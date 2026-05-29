@@ -44,13 +44,16 @@ add_executable(NextEngine
     src/graphics/Buffer.cpp
     src/graphics/Mesh.cpp
     src/graphics/Pipeline.cpp
+    src/graphics/Texture.cpp
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
+    src/graphics/StbImageUsage.cpp
 )
 target_include_directories(NextEngine PRIVATE
     src
     third_party/vma
     third_party/tinyobjloader
+    third_party/stb
 )
 target_link_libraries(NextEngine PRIVATE Vulkan::Vulkan glfw glm::glm)
 
@@ -61,6 +64,7 @@ target_compile_definitions(NextEngine PRIVATE NE_PROJECT_ROOT="${CMAKE_SOURCE_DI
 set_source_files_properties(
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
+    src/graphics/StbImageUsage.cpp
     PROPERTIES COMPILE_OPTIONS "-w")
 
 # Statically link the GCC/libstdc++ runtimes. Required here because this

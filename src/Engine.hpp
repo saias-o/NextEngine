@@ -14,6 +14,7 @@ class Swapchain;
 class Pipeline;
 class Mesh;
 class Buffer;
+class Texture;
 
 struct UniformBufferObject {
     alignas(16) glm::mat4 model;
@@ -50,6 +51,7 @@ private:
     std::unique_ptr<Swapchain> swapchain_;
     std::unique_ptr<Pipeline> pipeline_;
     std::unique_ptr<Mesh> mesh_;
+    std::unique_ptr<Texture> texture_;
 
     VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;

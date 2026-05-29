@@ -9,6 +9,7 @@
 #include "graphics/Mesh.hpp"
 #include "graphics/Pipeline.hpp"
 #include "graphics/Swapchain.hpp"
+#include "graphics/Texture.hpp"
 #include "graphics/VulkanDevice.hpp"
 
 #include <array>
@@ -25,6 +26,36 @@ constexpr uint32_t kHeight = 600;
 constexpr int kMaxFramesInFlight = 2;
 
 const std::string kModelPath = std::string(NE_PROJECT_ROOT) + "/models/bugatti/bugatti.obj";
+const std::string kTexturePath = std::string(NE_PROJECT_ROOT) + "/assets/textures/checker.png";
+
+// A unit cube with per-face UVs, used to demonstrate texturing. Color is white
+// so the fragment shader shows the texture unmodified.
+const std::vector<Vertex> kCubeVertices = {
+    // +Z
+    {{-0.5f, -0.5f,  0.5f}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f,  0.5f}, {1, 1, 1}, {1, 1}},
+    {{ 0.5f,  0.5f,  0.5f}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f,  0.5f}, {1, 1, 1}, {0, 0}},
+    // -Z
+    {{ 0.5f, -0.5f, -0.5f}, {1, 1, 1}, {0, 1}}, {{-0.5f, -0.5f, -0.5f}, {1, 1, 1}, {1, 1}},
+    {{-0.5f,  0.5f, -0.5f}, {1, 1, 1}, {1, 0}}, {{ 0.5f,  0.5f, -0.5f}, {1, 1, 1}, {0, 0}},
+    // +Y
+    {{-0.5f,  0.5f,  0.5f}, {1, 1, 1}, {0, 1}}, {{ 0.5f,  0.5f,  0.5f}, {1, 1, 1}, {1, 1}},
+    {{ 0.5f,  0.5f, -0.5f}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f, -0.5f}, {1, 1, 1}, {0, 0}},
+    // -Y
+    {{-0.5f, -0.5f, -0.5f}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f, -0.5f}, {1, 1, 1}, {1, 1}},
+    {{ 0.5f, -0.5f,  0.5f}, {1, 1, 1}, {1, 0}}, {{-0.5f, -0.5f,  0.5f}, {1, 1, 1}, {0, 0}},
+    // +X
+    {{ 0.5f, -0.5f,  0.5f}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f, -0.5f}, {1, 1, 1}, {1, 1}},
+    {{ 0.5f,  0.5f, -0.5f}, {1, 1, 1}, {1, 0}}, {{ 0.5f,  0.5f,  0.5f}, {1, 1, 1}, {0, 0}},
+    // -X
+    {{-0.5f, -0.5f, -0.5f}, {1, 1, 1}, {0, 1}}, {{-0.5f, -0.5f,  0.5f}, {1, 1, 1}, {1, 1}},
+    {{-0.5f,  0.5f,  0.5f}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f, -0.5f}, {1, 1, 1}, {0, 0}},
+};
+
+const std::vector<uint32_t> kCubeIndices = {
+     0,  1,  2,  2,  3,  0,   4,  5,  6,  6,  7,  4,
+     8,  9, 10, 10, 11,  8,  12, 13, 14, 14, 15, 12,
+    16, 17, 18, 18, 19, 16,  20, 21, 22, 22, 23, 20,
+};
 
 } // namespace
 
@@ -36,7 +67,10 @@ Engine::Engine() {
     createDescriptorSetLayout();
     pipeline_ = std::make_unique<Pipeline>(*device_, "shaders/shader.vert.spv",
         "shaders/shader.frag.spv", swapchain_->renderPass(), descriptorSetLayout_);
-    mesh_ = Mesh::fromObjFile(*device_, kModelPath);
+    // Textured cube demo. To render the bugatti instead (untextured — it has no
+    // UVs), swap this for: mesh_ = Mesh::fromObjFile(*device_, kModelPath);
+    mesh_ = std::make_unique<Mesh>(*device_, kCubeVertices, kCubeIndices);
+    texture_ = std::make_unique<Texture>(*device_, kTexturePath);
 
     createUniformBuffers();
     createDescriptorPool();
@@ -74,10 +108,18 @@ void Engine::createDescriptorSetLayout() {
     uboBinding.descriptorCount = 1;
     uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+    VkDescriptorSetLayoutBinding samplerBinding{};
+    samplerBinding.binding = 1;
+    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerBinding.descriptorCount = 1;
+    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboBinding, samplerBinding};
+
     VkDescriptorSetLayoutCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    ci.bindingCount = 1;
-    ci.pBindings = &uboBinding;
+    ci.bindingCount = static_cast<uint32_t>(bindings.size());
+    ci.pBindings = bindings.data();
 
     if (vkCreateDescriptorSetLayout(device_->device(), &ci, nullptr, &descriptorSetLayout_) != VK_SUCCESS)
         throw std::runtime_error("failed to create descriptor set layout");
@@ -93,14 +135,16 @@ void Engine::createUniformBuffers() {
 }
 
 void Engine::createDescriptorPool() {
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight);
+    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[0].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight);
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[1].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight);
 
     VkDescriptorPoolCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    ci.poolSizeCount = 1;
-    ci.pPoolSizes = &poolSize;
+    ci.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+    ci.pPoolSizes = poolSizes.data();
     ci.maxSets = static_cast<uint32_t>(kMaxFramesInFlight);
 
     if (vkCreateDescriptorPool(device_->device(), &ci, nullptr, &descriptorPool_) != VK_SUCCESS)
@@ -125,16 +169,30 @@ void Engine::createDescriptorSets() {
         bufInfo.offset = 0;
         bufInfo.range = sizeof(UniformBufferObject);
 
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = descriptorSets_[i];
-        write.dstBinding = 0;
-        write.dstArrayElement = 0;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        write.descriptorCount = 1;
-        write.pBufferInfo = &bufInfo;
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = texture_->imageView();
+        imageInfo.sampler = texture_->sampler();
 
-        vkUpdateDescriptorSets(device_->device(), 1, &write, 0, nullptr);
+        std::array<VkWriteDescriptorSet, 2> writes{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = descriptorSets_[i];
+        writes[0].dstBinding = 0;
+        writes[0].dstArrayElement = 0;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[0].descriptorCount = 1;
+        writes[0].pBufferInfo = &bufInfo;
+
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = descriptorSets_[i];
+        writes[1].dstBinding = 1;
+        writes[1].dstArrayElement = 0;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].descriptorCount = 1;
+        writes[1].pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(device_->device(),
+            static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }
 }
 

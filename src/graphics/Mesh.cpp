@@ -22,8 +22,8 @@ VkVertexInputBindingDescription Vertex::bindingDescription() {
     return desc;
 }
 
-std::array<VkVertexInputAttributeDescription, 2> Vertex::attributeDescriptions() {
-    std::array<VkVertexInputAttributeDescription, 2> attrs{};
+std::array<VkVertexInputAttributeDescription, 3> Vertex::attributeDescriptions() {
+    std::array<VkVertexInputAttributeDescription, 3> attrs{};
     attrs[0].binding = 0;
     attrs[0].location = 0;
     attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -32,6 +32,10 @@ std::array<VkVertexInputAttributeDescription, 2> Vertex::attributeDescriptions()
     attrs[1].location = 1;
     attrs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
     attrs[1].offset = offsetof(Vertex, color);
+    attrs[2].binding = 0;
+    attrs[2].location = 2;
+    attrs[2].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[2].offset = offsetof(Vertex, texCoord);
     return attrs;
 }
 
@@ -97,6 +101,12 @@ std::unique_ptr<Mesh> Mesh::fromObjFile(VulkanDevice& device, const std::string&
                 v.color = n * 0.5f + 0.5f;  // map [-1,1] normal to a [0,1] color
             } else {
                 v.color = glm::vec3(0.8f);
+            }
+            if (idx.texcoord_index >= 0) {
+                v.texCoord = glm::vec2(attrib.texcoords[2 * idx.texcoord_index + 0],
+                                       1.0f - attrib.texcoords[2 * idx.texcoord_index + 1]);
+            } else {
+                v.texCoord = glm::vec2(0.0f);
             }
 
             uint32_t newIndex = static_cast<uint32_t>(vertices.size());
