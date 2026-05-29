@@ -11,6 +11,7 @@
 #include "graphics/Swapchain.hpp"
 #include "graphics/Texture.hpp"
 #include "graphics/VulkanDevice.hpp"
+#include "scene/Behaviour.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/Scene.hpp"
 
@@ -58,6 +59,24 @@ const std::vector<uint32_t> kCubeIndices = {
      0,  1,  2,  2,  3,  0,   4,  5,  6,  6,  7,  4,
      8,  9, 10, 10, 11,  8,  12, 13, 14, 14, 15, 12,
     16, 17, 18, 18, 19, 16,  20, 21, 22, 22, 23, 20,
+};
+
+// Sample behaviour: continuously spins its node around an axis. Children inherit
+// the rotation through the transform hierarchy.
+class RotatorBehaviour : public Behaviour {
+public:
+    RotatorBehaviour(glm::vec3 axis, float degreesPerSecond)
+        : axis_(glm::normalize(axis)), speed_(glm::radians(degreesPerSecond)) {}
+
+    void onUpdate(float dt) override {
+        angle_ += dt * speed_;
+        node()->transform().rotation = glm::angleAxis(angle_, axis_);
+    }
+
+private:
+    glm::vec3 axis_;
+    float speed_;
+    float angle_ = 0.0f;
 };
 
 } // namespace
@@ -112,7 +131,7 @@ void Engine::run() {
         last = now;
 
         processInput(dt);
-        updateScene(dt);
+        scene_->updateTree(dt);  // runs node behaviours
         drawFrame();
     }
     vkDeviceWaitIdle(device_->device());
@@ -123,25 +142,19 @@ void Engine::buildScene() {
 
     // A small hierarchy to show transform inheritance: a central "planet" with
     // an orbiting "moon", which itself has an orbiting "sub-moon". All three
-    // reuse the same cube mesh; each gets its own transform.
-    planet_ = scene_->root().createChild<MeshNode>("planet", mesh_.get());
+    // reuse the same cube mesh; each gets its own transform. The orbiting motion
+    // comes entirely from RotatorBehaviours on the parents — children inherit it.
+    Node* planet = scene_->createChild<MeshNode>("planet", mesh_.get());
+    planet->addBehaviour<RotatorBehaviour>(glm::vec3(0, 1, 0), 40.0f);
 
-    moon_ = planet_->createChild<MeshNode>("moon", mesh_.get());
-    moon_->transform().position = {2.0f, 0.0f, 0.0f};
-    moon_->transform().scale = glm::vec3(0.45f);
+    Node* moon = planet->createChild<MeshNode>("moon", mesh_.get());
+    moon->transform().position = {2.0f, 0.0f, 0.0f};
+    moon->transform().scale = glm::vec3(0.45f);
+    moon->addBehaviour<RotatorBehaviour>(glm::vec3(0, 1, 0), 90.0f);
 
-    Node* subMoon = moon_->createChild<MeshNode>("sub-moon", mesh_.get());
+    Node* subMoon = moon->createChild<MeshNode>("sub-moon", mesh_.get());
     subMoon->transform().position = {2.0f, 0.0f, 0.0f};
     subMoon->transform().scale = glm::vec3(0.5f);
-}
-
-void Engine::updateScene(float dt) {
-    static float t = 0.0f;
-    t += dt;
-    // Spin the planet and the moon about Y; children inherit the motion, so the
-    // moon orbits the planet and the sub-moon orbits the moon.
-    planet_->transform().rotation = glm::angleAxis(t * glm::radians(40.0f), glm::vec3(0, 1, 0));
-    moon_->transform().rotation = glm::angleAxis(t * glm::radians(90.0f), glm::vec3(0, 1, 0));
 }
 
 void Engine::processInput(float dt) {

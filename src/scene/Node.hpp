@@ -1,5 +1,7 @@
 #pragma once
 
+#include "scene/Behaviour.hpp"
+
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -45,6 +47,21 @@ public:
         return ptr;
     }
 
+    // Attach a behaviour of type T, constructed in place; returns it (borrowed).
+    template <typename T, typename... Args>
+    T* addBehaviour(Args&&... args) {
+        static_assert(std::is_base_of_v<Behaviour, T>, "T must derive from Behaviour");
+        auto behaviour = std::make_unique<T>(std::forward<Args>(args)...);
+        behaviour->node_ = this;
+        T* ptr = behaviour.get();
+        behaviours_.push_back(std::move(behaviour));
+        return ptr;
+    }
+
+    // Run behaviour lifecycle (onReady once, then onUpdate) on this node and,
+    // recursively, all descendants.
+    void updateTree(float dt);
+
     Transform& transform() { return transform_; }
     const Transform& transform() const { return transform_; }
     glm::mat4 localMatrix() const { return transform_.matrix(); }
@@ -57,6 +74,11 @@ public:
     void traverse(const glm::mat4& parentWorld,
                   const std::function<void(Node&, const glm::mat4& world)>& visit);
 
+    // Convenience: traverse treating this node as a root (identity parent).
+    void traverse(const std::function<void(Node&, const glm::mat4& world)>& visit) {
+        traverse(glm::mat4(1.0f), visit);
+    }
+
     // Renderable nodes override this to expose their mesh (null = not drawable).
     virtual Mesh* mesh() const { return nullptr; }
 
@@ -65,6 +87,7 @@ protected:
     Transform transform_;
     Node* parent_ = nullptr;
     std::vector<std::unique_ptr<Node>> children_;
+    std::vector<std::unique_ptr<Behaviour>> behaviours_;
 };
 
 } // namespace ne

@@ -105,11 +105,14 @@ src/
     TinyObjUsage.cpp        Seule TU définissant TINYOBJLOADER_IMPLEMENTATION.
     StbImageUsage.cpp       Seule TU définissant STB_IMAGE_IMPLEMENTATION.
   scene/
-    Node.{hpp,cpp}          Nœud du graphe de scène : Transform (pos/quat/scale),
-                            parent/enfants, propagation de la matrice monde,
-                            traverse(). mesh() virtuel (null = non dessinable).
+    Node.{hpp,cpp}          Nœud du graphe : Transform (pos/quat/scale),
+                            parent/enfants, propagation de la matrice monde
+                            (traverse), behaviours attachés (addBehaviour +
+                            updateTree). mesh() virtuel (null = non dessinable).
     MeshNode.hpp            Node dessinant un Mesh (réf. non-possédante).
-    Scene.hpp               Possède le nœud racine + traverse() depuis l'origine.
+    Behaviour.hpp           Logique attachable à un Node (onReady/onUpdate),
+                            façon MonoBehaviour/script Godot. Accède à node().
+    Scene.hpp               Scene : public Node — la scène EST le nœud racine.
   shaders/
     shader.vert / .frag     GLSL : transforme par UBO, échantillonne la texture.
 third_party/vma/             VMA vendu.
@@ -145,6 +148,9 @@ Le moteur est construit par étapes numérotées :
       `MeshNode`, `Scene`) façon Godot/Unity : transform par nœud, hiérarchie
       parent/enfant, matrice `model` par objet via **push constant** (l'UBO ne
       garde que view/proj). Le rendu traverse la scène (`Engine::recordCommandBuffer`).
+      Une `Scene` **est** un `Node` (racine). Des `Behaviour` (onReady/onUpdate)
+      s'attachent aux nœuds — l'orbite de la démo est pilotée par un
+      `RotatorBehaviour`, pas par du code en dur dans l'Engine.
 - [ ] **Étape 6 — Éclairage.** Normales + Blinn-Phong puis PBR.
 - [ ] **Étape 7 — Outillage.** Dear ImGui (debug/stats), pipeline cache, MSAA.
 - [ ] **Étape 8 — Couche jeu.** Boucle de jeu (update/render séparés, delta

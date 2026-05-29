@@ -48,7 +48,6 @@ private:
     void buildScene();
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex);
     void processInput(float dt);
-    void updateScene(float dt);
     void updateUniformBuffer(uint32_t frame);
     void drawFrame();
 
@@ -59,8 +58,6 @@ private:
     std::unique_ptr<Mesh> mesh_;
     std::unique_ptr<Texture> texture_;
     std::unique_ptr<Scene> scene_;
-    Node* planet_ = nullptr;  // spun in updateScene to show hierarchy
-    Node* moon_ = nullptr;
 
     VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;

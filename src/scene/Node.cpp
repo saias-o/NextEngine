@@ -26,6 +26,18 @@ Node* Node::addChild(std::unique_ptr<Node> child) {
     return ptr;
 }
 
+void Node::updateTree(float dt) {
+    for (auto& behaviour : behaviours_) {
+        if (!behaviour->ready_) {
+            behaviour->onReady();
+            behaviour->ready_ = true;
+        }
+        behaviour->onUpdate(dt);
+    }
+    for (auto& child : children_)
+        child->updateTree(dt);
+}
+
 void Node::traverse(const glm::mat4& parentWorld,
                     const std::function<void(Node&, const glm::mat4&)>& visit) {
     glm::mat4 world = parentWorld * localMatrix();
