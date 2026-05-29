@@ -11,9 +11,12 @@
 #include "graphics/Swapchain.hpp"
 #include "graphics/Texture.hpp"
 #include "graphics/VulkanDevice.hpp"
+#include "scene/MeshNode.hpp"
+#include "scene/Scene.hpp"
+
+#include <glm/gtc/quaternion.hpp>
 
 #include <array>
-#include <chrono>
 #include <stdexcept>
 #include <string>
 
@@ -71,6 +74,7 @@ Engine::Engine() {
     // UVs), swap this for: mesh_ = Mesh::fromObjFile(*device_, kModelPath);
     mesh_ = std::make_unique<Mesh>(*device_, kCubeVertices, kCubeIndices);
     texture_ = std::make_unique<Texture>(*device_, kTexturePath);
+    buildScene();
 
     createUniformBuffers();
     createDescriptorPool();
@@ -78,10 +82,10 @@ Engine::Engine() {
     createCommandBuffers();
     createSyncObjects();
 
-    // Start a few units back, looking toward the cube at the origin.
-    camera_.position = {0.0f, 0.0f, 2.5f};
+    // Pull back and look slightly down to see the whole orbiting hierarchy.
+    camera_.position = {0.0f, 2.5f, 8.0f};
     camera_.yaw = -90.0f;
-    camera_.pitch = 0.0f;
+    camera_.pitch = -15.0f;
 }
 
 Engine::~Engine() {
@@ -108,9 +112,36 @@ void Engine::run() {
         last = now;
 
         processInput(dt);
+        updateScene(dt);
         drawFrame();
     }
     vkDeviceWaitIdle(device_->device());
+}
+
+void Engine::buildScene() {
+    scene_ = std::make_unique<Scene>();
+
+    // A small hierarchy to show transform inheritance: a central "planet" with
+    // an orbiting "moon", which itself has an orbiting "sub-moon". All three
+    // reuse the same cube mesh; each gets its own transform.
+    planet_ = scene_->root().createChild<MeshNode>("planet", mesh_.get());
+
+    moon_ = planet_->createChild<MeshNode>("moon", mesh_.get());
+    moon_->transform().position = {2.0f, 0.0f, 0.0f};
+    moon_->transform().scale = glm::vec3(0.45f);
+
+    Node* subMoon = moon_->createChild<MeshNode>("sub-moon", mesh_.get());
+    subMoon->transform().position = {2.0f, 0.0f, 0.0f};
+    subMoon->transform().scale = glm::vec3(0.5f);
+}
+
+void Engine::updateScene(float dt) {
+    static float t = 0.0f;
+    t += dt;
+    // Spin the planet and the moon about Y; children inherit the motion, so the
+    // moon orbits the planet and the sub-moon orbits the moon.
+    planet_->transform().rotation = glm::angleAxis(t * glm::radians(40.0f), glm::vec3(0, 1, 0));
+    moon_->transform().rotation = glm::angleAxis(t * glm::radians(90.0f), glm::vec3(0, 1, 0));
 }
 
 void Engine::processInput(float dt) {
@@ -301,10 +332,20 @@ void Engine::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     scissor.extent = extent;
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    mesh_->bind(cmd);
+    // View/projection (UBO) and the texture are shared by every object.
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout(),
         0, 1, &descriptorSets_[currentFrame_], 0, nullptr);
-    mesh_->draw(cmd);
+
+    // Walk the scene: each mesh node draws with its world matrix as a push constant.
+    VkPipelineLayout layout = pipeline_->layout();
+    scene_->traverse([&](Node& node, const glm::mat4& world) {
+        Mesh* m = node.mesh();
+        if (!m) return;
+        vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT,
+                           0, sizeof(glm::mat4), &world);
+        m->bind(cmd);
+        m->draw(cmd);
+    });
 
     vkCmdEndRenderPass(cmd);
     if (vkEndCommandBuffer(cmd) != VK_SUCCESS)
@@ -315,7 +356,6 @@ void Engine::updateUniformBuffer(uint32_t frame) {
     camera_.setPerspective(glm::radians(45.0f), swapchain_->aspectRatio(), 0.1f, 100.0f);
 
     UniformBufferObject ubo{};
-    ubo.model = glm::mat4(1.0f);  // static; fly the camera around it
     ubo.view = camera_.view();
     ubo.proj = camera_.projection();
 

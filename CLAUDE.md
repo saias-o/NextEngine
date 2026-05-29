@@ -26,10 +26,12 @@ vue mono ». Le rendu XR est stéréo (deux vues) — viser le *multiview* Vulka
 
 Le projet est parti d'un « Hello Cube » Vulkan monolithique (style
 vulkan-tutorial.com) et est progressivement transformé en vrai moteur. L'état
-actuel affiche un **cube texturé** autour duquel on **vole librement** (caméra
-FPS : ZQSD/WASD + souris, Espace/Ctrl, Maj pour accélérer, Échap pour quitter),
-avec depth buffer. Le bugatti reste chargeable via `Mesh::fromObjFile` (sans
-texture, faute d'UV) — voir le commentaire dans `Engine::Engine()`.
+actuel affiche une **scène à hiérarchie de nœuds** (une « planète » avec une
+« lune » qui orbite et une « sous-lune » enfant — chaque nœud hérite de la
+transform de son parent), cube texturé, autour de laquelle on **vole librement**
+(caméra FPS : ZQSD/WASD + souris, Espace/Ctrl, Maj pour accélérer, Échap pour
+quitter), avec depth buffer. Le bugatti reste chargeable via
+`Mesh::fromObjFile` (sans texture, faute d'UV) — voir `Engine::buildScene()`.
 
 ## Stack & dépendances
 
@@ -102,6 +104,12 @@ src/
     VmaUsage.cpp            Seule TU définissant VMA_IMPLEMENTATION.
     TinyObjUsage.cpp        Seule TU définissant TINYOBJLOADER_IMPLEMENTATION.
     StbImageUsage.cpp       Seule TU définissant STB_IMAGE_IMPLEMENTATION.
+  scene/
+    Node.{hpp,cpp}          Nœud du graphe de scène : Transform (pos/quat/scale),
+                            parent/enfants, propagation de la matrice monde,
+                            traverse(). mesh() virtuel (null = non dessinable).
+    MeshNode.hpp            Node dessinant un Mesh (réf. non-possédante).
+    Scene.hpp               Possède le nœud racine + traverse() depuis l'origine.
   shaders/
     shader.vert / .frag     GLSL : transforme par UBO, échantillonne la texture.
 third_party/vma/             VMA vendu.
@@ -133,8 +141,10 @@ Le moteur est construit par étapes numérotées :
             `Vertex` = pos+color+texCoord). Démo sur cube texturé.
 - [x] **Étape 4 — Caméra & inputs.** Caméra fly `Camera`, inputs clavier/souris
       gérés par `Window`, déplacement avec delta time dans `Engine::processInput`.
-- [ ] **Étape 5 — Multi-objets / scène.** Plusieurs `RenderObject` avec
-      transform par objet (push constants pour la matrice `model`).
+- [x] **Étape 5 — Multi-objets / scène.** Graphe de scène à nœuds (`Node`,
+      `MeshNode`, `Scene`) façon Godot/Unity : transform par nœud, hiérarchie
+      parent/enfant, matrice `model` par objet via **push constant** (l'UBO ne
+      garde que view/proj). Le rendu traverse la scène (`Engine::recordCommandBuffer`).
 - [ ] **Étape 6 — Éclairage.** Normales + Blinn-Phong puis PBR.
 - [ ] **Étape 7 — Outillage.** Dear ImGui (debug/stats), pipeline cache, MSAA.
 - [ ] **Étape 8 — Couche jeu.** Boucle de jeu (update/render séparés, delta
