@@ -22,8 +22,8 @@ VkVertexInputBindingDescription Vertex::bindingDescription() {
     return desc;
 }
 
-std::array<VkVertexInputAttributeDescription, 3> Vertex::attributeDescriptions() {
-    std::array<VkVertexInputAttributeDescription, 3> attrs{};
+std::array<VkVertexInputAttributeDescription, 4> Vertex::attributeDescriptions() {
+    std::array<VkVertexInputAttributeDescription, 4> attrs{};
     attrs[0].binding = 0;
     attrs[0].location = 0;
     attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -31,11 +31,15 @@ std::array<VkVertexInputAttributeDescription, 3> Vertex::attributeDescriptions()
     attrs[1].binding = 0;
     attrs[1].location = 1;
     attrs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attrs[1].offset = offsetof(Vertex, color);
+    attrs[1].offset = offsetof(Vertex, normal);
     attrs[2].binding = 0;
     attrs[2].location = 2;
-    attrs[2].format = VK_FORMAT_R32G32_SFLOAT;
-    attrs[2].offset = offsetof(Vertex, texCoord);
+    attrs[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[2].offset = offsetof(Vertex, color);
+    attrs[3].binding = 0;
+    attrs[3].location = 3;
+    attrs[3].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[3].offset = offsetof(Vertex, texCoord);
     return attrs;
 }
 
@@ -95,13 +99,13 @@ std::unique_ptr<Mesh> Mesh::fromObjFile(VulkanDevice& device, const std::string&
                                attrib.vertices[3 * idx.vertex_index + 1],
                                attrib.vertices[3 * idx.vertex_index + 2]) - center) * scale;
             if (idx.normal_index >= 0) {
-                glm::vec3 n(attrib.normals[3 * idx.normal_index + 0],
-                            attrib.normals[3 * idx.normal_index + 1],
-                            attrib.normals[3 * idx.normal_index + 2]);
-                v.color = n * 0.5f + 0.5f;  // map [-1,1] normal to a [0,1] color
+                v.normal = glm::vec3(attrib.normals[3 * idx.normal_index + 0],
+                                     attrib.normals[3 * idx.normal_index + 1],
+                                     attrib.normals[3 * idx.normal_index + 2]);
             } else {
-                v.color = glm::vec3(0.8f);
+                v.normal = glm::vec3(0.0f, 1.0f, 0.0f);
             }
+            v.color = glm::vec3(1.0f);  // white albedo; lighting provides shading
             if (idx.texcoord_index >= 0) {
                 v.texCoord = glm::vec2(attrib.texcoords[2 * idx.texcoord_index + 0],
                                        1.0f - attrib.texcoords[2 * idx.texcoord_index + 1]);

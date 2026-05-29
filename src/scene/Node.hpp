@@ -14,6 +14,7 @@
 namespace ne {
 
 class Mesh;
+class LightNode;
 
 // Local transform: translation, rotation (quaternion) and scale.
 struct Transform {
@@ -79,8 +80,10 @@ public:
         traverse(glm::mat4(1.0f), visit);
     }
 
-    // Renderable nodes override this to expose their mesh (null = not drawable).
+    // Type hooks: a node exposes itself as the relevant kind (null otherwise).
+    // Kept as cheap virtuals (no RTTI) since they run during scene traversal.
     virtual Mesh* mesh() const { return nullptr; }
+    virtual LightNode* asLight() { return nullptr; }
 
 protected:
     std::string name_;

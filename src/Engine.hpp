@@ -25,6 +25,22 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 proj;
 };
 
+// std140-compatible lighting block (mirrors the LightingUBO in shader.frag).
+// Everything is vec4/ivec4 to avoid std140 vec3 padding surprises.
+struct GpuPointLight {
+    glm::vec4 position;  // xyz = world pos, w = range
+    glm::vec4 color;     // rgb = color, w = intensity
+};
+
+struct LightingUBO {
+    glm::vec4 ambient{0.0f};
+    glm::vec4 cameraPos{0.0f};
+    glm::vec4 dirDirection{0.0f, -1.0f, 0.0f, 0.0f};  // w = intensity
+    glm::vec4 dirColor{0.0f};
+    GpuPointLight pointLights[4]{};
+    glm::ivec4 counts{0};  // x = active point lights, y = mode
+};
+
 // Top-level application object. Owns every subsystem and drives the render
 // loop. Declaration order of the members matters: device_ outlives the
 // resources that reference it during destruction.
@@ -48,6 +64,7 @@ private:
     void buildScene();
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex);
     void processInput(float dt);
+    void gatherLights(LightingUBO& ubo);
     void updateUniformBuffer(uint32_t frame);
     void drawFrame();
 
@@ -63,6 +80,7 @@ private:
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> descriptorSets_;
     std::vector<std::unique_ptr<Buffer>> uniformBuffers_;
+    std::vector<std::unique_ptr<Buffer>> lightingBuffers_;
 
     std::vector<VkCommandBuffer> commandBuffers_;
     std::vector<VkSemaphore> imageAvailableSemaphores_;

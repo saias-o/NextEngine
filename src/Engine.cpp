@@ -12,6 +12,7 @@
 #include "graphics/Texture.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "scene/Behaviour.hpp"
+#include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/Scene.hpp"
 
@@ -32,27 +33,27 @@ constexpr int kMaxFramesInFlight = 2;
 const std::string kModelPath = std::string(NE_PROJECT_ROOT) + "/models/bugatti/bugatti.obj";
 const std::string kTexturePath = std::string(NE_PROJECT_ROOT) + "/assets/textures/checker.png";
 
-// A unit cube with per-face UVs, used to demonstrate texturing. Color is white
-// so the fragment shader shows the texture unmodified.
+// A unit cube with per-face normals and UVs. Color is white so the fragment
+// shader shows texture * lighting unmodified.
 const std::vector<Vertex> kCubeVertices = {
     // +Z
-    {{-0.5f, -0.5f,  0.5f}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f,  0.5f}, {1, 1, 1}, {1, 1}},
-    {{ 0.5f,  0.5f,  0.5f}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f,  0.5f}, {1, 1, 1}, {0, 0}},
+    {{-0.5f, -0.5f,  0.5f}, {0, 0, 1}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f,  0.5f}, {0, 0, 1}, {1, 1, 1}, {1, 1}},
+    {{ 0.5f,  0.5f,  0.5f}, {0, 0, 1}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f,  0.5f}, {0, 0, 1}, {1, 1, 1}, {0, 0}},
     // -Z
-    {{ 0.5f, -0.5f, -0.5f}, {1, 1, 1}, {0, 1}}, {{-0.5f, -0.5f, -0.5f}, {1, 1, 1}, {1, 1}},
-    {{-0.5f,  0.5f, -0.5f}, {1, 1, 1}, {1, 0}}, {{ 0.5f,  0.5f, -0.5f}, {1, 1, 1}, {0, 0}},
+    {{ 0.5f, -0.5f, -0.5f}, {0, 0, -1}, {1, 1, 1}, {0, 1}}, {{-0.5f, -0.5f, -0.5f}, {0, 0, -1}, {1, 1, 1}, {1, 1}},
+    {{-0.5f,  0.5f, -0.5f}, {0, 0, -1}, {1, 1, 1}, {1, 0}}, {{ 0.5f,  0.5f, -0.5f}, {0, 0, -1}, {1, 1, 1}, {0, 0}},
     // +Y
-    {{-0.5f,  0.5f,  0.5f}, {1, 1, 1}, {0, 1}}, {{ 0.5f,  0.5f,  0.5f}, {1, 1, 1}, {1, 1}},
-    {{ 0.5f,  0.5f, -0.5f}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f, -0.5f}, {1, 1, 1}, {0, 0}},
+    {{-0.5f,  0.5f,  0.5f}, {0, 1, 0}, {1, 1, 1}, {0, 1}}, {{ 0.5f,  0.5f,  0.5f}, {0, 1, 0}, {1, 1, 1}, {1, 1}},
+    {{ 0.5f,  0.5f, -0.5f}, {0, 1, 0}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f, -0.5f}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
     // -Y
-    {{-0.5f, -0.5f, -0.5f}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f, -0.5f}, {1, 1, 1}, {1, 1}},
-    {{ 0.5f, -0.5f,  0.5f}, {1, 1, 1}, {1, 0}}, {{-0.5f, -0.5f,  0.5f}, {1, 1, 1}, {0, 0}},
+    {{-0.5f, -0.5f, -0.5f}, {0, -1, 0}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f, -0.5f}, {0, -1, 0}, {1, 1, 1}, {1, 1}},
+    {{ 0.5f, -0.5f,  0.5f}, {0, -1, 0}, {1, 1, 1}, {1, 0}}, {{-0.5f, -0.5f,  0.5f}, {0, -1, 0}, {1, 1, 1}, {0, 0}},
     // +X
-    {{ 0.5f, -0.5f,  0.5f}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f, -0.5f}, {1, 1, 1}, {1, 1}},
-    {{ 0.5f,  0.5f, -0.5f}, {1, 1, 1}, {1, 0}}, {{ 0.5f,  0.5f,  0.5f}, {1, 1, 1}, {0, 0}},
+    {{ 0.5f, -0.5f,  0.5f}, {1, 0, 0}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f, -0.5f}, {1, 0, 0}, {1, 1, 1}, {1, 1}},
+    {{ 0.5f,  0.5f, -0.5f}, {1, 0, 0}, {1, 1, 1}, {1, 0}}, {{ 0.5f,  0.5f,  0.5f}, {1, 0, 0}, {1, 1, 1}, {0, 0}},
     // -X
-    {{-0.5f, -0.5f, -0.5f}, {1, 1, 1}, {0, 1}}, {{-0.5f, -0.5f,  0.5f}, {1, 1, 1}, {1, 1}},
-    {{-0.5f,  0.5f,  0.5f}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f, -0.5f}, {1, 1, 1}, {0, 0}},
+    {{-0.5f, -0.5f, -0.5f}, {-1, 0, 0}, {1, 1, 1}, {0, 1}}, {{-0.5f, -0.5f,  0.5f}, {-1, 0, 0}, {1, 1, 1}, {1, 1}},
+    {{-0.5f,  0.5f,  0.5f}, {-1, 0, 0}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f, -0.5f}, {-1, 0, 0}, {1, 1, 1}, {0, 0}},
 };
 
 const std::vector<uint32_t> kCubeIndices = {
@@ -155,6 +156,22 @@ void Engine::buildScene() {
     Node* subMoon = moon->createChild<MeshNode>("sub-moon", mesh_.get());
     subMoon->transform().position = {2.0f, 0.0f, 0.0f};
     subMoon->transform().scale = glm::vec3(0.5f);
+
+    // A directional "sun" (warm, slightly overhead).
+    LightNode* sun = scene_->createChild<LightNode>("sun", LightType::Directional);
+    sun->direction = glm::normalize(glm::vec3(-0.5f, -1.0f, -0.3f));
+    sun->color = {1.0f, 0.95f, 0.85f};
+    sun->intensity = 1.0f;
+
+    // A point light orbiting the scene: a rotating pivot with the light offset
+    // from it, so the RotatorBehaviour makes it circle the objects.
+    Node* lightPivot = scene_->createChild<Node>("light-pivot");
+    lightPivot->addBehaviour<RotatorBehaviour>(glm::vec3(0, 1, 0), 70.0f);
+    LightNode* lamp = lightPivot->createChild<LightNode>("lamp", LightType::Point);
+    lamp->transform().position = {3.5f, 1.5f, 0.0f};
+    lamp->color = {0.3f, 0.5f, 1.0f};
+    lamp->intensity = 4.0f;
+    lamp->range = 8.0f;
 }
 
 void Engine::processInput(float dt) {
@@ -195,7 +212,13 @@ void Engine::createDescriptorSetLayout() {
     samplerBinding.descriptorCount = 1;
     samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboBinding, samplerBinding};
+    VkDescriptorSetLayoutBinding lightingBinding{};
+    lightingBinding.binding = 2;
+    lightingBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    lightingBinding.descriptorCount = 1;
+    lightingBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 3> bindings = {uboBinding, samplerBinding, lightingBinding};
 
     VkDescriptorSetLayoutCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -207,10 +230,12 @@ void Engine::createDescriptorSetLayout() {
 }
 
 void Engine::createUniformBuffers() {
-    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
     uniformBuffers_.reserve(kMaxFramesInFlight);
+    lightingBuffers_.reserve(kMaxFramesInFlight);
     for (int i = 0; i < kMaxFramesInFlight; i++) {
-        uniformBuffers_.push_back(std::make_unique<Buffer>(*device_, bufferSize,
+        uniformBuffers_.push_back(std::make_unique<Buffer>(*device_, sizeof(UniformBufferObject),
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryUsage::HostVisible));
+        lightingBuffers_.push_back(std::make_unique<Buffer>(*device_, sizeof(LightingUBO),
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryUsage::HostVisible));
     }
 }
@@ -218,7 +243,7 @@ void Engine::createUniformBuffers() {
 void Engine::createDescriptorPool() {
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight);
+    poolSizes[0].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight) * 2;  // camera + lighting
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight);
 
@@ -255,7 +280,12 @@ void Engine::createDescriptorSets() {
         imageInfo.imageView = texture_->imageView();
         imageInfo.sampler = texture_->sampler();
 
-        std::array<VkWriteDescriptorSet, 2> writes{};
+        VkDescriptorBufferInfo lightInfo{};
+        lightInfo.buffer = lightingBuffers_[i]->handle();
+        lightInfo.offset = 0;
+        lightInfo.range = sizeof(LightingUBO);
+
+        std::array<VkWriteDescriptorSet, 3> writes{};
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[0].dstSet = descriptorSets_[i];
         writes[0].dstBinding = 0;
@@ -271,6 +301,14 @@ void Engine::createDescriptorSets() {
         writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[1].descriptorCount = 1;
         writes[1].pImageInfo = &imageInfo;
+
+        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[2].dstSet = descriptorSets_[i];
+        writes[2].dstBinding = 2;
+        writes[2].dstArrayElement = 0;
+        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[2].descriptorCount = 1;
+        writes[2].pBufferInfo = &lightInfo;
 
         vkUpdateDescriptorSets(device_->device(),
             static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
@@ -365,14 +403,44 @@ void Engine::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
         throw std::runtime_error("failed to record command buffer");
 }
 
+void Engine::gatherLights(LightingUBO& ubo) {
+    ubo.ambient = glm::vec4(0.04f, 0.04f, 0.05f, 0.0f);
+    ubo.cameraPos = glm::vec4(camera_.position, 1.0f);
+    ubo.dirDirection = glm::vec4(0.0f, -1.0f, 0.0f, 0.0f);  // intensity 0 = no dir light yet
+    ubo.dirColor = glm::vec4(0.0f);
+    ubo.counts = glm::ivec4(0);
+    int pointCount = 0;
+
+    scene_->traverse([&](Node& node, const glm::mat4& world) {
+        LightNode* light = node.asLight();
+        if (!light) return;
+
+        if (light->type == LightType::Directional) {
+            glm::vec3 dir = glm::normalize(glm::mat3(world) * light->direction);
+            ubo.dirDirection = glm::vec4(dir, light->intensity);
+            ubo.dirColor = glm::vec4(light->color, 1.0f);
+        } else if (pointCount < 4) {
+            glm::vec3 pos = glm::vec3(world[3]);
+            ubo.pointLights[pointCount].position = glm::vec4(pos, light->range);
+            ubo.pointLights[pointCount].color = glm::vec4(light->color, light->intensity);
+            ++pointCount;
+        }
+    });
+
+    ubo.counts = glm::ivec4(pointCount, /*mode=realtime*/ 0, 0, 0);
+}
+
 void Engine::updateUniformBuffer(uint32_t frame) {
     camera_.setPerspective(glm::radians(45.0f), swapchain_->aspectRatio(), 0.1f, 100.0f);
 
     UniformBufferObject ubo{};
     ubo.view = camera_.view();
     ubo.proj = camera_.projection();
-
     uniformBuffers_[frame]->write(&ubo, sizeof(ubo));
+
+    LightingUBO lighting{};
+    gatherLights(lighting);
+    lightingBuffers_[frame]->write(&lighting, sizeof(lighting));
 }
 
 void Engine::drawFrame() {

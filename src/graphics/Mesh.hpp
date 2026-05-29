@@ -15,11 +15,12 @@ class Buffer;
 
 struct Vertex {
     glm::vec3 pos;
+    glm::vec3 normal;
     glm::vec3 color;
     glm::vec2 texCoord;
 
     static VkVertexInputBindingDescription bindingDescription();
-    static std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions();
+    static std::array<VkVertexInputAttributeDescription, 4> attributeDescriptions();
 };
 
 // Owns device-local vertex and index buffers and knows how to bind/draw itself.

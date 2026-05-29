@@ -28,10 +28,11 @@ Le projet est parti d'un « Hello Cube » Vulkan monolithique (style
 vulkan-tutorial.com) et est progressivement transformé en vrai moteur. L'état
 actuel affiche une **scène à hiérarchie de nœuds** (une « planète » avec une
 « lune » qui orbite et une « sous-lune » enfant — chaque nœud hérite de la
-transform de son parent), cube texturé, autour de laquelle on **vole librement**
-(caméra FPS : ZQSD/WASD + souris, Espace/Ctrl, Maj pour accélérer, Échap pour
-quitter), avec depth buffer. Le bugatti reste chargeable via
-`Mesh::fromObjFile` (sans texture, faute d'UV) — voir `Engine::buildScene()`.
+transform de son parent), cubes texturés **éclairés en temps réel** (Blinn-Phong :
+une lumière directionnelle « soleil » + une lumière ponctuelle qui orbite),
+autour de laquelle on **vole librement** (caméra FPS : ZQSD/WASD + souris,
+Espace/Ctrl, Maj pour accélérer, Échap pour quitter), avec depth buffer. Le
+bugatti reste chargeable via `Mesh::fromObjFile` — voir `Engine::buildScene()`.
 
 ## Stack & dépendances
 
@@ -110,6 +111,8 @@ src/
                             (traverse), behaviours attachés (addBehaviour +
                             updateTree). mesh() virtuel (null = non dessinable).
     MeshNode.hpp            Node dessinant un Mesh (réf. non-possédante).
+    LightNode.hpp           Lumière (Directional/Point) dans le graphe + champ
+                            bakeMode (Realtime/Baked/Mixed) pour le futur bake.
     Behaviour.hpp           Logique attachable à un Node (onReady/onUpdate),
                             façon MonoBehaviour/script Godot. Accède à node().
     Scene.hpp               Scene : public Node — la scène EST le nœud racine.
@@ -151,7 +154,16 @@ Le moteur est construit par étapes numérotées :
       Une `Scene` **est** un `Node` (racine). Des `Behaviour` (onReady/onUpdate)
       s'attachent aux nœuds — l'orbite de la démo est pilotée par un
       `RotatorBehaviour`, pas par du code en dur dans l'Engine.
-- [ ] **Étape 6 — Éclairage.** Normales + Blinn-Phong puis PBR.
+- [~] **Étape 6 — Éclairage.**
+      - [x] Temps réel simple : normales dans `Vertex`, Blinn-Phong en espace
+            monde, `LightNode` directionnelle + ponctuelle collectées par
+            traversée dans un UBO d'éclairage (binding 2, étage fragment).
+      - Pensé pour le **baked** : le fragment sépare un terme **indirect**
+            (ambient aujourd'hui → lightmap demain, hook `mode`/`counts.y`) et un
+            terme **direct** temps réel ; `LightNode::bakeMode` indiquera au
+            futur bake quelles lumières précalculer. *Reste à faire* : étape de
+            bake offline + UV de lightmap + échantillonnage du lightmap.
+      - [ ] PBR (metallic-roughness) + normal mapping, plus tard.
 - [ ] **Étape 7 — Outillage.** Dear ImGui (debug/stats), pipeline cache, MSAA.
 - [ ] **Étape 8 — Couche jeu.** Boucle de jeu (update/render séparés, delta
       time fixe/variable), abstraction « scène » jouable, point d'entrée
