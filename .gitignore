@@ -1,0 +1,14 @@
+# Build output (CMake/Ninja: objects, exe, compiled SPIR-V shaders, etc.)
+/build/
+
+# Blender source files: large, only needed for editing the model, not the build.
+*.blend
+*.blend1
+
+# Editor / IDE
+.vscode/
+.idea/
+*.user
+
+# Claude Code local (per-machine) settings
+.claude/settings.local.json
