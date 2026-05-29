@@ -26,8 +26,10 @@ vue mono ». Le rendu XR est stéréo (deux vues) — viser le *multiview* Vulka
 
 Le projet est parti d'un « Hello Cube » Vulkan monolithique (style
 vulkan-tutorial.com) et est progressivement transformé en vrai moteur. L'état
-actuel charge et affiche le **modèle bugatti** (`.obj`, ~1,7 M sommets,
-couleurs dérivées des normales) en **rotation plateau**, avec depth buffer.
+actuel affiche un **cube texturé** autour duquel on **vole librement** (caméra
+FPS : ZQSD/WASD + souris, Espace/Ctrl, Maj pour accélérer, Échap pour quitter),
+avec depth buffer. Le bugatti reste chargeable via `Mesh::fromObjFile` (sans
+texture, faute d'UV) — voir le commentaire dans `Engine::Engine()`.
 
 ## Stack & dépendances
 
@@ -77,7 +79,10 @@ src/
                         descriptor sets, uniform buffers, UBO/caméra, draw.
                         Contient pour l'instant la géométrie du cube en dur.
   core/
-    Window.{hpp,cpp}    GLFW : fenêtre, surface, flag de resize.
+    Window.{hpp,cpp}    GLFW : fenêtre, surface, resize, et inputs (capture
+                        curseur, delta souris, état clavier).
+    Camera.{hpp,cpp}    Caméra fly yaw/pitch → matrices view/projection
+                        (projection avec flip Y Vulkan intégré).
   graphics/
     VulkanDevice.{hpp,cpp}  Instance, debug messenger, surface, device,
                             queues, command pool, VmaAllocator. Helpers
@@ -89,16 +94,21 @@ src/
     Pipeline.{hpp,cpp}      Pipeline graphique + layout (depuis chemins de shaders).
     Buffer.{hpp,cpp}        Wrapper RAII de VkBuffer via VMA. enum MemoryUsage
                             {GpuOnly, HostVisible}. HostVisible = mappé en permanence.
+    Texture.{hpp,cpp}       Charge une image (stb_image) → VkImage échantillonnable
+                            (VMA) + view + sampler. Staging + transitions de layout.
     Mesh.{hpp,cpp}          Vertex (pos, color) + VBO/IBO (indices uint32) via
                             staging + bind/draw. Mesh::fromObjFile() charge un .obj.
     VmaFwd.hpp              Forward-decls VMA (garde le gros header hors des en-têtes).
     VmaUsage.cpp            Seule TU définissant VMA_IMPLEMENTATION.
     TinyObjUsage.cpp        Seule TU définissant TINYOBJLOADER_IMPLEMENTATION.
+    StbImageUsage.cpp       Seule TU définissant STB_IMAGE_IMPLEMENTATION.
   shaders/
-    shader.vert / .frag     GLSL minimal (transforme par UBO, sort la couleur vertex).
+    shader.vert / .frag     GLSL : transforme par UBO, échantillonne la texture.
 third_party/vma/             VMA vendu.
 third_party/tinyobjloader/   tinyobjloader vendu.
-models/bugatti/              Modèle de test (bugatti.obj, ~84 Mo).
+third_party/stb/             stb_image vendu.
+models/bugatti/              Modèle de test (bugatti.obj, ~84 Mo, LFS).
+assets/textures/             Textures (checker.png généré, LFS).
 ```
 
 ### Conventions de code
@@ -116,14 +126,13 @@ Le moteur est construit par étapes numérotées :
       (Window, VulkanDevice, Swapchain, Pipeline, Buffer, Mesh, Engine).
 - [x] **Étape 2 — Gestion mémoire via VMA.** Allocateur unique, fin des
       `vkAllocateMemory` manuels.
-- [~] **Étape 3 — Chargement d'assets.**
+- [x] **Étape 3 — Chargement d'assets.**
       - [x] Meshes `.obj` via `tinyobjloader` (`Mesh::fromObjFile`) : triangulation,
             dédup (position,normale), recentrage + scale unitaire, couleur = normale.
-            Le bugatti est chargé au démarrage.
-      - [ ] Textures via `stb_image` (sampler + 2e binding de descripteur ;
-            ajouter UV/normales au `Vertex` — actuellement `Vertex` = pos+color).
-- [ ] **Étape 4 — Caméra & inputs.** Caméra FPS/orbit, inputs GLFW (la vue est
-      actuellement figée dans `Engine::updateUniformBuffer`).
+      - [x] Textures via `stb_image` (classe `Texture`, sampler + binding 1 image ;
+            `Vertex` = pos+color+texCoord). Démo sur cube texturé.
+- [x] **Étape 4 — Caméra & inputs.** Caméra fly `Camera`, inputs clavier/souris
+      gérés par `Window`, déplacement avec delta time dans `Engine::processInput`.
 - [ ] **Étape 5 — Multi-objets / scène.** Plusieurs `RenderObject` avec
       transform par objet (push constants pour la matrice `model`).
 - [ ] **Étape 6 — Éclairage.** Normales + Blinn-Phong puis PBR.

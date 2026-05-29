@@ -3,6 +3,8 @@
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
+#include "core/Camera.hpp"
+
 #include <memory>
 #include <vector>
 
@@ -43,6 +45,7 @@ private:
     void createSyncObjects();
 
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex);
+    void processInput(float dt);
     void updateUniformBuffer(uint32_t frame);
     void drawFrame();
 
@@ -63,6 +66,8 @@ private:
     std::vector<VkSemaphore> renderFinishedSemaphores_;
     std::vector<VkFence> inFlightFences_;
     uint32_t currentFrame_ = 0;
+
+    Camera camera_;
 };
 
 } // namespace ne

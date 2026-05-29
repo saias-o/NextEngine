@@ -77,6 +77,11 @@ Engine::Engine() {
     createDescriptorSets();
     createCommandBuffers();
     createSyncObjects();
+
+    // Start a few units back, looking toward the cube at the origin.
+    camera_.position = {0.0f, 0.0f, 2.5f};
+    camera_.yaw = -90.0f;
+    camera_.pitch = 0.0f;
 }
 
 Engine::~Engine() {
@@ -94,11 +99,43 @@ Engine::~Engine() {
 }
 
 void Engine::run() {
+    double last = glfwGetTime();
     while (!window_->shouldClose()) {
         window_->pollEvents();
+
+        double now = glfwGetTime();
+        float dt = static_cast<float>(now - last);
+        last = now;
+
+        processInput(dt);
         drawFrame();
     }
     vkDeviceWaitIdle(device_->device());
+}
+
+void Engine::processInput(float dt) {
+    if (window_->keyDown(GLFW_KEY_ESCAPE)) {
+        window_->close();
+        return;
+    }
+
+    // Mouse look.
+    constexpr float sensitivity = 0.1f;
+    double dx, dy;
+    window_->consumeMouseDelta(dx, dy);
+    camera_.rotate(static_cast<float>(dx) * sensitivity,
+                   -static_cast<float>(dy) * sensitivity);  // screen Y is down
+
+    // Keyboard movement (WASD horizontal, Space/Ctrl up/down). Shift to sprint.
+    float speed = (window_->keyDown(GLFW_KEY_LEFT_SHIFT) ? 6.0f : 2.5f) * dt;
+    glm::vec3 front = camera_.front();
+    glm::vec3 right = camera_.right();
+    if (window_->keyDown(GLFW_KEY_W)) camera_.position += front * speed;
+    if (window_->keyDown(GLFW_KEY_S)) camera_.position -= front * speed;
+    if (window_->keyDown(GLFW_KEY_D)) camera_.position += right * speed;
+    if (window_->keyDown(GLFW_KEY_A)) camera_.position -= right * speed;
+    if (window_->keyDown(GLFW_KEY_SPACE)) camera_.position += glm::vec3(0, 1, 0) * speed;
+    if (window_->keyDown(GLFW_KEY_LEFT_CONTROL)) camera_.position -= glm::vec3(0, 1, 0) * speed;
 }
 
 void Engine::createDescriptorSetLayout() {
@@ -275,19 +312,12 @@ void Engine::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
 }
 
 void Engine::updateUniformBuffer(uint32_t frame) {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float>(currentTime - startTime).count();
+    camera_.setPerspective(glm::radians(45.0f), swapchain_->aspectRatio(), 0.1f, 100.0f);
 
     UniformBufferObject ubo{};
-    // Turntable rotation around the vertical axis.
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(45.0f),
-                            glm::vec3(0.0f, 1.0f, 0.0f));
-    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
-                           glm::vec3(0.0f, 0.0f, 0.0f),
-                           glm::vec3(0.0f, 1.0f, 0.0f));
-    ubo.proj = glm::perspective(glm::radians(45.0f), swapchain_->aspectRatio(), 0.1f, 10.0f);
-    ubo.proj[1][1] *= -1;  // Flip Y for Vulkan
+    ubo.model = glm::mat4(1.0f);  // static; fly the camera around it
+    ubo.view = camera_.view();
+    ubo.proj = camera_.projection();
 
     uniformBuffers_[frame]->write(&ubo, sizeof(ubo));
 }
