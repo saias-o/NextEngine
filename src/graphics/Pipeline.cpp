@@ -25,7 +25,8 @@ std::vector<char> readFile(const std::string& filename) {
 } // namespace
 
 Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std::string& fragPath,
-                   VkRenderPass renderPass, VkDescriptorSetLayout setLayout)
+                   VkRenderPass renderPass, VkDescriptorSetLayout setLayout,
+                   VkSampleCountFlagBits samples)
     : device_(device) {
     auto vertCode = readFile(vertPath);
     auto fragCode = readFile(fragPath);
@@ -79,7 +80,7 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.rasterizationSamples = samples;
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -140,7 +141,7 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
     pipelineCI.renderPass = renderPass;
     pipelineCI.subpass = 0;
 
-    if (vkCreateGraphicsPipelines(device_.device(), VK_NULL_HANDLE, 1, &pipelineCI, nullptr,
+    if (vkCreateGraphicsPipelines(device_.device(), device_.pipelineCache(), 1, &pipelineCI, nullptr,
         &pipeline_) != VK_SUCCESS)
         throw std::runtime_error("failed to create graphics pipeline");
 

@@ -1,5 +1,6 @@
 #include "graphics/Mesh.hpp"
 
+#include "core/Log.hpp"
 #include "graphics/Buffer.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "tiny_obj_loader.h"
@@ -7,7 +8,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <unordered_map>
@@ -120,8 +120,8 @@ std::unique_ptr<Mesh> Mesh::fromObjFile(VulkanDevice& device, const std::string&
         }
     }
 
-    std::cout << "loaded '" << path << "': " << vertices.size() << " vertices, "
-              << indices.size() / 3 << " triangles" << std::endl;
+    Log::info("loaded '", path, "': ", vertices.size(), " vertices, ",
+              indices.size() / 3, " triangles");
 
     return std::make_unique<Mesh>(device, vertices, indices);
 }

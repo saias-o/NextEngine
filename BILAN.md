@@ -26,10 +26,13 @@ Ce document liste ce qui reste fragile, améliorable, ou à construire.
 Dans l'ordre de valeur conseillé :
 
 1. **Outillage (étape 7)** — le plus rentable maintenant.
+   - ~~**Pipeline cache**~~ **[FAIT]** (`VkPipelineCache` sérialisé sur disque
+     dans `VulkanDevice`).
+   - ~~**MSAA**~~ **[FAIT]** (couleur multisamplée + resolve dans `Swapchain`,
+     sample count auto plafonné à 4×).
    - **Dear ImGui** : régler lumières/caméra/objets en direct, voir les FPS.
-     Indispensable pour itérer. (Vendre `imgui` + backend GLFW/Vulkan.)
-   - **Pipeline cache** (`VkPipelineCache`) sérialisé sur disque.
-   - **MSAA** (tout est en `VK_SAMPLE_COUNT_1_BIT` → aliasing visible).
+     Indispensable pour itérer. (Vendre `imgui` + backend GLFW/Vulkan.) Faire
+     d'abord le **toggle de capture du curseur** (§5).
    - **Vulkan SDK / validation layers** : non installées → bugs Vulkan
      silencieux. À installer avant d'aller plus loin (gros multiplicateur de
      fiabilité). Cf. note dans `CLAUDE.md`.
@@ -74,8 +77,8 @@ Dans l'ordre de valeur conseillé :
 ### Qualité / hygiène
 - ~~**Aucun warning compilateur activé**~~ **[FAIT]** `-Wall -Wextra` activés
   sur les TU du moteur (third-party restent en `-w`) ; build sans warning.
-- **Pas de système de log** : `std::cout`/`cerr` épars. Un petit `Log`
-  (niveaux info/warn/error) clarifierait.
+- ~~**Pas de système de log**~~ **[FAIT]** `core/Log.hpp` (info/warn/error) ;
+  les `cout`/`cerr` épars y sont routés.
 - **Chemins d'assets** : modèles via `NE_PROJECT_ROOT` (chemin **absolu** baked
   à la compilation) ; shaders en chemin **relatif** au cwd (→ obligation de
   lancer depuis `build/`). Incohérent et non packageable. Voir §4 (ResourceManager).

@@ -38,6 +38,8 @@ public:
     VkQueue presentQueue() const { return presentQueue_; }
     VkCommandPool commandPool() const { return commandPool_; }
     VmaAllocator allocator() const { return allocator_; }
+    VkPipelineCache pipelineCache() const { return pipelineCache_; }
+    VkSampleCountFlagBits maxUsableSampleCount() const;
 
     QueueFamilyIndices findQueueFamilies() const { return findQueueFamilies(physicalDevice_); }
     SwapChainSupportDetails querySwapChainSupport() const { return querySwapChainSupport(physicalDevice_); }
@@ -60,6 +62,8 @@ private:
     void createLogicalDevice();
     void createCommandPool();
     void createAllocator();
+    void createPipelineCache();
+    void savePipelineCache() const;
 
     bool checkValidationLayerSupport() const;
     std::vector<const char*> requiredInstanceExtensions() const;
@@ -77,6 +81,7 @@ private:
     VkQueue presentQueue_ = VK_NULL_HANDLE;
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
+    VkPipelineCache pipelineCache_ = VK_NULL_HANDLE;
     bool validationEnabled_ = false;
 };
 

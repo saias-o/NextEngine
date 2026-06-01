@@ -86,11 +86,13 @@ src/
                         curseur, delta souris, état clavier).
     Camera.{hpp,cpp}    Caméra fly yaw/pitch → matrices view/projection
                         (projection avec flip Y Vulkan intégré).
+    Log.hpp             Logger minimal header-only (info/warn/error).
   graphics/
     VulkanDevice.{hpp,cpp}  Instance, debug messenger, surface, device,
-                            queues, command pool, VmaAllocator. Helpers
-                            (copyBuffer, createImageView, single-time cmds,
-                            formats/depth). Objet « GPU » central.
+                            queues, command pool, VmaAllocator, pipeline cache
+                            (sérialisé sur disque), max sample count (MSAA).
+                            Helpers (copyBuffer, createImageView, single-time
+                            cmds, formats/depth). Objet « GPU » central.
     Swapchain.{hpp,cpp}     Swapchain + depth (VMA) + render pass + framebuffers
                             + sémaphores renderFinished (1 par image). recreate()
                             au resize. La render pass est créée une fois et survit
@@ -165,7 +167,13 @@ Le moteur est construit par étapes numérotées :
             futur bake quelles lumières précalculer. *Reste à faire* : étape de
             bake offline + UV de lightmap + échantillonnage du lightmap.
       - [ ] PBR (metallic-roughness) + normal mapping, plus tard.
-- [ ] **Étape 7 — Outillage.** Dear ImGui (debug/stats), pipeline cache, MSAA.
+- [~] **Étape 7 — Outillage.**
+      - [x] Pipeline cache (`VkPipelineCache` sérialisé sur disque, dans
+            `VulkanDevice`) et **MSAA** (couleur multisamplée + resolve dans
+            `Swapchain`, sample count auto plafonné à 4×).
+      - [x] Petit `Log` (`core/Log.hpp`, niveaux info/warn/error).
+      - [ ] Dear ImGui (debug/stats, réglage des lumières en direct) — nécessite
+            d'abord un toggle de capture du curseur.
 - [ ] **Étape 8 — Couche jeu.** Boucle de jeu (update/render séparés, delta
       time fixe/variable), abstraction « scène » jouable, point d'entrée
       utilisateur simple pour créer un jeu desktop.

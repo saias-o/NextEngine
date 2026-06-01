@@ -13,9 +13,11 @@ namespace ne {
 
 Swapchain::Swapchain(VulkanDevice& device, Window& window)
     : device_(device), window_(window) {
+    samples_ = device_.maxUsableSampleCount();
     createSwapchain();
     createImageViews();
     createRenderPass();
+    createColorResources();
     createDepthResources();
     createFramebuffers();
     createRenderFinishedSemaphores();
@@ -38,6 +40,7 @@ void Swapchain::recreate() {
     cleanup();
     createSwapchain();
     createImageViews();
+    createColorResources();
     createDepthResources();
     createFramebuffers();
     createRenderFinishedSemaphores();
@@ -45,6 +48,8 @@ void Swapchain::recreate() {
 
 void Swapchain::cleanup() {
     for (auto sem : renderFinishedSemaphores_) vkDestroySemaphore(device_.device(), sem, nullptr);
+    vkDestroyImageView(device_.device(), colorImageView_, nullptr);
+    vmaDestroyImage(device_.allocator(), colorImage_, colorAllocation_);
     vkDestroyImageView(device_.device(), depthImageView_, nullptr);
     vmaDestroyImage(device_.allocator(), depthImage_, depthAllocation_);
     for (auto fb : framebuffers_) vkDestroyFramebuffer(device_.device(), fb, nullptr);
@@ -137,25 +142,38 @@ void Swapchain::createImageViews() {
 }
 
 void Swapchain::createRenderPass() {
+    // Attachment 0: multisampled color (rendered into, then resolved away).
     VkAttachmentDescription colorAttach{};
     colorAttach.format = imageFormat_;
-    colorAttach.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttach.samples = samples_;
     colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;  // resolved, not kept
     colorAttach.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttach.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttach.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttach.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    colorAttach.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    // Attachment 1: multisampled depth.
     VkAttachmentDescription depthAttach{};
     depthAttach.format = device_.findDepthFormat();
-    depthAttach.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttach.samples = samples_;
     depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttach.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttach.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttach.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     depthAttach.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    // Attachment 2: single-sample resolve target = the swap-chain image.
+    VkAttachmentDescription resolveAttach{};
+    resolveAttach.format = imageFormat_;
+    resolveAttach.samples = VK_SAMPLE_COUNT_1_BIT;
+    resolveAttach.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    resolveAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    resolveAttach.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    resolveAttach.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    resolveAttach.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    resolveAttach.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     VkAttachmentReference colorRef{};
     colorRef.attachment = 0;
@@ -165,11 +183,16 @@ void Swapchain::createRenderPass() {
     depthRef.attachment = 1;
     depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentReference resolveRef{};
+    resolveRef.attachment = 2;
+    resolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorRef;
     subpass.pDepthStencilAttachment = &depthRef;
+    subpass.pResolveAttachments = &resolveRef;
 
     VkSubpassDependency dep{};
     dep.srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -182,7 +205,7 @@ void Swapchain::createRenderPass() {
     dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
                       | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-    std::array<VkAttachmentDescription, 2> attachments = {colorAttach, depthAttach};
+    std::array<VkAttachmentDescription, 3> attachments = {colorAttach, depthAttach, resolveAttach};
 
     VkRenderPassCreateInfo rpci{};
     rpci.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -195,6 +218,34 @@ void Swapchain::createRenderPass() {
 
     if (vkCreateRenderPass(device_.device(), &rpci, nullptr, &renderPass_) != VK_SUCCESS)
         throw std::runtime_error("failed to create render pass");
+}
+
+void Swapchain::createColorResources() {
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = extent_.width;
+    imageInfo.extent.height = extent_.height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = imageFormat_;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.samples = samples_;
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    allocInfo.priority = 1.0f;
+
+    if (vmaCreateImage(device_.allocator(), &imageInfo, &allocInfo,
+                       &colorImage_, &colorAllocation_, nullptr) != VK_SUCCESS)
+        throw std::runtime_error("failed to create MSAA color image");
+
+    colorImageView_ = device_.createImageView(colorImage_, imageFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
 void Swapchain::createDepthResources() {
@@ -213,7 +264,7 @@ void Swapchain::createDepthResources() {
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.samples = samples_;
 
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
@@ -230,7 +281,8 @@ void Swapchain::createDepthResources() {
 void Swapchain::createFramebuffers() {
     framebuffers_.resize(imageViews_.size());
     for (size_t i = 0; i < imageViews_.size(); i++) {
-        std::array<VkImageView, 2> attachments = {imageViews_[i], depthImageView_};
+        // Order must match the render pass: msaa color, depth, resolve(swap image).
+        std::array<VkImageView, 3> attachments = {colorImageView_, depthImageView_, imageViews_[i]};
 
         VkFramebufferCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;

@@ -27,6 +27,7 @@ public:
     VkRenderPass renderPass() const { return renderPass_; }
     VkFramebuffer framebuffer(uint32_t index) const { return framebuffers_[index]; }
     VkExtent2D extent() const { return extent_; }
+    VkSampleCountFlagBits samples() const { return samples_; }
     float aspectRatio() const { return extent_.width / static_cast<float>(extent_.height); }
 
     // Signalled when rendering to the given swap-chain image is done; presented
@@ -40,6 +41,7 @@ private:
     void createSwapchain();
     void createImageViews();
     void createRenderPass();
+    void createColorResources();
     void createDepthResources();
     void createFramebuffers();
     void createRenderFinishedSemaphores();
@@ -57,6 +59,12 @@ private:
     std::vector<VkImageView> imageViews_;
     VkFormat imageFormat_{};
     VkExtent2D extent_{};
+    VkSampleCountFlagBits samples_ = VK_SAMPLE_COUNT_1_BIT;
+
+    // Multisampled color target, resolved into the swap-chain image for present.
+    VkImage colorImage_ = VK_NULL_HANDLE;
+    VmaAllocation colorAllocation_ = VK_NULL_HANDLE;
+    VkImageView colorImageView_ = VK_NULL_HANDLE;
 
     VkImage depthImage_ = VK_NULL_HANDLE;
     VmaAllocation depthAllocation_ = VK_NULL_HANDLE;

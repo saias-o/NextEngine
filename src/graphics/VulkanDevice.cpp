@@ -1,13 +1,15 @@
 #include "graphics/VulkanDevice.hpp"
 
+#include "core/Log.hpp"
 #include "core/Window.hpp"
 #include "vk_mem_alloc.h"
 
 #include <cstring>
-#include <iostream>
+#include <fstream>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace ne {
 
@@ -21,6 +23,9 @@ const std::vector<const char*> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
+// Stored next to the executable (cwd). build/ is gitignored.
+constexpr const char* kPipelineCacheFile = "pipeline_cache.bin";
+
 #ifdef NDEBUG
 constexpr bool kEnableValidationLayers = false;
 #else
@@ -33,8 +38,10 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     const VkDebugUtilsMessengerCallbackDataEXT* data,
     void*)
 {
-    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
-        std::cerr << "validation: " << data->pMessage << std::endl;
+    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+        Log::error("validation: ", data->pMessage);
+    else if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+        Log::warn("validation: ", data->pMessage);
     return VK_FALSE;
 }
 
@@ -80,9 +87,12 @@ VulkanDevice::VulkanDevice(Window& window) {
     createLogicalDevice();
     createAllocator();
     createCommandPool();
+    createPipelineCache();
 }
 
 VulkanDevice::~VulkanDevice() {
+    savePipelineCache();
+    vkDestroyPipelineCache(device_, pipelineCache_, nullptr);
     vkDestroyCommandPool(device_, commandPool_, nullptr);
     vmaDestroyAllocator(allocator_);
     vkDestroyDevice(device_, nullptr);
@@ -120,7 +130,7 @@ std::vector<const char*> VulkanDevice::requiredInstanceExtensions() const {
 void VulkanDevice::createInstance() {
     validationEnabled_ = kEnableValidationLayers && checkValidationLayerSupport();
     if (kEnableValidationLayers && !validationEnabled_)
-        std::cerr << "warning: validation layers requested but not available, continuing without them" << std::endl;
+        Log::warn("validation layers requested but not available, continuing without them");
 
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -233,7 +243,7 @@ void VulkanDevice::pickPhysicalDevice() {
         vkGetPhysicalDeviceProperties(dev, &props);
         if (isDeviceSuitable(dev) && props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
             physicalDevice_ = dev;
-            std::cout << "GPU: " << props.deviceName << std::endl;
+            Log::info("GPU: ", props.deviceName);
             return;
         }
     }
@@ -242,7 +252,7 @@ void VulkanDevice::pickPhysicalDevice() {
             physicalDevice_ = dev;
             VkPhysicalDeviceProperties props;
             vkGetPhysicalDeviceProperties(dev, &props);
-            std::cout << "GPU: " << props.deviceName << std::endl;
+            Log::info("GPU: ", props.deviceName);
             return;
         }
     }
@@ -307,7 +317,47 @@ void VulkanDevice::createAllocator() {
         throw std::runtime_error("failed to create memory allocator");
 }
 
+void VulkanDevice::createPipelineCache() {
+    // Seed the cache from disk if a previous run saved one (faster pipeline
+    // creation; Vulkan validates the header and ignores incompatible data).
+    std::vector<char> initialData;
+    if (std::ifstream file(kPipelineCacheFile, std::ios::binary | std::ios::ate); file) {
+        initialData.resize(static_cast<size_t>(file.tellg()));
+        file.seekg(0);
+        file.read(initialData.data(), static_cast<std::streamsize>(initialData.size()));
+    }
+
+    VkPipelineCacheCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    ci.initialDataSize = initialData.size();
+    ci.pInitialData = initialData.empty() ? nullptr : initialData.data();
+    if (vkCreatePipelineCache(device_, &ci, nullptr, &pipelineCache_) != VK_SUCCESS)
+        throw std::runtime_error("failed to create pipeline cache");
+}
+
+void VulkanDevice::savePipelineCache() const {
+    size_t size = 0;
+    if (vkGetPipelineCacheData(device_, pipelineCache_, &size, nullptr) != VK_SUCCESS || size == 0)
+        return;
+    std::vector<char> data(size);
+    if (vkGetPipelineCacheData(device_, pipelineCache_, &size, data.data()) != VK_SUCCESS)
+        return;
+    if (std::ofstream file(kPipelineCacheFile, std::ios::binary); file)
+        file.write(data.data(), static_cast<std::streamsize>(size));
+}
+
 // ----------------------------------------------------------------- helpers
+
+VkSampleCountFlagBits VulkanDevice::maxUsableSampleCount() const {
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(physicalDevice_, &props);
+    VkSampleCountFlags counts = props.limits.framebufferColorSampleCounts
+                              & props.limits.framebufferDepthSampleCounts;
+    // Cap at 4x: a good quality/perf trade-off for this engine.
+    if (counts & VK_SAMPLE_COUNT_4_BIT) return VK_SAMPLE_COUNT_4_BIT;
+    if (counts & VK_SAMPLE_COUNT_2_BIT) return VK_SAMPLE_COUNT_2_BIT;
+    return VK_SAMPLE_COUNT_1_BIT;
+}
 
 VkFormat VulkanDevice::findSupportedFormat(const std::vector<VkFormat>& candidates,
     VkImageTiling tiling, VkFormatFeatureFlags features) const

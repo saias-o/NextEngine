@@ -87,7 +87,8 @@ Engine::Engine() {
 
     createDescriptorSetLayout();
     pipeline_ = std::make_unique<Pipeline>(*device_, "shaders/shader.vert.spv",
-        "shaders/shader.frag.spv", swapchain_->renderPass(), descriptorSetLayout_);
+        "shaders/shader.frag.spv", swapchain_->renderPass(), descriptorSetLayout_,
+        swapchain_->samples());
     // Textured cube demo. To render the bugatti instead (untextured — it has no
     // UVs), swap this for: mesh_ = Mesh::fromObjFile(*device_, kModelPath);
     mesh_ = std::make_unique<Mesh>(*device_, kCubeVertices, kCubeIndices);
