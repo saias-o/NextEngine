@@ -14,6 +14,7 @@
 namespace ne {
 
 class Mesh;
+class Material;
 class LightNode;
 
 // Local transform: translation, rotation (quaternion) and scale.
@@ -83,6 +84,7 @@ public:
     // Type hooks: a node exposes itself as the relevant kind (null otherwise).
     // Kept as cheap virtuals (no RTTI) since they run during scene traversal.
     virtual Mesh* mesh() const { return nullptr; }
+    virtual Material* material() const { return nullptr; }
     virtual LightNode* asLight() { return nullptr; }
 
 protected:

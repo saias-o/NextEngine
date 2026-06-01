@@ -1,13 +1,12 @@
 #version 450
 
-layout(binding = 1) uniform sampler2D texSampler;
-
 struct PointLight {
     vec4 position;  // xyz = world position, w = range
     vec4 color;     // rgb = color, w = intensity
 };
 
-layout(binding = 2) uniform LightingUBO {
+// Set 0: per-frame global data.
+layout(set = 0, binding = 1) uniform LightingUBO {
     vec4 ambient;       // rgb = ambient color
     vec4 cameraPos;     // xyz = camera world position
     vec4 dirDirection;  // xyz = travel direction, w = intensity
@@ -15,6 +14,12 @@ layout(binding = 2) uniform LightingUBO {
     PointLight pointLights[4];
     ivec4 counts;       // x = active point lights, y = mode (0 realtime, 1 baked)
 } lights;
+
+// Set 1: per-material data.
+layout(set = 1, binding = 0) uniform sampler2D texSampler;
+layout(set = 1, binding = 1) uniform MaterialUBO {
+    vec4 baseColor;  // rgb tint, a unused (for now)
+} material;
 
 layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
@@ -32,7 +37,7 @@ vec3 blinnPhong(vec3 N, vec3 V, vec3 L, vec3 radiance) {
 }
 
 void main() {
-    vec3 albedo = texture(texSampler, fragTexCoord).rgb * fragColor;
+    vec3 albedo = texture(texSampler, fragTexCoord).rgb * fragColor * material.baseColor.rgb;
     vec3 N = normalize(fragNormal);
     vec3 V = normalize(lights.cameraPos.xyz - fragWorldPos);
 

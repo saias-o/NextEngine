@@ -28,8 +28,9 @@ Le projet est parti d'un « Hello Cube » Vulkan monolithique (style
 vulkan-tutorial.com) et est progressivement transformé en vrai moteur. L'état
 actuel affiche une **scène à hiérarchie de nœuds** (une « planète » avec une
 « lune » qui orbite et une « sous-lune » enfant — chaque nœud hérite de la
-transform de son parent), cubes texturés **éclairés en temps réel** (Blinn-Phong :
-une lumière directionnelle « soleil » + une lumière ponctuelle qui orbite),
+transform de son parent), cubes texturés à **matériaux distincts** (même texture, teintes différentes via
+`Material`), **éclairés en temps réel** (Blinn-Phong : une lumière directionnelle
+« soleil » + une lumière ponctuelle qui orbite),
 autour de laquelle on **vole librement** (caméra FPS : ZQSD/WASD + souris,
 Espace/Ctrl, Maj pour accélérer, Échap pour quitter), avec depth buffer et
 **MSAA**. Un **panneau ImGui** (TAB pour libérer le curseur) affiche FPS/caméra
@@ -52,11 +53,12 @@ cmake -S . -B build -G Ninja
 cmake --build build
 ```
 
-L'exécutable lit ses shaders au chemin **relatif** `shaders/shader.vert.spv`,
-or glslc les compile dans `build/shaders/`. **Lancer depuis `build/`** :
+Les chemins d'assets et de shaders sont **absolus** (bakés par CMake :
+`NE_PROJECT_ROOT`, `NE_SHADER_DIR`), donc l'exe se lance **depuis n'importe quel
+répertoire** :
 
 ```sh
-cd build && ./NextEngine.exe
+./build/NextEngine.exe
 ```
 
 Pour lancer **avec les validation layers Vulkan** : `./run.sh` (depuis la racine).
@@ -70,10 +72,11 @@ Pour valider sans interaction : lancer avec un timeout (~60 s) et vérifier que
 les logs de démarrage passent (`GPU: ...`, `loaded '...': N vertices`) — y
 arriver signifie que l'init et le chargement ont réussi.
 
-**Localisation des assets** : les modèles sont chargés via un chemin absolu
-basé sur `NE_PROJECT_ROOT` (défini par CMake = racine du projet), donc
-indépendant du cwd. Les **shaders**, eux, restent en chemin relatif → toujours
-lancer depuis `build/`. (À unifier plus tard, p. ex. pour le packaging d'un jeu.)
+**Localisation des assets** : `core/Paths.hpp` centralise la résolution —
+`assetPath(rel)` (sous `NE_PROJECT_ROOT` : `models/`, `assets/`) et
+`shaderPath(name)` (sous `NE_SHADER_DIR` = `build/shaders/`). Tout est absolu,
+donc indépendant du cwd. (Pour packager un jeu plus tard : remplacer ces racines
+par un dossier d'assets relatif à l'exe.)
 
 ## Architecture
 
@@ -94,6 +97,8 @@ src/
     Camera.{hpp,cpp}    Caméra fly yaw/pitch → matrices view/projection
                         (projection avec flip Y Vulkan intégré).
     Log.hpp             Logger minimal header-only (info/warn/error).
+    Paths.hpp           assetPath()/shaderPath() — résolution centralisée
+                        (chemins absolus bakés par CMake, cwd-indépendant).
   graphics/
     VulkanDevice.{hpp,cpp}  Instance, debug messenger, surface, device,
                             queues, command pool, VmaAllocator, pipeline cache
@@ -111,8 +116,12 @@ src/
                             (VMA) + view + sampler. Staging + transitions de layout.
     ImGuiLayer.{hpp,cpp}    Wrappe Dear ImGui + backends GLFW/Vulkan. beginFrame/
                             endFrame/renderDrawData(cmd) dans la render pass.
-    Mesh.{hpp,cpp}          Vertex (pos, color) + VBO/IBO (indices uint32) via
-                            staging + bind/draw. Mesh::fromObjFile() charge un .obj.
+    Mesh.{hpp,cpp}          Vertex (pos, normal, color, uv) + VBO/IBO (uint32)
+                            via staging + bind/draw. Mesh::fromObjFile() charge un .obj.
+    Material.{hpp,cpp}      Texture + params (baseColor) → descriptor set 1
+                            (sampler + UBO). Référencé par les MeshNode.
+    ResourceManager.{hpp,cpp}  Cache meshes/textures/matériaux par clé ; possède
+                            le layout + pool du set matériau. Crée les Material.
     VmaFwd.hpp              Forward-decls VMA (garde le gros header hors des en-têtes).
     VmaUsage.cpp            Seule TU définissant VMA_IMPLEMENTATION.
     TinyObjUsage.cpp        Seule TU définissant TINYOBJLOADER_IMPLEMENTATION.
@@ -122,7 +131,7 @@ src/
                             parent/enfants, propagation de la matrice monde
                             (traverse), behaviours attachés (addBehaviour +
                             updateTree). mesh() virtuel (null = non dessinable).
-    MeshNode.hpp            Node dessinant un Mesh (réf. non-possédante).
+    MeshNode.hpp            Node dessinant un Mesh + un Material (réfs non-possédantes).
     LightNode.hpp           Lumière (Directional/Point) dans le graphe + champ
                             bakeMode (Realtime/Baked/Mixed) pour le futur bake.
     Behaviour.hpp           Logique attachable à un Node (onReady/onUpdate),
@@ -144,6 +153,10 @@ assets/textures/             Textures (checker.png généré, LFS).
   `MemoryUsage::GpuOnly`/`HostVisible`, **jamais** de types VMA directement
   (sauf dans les `.cpp` qui incluent `vk_mem_alloc.h`).
 - Les en-têtes n'incluent pas `vk_mem_alloc.h` (711 Ko) : utiliser `VmaFwd.hpp`.
+- **Descriptor sets par fréquence** : *set 0* = données par-frame globales
+  (camera + lighting UBOs, possédé par `Engine`) ; *set 1* = par matériau
+  (sampler + params UBO, possédé par `Material`). La matrice `model` par objet
+  passe en **push constant**. Bind set 0 une fois/frame, set 1 par nœud.
 
 ## Avancement (feuille de route)
 

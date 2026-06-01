@@ -47,6 +47,8 @@ add_executable(NextEngine
     src/graphics/Mesh.cpp
     src/graphics/Pipeline.cpp
     src/graphics/Texture.cpp
+    src/graphics/Material.cpp
+    src/graphics/ResourceManager.cpp
     src/graphics/ImGuiLayer.cpp
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
@@ -69,8 +71,11 @@ target_include_directories(NextEngine PRIVATE
 )
 target_link_libraries(NextEngine PRIVATE Vulkan::Vulkan glfw glm::glm)
 
-# Absolute path to the project root, used at runtime to locate assets (models).
-target_compile_definitions(NextEngine PRIVATE NE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
+# Absolute paths baked at configure time so the exe runs from any cwd:
+# project root for source assets (models/, assets/), and the compiled shader dir.
+target_compile_definitions(NextEngine PRIVATE
+    NE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+    NE_SHADER_DIR="${SHADER_OUT_DIR}")
 
 # GLM conventions applied consistently across every TU (radians; Vulkan's 0..1
 # depth range). Defined here, not per-.cpp, so headers including GLM never see

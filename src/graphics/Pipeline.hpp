@@ -14,7 +14,7 @@ class VulkanDevice;
 class Pipeline {
 public:
     Pipeline(VulkanDevice& device, const std::string& vertPath, const std::string& fragPath,
-             VkRenderPass renderPass, VkDescriptorSetLayout setLayout,
+             VkRenderPass renderPass, const std::vector<VkDescriptorSetLayout>& setLayouts,
              VkSampleCountFlagBits samples);
     ~Pipeline();
     Pipeline(const Pipeline&) = delete;

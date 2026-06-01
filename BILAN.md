@@ -50,7 +50,9 @@ Dans l'ordre de valeur conseillé :
 
 4. **XR / OpenXR (étape 9, objectif final)** — voir §6.
 
-5. **Matériaux & PBR** — prérequis pour des jeux qui ont de la gueule (voir §4).
+5. **Matériaux & PBR** — ~~`Material` + `ResourceManager` + chemins unifiés~~
+   **[FAIT]** (set 0 global / set 1 matériau, cache d'assets, `core/Paths.hpp`).
+   Reste le **PBR** (metallic-roughness) par-dessus le `Material` actuel.
 
 6. **Baked GI** (la suite du « pense déjà au baked » déjà amorcé) : étape de
    bake offline, UV de lightmap (2e jeu d'UV dans `Vertex`), texture lightmap
@@ -87,9 +89,9 @@ Dans l'ordre de valeur conseillé :
   sur les TU du moteur (third-party restent en `-w`) ; build sans warning.
 - ~~**Pas de système de log**~~ **[FAIT]** `core/Log.hpp` (info/warn/error) ;
   les `cout`/`cerr` épars y sont routés.
-- **Chemins d'assets** : modèles via `NE_PROJECT_ROOT` (chemin **absolu** baked
-  à la compilation) ; shaders en chemin **relatif** au cwd (→ obligation de
-  lancer depuis `build/`). Incohérent et non packageable. Voir §4 (ResourceManager).
+- ~~**Chemins d'assets** incohérents (modèles absolus, shaders relatifs au
+  cwd)~~ **[FAIT]** `core/Paths.hpp` : tout absolu (`assetPath`/`shaderPath`),
+  cwd-indépendant. (Reste à rendre relatif-à-l'exe pour packager un jeu.)
 - **Couleurs / gamma** : albédo en sRGB, cible sRGB, mais l'éclairage est
   additionné sans vraie gestion linéaire ni tone mapping. À formaliser quand on
   passera au PBR.
@@ -98,17 +100,15 @@ Dans l'ordre de valeur conseillé :
 
 ## 4. Classes / abstractions à ajouter
 
-- **`Material`** — la grosse pièce manquante. Aujourd'hui : une seule pipeline,
-  une seule texture liée globalement, tous les `MeshNode` la partagent. Il faut
-  un `Material` (texture(s) + paramètres + référence pipeline) que `MeshNode`
-  référence, et un tri des draws par matériau. Débloque : plusieurs textures,
-  PBR, transparence.
+- ~~**`Material`**~~ **[FAIT]** `Material` (texture + `baseColor`, descriptor
+  set 1) référencé par `MeshNode` ; créés/cachés par `ResourceManager`. *Reste* :
+  tri des draws par matériau, plusieurs pipelines (transparence), PBR.
 - **`CameraNode`** — la caméra est un membre de `Engine`, pas un nœud. Pour
   rester cohérent avec « tout est nœud » (et pour le multi-caméra / XR), en
   faire un `CameraNode` dans le graphe, dont la transform donne la vue.
-- **`ResourceManager` / cache d'assets** — charge et **mutualise** meshes,
-  textures, (futurs) matériaux par chemin ; centralise la résolution des chemins
-  (assets + shaders) au même endroit, packageable.
+- ~~**`ResourceManager` / cache d'assets**~~ **[FAIT]** mutualise meshes/textures/
+  matériaux par clé ; `core/Paths.hpp` centralise la résolution (assets +
+  shaders, absolus, cwd-indépendant).
 - **`Renderer`** — extraire de `Engine` toute la logique frame (command buffers,
   sync, draw, descriptors) pour ne laisser dans `Engine` que l'orchestration
   (fenêtre, scène, boucle). Prépare proprement le double chemin desktop/XR (§6).
@@ -160,8 +160,8 @@ Dans l'ordre de valeur conseillé :
 1. ~~Vulkan SDK + validation layers, sémaphore `renderFinished`, macros GLM.~~ FAIT
 2. ~~`-Wall -Wextra`, petit `Log`.~~ FAIT
 3. ~~ImGui + pipeline cache + MSAA (étape 7).~~ FAIT
-4. `Material` + `ResourceManager` + unification des chemins d'assets. ← prochain
-5. Extraire `Renderer` ; faire de la caméra un `CameraNode` ; `Input`/`Time`.
+4. ~~`Material` + `ResourceManager` + unification des chemins d'assets.~~ FAIT
+5. Extraire `Renderer` ; faire de la caméra un `CameraNode` ; `Input`/`Time`. ← prochain
 6. Couche jeu + split moteur(lib)/jeu(exe) (étape 8).
 7. Scripting Lua + `ScriptBehaviour` + hot-reload (étape 8b).
 8. PBR, ombres, baked GI.

@@ -25,7 +25,7 @@ std::vector<char> readFile(const std::string& filename) {
 } // namespace
 
 Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std::string& fragPath,
-                   VkRenderPass renderPass, VkDescriptorSetLayout setLayout,
+                   VkRenderPass renderPass, const std::vector<VkDescriptorSetLayout>& setLayouts,
                    VkSampleCountFlagBits samples)
     : device_(device) {
     auto vertCode = readFile(vertPath);
@@ -117,8 +117,8 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
 
     VkPipelineLayoutCreateInfo layoutCI{};
     layoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutCI.setLayoutCount = 1;
-    layoutCI.pSetLayouts = &setLayout;
+    layoutCI.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+    layoutCI.pSetLayouts = setLayouts.data();
     layoutCI.pushConstantRangeCount = 1;
     layoutCI.pPushConstantRanges = &pushRange;
 

@@ -5,8 +5,11 @@
 #include "core/Window.hpp"
 #include "graphics/Buffer.hpp"
 #include "graphics/Mesh.hpp"
+#include "core/Paths.hpp"
 #include "graphics/ImGuiLayer.hpp"
+#include "graphics/Material.hpp"
 #include "graphics/Pipeline.hpp"
+#include "graphics/ResourceManager.hpp"
 #include "graphics/Swapchain.hpp"
 #include "graphics/Texture.hpp"
 #include "graphics/VulkanDevice.hpp"
@@ -31,8 +34,7 @@ constexpr uint32_t kWidth = 800;
 constexpr uint32_t kHeight = 600;
 constexpr int kMaxFramesInFlight = 2;
 
-const std::string kModelPath = std::string(NE_PROJECT_ROOT) + "/models/bugatti/bugatti.obj";
-const std::string kTexturePath = std::string(NE_PROJECT_ROOT) + "/assets/textures/checker.png";
+const std::string kTexturePath = assetPath("assets/textures/checker.png");
 
 // A unit cube with per-face normals and UVs. Color is white so the fragment
 // shader shows texture * lighting unmodified.
@@ -84,23 +86,23 @@ private:
 } // namespace
 
 Engine::Engine() {
-    window_ = std::make_unique<Window>(kWidth, kHeight, "NextEngine - Vulkan Cube");
+    window_ = std::make_unique<Window>(kWidth, kHeight, "NextEngine");
     device_ = std::make_unique<VulkanDevice>(*window_);
     swapchain_ = std::make_unique<Swapchain>(*device_, *window_);
+    resources_ = std::make_unique<ResourceManager>(*device_);
 
-    createDescriptorSetLayout();
-    pipeline_ = std::make_unique<Pipeline>(*device_, "shaders/shader.vert.spv",
-        "shaders/shader.frag.spv", swapchain_->renderPass(), descriptorSetLayout_,
+    createGlobalSetLayout();
+    std::vector<VkDescriptorSetLayout> setLayouts = {
+        globalSetLayout_, resources_->materialSetLayout()};
+    pipeline_ = std::make_unique<Pipeline>(*device_, shaderPath("shader.vert.spv"),
+        shaderPath("shader.frag.spv"), swapchain_->renderPass(), setLayouts,
         swapchain_->samples());
-    // Textured cube demo. To render the bugatti instead (untextured — it has no
-    // UVs), swap this for: mesh_ = Mesh::fromObjFile(*device_, kModelPath);
-    mesh_ = std::make_unique<Mesh>(*device_, kCubeVertices, kCubeIndices);
-    texture_ = std::make_unique<Texture>(*device_, kTexturePath);
-    buildScene();
+
+    buildScene();  // creates meshes/textures/materials via resources_
 
     createUniformBuffers();
-    createDescriptorPool();
-    createDescriptorSets();
+    createGlobalDescriptorPool();
+    createGlobalDescriptorSets();
     createCommandBuffers();
     createSyncObjects();
 
@@ -121,8 +123,8 @@ Engine::~Engine() {
         vkDestroySemaphore(device_->device(), imageAvailableSemaphores_[i], nullptr);
         vkDestroyFence(device_->device(), inFlightFences_[i], nullptr);
     }
-    vkDestroyDescriptorPool(device_->device(), descriptorPool_, nullptr);
-    vkDestroyDescriptorSetLayout(device_->device(), descriptorSetLayout_, nullptr);
+    vkDestroyDescriptorPool(device_->device(), globalPool_, nullptr);
+    vkDestroyDescriptorSetLayout(device_->device(), globalSetLayout_, nullptr);
     // Remaining subsystems are torn down by their unique_ptr destructors, in
     // reverse declaration order, while device_ is still alive.
 }
@@ -151,19 +153,29 @@ void Engine::run() {
 void Engine::buildScene() {
     scene_ = std::make_unique<Scene>();
 
+    // Shared resources, loaded once and cached by the ResourceManager.
+    // (To load the bugatti instead — untextured, no UVs — use:
+    //  resources_->loadMesh(assetPath("models/bugatti/bugatti.obj")).)
+    Mesh* cube = resources_->createMesh("cube", kCubeVertices, kCubeIndices);
+    Texture* checker = resources_->loadTexture(kTexturePath);
+    // Three materials sharing the texture but tinted differently (per-material data).
+    Material* matWhite = resources_->createMaterial("white", checker, glm::vec4(1.0f));
+    Material* matWarm = resources_->createMaterial("warm", checker, glm::vec4(1.0f, 0.55f, 0.4f, 1.0f));
+    Material* matCool = resources_->createMaterial("cool", checker, glm::vec4(0.45f, 0.7f, 1.0f, 1.0f));
+
     // A small hierarchy to show transform inheritance: a central "planet" with
-    // an orbiting "moon", which itself has an orbiting "sub-moon". All three
-    // reuse the same cube mesh; each gets its own transform. The orbiting motion
-    // comes entirely from RotatorBehaviours on the parents — children inherit it.
-    Node* planet = scene_->createChild<MeshNode>("planet", mesh_.get());
+    // an orbiting "moon", which itself has an orbiting "sub-moon". They share the
+    // cube mesh but each has its own material. The orbiting motion comes entirely
+    // from RotatorBehaviours on the parents — children inherit it.
+    Node* planet = scene_->createChild<MeshNode>("planet", cube, matWhite);
     planet->addBehaviour<RotatorBehaviour>(glm::vec3(0, 1, 0), 40.0f);
 
-    Node* moon = planet->createChild<MeshNode>("moon", mesh_.get());
+    Node* moon = planet->createChild<MeshNode>("moon", cube, matWarm);
     moon->transform().position = {2.0f, 0.0f, 0.0f};
     moon->transform().scale = glm::vec3(0.45f);
     moon->addBehaviour<RotatorBehaviour>(glm::vec3(0, 1, 0), 90.0f);
 
-    Node* subMoon = moon->createChild<MeshNode>("sub-moon", mesh_.get());
+    Node* subMoon = moon->createChild<MeshNode>("sub-moon", cube, matCool);
     subMoon->transform().position = {2.0f, 0.0f, 0.0f};
     subMoon->transform().scale = glm::vec3(0.5f);
 
@@ -247,34 +259,29 @@ void Engine::processInput(float dt) {
     if (window_->keyDown(GLFW_KEY_LEFT_CONTROL)) camera_.position -= glm::vec3(0, 1, 0) * speed;
 }
 
-void Engine::createDescriptorSetLayout() {
-    VkDescriptorSetLayoutBinding uboBinding{};
-    uboBinding.binding = 0;
-    uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboBinding.descriptorCount = 1;
-    uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutBinding samplerBinding{};
-    samplerBinding.binding = 1;
-    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerBinding.descriptorCount = 1;
-    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+void Engine::createGlobalSetLayout() {
+    // Set 0: camera UBO (vertex) + lighting UBO (fragment), shared by all draws.
+    VkDescriptorSetLayoutBinding cameraBinding{};
+    cameraBinding.binding = 0;
+    cameraBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    cameraBinding.descriptorCount = 1;
+    cameraBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     VkDescriptorSetLayoutBinding lightingBinding{};
-    lightingBinding.binding = 2;
+    lightingBinding.binding = 1;
     lightingBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     lightingBinding.descriptorCount = 1;
     lightingBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings = {uboBinding, samplerBinding, lightingBinding};
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {cameraBinding, lightingBinding};
 
     VkDescriptorSetLayoutCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     ci.bindingCount = static_cast<uint32_t>(bindings.size());
     ci.pBindings = bindings.data();
 
-    if (vkCreateDescriptorSetLayout(device_->device(), &ci, nullptr, &descriptorSetLayout_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create descriptor set layout");
+    if (vkCreateDescriptorSetLayout(device_->device(), &ci, nullptr, &globalSetLayout_) != VK_SUCCESS)
+        throw std::runtime_error("failed to create global descriptor set layout");
 }
 
 void Engine::createUniformBuffers() {
@@ -288,75 +295,58 @@ void Engine::createUniformBuffers() {
     }
 }
 
-void Engine::createDescriptorPool() {
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
-    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight) * 2;  // camera + lighting
-    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight);
+void Engine::createGlobalDescriptorPool() {
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSize.descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight) * 2;  // camera + lighting
 
     VkDescriptorPoolCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    ci.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-    ci.pPoolSizes = poolSizes.data();
+    ci.poolSizeCount = 1;
+    ci.pPoolSizes = &poolSize;
     ci.maxSets = static_cast<uint32_t>(kMaxFramesInFlight);
 
-    if (vkCreateDescriptorPool(device_->device(), &ci, nullptr, &descriptorPool_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create descriptor pool");
+    if (vkCreateDescriptorPool(device_->device(), &ci, nullptr, &globalPool_) != VK_SUCCESS)
+        throw std::runtime_error("failed to create global descriptor pool");
 }
 
-void Engine::createDescriptorSets() {
-    std::vector<VkDescriptorSetLayout> layouts(kMaxFramesInFlight, descriptorSetLayout_);
+void Engine::createGlobalDescriptorSets() {
+    std::vector<VkDescriptorSetLayout> layouts(kMaxFramesInFlight, globalSetLayout_);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descriptorPool_;
+    allocInfo.descriptorPool = globalPool_;
     allocInfo.descriptorSetCount = static_cast<uint32_t>(kMaxFramesInFlight);
     allocInfo.pSetLayouts = layouts.data();
 
-    descriptorSets_.resize(kMaxFramesInFlight);
-    if (vkAllocateDescriptorSets(device_->device(), &allocInfo, descriptorSets_.data()) != VK_SUCCESS)
-        throw std::runtime_error("failed to allocate descriptor sets");
+    globalSets_.resize(kMaxFramesInFlight);
+    if (vkAllocateDescriptorSets(device_->device(), &allocInfo, globalSets_.data()) != VK_SUCCESS)
+        throw std::runtime_error("failed to allocate global descriptor sets");
 
     for (int i = 0; i < kMaxFramesInFlight; i++) {
-        VkDescriptorBufferInfo bufInfo{};
-        bufInfo.buffer = uniformBuffers_[i]->handle();
-        bufInfo.offset = 0;
-        bufInfo.range = sizeof(UniformBufferObject);
-
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = texture_->imageView();
-        imageInfo.sampler = texture_->sampler();
+        VkDescriptorBufferInfo cameraInfo{};
+        cameraInfo.buffer = uniformBuffers_[i]->handle();
+        cameraInfo.offset = 0;
+        cameraInfo.range = sizeof(UniformBufferObject);
 
         VkDescriptorBufferInfo lightInfo{};
         lightInfo.buffer = lightingBuffers_[i]->handle();
         lightInfo.offset = 0;
         lightInfo.range = sizeof(LightingUBO);
 
-        std::array<VkWriteDescriptorSet, 3> writes{};
+        std::array<VkWriteDescriptorSet, 2> writes{};
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = descriptorSets_[i];
+        writes[0].dstSet = globalSets_[i];
         writes[0].dstBinding = 0;
-        writes[0].dstArrayElement = 0;
         writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         writes[0].descriptorCount = 1;
-        writes[0].pBufferInfo = &bufInfo;
+        writes[0].pBufferInfo = &cameraInfo;
 
         writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = descriptorSets_[i];
+        writes[1].dstSet = globalSets_[i];
         writes[1].dstBinding = 1;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         writes[1].descriptorCount = 1;
-        writes[1].pImageInfo = &imageInfo;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = descriptorSets_[i];
-        writes[2].dstBinding = 2;
-        writes[2].dstArrayElement = 0;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[2].descriptorCount = 1;
-        writes[2].pBufferInfo = &lightInfo;
+        writes[1].pBufferInfo = &lightInfo;
 
         vkUpdateDescriptorSets(device_->device(),
             static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
@@ -431,15 +421,21 @@ void Engine::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     scissor.extent = extent;
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    // View/projection (UBO) and the texture are shared by every object.
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout(),
-        0, 1, &descriptorSets_[currentFrame_], 0, nullptr);
-
-    // Walk the scene: each mesh node draws with its world matrix as a push constant.
     VkPipelineLayout layout = pipeline_->layout();
+
+    // Set 0: per-frame global data (camera + lighting), shared by every object.
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
+        0, 1, &globalSets_[currentFrame_], 0, nullptr);
+
+    // Walk the scene: per mesh node, bind its material (set 1) and push its
+    // world matrix, then draw.
     scene_->traverse([&](Node& node, const glm::mat4& world) {
         Mesh* m = node.mesh();
-        if (!m) return;
+        Material* mat = node.material();
+        if (!m || !mat) return;
+        VkDescriptorSet materialSet = mat->descriptorSet();
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
+            1, 1, &materialSet, 0, nullptr);
         vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT,
                            0, sizeof(glm::mat4), &world);
         m->bind(cmd);

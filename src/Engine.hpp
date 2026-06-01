@@ -17,6 +17,8 @@ class Pipeline;
 class Mesh;
 class Buffer;
 class Texture;
+class Material;
+class ResourceManager;
 class Scene;
 class Node;
 class LightNode;
@@ -56,10 +58,10 @@ public:
     void run();
 
 private:
-    void createDescriptorSetLayout();
+    void createGlobalSetLayout();
     void createUniformBuffers();
-    void createDescriptorPool();
-    void createDescriptorSets();
+    void createGlobalDescriptorPool();
+    void createGlobalDescriptorSets();
     void createCommandBuffers();
     void createSyncObjects();
 
@@ -74,17 +76,17 @@ private:
     std::unique_ptr<Window> window_;
     std::unique_ptr<VulkanDevice> device_;
     std::unique_ptr<Swapchain> swapchain_;
+    std::unique_ptr<ResourceManager> resources_;
     std::unique_ptr<Pipeline> pipeline_;
-    std::unique_ptr<Mesh> mesh_;
-    std::unique_ptr<Texture> texture_;
     std::unique_ptr<Scene> scene_;
     std::unique_ptr<ImGuiLayer> imgui_;
     LightNode* sun_ = nullptr;   // referenced by the debug UI
     LightNode* lamp_ = nullptr;
 
-    VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
-    std::vector<VkDescriptorSet> descriptorSets_;
+    // Set 0 = per-frame global data (camera + lighting UBOs).
+    VkDescriptorSetLayout globalSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool globalPool_ = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> globalSets_;
     std::vector<std::unique_ptr<Buffer>> uniformBuffers_;
     std::vector<std::unique_ptr<Buffer>> lightingBuffers_;
 
