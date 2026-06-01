@@ -187,7 +187,12 @@ Le moteur est construit par étapes numérotées :
             capture du curseur (TAB) dans `Window` pour passer fly-cam ↔ UI.
 - [ ] **Étape 8 — Couche jeu.** Boucle de jeu (update/render séparés, delta
       time fixe/variable), abstraction « scène » jouable, point d'entrée
-      utilisateur simple pour créer un jeu desktop.
+      utilisateur simple pour créer un jeu desktop. **Split moteur (bibliothèque)
+      / jeu (exécutable)** : le moteur compile une fois, le code de jeu est un
+      petit target — on ne relie plus le moteur à chaque changement de logique.
+- [ ] **Étape 8b — Scripting (Lua).** Voir « Décision scripting » ci-dessous.
+      Différé : à faire une fois l'API moteur stable (après `Material`/
+      `ResourceManager`), pour exposer une API propre aux scripts.
 - [ ] **Étape 9 — XR / OpenXR.** Intégration OpenXR : instance/session/espaces,
       swapchain XR, rendu stéréo (multiview), poses casque + contrôleurs.
       Le rendu desktop et XR partagent le même pipeline de scène ; seul le
@@ -198,6 +203,34 @@ Quand une étape est finie : cocher ici et compiler pour vérifier.
 Note : les étapes 1→7 construisent un renderer desktop solide ; l'étape 9 (XR)
 réutilise tout sauf la présentation. Concevoir les étapes intermédiaires en
 gardant la dualité desktop/XR à l'esprit (cf. « Objectif final »).
+
+## Décision scripting (prise, différée)
+
+Comment les développeurs écriront la logique de jeu. **Décidé, pas encore
+implémenté** (ne pas re-débattre) :
+
+- **Logique de jeu en C++ `Behaviour`** (déjà en place) pour le moteur et le
+  perf-critique, **+ scripts Lua** pour la logique itérée. Les deux se branchent
+  sur le même point de couture : un futur `ScriptBehaviour : Behaviour` qui
+  délègue `onReady`/`onUpdate` à des fonctions Lua.
+- **Pourquoi Lua** : contrainte clé = *ne pas recompiler/relier le moteur à
+  chaque évolution d'un script*. Lua est **vendu en source C compilée dans le
+  moteur** (zéro DLL, zéro lien dynamique) ; les scripts sont du **texte** →
+  changement = aucun recompile, aucun link, **hot-reload** sans redémarrage
+  (file-watcher). Binding via **sol2** (header-only). L'état du jeu reste
+  possédé côté moteur (survit au reload).
+- **Pourquoi PAS un hot-reload DLL natif C++** : il impose le **linkage
+  dynamique de libstdc++**, ce qui réveille le bug `ld` (exit 116) de cette
+  toolchain MSYS2 qu'on contourne avec `-static` (cf. « Pièges connus »). Trop
+  fragile ici. À reconsidérer seulement si la toolchain change.
+- **Pourquoi PAS C#** : héberger .NET + marshalling + bindings + friction XR =
+  effort disproportionné qui dépasserait la taille du moteur ; contredit
+  l'objectif « léger ».
+
+Implémentation prévue : vendre Lua + sol2, `ScriptBehaviour`, file-watcher de
+hot-reload, et exposer une API de binding (`Node`/`Transform`/`Input`/…). À
+caler en **étape 8b**, après que `Material`/`ResourceManager` aient stabilisé
+l'API moteur.
 
 ## Pièges connus / environnement
 

@@ -39,12 +39,20 @@ Dans l'ordre de valeur conseillé :
 
 2. **Couche jeu (étape 8)** — boucle update/render claire, `dt` fixe vs
    variable, point d'entrée utilisateur pour écrire un jeu sans toucher l'Engine.
+   Inclut le **split moteur (lib) / jeu (exe)** : ne plus relier le moteur à
+   chaque changement de code de jeu.
 
-3. **XR / OpenXR (étape 9, objectif final)** — voir §6.
+3. **Scripting Lua (étape 8b)** — *décidé, différé* (voir « Décision scripting »
+   dans `CLAUDE.md`). Lua vendu (source C, zéro DLL) + sol2 + `ScriptBehaviour`
+   + hot-reload par file-watcher → itérer la logique sans recompiler/relier le
+   moteur. À faire après que `Material`/`ResourceManager` aient stabilisé l'API.
+   (Pas de hot-reload DLL natif : réveille le bug `ld`/libstdc++. Pas de C#.)
 
-4. **Matériaux & PBR** — prérequis pour des jeux qui ont de la gueule (voir §4).
+4. **XR / OpenXR (étape 9, objectif final)** — voir §6.
 
-5. **Baked GI** (la suite du « pense déjà au baked » déjà amorcé) : étape de
+5. **Matériaux & PBR** — prérequis pour des jeux qui ont de la gueule (voir §4).
+
+6. **Baked GI** (la suite du « pense déjà au baked » déjà amorcé) : étape de
    bake offline, UV de lightmap (2e jeu d'UV dans `Vertex`), texture lightmap
    échantillonnée dans le terme *indirect* du fragment shader. Le hook
    `LightNode::bakeMode` et la séparation indirect/direct sont déjà là.
@@ -113,6 +121,9 @@ Dans l'ordre de valeur conseillé :
   `onDestroy`, flag `enabled`.
 - **`LightingSystem`** — sortir `gatherLights` + l'UBO de l'`Engine` quand le
   nombre de lumières et de types grandira (et pour les ombres).
+- **`ScriptBehaviour` + binding Lua** (étape 8b, décidé/différé) — `Behaviour`
+  qui délègue `onReady`/`onUpdate` à des fonctions Lua ; Lua vendu (source C) +
+  sol2 + file-watcher hot-reload. Cf. « Décision scripting » dans `CLAUDE.md`.
 
 ---
 
@@ -146,12 +157,12 @@ Dans l'ordre de valeur conseillé :
 
 ## 7. Ordre d'attaque conseillé (résumé)
 
-1. Vulkan SDK + validation layers, puis fixer le sémaphore `renderFinished` et
-   les macros GLM (rapide, fiabilité).
-2. `-Wall -Wextra`, petit `Log`.
-3. ImGui + pipeline cache + MSAA (étape 7).
-4. `Material` + `ResourceManager` + unification des chemins d'assets.
+1. ~~Vulkan SDK + validation layers, sémaphore `renderFinished`, macros GLM.~~ FAIT
+2. ~~`-Wall -Wextra`, petit `Log`.~~ FAIT
+3. ~~ImGui + pipeline cache + MSAA (étape 7).~~ FAIT
+4. `Material` + `ResourceManager` + unification des chemins d'assets. ← prochain
 5. Extraire `Renderer` ; faire de la caméra un `CameraNode` ; `Input`/`Time`.
-6. Couche jeu (étape 8).
-7. PBR, ombres, baked GI.
-8. OpenXR (étape 9).
+6. Couche jeu + split moteur(lib)/jeu(exe) (étape 8).
+7. Scripting Lua + `ScriptBehaviour` + hot-reload (étape 8b).
+8. PBR, ombres, baked GI.
+9. OpenXR (étape 9).
