@@ -50,6 +50,13 @@ void Window::consumeMouseDelta(double& dx, double& dy) {
     mouseDy_ = 0.0;
 }
 
+void Window::setCursorCaptured(bool captured) {
+    if (captured == cursorCaptured_) return;
+    cursorCaptured_ = captured;
+    glfwSetInputMode(window_, GLFW_CURSOR, captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    firstMouse_ = true;  // avoid a look jump when re-capturing
+}
+
 VkSurfaceKHR Window::createSurface(VkInstance instance) const {
     VkSurfaceKHR surface;
     if (glfwCreateWindowSurface(instance, window_, nullptr, &surface) != VK_SUCCESS)

@@ -47,15 +47,25 @@ add_executable(NextEngine
     src/graphics/Mesh.cpp
     src/graphics/Pipeline.cpp
     src/graphics/Texture.cpp
+    src/graphics/ImGuiLayer.cpp
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
     src/graphics/StbImageUsage.cpp
+    # Dear ImGui (vendored) + GLFW/Vulkan backends
+    third_party/imgui/imgui.cpp
+    third_party/imgui/imgui_draw.cpp
+    third_party/imgui/imgui_tables.cpp
+    third_party/imgui/imgui_widgets.cpp
+    third_party/imgui/imgui_demo.cpp
+    third_party/imgui/backends/imgui_impl_glfw.cpp
+    third_party/imgui/backends/imgui_impl_vulkan.cpp
 )
 target_include_directories(NextEngine PRIVATE
     src
     third_party/vma
     third_party/tinyobjloader
     third_party/stb
+    third_party/imgui
 )
 target_link_libraries(NextEngine PRIVATE Vulkan::Vulkan glfw glm::glm)
 
@@ -75,6 +85,13 @@ set_source_files_properties(
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
     src/graphics/StbImageUsage.cpp
+    third_party/imgui/imgui.cpp
+    third_party/imgui/imgui_draw.cpp
+    third_party/imgui/imgui_tables.cpp
+    third_party/imgui/imgui_widgets.cpp
+    third_party/imgui/imgui_demo.cpp
+    third_party/imgui/backends/imgui_impl_glfw.cpp
+    third_party/imgui/backends/imgui_impl_vulkan.cpp
     PROPERTIES COMPILE_OPTIONS "-w")
 
 # Statically link the GCC/libstdc++ runtimes. Required here because this

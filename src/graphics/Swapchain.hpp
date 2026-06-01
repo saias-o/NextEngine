@@ -28,6 +28,7 @@ public:
     VkFramebuffer framebuffer(uint32_t index) const { return framebuffers_[index]; }
     VkExtent2D extent() const { return extent_; }
     VkSampleCountFlagBits samples() const { return samples_; }
+    uint32_t imageCount() const { return static_cast<uint32_t>(images_.size()); }
     float aspectRatio() const { return extent_.width / static_cast<float>(extent_.height); }
 
     // Signalled when rendering to the given swap-chain image is done; presented

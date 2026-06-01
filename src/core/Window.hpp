@@ -32,6 +32,10 @@ public:
     // Mouse movement accumulated since the last call (then reset to zero).
     void consumeMouseDelta(double& dx, double& dy);
 
+    // Cursor capture: disabled (hidden, locked) for fly-cam vs normal for UI.
+    bool cursorCaptured() const { return cursorCaptured_; }
+    void setCursorCaptured(bool captured);
+
     GLFWwindow* handle() const { return window_; }
 
 private:
@@ -46,6 +50,7 @@ private:
     double lastX_ = 0.0;
     double lastY_ = 0.0;
     bool firstMouse_ = true;
+    bool cursorCaptured_ = true;
 };
 
 } // namespace ne

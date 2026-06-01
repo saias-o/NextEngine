@@ -5,11 +5,14 @@
 #include "core/Window.hpp"
 #include "graphics/Buffer.hpp"
 #include "graphics/Mesh.hpp"
+#include "graphics/ImGuiLayer.hpp"
 #include "graphics/Pipeline.hpp"
 #include "graphics/Swapchain.hpp"
 #include "graphics/Texture.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "scene/Behaviour.hpp"
+
+#include "imgui.h"
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/Scene.hpp"
@@ -101,6 +104,9 @@ Engine::Engine() {
     createCommandBuffers();
     createSyncObjects();
 
+    imgui_ = std::make_unique<ImGuiLayer>(*device_, *window_, swapchain_->renderPass(),
+        swapchain_->imageCount(), swapchain_->samples());
+
     // Pull back and look slightly down to see the whole orbiting hierarchy.
     camera_.position = {0.0f, 2.5f, 8.0f};
     camera_.yaw = -90.0f;
@@ -132,6 +138,11 @@ void Engine::run() {
 
         processInput(dt);
         scene_->updateTree(dt);  // runs node behaviours
+
+        imgui_->beginFrame();
+        drawUI();
+        imgui_->endFrame();  // finalize draw data even if drawFrame skips (resize)
+
         drawFrame();
     }
     vkDeviceWaitIdle(device_->device());
@@ -157,20 +168,46 @@ void Engine::buildScene() {
     subMoon->transform().scale = glm::vec3(0.5f);
 
     // A directional "sun" (warm, slightly overhead).
-    LightNode* sun = scene_->createChild<LightNode>("sun", LightType::Directional);
-    sun->direction = glm::normalize(glm::vec3(-0.5f, -1.0f, -0.3f));
-    sun->color = {1.0f, 0.95f, 0.85f};
-    sun->intensity = 1.0f;
+    sun_ = scene_->createChild<LightNode>("sun", LightType::Directional);
+    sun_->direction = glm::normalize(glm::vec3(-0.5f, -1.0f, -0.3f));
+    sun_->color = {1.0f, 0.95f, 0.85f};
+    sun_->intensity = 1.0f;
 
     // A point light orbiting the scene: a rotating pivot with the light offset
     // from it, so the RotatorBehaviour makes it circle the objects.
     Node* lightPivot = scene_->createChild<Node>("light-pivot");
     lightPivot->addBehaviour<RotatorBehaviour>(glm::vec3(0, 1, 0), 70.0f);
-    LightNode* lamp = lightPivot->createChild<LightNode>("lamp", LightType::Point);
-    lamp->transform().position = {3.5f, 1.5f, 0.0f};
-    lamp->color = {0.3f, 0.5f, 1.0f};
-    lamp->intensity = 4.0f;
-    lamp->range = 8.0f;
+    lamp_ = lightPivot->createChild<LightNode>("lamp", LightType::Point);
+    lamp_->transform().position = {3.5f, 1.5f, 0.0f};
+    lamp_->color = {0.3f, 0.5f, 1.0f};
+    lamp_->intensity = 4.0f;
+    lamp_->range = 8.0f;
+}
+
+void Engine::drawUI() {
+    ImGui::SetNextWindowSize(ImVec2(320, 0), ImGuiCond_FirstUseEver);
+    ImGui::Begin("NextEngine");
+
+    ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate, 1000.0f / ImGui::GetIO().Framerate);
+    ImGui::Text("Camera  %.1f  %.1f  %.1f", camera_.position.x, camera_.position.y, camera_.position.z);
+    ImGui::TextDisabled("TAB: free/lock cursor | WASD+mouse: fly");
+
+    if (ImGui::CollapsingHeader("Sun (directional)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::PushID("sun");
+        ImGui::SliderFloat("intensity", &sun_->intensity, 0.0f, 4.0f);
+        ImGui::ColorEdit3("color", &sun_->color.x);
+        ImGui::SliderFloat3("direction", &sun_->direction.x, -1.0f, 1.0f);
+        ImGui::PopID();
+    }
+    if (ImGui::CollapsingHeader("Lamp (point)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::PushID("lamp");
+        ImGui::SliderFloat("intensity", &lamp_->intensity, 0.0f, 12.0f);
+        ImGui::SliderFloat("range", &lamp_->range, 0.5f, 20.0f);
+        ImGui::ColorEdit3("color", &lamp_->color.x);
+        ImGui::PopID();
+    }
+
+    ImGui::End();
 }
 
 void Engine::processInput(float dt) {
@@ -179,10 +216,22 @@ void Engine::processInput(float dt) {
         return;
     }
 
-    // Mouse look.
-    constexpr float sensitivity = 0.1f;
+    // TAB toggles between fly-camera (cursor captured) and UI (cursor free).
+    bool tabDown = window_->keyDown(GLFW_KEY_TAB);
+    if (tabDown && !tabWasDown_)
+        window_->setCursorCaptured(!window_->cursorCaptured());
+    tabWasDown_ = tabDown;
+
+    // Always drain the accumulated mouse delta so it can't pile up while in UI.
     double dx, dy;
     window_->consumeMouseDelta(dx, dy);
+
+    // When the cursor is free (UI mode), ImGui owns the mouse; don't fly.
+    if (!window_->cursorCaptured())
+        return;
+
+    // Mouse look.
+    constexpr float sensitivity = 0.1f;
     camera_.rotate(static_cast<float>(dx) * sensitivity,
                    -static_cast<float>(dy) * sensitivity);  // screen Y is down
 
@@ -396,6 +445,8 @@ void Engine::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
         m->bind(cmd);
         m->draw(cmd);
     });
+
+    imgui_->renderDrawData(cmd);  // UI on top, same render pass
 
     vkCmdEndRenderPass(cmd);
     if (vkEndCommandBuffer(cmd) != VK_SUCCESS)

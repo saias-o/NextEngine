@@ -19,6 +19,8 @@ class Buffer;
 class Texture;
 class Scene;
 class Node;
+class LightNode;
+class ImGuiLayer;
 
 struct UniformBufferObject {
     alignas(16) glm::mat4 view;
@@ -62,6 +64,7 @@ private:
     void createSyncObjects();
 
     void buildScene();
+    void drawUI();
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex);
     void processInput(float dt);
     void gatherLights(LightingUBO& ubo);
@@ -75,6 +78,9 @@ private:
     std::unique_ptr<Mesh> mesh_;
     std::unique_ptr<Texture> texture_;
     std::unique_ptr<Scene> scene_;
+    std::unique_ptr<ImGuiLayer> imgui_;
+    LightNode* sun_ = nullptr;   // referenced by the debug UI
+    LightNode* lamp_ = nullptr;
 
     VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
@@ -88,6 +94,7 @@ private:
     uint32_t currentFrame_ = 0;
 
     Camera camera_;
+    bool tabWasDown_ = false;  // edge-detect the cursor toggle
 };
 
 } // namespace ne

@@ -30,9 +30,9 @@ Dans l'ordre de valeur conseillé :
      dans `VulkanDevice`).
    - ~~**MSAA**~~ **[FAIT]** (couleur multisamplée + resolve dans `Swapchain`,
      sample count auto plafonné à 4×).
-   - **Dear ImGui** : régler lumières/caméra/objets en direct, voir les FPS.
-     Indispensable pour itérer. (Vendre `imgui` + backend GLFW/Vulkan.) Faire
-     d'abord le **toggle de capture du curseur** (§5).
+   - ~~**Dear ImGui**~~ **[FAIT]** `graphics/ImGuiLayer` + backends GLFW/Vulkan
+     vendus ; panneau debug (FPS, caméra, lumières en direct) ; toggle curseur
+     (TAB) dans `Window`.
    - ~~**Vulkan SDK / validation layers**~~ **[FAIT]** Layers MSYS2 activées via
      `./run.sh` (`VK_LAYER_PATH` + `ucrt64/bin` en tête du PATH). Le moteur passe
      la validation sans erreur.
@@ -122,8 +122,8 @@ Dans l'ordre de valeur conseillé :
   et un build CI.
 - **Toolchain MSYS2** : link statique en contournement du crash `ld` (cf.
   `CLAUDE.md`). Vrai correctif : réinstaller `mingw-w64-ucrt-x86_64-gcc/binutils`.
-- **Curseur souris** toujours capturé (pas de toggle) — gênant pour debugger /
-  ImGui. Ajouter un raccourci pour libérer le curseur.
+- ~~**Curseur souris toujours capturé**~~ **[FAIT]** toggle TAB
+  (`Window::setCursorCaptured`).
 
 ---
 

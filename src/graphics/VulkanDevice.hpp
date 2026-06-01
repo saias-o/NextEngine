@@ -31,6 +31,7 @@ public:
     VulkanDevice(const VulkanDevice&) = delete;
     VulkanDevice& operator=(const VulkanDevice&) = delete;
 
+    VkInstance instance() const { return instance_; }
     VkDevice device() const { return device_; }
     VkPhysicalDevice physicalDevice() const { return physicalDevice_; }
     VkSurfaceKHR surface() const { return surface_; }

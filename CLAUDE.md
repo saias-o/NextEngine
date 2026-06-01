@@ -31,8 +31,10 @@ actuel affiche une **scène à hiérarchie de nœuds** (une « planète » avec 
 transform de son parent), cubes texturés **éclairés en temps réel** (Blinn-Phong :
 une lumière directionnelle « soleil » + une lumière ponctuelle qui orbite),
 autour de laquelle on **vole librement** (caméra FPS : ZQSD/WASD + souris,
-Espace/Ctrl, Maj pour accélérer, Échap pour quitter), avec depth buffer. Le
-bugatti reste chargeable via `Mesh::fromObjFile` — voir `Engine::buildScene()`.
+Espace/Ctrl, Maj pour accélérer, Échap pour quitter), avec depth buffer et
+**MSAA**. Un **panneau ImGui** (TAB pour libérer le curseur) affiche FPS/caméra
+et règle les lumières en direct. Le bugatti reste chargeable via
+`Mesh::fromObjFile` — voir `Engine::buildScene()`.
 
 ## Stack & dépendances
 
@@ -107,6 +109,8 @@ src/
                             {GpuOnly, HostVisible}. HostVisible = mappé en permanence.
     Texture.{hpp,cpp}       Charge une image (stb_image) → VkImage échantillonnable
                             (VMA) + view + sampler. Staging + transitions de layout.
+    ImGuiLayer.{hpp,cpp}    Wrappe Dear ImGui + backends GLFW/Vulkan. beginFrame/
+                            endFrame/renderDrawData(cmd) dans la render pass.
     Mesh.{hpp,cpp}          Vertex (pos, color) + VBO/IBO (indices uint32) via
                             staging + bind/draw. Mesh::fromObjFile() charge un .obj.
     VmaFwd.hpp              Forward-decls VMA (garde le gros header hors des en-têtes).
@@ -129,6 +133,7 @@ src/
 third_party/vma/             VMA vendu.
 third_party/tinyobjloader/   tinyobjloader vendu.
 third_party/stb/             stb_image vendu.
+third_party/imgui/           Dear ImGui vendu (core + backends/).
 models/bugatti/              Modèle de test (bugatti.obj, ~84 Mo, LFS).
 assets/textures/             Textures (checker.png généré, LFS).
 ```
@@ -172,13 +177,14 @@ Le moteur est construit par étapes numérotées :
             futur bake quelles lumières précalculer. *Reste à faire* : étape de
             bake offline + UV de lightmap + échantillonnage du lightmap.
       - [ ] PBR (metallic-roughness) + normal mapping, plus tard.
-- [~] **Étape 7 — Outillage.**
+- [x] **Étape 7 — Outillage.**
       - [x] Pipeline cache (`VkPipelineCache` sérialisé sur disque, dans
             `VulkanDevice`) et **MSAA** (couleur multisamplée + resolve dans
             `Swapchain`, sample count auto plafonné à 4×).
       - [x] Petit `Log` (`core/Log.hpp`, niveaux info/warn/error).
-      - [ ] Dear ImGui (debug/stats, réglage des lumières en direct) — nécessite
-            d'abord un toggle de capture du curseur.
+      - [x] **Dear ImGui** (`graphics/ImGuiLayer`, backends GLFW+Vulkan vendus) :
+            panneau debug (FPS, caméra, réglage live des lumières). Toggle de
+            capture du curseur (TAB) dans `Window` pour passer fly-cam ↔ UI.
 - [ ] **Étape 8 — Couche jeu.** Boucle de jeu (update/render séparés, delta
       time fixe/variable), abstraction « scène » jouable, point d'entrée
       utilisateur simple pour créer un jeu desktop.
