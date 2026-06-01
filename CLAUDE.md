@@ -91,9 +91,10 @@ src/
                             queues, command pool, VmaAllocator. Helpers
                             (copyBuffer, createImageView, single-time cmds,
                             formats/depth). Objet « GPU » central.
-    Swapchain.{hpp,cpp}     Swapchain + depth (VMA) + render pass + framebuffers.
-                            recreate() au resize. La render pass est créée une
-                            fois et survit aux recreate (pipelines restent valides).
+    Swapchain.{hpp,cpp}     Swapchain + depth (VMA) + render pass + framebuffers
+                            + sémaphores renderFinished (1 par image). recreate()
+                            au resize. La render pass est créée une fois et survit
+                            aux recreate (pipelines restent valides).
     Pipeline.{hpp,cpp}      Pipeline graphique + layout (depuis chemins de shaders).
     Buffer.{hpp,cpp}        Wrapper RAII de VkBuffer via VMA. enum MemoryUsage
                             {GpuOnly, HostVisible}. HostVisible = mappé en permanence.

@@ -13,7 +13,7 @@ public:
     virtual ~Behaviour() = default;
 
     virtual void onReady() {}
-    virtual void onUpdate(float dt) {}
+    virtual void onUpdate(float /*dt*/) {}
 
     Node* node() const { return node_; }
 

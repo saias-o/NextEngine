@@ -1,8 +1,6 @@
 #include "scene/Node.hpp"
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/matrix_transform.hpp>  // GLM_FORCE_* set globally by CMake
 
 #include <utility>
 

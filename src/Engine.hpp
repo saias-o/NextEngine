@@ -84,7 +84,6 @@ private:
 
     std::vector<VkCommandBuffer> commandBuffers_;
     std::vector<VkSemaphore> imageAvailableSemaphores_;
-    std::vector<VkSemaphore> renderFinishedSemaphores_;
     std::vector<VkFence> inFlightFences_;
     uint32_t currentFrame_ = 0;
 

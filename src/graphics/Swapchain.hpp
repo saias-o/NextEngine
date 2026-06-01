@@ -29,12 +29,20 @@ public:
     VkExtent2D extent() const { return extent_; }
     float aspectRatio() const { return extent_.width / static_cast<float>(extent_.height); }
 
+    // Signalled when rendering to the given swap-chain image is done; presented
+    // image is waited on by present. One per image (not per frame-in-flight) so
+    // a semaphore is never reused while its present is still pending.
+    VkSemaphore renderFinishedSemaphore(uint32_t imageIndex) const {
+        return renderFinishedSemaphores_[imageIndex];
+    }
+
 private:
     void createSwapchain();
     void createImageViews();
     void createRenderPass();
     void createDepthResources();
     void createFramebuffers();
+    void createRenderFinishedSemaphores();
     void cleanup();
 
     VkSurfaceFormatKHR chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& available) const;
@@ -56,6 +64,7 @@ private:
 
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> framebuffers_;
+    std::vector<VkSemaphore> renderFinishedSemaphores_;  // one per swap-chain image
 };
 
 } // namespace ne

@@ -18,6 +18,7 @@ Swapchain::Swapchain(VulkanDevice& device, Window& window)
     createRenderPass();
     createDepthResources();
     createFramebuffers();
+    createRenderFinishedSemaphores();
 }
 
 Swapchain::~Swapchain() {
@@ -39,14 +40,25 @@ void Swapchain::recreate() {
     createImageViews();
     createDepthResources();
     createFramebuffers();
+    createRenderFinishedSemaphores();
 }
 
 void Swapchain::cleanup() {
+    for (auto sem : renderFinishedSemaphores_) vkDestroySemaphore(device_.device(), sem, nullptr);
     vkDestroyImageView(device_.device(), depthImageView_, nullptr);
     vmaDestroyImage(device_.allocator(), depthImage_, depthAllocation_);
     for (auto fb : framebuffers_) vkDestroyFramebuffer(device_.device(), fb, nullptr);
     for (auto iv : imageViews_) vkDestroyImageView(device_.device(), iv, nullptr);
     vkDestroySwapchainKHR(device_.device(), swapchain_, nullptr);
+}
+
+void Swapchain::createRenderFinishedSemaphores() {
+    VkSemaphoreCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    renderFinishedSemaphores_.resize(images_.size());
+    for (auto& sem : renderFinishedSemaphores_)
+        if (vkCreateSemaphore(device_.device(), &ci, nullptr, &sem) != VK_SUCCESS)
+            throw std::runtime_error("failed to create render-finished semaphore");
 }
 
 VkSurfaceFormatKHR Swapchain::chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& available) const {

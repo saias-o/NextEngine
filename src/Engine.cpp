@@ -1,8 +1,6 @@
 #include "Engine.hpp"
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/matrix_transform.hpp>  // GLM_FORCE_* set globally by CMake
 
 #include "core/Window.hpp"
 #include "graphics/Buffer.hpp"
@@ -111,8 +109,8 @@ Engine::Engine() {
 Engine::~Engine() {
     vkDeviceWaitIdle(device_->device());
 
+    // renderFinished semaphores live in the Swapchain (one per image).
     for (int i = 0; i < kMaxFramesInFlight; i++) {
-        vkDestroySemaphore(device_->device(), renderFinishedSemaphores_[i], nullptr);
         vkDestroySemaphore(device_->device(), imageAvailableSemaphores_[i], nullptr);
         vkDestroyFence(device_->device(), inFlightFences_[i], nullptr);
     }
@@ -327,8 +325,9 @@ void Engine::createCommandBuffers() {
 }
 
 void Engine::createSyncObjects() {
+    // imageAvailable semaphores and fences are per frame-in-flight; the
+    // renderFinished semaphores are per swap-chain image and owned by Swapchain.
     imageAvailableSemaphores_.resize(kMaxFramesInFlight);
-    renderFinishedSemaphores_.resize(kMaxFramesInFlight);
     inFlightFences_.resize(kMaxFramesInFlight);
 
     VkSemaphoreCreateInfo semCI{};
@@ -339,7 +338,6 @@ void Engine::createSyncObjects() {
 
     for (int i = 0; i < kMaxFramesInFlight; i++) {
         if (vkCreateSemaphore(device_->device(), &semCI, nullptr, &imageAvailableSemaphores_[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(device_->device(), &semCI, nullptr, &renderFinishedSemaphores_[i]) != VK_SUCCESS ||
             vkCreateFence(device_->device(), &fenceCI, nullptr, &inFlightFences_[i]) != VK_SUCCESS)
             throw std::runtime_error("failed to create sync objects");
     }
@@ -466,7 +464,7 @@ void Engine::drawFrame() {
 
     VkSemaphore waitSemaphores[] = {imageAvailableSemaphores_[currentFrame_]};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    VkSemaphore signalSemaphores[] = {renderFinishedSemaphores_[currentFrame_]};
+    VkSemaphore signalSemaphores[] = {swapchain_->renderFinishedSemaphore(imageIndex)};
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
