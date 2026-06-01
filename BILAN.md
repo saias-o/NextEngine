@@ -33,9 +33,9 @@ Dans l'ordre de valeur conseillé :
    - **Dear ImGui** : régler lumières/caméra/objets en direct, voir les FPS.
      Indispensable pour itérer. (Vendre `imgui` + backend GLFW/Vulkan.) Faire
      d'abord le **toggle de capture du curseur** (§5).
-   - **Vulkan SDK / validation layers** : non installées → bugs Vulkan
-     silencieux. À installer avant d'aller plus loin (gros multiplicateur de
-     fiabilité). Cf. note dans `CLAUDE.md`.
+   - ~~**Vulkan SDK / validation layers**~~ **[FAIT]** Layers MSYS2 activées via
+     `./run.sh` (`VK_LAYER_PATH` + `ucrt64/bin` en tête du PATH). Le moteur passe
+     la validation sans erreur.
 
 2. **Couche jeu (étape 8)** — boucle update/render claire, `dt` fixe vs
    variable, point d'entrée utilisateur pour écrire un jeu sans toucher l'Engine.
@@ -117,7 +117,7 @@ Dans l'ordre de valeur conseillé :
 ---
 
 ## 5. Dette technique & environnement
-- **Validation layers absentes** (Vulkan SDK non installé) → installer.
+- ~~**Validation layers absentes**~~ **[FAIT]** activées via `./run.sh`.
 - **Tests / CI** : aucun. Au minimum, un smoke test « init + 1 frame headless »
   et un build CI.
 - **Toolchain MSYS2** : link statique en contournement du crash `ld` (cf.

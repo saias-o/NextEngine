@@ -57,6 +57,11 @@ or glslc les compile dans `build/shaders/`. **Lancer depuis `build/`** :
 cd build && ./NextEngine.exe
 ```
 
+Pour lancer **avec les validation layers Vulkan** : `./run.sh` (depuis la racine).
+Le script met `ucrt64/bin` en tête du PATH et pointe `VK_LAYER_PATH` sur le
+manifeste de la layer (paquet MSYS2 `vulkan-validation-layers`, non enregistré
+auprès du loader). En build Debug, le moteur les active automatiquement.
+
 C'est une application GUI à boucle de rendu infinie : elle ouvre une fenêtre et
 ne rend pas la main (ne pas l'exécuter dans un contexte automatisé/headless).
 Pour valider sans interaction : lancer avec un timeout (~60 s) et vérifier que
@@ -197,8 +202,11 @@ gardant la dualité desktop/XR à l'esprit (cf. « Objectif final »).
   `if(MINGW)`). Bonus : exe autonome. *Vrai* correctif si possible :
   réinstaller la toolchain (`pacman -S mingw-w64-ucrt-x86_64-gcc
   mingw-w64-ucrt-x86_64-binutils`). Le `-static` peut rester quoi qu'il arrive.
-- **Pas (encore) de dépôt git** — `git init` recommandé avant d'aller plus loin.
-- Validation layers Vulkan activées en build Debug (désactivées si `NDEBUG`).
+- **Validation layers** : activées en build Debug (désactivées si `NDEBUG`).
+  La layer MSYS2 n'est pas enregistrée auprès du loader → lancer via `./run.sh`
+  qui met `ucrt64/bin` en tête du PATH (sinon erreur 127 : la layer charge un
+  `libstdc++` incompatible) et définit `VK_LAYER_PATH`. Le moteur passe la
+  validation sans erreur.
 
 ## Quand tu modifies le projet
 - Toujours **compiler** après changement (`cmake --build build`) pour valider.
