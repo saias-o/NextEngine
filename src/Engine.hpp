@@ -48,9 +48,7 @@ private:
     LightNode* lamp_ = nullptr;
 
     Camera camera_;
-    bool tabWasDown_ = false;   // edge-detect the cursor toggle
-    bool escWasDown_ = false;   // edge-detect the Escape close/toggle key
-    bool wasPlayMode_ = false;
+    bool wasPlayMode_ = false;  // edge-detect play-mode enter/exit for cursor
 };
 
 } // namespace ne

@@ -103,19 +103,20 @@ Dans l'ordre de valeur conseillé :
 - ~~**`Material`**~~ **[FAIT]** `Material` (texture + `baseColor`, descriptor
   set 1) référencé par `MeshNode` ; créés/cachés par `ResourceManager`. *Reste* :
   tri des draws par matériau, plusieurs pipelines (transparence), PBR.
-- **`CameraNode`** — la caméra est un membre de `Engine`, pas un nœud. Pour
-  rester cohérent avec « tout est nœud » (et pour le multi-caméra / XR), en
-  faire un `CameraNode` dans le graphe, dont la transform donne la vue.
+- **`CameraNode`** (différé) — la caméra est un membre de `Engine`. En faire un
+  nœud serait cohérent avec « tout est nœud » (et utile multi-caméra / XR), MAIS
+  l'éditeur introduit une distinction caméra-d'éditeur (outil, hors scène) vs
+  caméra-de-jeu (`CameraNode` dans la scène, active en Play Mode). À trancher
+  avant d'ajouter la classe, pour ne pas créer une abstraction inutilisée.
 - ~~**`ResourceManager` / cache d'assets**~~ **[FAIT]** mutualise meshes/textures/
   matériaux par clé ; `core/Paths.hpp` centralise la résolution (assets +
   shaders, absolus, cwd-indépendant).
-- **`Renderer`** — extraire de `Engine` toute la logique frame (command buffers,
-  sync, draw, descriptors) pour ne laisser dans `Engine` que l'orchestration
-  (fenêtre, scène, boucle). Prépare proprement le double chemin desktop/XR (§6).
-- **`Input`** — abstraction d'entrée (actions, état clavier/souris/manette)
-  accessible **depuis les `Behaviour`** (actuellement les inputs ne sont lus que
-  dans `Engine::processInput`). Indispensable pour scripter le gameplay.
-- **`Time`** — `dt`, temps écoulé, time scale, exposé globalement aux behaviours.
+- ~~**`Renderer`**~~ **[FAIT]** `render/Renderer` possède toute la machinerie de
+  frame ; `Engine` n'est plus que l'orchestration. Couture pour le chemin XR (§6).
+- ~~**`Input`**~~ **[FAIT]** `core/Input` (statique, échantillonné 1×/frame),
+  accessible aux `Behaviour`. Dogfoodé dans `Engine::processInput`.
+- ~~**`Time`**~~ **[FAIT]** `core/Time` (delta scaled/unscaled, elapsed, scale) ;
+  `updateTree` utilise le delta scaled → pause gameplay possible (scale=0).
 - **API scène manquante sur `Node`** : `removeChild`, suppression/`destroy`,
   `findChild(name)` / chemins, activation (`enabled`). Lifecycle behaviour :
   `onDestroy`, flag `enabled`.
@@ -161,7 +162,9 @@ Dans l'ordre de valeur conseillé :
 2. ~~`-Wall -Wextra`, petit `Log`.~~ FAIT
 3. ~~ImGui + pipeline cache + MSAA (étape 7).~~ FAIT
 4. ~~`Material` + `ResourceManager` + unification des chemins d'assets.~~ FAIT
-5. Extraire `Renderer` ; faire de la caméra un `CameraNode` ; `Input`/`Time`. ← prochain
+5. ~~Extraire `Renderer`~~ FAIT ; ~~`Input`/`Time`~~ FAIT ; `CameraNode` **différé**
+   (l'éditeur introduit caméra-éditeur vs caméra-de-jeu : à décider avant de
+   l'ajouter, sinon classe inutilisée). ← le reste de l'item 5
 6. Couche jeu + split moteur(lib)/jeu(exe) (étape 8).
 7. Scripting Lua + `ScriptBehaviour` + hot-reload (étape 8b).
 8. PBR, ombres, baked GI.

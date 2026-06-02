@@ -3,7 +3,9 @@
 #include <glm/gtc/matrix_transform.hpp>  // GLM_FORCE_* set globally by CMake
 #include <glm/gtc/quaternion.hpp>
 
+#include "core/Input.hpp"
 #include "core/Paths.hpp"
+#include "core/Time.hpp"
 #include "core/Window.hpp"
 #include "editor/EditorUI.hpp"
 #include "graphics/ImGuiLayer.hpp"
@@ -83,6 +85,7 @@ private:
 
 Engine::Engine() {
     window_ = std::make_unique<Window>(kWidth, kHeight, "NextEngine");
+    Input::bind(window_.get());
     device_ = std::make_unique<VulkanDevice>(*window_);
     swapchain_ = std::make_unique<Swapchain>(*device_, *window_);
     resources_ = std::make_unique<ResourceManager>(*device_);
@@ -115,14 +118,17 @@ void Engine::run() {
         window_->pollEvents();
 
         double now = glfwGetTime();
-        float dt = static_cast<float>(now - last);
+        float realDt = static_cast<float>(now - last);
         last = now;
 
-        processInput(dt);
-        scene_->updateTree(dt);  // runs node behaviours
+        Time::update(realDt);  // sets scaled delta + elapsed
+        Input::newFrame();     // single per-frame input snapshot
+
+        processInput(realDt);              // editor camera: unscaled real time
+        scene_->updateTree(Time::delta()); // behaviours: scaled time (pausable)
 
         imgui_->beginFrame();
-        editorUI_->draw(scene_.get(), &camera_, project_.get(), dt);
+        editorUI_->draw(scene_.get(), &camera_, project_.get(), realDt);
         imgui_->endFrame();  // finalize draw data even if the frame is skipped (resize)
 
         renderer_->drawFrame(*scene_, camera_);
@@ -189,18 +195,15 @@ void Engine::updateCursorCapture(bool isPlayMode) {
     wasPlayMode_ = isPlayMode;
 
     if (isPlayMode) {
-        // In play mode, TAB toggles between captured/free
-        bool tabDown = window_->keyDown(GLFW_KEY_TAB);
-        if (tabDown && !tabWasDown_)
+        // In play mode, TAB toggles between captured/free.
+        if (Input::keyPressed(GLFW_KEY_TAB))
             window_->setCursorCaptured(!window_->cursorCaptured());
-        tabWasDown_ = tabDown;
     } else {
-        // In scene mode, fly only when holding right-click over the viewport
-        bool rightClick = window_->mouseButtonDown(GLFW_MOUSE_BUTTON_RIGHT);
+        // In scene mode, fly only while holding right-click over the viewport.
+        bool rightClick = Input::mouseButtonDown(GLFW_MOUSE_BUTTON_RIGHT);
         if (rightClick && !window_->cursorCaptured()) {
-            if (!ImGui::GetIO().WantCaptureMouse) {
+            if (!ImGui::GetIO().WantCaptureMouse)
                 window_->setCursorCaptured(true);
-            }
         } else if (!rightClick && window_->cursorCaptured()) {
             window_->setCursorCaptured(false);
         }
@@ -208,16 +211,14 @@ void Engine::updateCursorCapture(bool isPlayMode) {
 }
 
 void Engine::processInput(float dt) {
-    bool escDown = window_->keyDown(GLFW_KEY_ESCAPE);
-    if (escDown && !escWasDown_) {
+    if (Input::keyPressed(GLFW_KEY_ESCAPE)) {
         if (editorUI_ && editorUI_->isPlayMode()) {
-            editorUI_->setPlayMode(false); // Exits Play Mode back to Scene Mode
+            editorUI_->setPlayMode(false);  // exit Play Mode back to Scene Mode
         } else {
             window_->close();
             return;
         }
     }
-    escWasDown_ = escDown;
 
     if (editorUI_ && editorUI_->quitRequested()) {
         window_->close();
@@ -226,29 +227,26 @@ void Engine::processInput(float dt) {
 
     updateCursorCapture(editorUI_->isPlayMode());
 
-    // Always drain the accumulated mouse delta so it can't pile up while in UI.
-    double dx, dy;
-    window_->consumeMouseDelta(dx, dy);
-
     // When the cursor is free (UI mode), ImGui owns the mouse; don't fly.
+    // (Input::newFrame already consumed the mouse delta, so it can't pile up.)
     if (!window_->cursorCaptured())
         return;
 
     // Mouse look.
     constexpr float sensitivity = 0.1f;
-    camera_.rotate(static_cast<float>(dx) * sensitivity,
-                   -static_cast<float>(dy) * sensitivity);  // screen Y is down
+    glm::vec2 d = Input::mouseDelta();
+    camera_.rotate(d.x * sensitivity, -d.y * sensitivity);  // screen Y is down
 
     // Keyboard movement (WASD horizontal, Space/Ctrl up/down). Shift to sprint.
-    float speed = (window_->keyDown(GLFW_KEY_LEFT_SHIFT) ? 6.0f : 2.5f) * dt;
+    float speed = (Input::keyDown(GLFW_KEY_LEFT_SHIFT) ? 6.0f : 2.5f) * dt;
     glm::vec3 front = camera_.front();
     glm::vec3 right = camera_.right();
-    if (window_->keyDown(GLFW_KEY_W)) camera_.position += front * speed;
-    if (window_->keyDown(GLFW_KEY_S)) camera_.position -= front * speed;
-    if (window_->keyDown(GLFW_KEY_D)) camera_.position += right * speed;
-    if (window_->keyDown(GLFW_KEY_A)) camera_.position -= right * speed;
-    if (window_->keyDown(GLFW_KEY_SPACE)) camera_.position += glm::vec3(0, 1, 0) * speed;
-    if (window_->keyDown(GLFW_KEY_LEFT_CONTROL)) camera_.position -= glm::vec3(0, 1, 0) * speed;
+    if (Input::keyDown(GLFW_KEY_W)) camera_.position += front * speed;
+    if (Input::keyDown(GLFW_KEY_S)) camera_.position -= front * speed;
+    if (Input::keyDown(GLFW_KEY_D)) camera_.position += right * speed;
+    if (Input::keyDown(GLFW_KEY_A)) camera_.position -= right * speed;
+    if (Input::keyDown(GLFW_KEY_SPACE)) camera_.position += glm::vec3(0, 1, 0) * speed;
+    if (Input::keyDown(GLFW_KEY_LEFT_CONTROL)) camera_.position -= glm::vec3(0, 1, 0) * speed;
 }
 
 } // namespace ne

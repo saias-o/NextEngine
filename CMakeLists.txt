@@ -40,6 +40,7 @@ add_executable(NextEngine
     src/Engine.cpp
     src/core/Window.cpp
     src/core/Camera.cpp
+    src/core/Input.cpp
     src/scene/Node.cpp
     src/graphics/VulkanDevice.cpp
     src/graphics/Swapchain.cpp

@@ -104,6 +104,10 @@ src/
     Log.hpp             Logger minimal header-only (info/warn/error).
     Paths.hpp           assetPath()/shaderPath() — résolution centralisée
                         (chemins absolus bakés par CMake, cwd-indépendant).
+    Time.hpp            Timing global (delta scaled/unscaled, elapsed, scale)
+                        façon Unity. L'Engine l'avance ; tout le monde le lit.
+    Input.{hpp,cpp}     Input global échantillonné 1×/frame depuis la Window
+                        (keyDown/keyPressed, mouse delta/pos). Codes GLFW.
   graphics/
     VulkanDevice.{hpp,cpp}  Instance, debug messenger, surface, device,
                             queues, command pool, VmaAllocator, pipeline cache
