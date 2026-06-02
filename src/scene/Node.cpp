@@ -24,6 +24,17 @@ Node* Node::addChild(std::unique_ptr<Node> child) {
     return ptr;
 }
 
+bool Node::removeChild(Node* child) {
+    if (!child) return false;
+    for (auto it = children_.begin(); it != children_.end(); ++it) {
+        if (it->get() == child) {
+            children_.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
 void Node::updateTree(float dt) {
     for (auto& behaviour : behaviours_) {
         if (!behaviour->ready_) {

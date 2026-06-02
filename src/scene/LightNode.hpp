@@ -29,6 +29,7 @@ public:
         : Node(std::move(name)), type(type) {}
 
     LightNode* asLight() override { return this; }
+    const LightNode* asLightConst() const override { return this; }
 
     LightType type;
     glm::vec3 color{1.0f};

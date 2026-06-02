@@ -31,24 +31,27 @@ ImGuiLayer::ImGuiLayer(VulkanDevice& device, Window& window, VkRenderPass render
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGui::GetIO().IniFilename = nullptr;  // don't litter the cwd with imgui.ini
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;  // don't litter the cwd with imgui.ini
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;  // enable docking
     ImGui::StyleColorsDark();
 
     ImGui_ImplGlfw_InitForVulkan(window.handle(), /*install_callbacks=*/true);
 
     ImGui_ImplVulkan_InitInfo info{};
+    info.ApiVersion = VK_API_VERSION_1_0;
     info.Instance = device_.instance();
     info.PhysicalDevice = device_.physicalDevice();
     info.Device = device_.device();
     info.QueueFamily = device_.findQueueFamilies().graphicsFamily.value();
     info.Queue = device_.graphicsQueue();
     info.DescriptorPool = descriptorPool_;
-    info.RenderPass = renderPass;
     info.MinImageCount = 2;
     info.ImageCount = imageCount;
-    info.MSAASamples = samples;
     info.PipelineCache = device_.pipelineCache();
-    info.Subpass = 0;
+    info.PipelineInfoMain.RenderPass = renderPass;
+    info.PipelineInfoMain.Subpass = 0;
+    info.PipelineInfoMain.MSAASamples = samples;
     ImGui_ImplVulkan_Init(&info);
     // Font atlas is uploaded lazily on the first frame; no manual step needed.
 }

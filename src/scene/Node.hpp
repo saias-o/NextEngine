@@ -39,6 +39,9 @@ public:
     // Takes ownership of `child`, sets its parent, returns a borrowed pointer.
     Node* addChild(std::unique_ptr<Node> child);
 
+    // Find the unique_ptr for `child` in our children_ vector, erase it (which deletes it), and return true.
+    bool removeChild(Node* child);
+
     // Convenience: construct a child of type T in place and return it.
     template <typename T, typename... Args>
     T* createChild(Args&&... args) {
@@ -86,6 +89,11 @@ public:
     virtual Mesh* mesh() const { return nullptr; }
     virtual Material* material() const { return nullptr; }
     virtual LightNode* asLight() { return nullptr; }
+    virtual const LightNode* asLightConst() const { return nullptr; }
+
+    // Behaviour queries (used by the editor inspector).
+    bool hasBehaviours() const { return !behaviours_.empty(); }
+    int behaviourCount() const { return static_cast<int>(behaviours_.size()); }
 
 protected:
     std::string name_;

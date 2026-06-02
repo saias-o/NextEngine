@@ -50,6 +50,9 @@ add_executable(NextEngine
     src/graphics/Material.cpp
     src/graphics/ResourceManager.cpp
     src/graphics/ImGuiLayer.cpp
+    src/render/Renderer.cpp
+    src/editor/EditorUI.cpp
+    src/project/Project.cpp
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
     src/graphics/StbImageUsage.cpp

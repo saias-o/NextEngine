@@ -88,9 +88,14 @@ les détruit (RAII), tout emprunte un `VulkanDevice&`, copies interdites.
 ```
 src/
   main.cpp              Point d'entrée minimal (try/catch).
-  Engine.{hpp,cpp}      Orchestration : boucle de rendu, frames-in-flight,
-                        descriptor sets, uniform buffers, UBO/caméra, draw.
-                        Contient pour l'instant la géométrie du cube en dur.
+  Engine.{hpp,cpp}      Orchestration légère : possède les sous-systèmes, la
+                        boucle (input, update de scène, UI, present délégué au
+                        Renderer), la caméra et la construction de la scène démo.
+  render/
+    Renderer.{hpp,cpp}  Toute la machinerie de frame GPU : pipeline de scène,
+                        set 0 (global), UBOs par-frame, command buffers, sync,
+                        draw + UI overlay, acquire/submit/present (+ resize).
+                        Seul à toucher la présentation → couture pour le XR.
   core/
     Window.{hpp,cpp}    GLFW : fenêtre, surface, resize, et inputs (capture
                         curseur, delta souris, état clavier).

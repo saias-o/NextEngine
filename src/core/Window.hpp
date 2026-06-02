@@ -29,6 +29,7 @@ public:
 
     // --- input ---
     bool keyDown(int glfwKey) const { return glfwGetKey(window_, glfwKey) == GLFW_PRESS; }
+    bool mouseButtonDown(int glfwButton) const { return glfwGetMouseButton(window_, glfwButton) == GLFW_PRESS; }
     // Mouse movement accumulated since the last call (then reset to zero).
     void consumeMouseDelta(double& dx, double& dy);
 
@@ -50,7 +51,7 @@ private:
     double lastX_ = 0.0;
     double lastY_ = 0.0;
     bool firstMouse_ = true;
-    bool cursorCaptured_ = true;
+    bool cursorCaptured_ = false;
 };
 
 } // namespace ne
