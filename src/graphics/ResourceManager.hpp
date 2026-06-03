@@ -36,6 +36,12 @@ public:
     Material* createMaterial(const std::string& key, Texture* texture,
                              const glm::vec4& baseColor);
 
+    // Lookups by key, and reverse lookups (pointer -> key) for serialization.
+    Mesh* mesh(const std::string& key) const;
+    Material* material(const std::string& key) const;
+    std::string meshKey(const Mesh* mesh) const;
+    std::string materialKey(const Material* material) const;
+
     VkDescriptorSetLayout materialSetLayout() const { return materialSetLayout_; }
 
 private:

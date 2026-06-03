@@ -13,7 +13,11 @@
 #include "project/Project.hpp"
 #include "render/Renderer.hpp"
 #include "imgui.h"
+#include "scene/BehaviourRegistry.hpp"
 #include "scene/Scene.hpp"
+#include "scene/SceneSettings.hpp"
+#include "scene/SceneSerializer.hpp"
+#include "core/Log.hpp"
 
 namespace ne {
 
@@ -24,25 +28,35 @@ constexpr uint32_t kHeight = 900;
 
 } // namespace
 
-Engine::Engine(SceneSetup sceneSetup) {
+Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
+    // Engine built-in behaviours, registered so scenes can deserialize them.
+    BehaviourRegistry::instance().registerType<SceneSettingsBehaviour>("SceneSettings");
+
     window_ = std::make_unique<Window>(kWidth, kHeight, "NextEngine");
     Input::bind(window_.get());
     device_ = std::make_unique<VulkanDevice>(*window_);
     swapchain_ = std::make_unique<Swapchain>(*device_, *window_);
     resources_ = std::make_unique<ResourceManager>(*device_);
 
-    // The scene is engine-owned (auto-creates its Settings node); the game
-    // populates it. No built-in content lives in the engine library.
     scene_ = std::make_unique<Scene>();
-    if (sceneSetup)
-        sceneSetup(*scene_, *resources_);
+    project_ = std::make_unique<Project>();
+
+    if (!initialProject.empty()) {
+        if (!project_->load(initialProject)) {
+            Log::warn("Failed to load initial project: " + initialProject);
+        }
+    }
+
+    if (!project_->isLoaded()) {
+        if (sceneSetup)
+            sceneSetup(*scene_, *resources_);
+    }
 
     imgui_ = std::make_unique<ImGuiLayer>(*device_, *window_, swapchain_->renderPass(),
         swapchain_->imageCount(), swapchain_->samples());
     renderer_ = std::make_unique<Renderer>(*device_, *swapchain_, *window_,
         resources_->materialSetLayout(), *imgui_);
     editorUI_ = std::make_unique<EditorUI>();
-    project_ = std::make_unique<Project>();
 
     // Pull back and look slightly down to see the whole orbiting hierarchy.
     camera_.position = {0.0f, 2.5f, 8.0f};

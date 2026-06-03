@@ -12,6 +12,10 @@ public:
     bool enablePostProcessing = true;
 
     void onDrawInspector() override;
+
+    const char* typeName() const override { return "SceneSettings"; }
+    void save(nlohmann::json& j) const override;
+    void load(const nlohmann::json& j) override;
 };
 
 } // namespace ne

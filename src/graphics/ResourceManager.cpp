@@ -107,4 +107,26 @@ Material* ResourceManager::createMaterial(const std::string& key, Texture* textu
     return ptr;
 }
 
+Mesh* ResourceManager::mesh(const std::string& key) const {
+    auto it = meshes_.find(key);
+    return it != meshes_.end() ? it->second.get() : nullptr;
+}
+
+Material* ResourceManager::material(const std::string& key) const {
+    auto it = materials_.find(key);
+    return it != materials_.end() ? it->second.get() : nullptr;
+}
+
+std::string ResourceManager::meshKey(const Mesh* mesh) const {
+    for (auto& [key, ptr] : meshes_)
+        if (ptr.get() == mesh) return key;
+    return {};
+}
+
+std::string ResourceManager::materialKey(const Material* material) const {
+    for (auto& [key, ptr] : materials_)
+        if (ptr.get() == material) return key;
+    return {};
+}
+
 } // namespace ne

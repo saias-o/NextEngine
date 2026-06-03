@@ -46,6 +46,8 @@ add_library(ne_engine STATIC
     src/scene/Node.cpp
     src/scene/Scene.cpp
     src/scene/SceneSettings.cpp
+    src/scene/SceneSerializer.cpp
+    src/scene/BehaviourRegistry.cpp
     src/graphics/VulkanDevice.cpp
     src/graphics/Swapchain.cpp
     src/graphics/Buffer.cpp
@@ -78,6 +80,7 @@ target_include_directories(ne_engine PUBLIC
     third_party/tinyobjloader
     third_party/stb
     third_party/imgui
+    third_party/json
 )
 target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm)
 
@@ -122,3 +125,11 @@ add_executable(NextEngine
 target_link_libraries(NextEngine PRIVATE ne_engine)
 target_compile_options(NextEngine PRIVATE -Wall -Wextra)
 add_dependencies(NextEngine Shaders)
+
+# ── Hub executable ──────────────────────────────────────────────────────────
+add_executable(NextEngineHub
+    src/hub/main.cpp
+    src/hub/Hub.cpp
+)
+target_link_libraries(NextEngineHub PRIVATE ne_engine)
+target_compile_options(NextEngineHub PRIVATE -Wall -Wextra)

@@ -24,6 +24,13 @@ Node* Node::addChild(std::unique_ptr<Node> child) {
     return ptr;
 }
 
+Behaviour* Node::addBehaviour(std::unique_ptr<Behaviour> behaviour) {
+    behaviour->node_ = this;
+    Behaviour* ptr = behaviour.get();
+    behaviours_.push_back(std::move(behaviour));
+    return ptr;
+}
+
 bool Node::removeChild(Node* child) {
     if (!child) return false;
     for (auto it = children_.begin(); it != children_.end(); ++it) {

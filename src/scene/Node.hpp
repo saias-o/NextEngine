@@ -60,12 +60,15 @@ public:
     template <typename T, typename... Args>
     T* addBehaviour(Args&&... args) {
         static_assert(std::is_base_of_v<Behaviour, T>, "T must derive from Behaviour");
-        auto behaviour = std::make_unique<T>(std::forward<Args>(args)...);
-        behaviour->node_ = this;
-        T* ptr = behaviour.get();
-        behaviours_.push_back(std::move(behaviour));
-        return ptr;
+        return static_cast<T*>(addBehaviour(std::make_unique<T>(std::forward<Args>(args)...)));
     }
+
+    // Attach an already-constructed behaviour (e.g. from the BehaviourRegistry
+    // during deserialization); returns it (borrowed).
+    Behaviour* addBehaviour(std::unique_ptr<Behaviour> behaviour);
+
+    // Remove all children (and, transitively, their subtrees).
+    void clearChildren() { children_.clear(); }
 
     // Run behaviour lifecycle (onReady once, then onUpdate) on this node and,
     // recursively, all descendants.

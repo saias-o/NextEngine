@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 
 namespace ne {
 
@@ -27,7 +28,7 @@ using SceneSetup = std::function<void(Scene&, ResourceManager&)>;
 // device_ outlives the GPU resources that reference it during destruction.
 class Engine {
 public:
-    explicit Engine(SceneSetup sceneSetup);
+    explicit Engine(SceneSetup sceneSetup, const std::string& initialProject = "");
     ~Engine();
     Engine(const Engine&) = delete;
     Engine& operator=(const Engine&) = delete;

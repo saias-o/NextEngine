@@ -6,9 +6,12 @@
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Texture.hpp"
 #include "scene/Behaviour.hpp"
+#include "scene/BehaviourRegistry.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/Scene.hpp"
+
+#include "nlohmann/json.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -49,26 +52,41 @@ const std::vector<uint32_t> kCubeIndices = {
 };
 
 // Sample behaviour: continuously spins its node around an axis. Children inherit
-// the rotation through the transform hierarchy.
+// the rotation through the transform hierarchy. Serializable (registered below).
 class RotatorBehaviour : public Behaviour {
 public:
+    RotatorBehaviour() = default;  // for the registry factory
     RotatorBehaviour(glm::vec3 axis, float degreesPerSecond)
-        : axis_(glm::normalize(axis)), speed_(glm::radians(degreesPerSecond)) {}
+        : axis_(glm::normalize(axis)), degreesPerSecond_(degreesPerSecond) {}
 
     void onUpdate(float dt) override {
-        angle_ += dt * speed_;
+        angle_ += dt * glm::radians(degreesPerSecond_);
         node()->transform().rotation = glm::angleAxis(angle_, axis_);
     }
 
+    const char* typeName() const override { return "Rotator"; }
+    void save(nlohmann::json& j) const override {
+        j["axis"] = {axis_.x, axis_.y, axis_.z};
+        j["speed"] = degreesPerSecond_;
+    }
+    void load(const nlohmann::json& j) override {
+        if (auto it = j.find("axis"); it != j.end() && it->is_array() && it->size() == 3)
+            axis_ = glm::normalize(glm::vec3((*it)[0].get<float>(), (*it)[1].get<float>(), (*it)[2].get<float>()));
+        degreesPerSecond_ = j.value("speed", 0.0f);
+    }
+
 private:
-    glm::vec3 axis_;
-    float speed_;
+    glm::vec3 axis_{0.0f, 1.0f, 0.0f};
+    float degreesPerSecond_ = 0.0f;
     float angle_ = 0.0f;
 };
 
 } // namespace
 
 void buildDemoScene(Scene& scene, ResourceManager& resources) {
+    // Register the game's serializable behaviours so saved scenes round-trip.
+    BehaviourRegistry::instance().registerType<RotatorBehaviour>("Rotator");
+
     // Shared resources, loaded once and cached by the ResourceManager.
     // (To load the bugatti instead — untextured, no UVs — use:
     //  resources.loadMesh(assetPath("models/bugatti/bugatti.obj")).)
