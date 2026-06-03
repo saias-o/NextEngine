@@ -37,10 +37,10 @@ Dans l'ordre de valeur conseillé :
      `./run.sh` (`VK_LAYER_PATH` + `ucrt64/bin` en tête du PATH). Le moteur passe
      la validation sans erreur.
 
-2. **Couche jeu (étape 8)** — boucle update/render claire, `dt` fixe vs
-   variable, point d'entrée utilisateur pour écrire un jeu sans toucher l'Engine.
-   Inclut le **split moteur (lib) / jeu (exe)** : ne plus relier le moteur à
-   chaque changement de code de jeu.
+2. **Couche jeu (étape 8)** — ~~**split moteur (lib `ne_engine`) / jeu (exe)**~~
+   **[FAIT]** : le jeu (scène + behaviours) vit dans `game/` (exe), l'`Engine`
+   reçoit un `SceneSetup` ; itérer le jeu ne recompile plus le moteur. *Reste* :
+   sérialisation de scène (load/save), point d'entrée encore plus simple.
 
 3. **Scripting Lua (étape 8b)** — *décidé, différé* (voir « Décision scripting »
    dans `CLAUDE.md`). Lua vendu (source C, zéro DLL) + sol2 + `ScriptBehaviour`
@@ -165,7 +165,7 @@ Dans l'ordre de valeur conseillé :
 5. ~~Extraire `Renderer`~~ FAIT ; ~~`Input`/`Time`~~ FAIT ; `CameraNode` **différé**
    (l'éditeur introduit caméra-éditeur vs caméra-de-jeu : à décider avant de
    l'ajouter, sinon classe inutilisée). ← le reste de l'item 5
-6. Couche jeu + split moteur(lib)/jeu(exe) (étape 8).
+6. ~~Split moteur(lib)/jeu(exe)~~ FAIT ; reste : sérialisation de scène, couche jeu.
 7. Scripting Lua + `ScriptBehaviour` + hot-reload (étape 8b).
 8. PBR, ombres, baked GI.
 9. OpenXR (étape 9).

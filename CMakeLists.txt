@@ -34,9 +34,11 @@ endforeach()
 
 add_custom_target(Shaders DEPENDS ${SHADER_SPIRV})
 
-# Main executable
-add_executable(NextEngine
-    src/main.cpp
+# ── Engine library ──────────────────────────────────────────────────────────
+# Everything reusable lives here and compiles once. Game/editor executables
+# link it, so changing game code doesn't recompile the engine. The editor still
+# lives inside the lib for now (to be moved to an editor target later).
+add_library(ne_engine STATIC
     src/Engine.cpp
     src/core/Window.cpp
     src/core/Camera.cpp
@@ -68,30 +70,27 @@ add_executable(NextEngine
     third_party/imgui/backends/imgui_impl_glfw.cpp
     third_party/imgui/backends/imgui_impl_vulkan.cpp
 )
-target_include_directories(NextEngine PRIVATE
+
+# PUBLIC: propagated to anything linking the engine (the game/editor exe).
+target_include_directories(ne_engine PUBLIC
     src
     third_party/vma
     third_party/tinyobjloader
     third_party/stb
     third_party/imgui
 )
-target_link_libraries(NextEngine PRIVATE Vulkan::Vulkan glfw glm::glm)
+target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm)
 
-# Absolute paths baked at configure time so the exe runs from any cwd:
-# project root for source assets (models/, assets/), and the compiled shader dir.
-target_compile_definitions(NextEngine PRIVATE
+# Absolute paths baked at configure time so the exe runs from any cwd; and GLM
+# conventions (radians, Vulkan 0..1 depth) — PUBLIC so game code sees them too.
+target_compile_definitions(ne_engine PUBLIC
     NE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
-    NE_SHADER_DIR="${SHADER_OUT_DIR}")
-
-# GLM conventions applied consistently across every TU (radians; Vulkan's 0..1
-# depth range). Defined here, not per-.cpp, so headers including GLM never see
-# an inconsistent configuration.
-target_compile_definitions(NextEngine PRIVATE GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE)
+    NE_SHADER_DIR="${SHADER_OUT_DIR}"
+    GLM_FORCE_RADIANS
+    GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
 # Warnings for the engine's own sources (third-party TUs override this with -w).
-target_compile_options(NextEngine PRIVATE -Wall -Wextra)
-
-# Third-party implementation units; don't police their warnings.
+target_compile_options(ne_engine PRIVATE -Wall -Wextra)
 set_source_files_properties(
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
@@ -105,11 +104,21 @@ set_source_files_properties(
     third_party/imgui/backends/imgui_impl_vulkan.cpp
     PROPERTIES COMPILE_OPTIONS "-w")
 
-# Statically link the GCC/libstdc++ runtimes. Required here because this
-# MSYS2 toolchain's dynamic libstdc++ import library crashes the linker
-# (ld exit 116) on iostream/exception symbols; as a bonus it produces a
-# self-contained executable with no runtime DLL dependencies.
+# Statically link the GCC/libstdc++ runtimes. Required here because this MSYS2
+# toolchain's dynamic libstdc++ import library crashes the linker (ld exit 116)
+# on iostream/exception symbols; bonus: self-contained exe. PUBLIC so the link
+# options propagate to executables linking the engine.
 if (MINGW)
-    target_link_options(NextEngine PRIVATE -static -static-libgcc -static-libstdc++)
+    target_link_options(ne_engine PUBLIC -static -static-libgcc -static-libstdc++)
 endif()
+
+# ── Game executable ─────────────────────────────────────────────────────────
+# Thin target: the entry point plus the game's own scene/behaviours. Iterating
+# on the game only recompiles this, not the engine library.
+add_executable(NextEngine
+    src/main.cpp
+    src/game/DemoScene.cpp
+)
+target_link_libraries(NextEngine PRIVATE ne_engine)
+target_compile_options(NextEngine PRIVATE -Wall -Wextra)
 add_dependencies(NextEngine Shaders)

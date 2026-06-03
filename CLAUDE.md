@@ -80,6 +80,12 @@ par un dossier d'assets relatif à l'exe.)
 
 ## Architecture
 
+**Split lib/exe** : le moteur compile en bibliothèque statique `ne_engine`
+(tout `src/` sauf `main.cpp` + `game/`) ; l'exécutable `NextEngine` ne contient
+que `main.cpp` + le code de jeu (`game/`) et linke la lib. Conséquence : itérer
+le jeu ne recompile/relink que l'exe, jamais le moteur. (L'éditeur vit encore
+dans la lib — à déplacer dans un target éditeur dédié plus tard.)
+
 Tout est dans le namespace `ne`. Chaque classe possède ses handles Vulkan et
 les détruit (RAII), tout emprunte un `VulkanDevice&`, copies interdites.
 **L'ordre de déclaration des membres compte** (destruction en ordre inverse :
@@ -87,10 +93,15 @@ les détruit (RAII), tout emprunte un `VulkanDevice&`, copies interdites.
 
 ```
 src/
-  main.cpp              Point d'entrée minimal (try/catch).
+  main.cpp              Point d'entrée du jeu : crée Engine(buildDemoScene), run.
+  game/
+    DemoScene.{hpp,cpp} Contenu du *jeu* (cube, matériaux, lumières, behaviours
+                        de démo). Vit dans l'exe, pas dans la lib moteur → itérer
+                        le jeu ne recompile pas le moteur.
   Engine.{hpp,cpp}      Orchestration légère : possède les sous-systèmes, la
                         boucle (input, update de scène, UI, present délégué au
-                        Renderer), la caméra et la construction de la scène démo.
+                        Renderer), la caméra. Reçoit un `SceneSetup` (le jeu
+                        peuple la scène) — aucun contenu en dur dans le moteur.
   render/
     Renderer.{hpp,cpp}  Toute la machinerie de frame GPU : pipeline de scène,
                         set 0 (global), UBOs par-frame, command buffers, sync,
@@ -207,11 +218,13 @@ Le moteur est construit par étapes numérotées :
       - [x] **Dear ImGui** (`graphics/ImGuiLayer`, backends GLFW+Vulkan vendus) :
             panneau debug (FPS, caméra, réglage live des lumières). Toggle de
             capture du curseur (TAB) dans `Window` pour passer fly-cam ↔ UI.
-- [ ] **Étape 8 — Couche jeu.** Boucle de jeu (update/render séparés, delta
-      time fixe/variable), abstraction « scène » jouable, point d'entrée
-      utilisateur simple pour créer un jeu desktop. **Split moteur (bibliothèque)
-      / jeu (exécutable)** : le moteur compile une fois, le code de jeu est un
-      petit target — on ne relie plus le moteur à chaque changement de logique.
+- [~] **Étape 8 — Couche jeu.**
+      - [x] **Split moteur (lib `ne_engine`) / jeu (exe)** : le moteur compile
+            une fois, le jeu est un petit target. Le contenu de jeu (scène,
+            behaviours) vit dans `game/` (exe) ; l'`Engine` reçoit un `SceneSetup`.
+      - [ ] Boucle de jeu plus complète, sérialisation de scène (load/save),
+            point d'entrée utilisateur encore plus simple. (Un éditeur ImGui
+            existe déjà dans `editor/`, à brancher/déplacer plus tard.)
 - [ ] **Étape 8b — Scripting (Lua).** Voir « Décision scripting » ci-dessous.
       Différé : à faire une fois l'API moteur stable (après `Material`/
       `ResourceManager`), pour exposer une API propre aux scripts.

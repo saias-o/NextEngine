@@ -2,6 +2,7 @@
 
 #include "core/Camera.hpp"
 
+#include <functional>
 #include <memory>
 
 namespace ne {
@@ -11,11 +12,14 @@ class VulkanDevice;
 class Swapchain;
 class ResourceManager;
 class Scene;
-class LightNode;
 class ImGuiLayer;
 class Renderer;
 class EditorUI;
 class Project;
+
+// How a game populates the scene at startup. Provided by the executable (game
+// code), so the engine library has no built-in content.
+using SceneSetup = std::function<void(Scene&, ResourceManager&)>;
 
 // Top-level application object. Owns every subsystem and drives the main loop
 // (input, scene update, UI, present). Rendering is delegated to the Renderer;
@@ -23,7 +27,7 @@ class Project;
 // device_ outlives the GPU resources that reference it during destruction.
 class Engine {
 public:
-    Engine();
+    explicit Engine(SceneSetup sceneSetup);
     ~Engine();
     Engine(const Engine&) = delete;
     Engine& operator=(const Engine&) = delete;
@@ -31,7 +35,6 @@ public:
     void run();
 
 private:
-    void buildScene();
     void updateCursorCapture(bool isPlayMode);
     void processInput(float dt);
 
@@ -44,8 +47,6 @@ private:
     std::unique_ptr<Renderer> renderer_;
     std::unique_ptr<EditorUI> editorUI_;
     std::unique_ptr<Project> project_;
-    LightNode* sun_ = nullptr;
-    LightNode* lamp_ = nullptr;
 
     Camera camera_;
     bool wasPlayMode_ = false;  // edge-detect play-mode enter/exit for cursor
