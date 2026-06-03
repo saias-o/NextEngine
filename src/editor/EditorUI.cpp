@@ -3,6 +3,7 @@
 #include "core/Camera.hpp"
 #include "core/Paths.hpp"
 #include "core/Time.hpp"
+#include "editor/Command.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Texture.hpp"
 #include "project/Project.hpp"
@@ -10,6 +11,10 @@
 #include "scene/MeshNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
+#include "scene/SceneSerializer.hpp"
+#include "scene/SceneSettings.hpp"
+
+#include <memory>
 
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -193,6 +198,24 @@ void EditorUI::applyEditorStyle() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void EditorUI::draw(Scene* scene, Camera* camera, Project* project, ResourceManager* resources, float dt) {
+    ctxResources_ = resources;  // so deferred scene-tree ops can reach resources
+
+    // Keyboard shortcuts (skip while typing in a text field).
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.KeyCtrl && !io.WantTextInput) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Z) && history_.canUndo()) { history_.undo(); selectedNode_ = nullptr; }
+        if (ImGui::IsKeyPressed(ImGuiKey_Y) && history_.canRedo()) { history_.redo(); selectedNode_ = nullptr; }
+        if (ImGui::IsKeyPressed(ImGuiKey_C)) copySelected(resources);
+        if (ImGui::IsKeyPressed(ImGuiKey_V)) pasteClipboard(scene, resources);
+        if (ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelected(resources);
+        if (ImGui::IsKeyPressed(ImGuiKey_S)) {
+            std::string path = !currentScenePath_.empty() ? currentScenePath_
+                : ((project && project->isLoaded()) ? project->scenesDir() + "/main.scene"
+                                                     : std::string("scene.scene"));
+            saveScene(scene, resources, path);
+        }
+    }
+
     // Full-viewport dockspace with passthrough so the 3D render shows behind.
     // We use a fixed ID so the DockBuilder setup below targets the right node.
     ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -252,7 +275,7 @@ void EditorUI::draw(Scene* scene, Camera* camera, Project* project, ResourceMana
 
     ImGui::End();  // DockSpaceHost
 
-    drawMenuBar(project, scene);
+    drawMenuBar(project, scene, resources);
 
     if (showSceneTree_)   drawSceneTree(scene);
     if (showInspector_)   drawInspector();
@@ -270,10 +293,62 @@ void EditorUI::draw(Scene* scene, Camera* camera, Project* project, ResourceMana
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Scene update: serialization, clipboard, undo/redo helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+void EditorUI::saveScene(Scene* scene, ResourceManager* resources, const std::string& path) {
+    if (!scene || !resources) return;
+    if (SceneSerializer::saveToFile(*scene, *resources, path))
+        currentScenePath_ = path;
+}
+
+void EditorUI::loadScene(Scene* scene, ResourceManager* resources, const std::string& path) {
+    if (!scene || !resources) return;
+    if (SceneSerializer::loadIntoScene(*scene, *resources, path)) {
+        currentScenePath_ = path;
+        selectedNode_ = nullptr;
+        history_.clear();
+    }
+}
+
+void EditorUI::copySelected(ResourceManager* resources) {
+    if (selectedNode_ && resources)
+        clipboard_ = SceneSerializer::nodeToJson(*selectedNode_, *resources);
+}
+
+void EditorUI::pasteClipboard(Scene* scene, ResourceManager* resources) {
+    if (clipboard_.empty() || !resources) return;
+    Node* parent = selectedNode_ ? selectedNode_ : scene;
+    if (!parent) return;
+    if (auto node = SceneSerializer::nodeFromJson(clipboard_, *resources)) {
+        Node* added = node.get();
+        history_.execute(std::make_unique<AddNodeCommand>(parent, std::move(node)));
+        selectedNode_ = added;
+    }
+}
+
+void EditorUI::duplicateSelected(ResourceManager* resources) {
+    if (!selectedNode_ || !resources || !selectedNode_->parent()) return;
+    std::string json = SceneSerializer::nodeToJson(*selectedNode_, *resources);
+    if (auto node = SceneSerializer::nodeFromJson(json, *resources)) {
+        Node* added = node.get();
+        history_.execute(std::make_unique<AddNodeCommand>(selectedNode_->parent(), std::move(node)));
+        selectedNode_ = added;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Menu bar
 // ─────────────────────────────────────────────────────────────────────────────
 
-void EditorUI::drawMenuBar(Project* project, Scene* scene) {
+void EditorUI::drawMenuBar(Project* project, Scene* scene, ResourceManager* resources) {
+    // Resolve a default scene path (last used, else under the project / cwd).
+    auto resolveScenePath = [&]() -> std::string {
+        if (!currentScenePath_.empty()) return currentScenePath_;
+        if (project && project->isLoaded()) return project->scenesDir() + "/main.scene";
+        return "scene.scene";
+    };
+
     if (ImGui::BeginMainMenuBar()) {
         // ── 1. File Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("File")) {
@@ -295,11 +370,26 @@ void EditorUI::drawMenuBar(Project* project, Scene* scene) {
                 ImGui::TextDisabled("  (no project)");
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("New Scene"))        { /* TODO */ }
-            if (ImGui::MenuItem("Open Scene..."))    { /* TODO */ }
+            if (ImGui::MenuItem("New Scene")) {
+                if (scene) {
+                    scene->clearChildren();
+                    scene->createChild<Node>("Settings")->addBehaviour<SceneSettingsBehaviour>();
+                    selectedNode_ = nullptr;
+                    currentScenePath_.clear();
+                    history_.clear();
+                }
+            }
+            if (ImGui::MenuItem("Open Scene...")) {
+                loadScene(scene, resources, resolveScenePath());
+            }
             ImGui::Separator();
-            if (ImGui::MenuItem("Save Scene"))       { /* TODO */ }
-            if (ImGui::MenuItem("Save Scene As...")) { /* TODO */ }
+            if (ImGui::MenuItem("Save Scene")) {
+                saveScene(scene, resources, resolveScenePath());
+            }
+            if (ImGui::MenuItem("Save Scene As...")) {
+                // TODO: real file dialog; for now saves to the resolved path.
+                saveScene(scene, resources, resolveScenePath());
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Quit", "Esc"))      { quitRequested_ = true; }
             ImGui::EndMenu();
@@ -307,12 +397,22 @@ void EditorUI::drawMenuBar(Project* project, Scene* scene) {
 
         // ── 2. Edit Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("Edit")) {
-            if (ImGui::MenuItem("Undo", "Ctrl+Z"))   { /* TODO */ }
-            if (ImGui::MenuItem("Redo", "Ctrl+Y"))   { /* TODO */ }
+            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, history_.canUndo())) {
+                history_.undo(); selectedNode_ = nullptr;
+            }
+            if (ImGui::MenuItem("Redo", "Ctrl+Y", false, history_.canRedo())) {
+                history_.redo(); selectedNode_ = nullptr;
+            }
             ImGui::Separator();
-            if (ImGui::MenuItem("Copy", "Ctrl+C"))   { /* TODO */ }
-            if (ImGui::MenuItem("Paste", "Ctrl+V"))  { /* TODO */ }
-            if (ImGui::MenuItem("Duplicate", "Ctrl+D")) { /* TODO */ }
+            if (ImGui::MenuItem("Copy", "Ctrl+C", false, selectedNode_ != nullptr)) {
+                copySelected(resources);
+            }
+            if (ImGui::MenuItem("Paste", "Ctrl+V", false, !clipboard_.empty())) {
+                pasteClipboard(scene, resources);
+            }
+            if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, selectedNode_ != nullptr)) {
+                duplicateSelected(resources);
+            }
             ImGui::EndMenu();
         }
 
@@ -494,60 +594,55 @@ void EditorUI::drawSceneTree(Scene* scene) {
         ImGui::EndPopup();
     }
 
-    // Handle deferred creations/deletions after the recursion finishes to avoid iterator invalidation
+    // Handle deferred ops after the tree recursion (avoids iterator invalidation).
+    // All go through the command history so they're undoable.
     if (nodeToDelete_) {
-        Node* p = nodeToDelete_->parent();
-        if (p) {
-            if (selectedNode_ && (selectedNode_ == nodeToDelete_ || isDescendantOf(selectedNode_, nodeToDelete_))) {
+        if (nodeToDelete_->parent()) {
+            if (selectedNode_ && (selectedNode_ == nodeToDelete_ || isDescendantOf(selectedNode_, nodeToDelete_)))
                 selectedNode_ = nullptr;
-            }
-            p->removeChild(nodeToDelete_);
+            history_.execute(std::make_unique<DeleteNodeCommand>(nodeToDelete_));
         }
         nodeToDelete_ = nullptr;
     }
 
     if (nodeToReparent_ && newParent_) {
-        if (Node* oldParent = nodeToReparent_->parent()) {
-            std::unique_ptr<Node> detached = oldParent->detachChild(nodeToReparent_);
-            if (detached) {
-                newParent_->addChild(std::move(detached));
-            }
-        }
+        if (nodeToReparent_->parent() && !isDescendantOf(newParent_, nodeToReparent_))
+            history_.execute(std::make_unique<ReparentNodeCommand>(nodeToReparent_, newParent_));
         nodeToReparent_ = nullptr;
         newParent_ = nullptr;
     }
 
     if (nodeToCreateChildUnder_ && createType_ != 0) {
-        // Find default mesh/material in the scene
+        // Find a default mesh/material in the scene for new MeshNodes.
         Mesh* defaultMesh = nullptr;
         Material* defaultMaterial = nullptr;
         if (scene) {
             scene->traverse([&](Node& n, const glm::mat4&) {
-                if (auto* mn = dynamic_cast<MeshNode*>(&n)) {
-                    if (!defaultMesh) {
-                        defaultMesh = mn->mesh();
-                        defaultMaterial = mn->material();
-                    }
-                }
+                if (!defaultMesh && n.mesh()) { defaultMesh = n.mesh(); defaultMaterial = n.material(); }
             });
         }
 
+        std::unique_ptr<Node> newNode;
         if (createType_ == 1) {
-            nodeToCreateChildUnder_->createChild<Node>("Node");
+            newNode = std::make_unique<Node>("Node");
         } else if (createType_ == 2) {
-            nodeToCreateChildUnder_->createChild<MeshNode>("MeshNode", defaultMesh, defaultMaterial);
+            newNode = std::make_unique<MeshNode>("MeshNode", defaultMesh, defaultMaterial);
         } else if (createType_ == 3) {
-            nodeToCreateChildUnder_->createChild<LightNode>("Directional Light", LightType::Directional);
+            newNode = std::make_unique<LightNode>("Directional Light", LightType::Directional);
         } else if (createType_ == 4) {
-            nodeToCreateChildUnder_->createChild<LightNode>("Point Light", LightType::Point);
-        } else if (createType_ == 5) {
+            newNode = std::make_unique<LightNode>("Point Light", LightType::Point);
+        } else if (createType_ == 5 && ctxResources_) {
+            // Instantiate a .scene file as a subtree (the serializer loads it).
             std::filesystem::path p(draggedScenePath_);
-            // Crée un nœud conteneur avec le nom de la scène.
-            // À terme, le sérialiseur (Claude) chargera l'arbre depuis p.string() et l'attachera ici.
-            Node* instance = nodeToCreateChildUnder_->createChild<Node>(p.stem().string() + " (Scene)");
-            (void)instance; // évite l'avertissement unused variable
+            newNode = SceneSerializer::loadNodeFromSceneFile(draggedScenePath_, *ctxResources_);
+            if (newNode) newNode->setName(p.stem().string() + " (Scene)");
         }
 
+        if (newNode) {
+            Node* added = newNode.get();
+            history_.execute(std::make_unique<AddNodeCommand>(nodeToCreateChildUnder_, std::move(newNode)));
+            selectedNode_ = added;
+        }
         nodeToCreateChildUnder_ = nullptr;
         createType_ = 0;
     }
@@ -586,10 +681,12 @@ void EditorUI::drawSceneTreeNode(Node* node) {
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
         ImGui::SetKeyboardFocusHere();
         if (ImGui::InputText("##rename_node", nodeRenameBuf_, sizeof(nodeRenameBuf_), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
-            node->setName(nodeRenameBuf_);
+            if (node->name() != nodeRenameBuf_)
+                history_.execute(std::make_unique<RenameNodeCommand>(node, nodeRenameBuf_));
             nodeToRename_ = nullptr;
         } else if (ImGui::IsItemDeactivated() && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
-            node->setName(nodeRenameBuf_);
+            if (node->name() != nodeRenameBuf_)
+                history_.execute(std::make_unique<RenameNodeCommand>(node, nodeRenameBuf_));
             nodeToRename_ = nullptr;
         }
         ImGui::PopStyleVar();

@@ -145,6 +145,22 @@ std::unique_ptr<Node> SceneSerializer::nodeFromJson(const std::string& text,
     }
 }
 
+std::unique_ptr<Node> SceneSerializer::loadNodeFromSceneFile(const std::string& path,
+                                                             ResourceManager& resources) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        Log::error("loadNodeFromSceneFile: cannot open ", path);
+        return nullptr;
+    }
+    try {
+        json doc = json::parse(file);
+        return deserializeNode(doc.at("scene"), resources);
+    } catch (const std::exception& e) {
+        Log::error("loadNodeFromSceneFile: ", e.what());
+        return nullptr;
+    }
+}
+
 bool SceneSerializer::saveToFile(Node& sceneRoot, ResourceManager& resources,
                                  const std::string& path) {
     json doc;

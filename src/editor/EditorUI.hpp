@@ -1,5 +1,7 @@
 #pragma once
 
+#include "editor/CommandHistory.hpp"
+
 #include <string>
 #include <glm/glm.hpp>
 
@@ -44,8 +46,15 @@ public:
     }
 
 private:
-    void drawMenuBar(Project* project, Scene* scene);
+    void drawMenuBar(Project* project, Scene* scene, ResourceManager* resources);
     void drawSceneTree(Scene* scene);
+
+    // Scene update: serialization, clipboard and undo/redo.
+    void saveScene(Scene* scene, ResourceManager* resources, const std::string& path);
+    void loadScene(Scene* scene, ResourceManager* resources, const std::string& path);
+    void copySelected(ResourceManager* resources);
+    void pasteClipboard(Scene* scene, ResourceManager* resources);
+    void duplicateSelected(ResourceManager* resources);
     void drawSceneTreeNode(Node* node);
     void drawInspector();
     void drawFileBrowser(Project* project, ResourceManager* resources);
@@ -129,6 +138,12 @@ private:
 
     glm::vec2 viewportPos_{0.0f, 0.0f};
     glm::vec2 viewportSize_{0.0f, 0.0f};
+
+    // Scene update state.
+    CommandHistory history_;
+    std::string clipboard_;          // JSON of a copied node subtree
+    std::string currentScenePath_;   // last saved/opened .scene path
+    ResourceManager* ctxResources_ = nullptr;  // set each frame in draw()
 };
 
 } // namespace ne

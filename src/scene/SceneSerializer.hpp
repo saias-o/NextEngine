@@ -19,6 +19,11 @@ public:
 
     static std::string nodeToJson(Node& node, ResourceManager& resources);
     static std::unique_ptr<Node> nodeFromJson(const std::string& json, ResourceManager& resources);
+
+    // Load a .scene file as a single node subtree (for instancing a scene as a
+    // child of another). Returns nullptr on failure.
+    static std::unique_ptr<Node> loadNodeFromSceneFile(const std::string& path,
+                                                       ResourceManager& resources);
 };
 
 } // namespace ne

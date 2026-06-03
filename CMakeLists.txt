@@ -59,6 +59,7 @@ add_library(ne_engine STATIC
     src/graphics/ImGuiLayer.cpp
     src/render/Renderer.cpp
     src/editor/EditorUI.cpp
+    src/editor/CommandHistory.cpp
     src/project/Project.cpp
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp

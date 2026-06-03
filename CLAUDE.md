@@ -156,7 +156,14 @@ src/
                             bakeMode (Realtime/Baked/Mixed) pour le futur bake.
     Behaviour.hpp           Logique attachable à un Node (onReady/onUpdate),
                             façon MonoBehaviour/script Godot. Accède à node().
-    Scene.hpp               Scene : public Node — la scène EST le nœud racine.
+                            Hooks de sérialisation (typeName/save/load).
+    BehaviourRegistry.{hpp,cpp}  Nom de type → factory ; reconstruit les
+                            behaviours au chargement d'une scène.
+    SceneSerializer.{hpp,cpp}    Save/load de scène en JSON (nlohmann, vendu) :
+                            nœuds, transforms, lumières, mesh/material par clé,
+                            behaviours enregistrés. Aussi nœud↔JSON (copier/coller).
+    Scene.{hpp,cpp}         Scene : public Node — la scène EST le nœud racine
+                            (crée un nœud Settings avec SceneSettingsBehaviour).
   shaders/
     shader.vert / .frag     GLSL : transforme par UBO, échantillonne la texture.
 third_party/vma/             VMA vendu.
@@ -222,9 +229,15 @@ Le moteur est construit par étapes numérotées :
       - [x] **Split moteur (lib `ne_engine`) / jeu (exe)** : le moteur compile
             une fois, le jeu est un petit target. Le contenu de jeu (scène,
             behaviours) vit dans `game/` (exe) ; l'`Engine` reçoit un `SceneSetup`.
-      - [ ] Boucle de jeu plus complète, sérialisation de scène (load/save),
-            point d'entrée utilisateur encore plus simple. (Un éditeur ImGui
-            existe déjà dans `editor/`, à brancher/déplacer plus tard.)
+      - [x] **Sérialisation de scène** (JSON via nlohmann vendu) :
+            `SceneSerializer` save/load + nœud↔JSON. Behaviours sérialisables
+            via `BehaviourRegistry`. Round-trip vérifié (save→load→save identique).
+      - [x] **Undo/redo** éditeur (`editor/Command*` : command pattern +
+            `CommandHistory`) et branchement UI (menus File/Edit, copier/coller/
+            dupliquer, raccourcis Ctrl+Z/Y/C/V/D/S, ops scene-tree → commandes).
+      - [ ] Boucle de jeu plus complète, point d'entrée utilisateur encore plus
+            simple. (L'éditeur ImGui dans `editor/`, à déplacer dans un target
+            dédié plus tard.)
 - [ ] **Étape 8b — Scripting (Lua).** Voir « Décision scripting » ci-dessous.
       Différé : à faire une fois l'API moteur stable (après `Material`/
       `ResourceManager`), pour exposer une API propre aux scripts.
