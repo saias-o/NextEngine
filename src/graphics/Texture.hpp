@@ -1,6 +1,7 @@
 #pragma once
 
 #include "graphics/VmaFwd.hpp"
+#include <imgui.h>
 
 #include <string>
 
@@ -20,6 +21,8 @@ public:
     VkImageView imageView() const { return imageView_; }
     VkSampler sampler() const { return sampler_; }
 
+    ImTextureID getImGuiTextureID();
+
 private:
     void createSampler();
 
@@ -28,6 +31,7 @@ private:
     VmaAllocation allocation_ = VK_NULL_HANDLE;
     VkImageView imageView_ = VK_NULL_HANDLE;
     VkSampler sampler_ = VK_NULL_HANDLE;
+    ImTextureID imGuiTexId_ = 0;
 };
 
 } // namespace ne

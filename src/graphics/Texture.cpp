@@ -2,6 +2,8 @@
 
 #include "graphics/Buffer.hpp"
 #include "graphics/VulkanDevice.hpp"
+#include <backends/imgui_impl_vulkan.h>
+
 #include "stb_image.h"
 #include "vk_mem_alloc.h"
 
@@ -122,6 +124,14 @@ Texture::~Texture() {
     vkDestroySampler(device_.device(), sampler_, nullptr);
     vkDestroyImageView(device_.device(), imageView_, nullptr);
     vmaDestroyImage(device_.allocator(), image_, allocation_);
+}
+
+ImTextureID Texture::getImGuiTextureID() {
+    if (!imGuiTexId_) {
+        // We use VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL as this is how stb textures are transitioned
+        imGuiTexId_ = (ImTextureID)ImGui_ImplVulkan_AddTexture(sampler_, imageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+    return imGuiTexId_;
 }
 
 void Texture::createSampler() {

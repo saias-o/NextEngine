@@ -30,6 +30,7 @@ public:
     bool isLoaded() const { return loaded_; }
 
     const std::string& name() const { return name_; }
+    void setName(const std::string& name) { name_ = name; }
     const std::string& rootPath() const { return rootPath_; }     // project directory
     const std::string& filePath() const { return filePath_; }     // .neproj file
     const std::string& engineVersion() const { return engineVersion_; }

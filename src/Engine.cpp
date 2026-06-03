@@ -124,11 +124,12 @@ void Engine::run() {
         Time::update(realDt);  // sets scaled delta + elapsed
         Input::newFrame();     // single per-frame input snapshot
 
+        imgui_->beginFrame();
+
         processInput(realDt);              // editor camera: unscaled real time
         scene_->updateTree(Time::delta()); // behaviours: scaled time (pausable)
 
-        imgui_->beginFrame();
-        editorUI_->draw(scene_.get(), &camera_, project_.get(), realDt);
+        editorUI_->draw(scene_.get(), &camera_, project_.get(), resources_.get(), realDt);
         imgui_->endFrame();  // finalize draw data even if the frame is skipped (resize)
 
         renderer_->drawFrame(*scene_, camera_);
@@ -228,9 +229,31 @@ void Engine::processInput(float dt) {
     updateCursorCapture(editorUI_->isPlayMode());
 
     // When the cursor is free (UI mode), ImGui owns the mouse; don't fly.
-    // (Input::newFrame already consumed the mouse delta, so it can't pile up.)
-    if (!window_->cursorCaptured())
+    // However, if the user interacts with the 3D viewport (central node, WantCaptureMouse=false),
+    // allow panning (Middle Mouse Drag) and zooming (Mouse Wheel).
+    if (!window_->cursorCaptured()) {
+        ImGuiIO& io = ImGui::GetIO();
+        bool inViewport = editorUI_ && editorUI_->isViewportHovered(Input::mousePosition().x, Input::mousePosition().y);
+        
+        // Allow viewport navigation if explicitly hovering the 3D viewport,
+        // or if ImGui isn't capturing the mouse at all.
+        if (inViewport || !io.WantCaptureMouse) {
+            // Panning: Middle Mouse Drag
+            if (Input::mouseButtonDown(GLFW_MOUSE_BUTTON_MIDDLE)) {
+                glm::vec2 d = Input::mouseDelta();
+                float panSpeed = 0.01f;
+                // Move camera opposite to mouse movement to drag the scene
+                camera_.position -= camera_.right() * d.x * panSpeed;
+                camera_.position += camera_.up() * d.y * panSpeed; // Screen Y is down
+            }
+            // Zooming: Mouse Wheel
+            if (io.MouseWheel != 0.0f) {
+                float zoomSpeed = 2.0f; // Increased for better feel
+                camera_.position += camera_.front() * io.MouseWheel * zoomSpeed;
+            }
+        }
         return;
+    }
 
     // Mouse look.
     constexpr float sensitivity = 0.1f;

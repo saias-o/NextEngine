@@ -35,6 +35,19 @@ bool Node::removeChild(Node* child) {
     return false;
 }
 
+std::unique_ptr<Node> Node::detachChild(Node* child) {
+    if (!child) return nullptr;
+    for (auto it = children_.begin(); it != children_.end(); ++it) {
+        if (it->get() == child) {
+            std::unique_ptr<Node> detached = std::move(*it);
+            children_.erase(it);
+            detached->parent_ = nullptr;
+            return detached;
+        }
+    }
+    return nullptr;
+}
+
 void Node::updateTree(float dt) {
     for (auto& behaviour : behaviours_) {
         if (!behaviour->ready_) {

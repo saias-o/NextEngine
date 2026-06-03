@@ -42,6 +42,8 @@ add_executable(NextEngine
     src/core/Camera.cpp
     src/core/Input.cpp
     src/scene/Node.cpp
+    src/scene/Scene.cpp
+    src/scene/SceneSettings.cpp
     src/graphics/VulkanDevice.cpp
     src/graphics/Swapchain.cpp
     src/graphics/Buffer.cpp

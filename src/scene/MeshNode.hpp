@@ -21,9 +21,17 @@ public:
     Mesh* mesh() const override { return mesh_; }
     Material* material() const override { return material_; }
 
+    bool& castShadows() { return castShadows_; }
+    bool castShadows() const { return castShadows_; }
+
+    bool& includeInLightBaking() { return includeInLightBaking_; }
+    bool includeInLightBaking() const { return includeInLightBaking_; }
+
 private:
     Mesh* mesh_;
     Material* material_;
+    bool castShadows_ = true;
+    bool includeInLightBaking_ = false;
 };
 
 } // namespace ne

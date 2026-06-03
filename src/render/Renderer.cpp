@@ -13,6 +13,7 @@
 #include "scene/LightNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
+#include "scene/SceneSettings.hpp"
 
 #include <array>
 #include <stdexcept>
@@ -176,7 +177,13 @@ void Renderer::createSyncObjects() {
 }
 
 void Renderer::gatherLights(LightingUBO& ubo, Scene& scene, const Camera& camera) {
-    ubo.ambient = glm::vec4(0.04f, 0.04f, 0.05f, 0.0f);
+    SceneSettingsBehaviour* settings = scene.getActiveSettings();
+    if (settings) {
+        ubo.ambient = settings->ambientLight;
+    } else {
+        ubo.ambient = glm::vec4(0.04f, 0.04f, 0.05f, 0.0f);
+    }
+    
     ubo.cameraPos = glm::vec4(camera.position, 1.0f);
     ubo.dirDirection = glm::vec4(0.0f, -1.0f, 0.0f, 0.0f);  // intensity 0 = no dir light yet
     ubo.dirColor = glm::vec4(0.0f);
@@ -220,8 +227,11 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS)
         throw std::runtime_error("failed to begin recording command buffer");
 
+    SceneSettingsBehaviour* settings = scene.getActiveSettings();
+    glm::vec4 clearColor = settings ? settings->clearColor : glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
+
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.1f, 0.1f, 0.1f, 1.0f}};
+    clearValues[0].color = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
     clearValues[1].depthStencil = {1.0f, 0};
 
     VkExtent2D extent = swapchain_.extent();

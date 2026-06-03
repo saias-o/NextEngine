@@ -2,6 +2,9 @@
 
 #include "core/Camera.hpp"
 #include "core/Paths.hpp"
+#include "core/Time.hpp"
+#include "graphics/ResourceManager.hpp"
+#include "graphics/Texture.hpp"
 #include "project/Project.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
@@ -88,6 +91,11 @@ EditorUI::EditorUI() {
     std::strncpy(newProjectPath_, NE_PROJECT_ROOT, sizeof(newProjectPath_) - 1);
     newProjectPath_[sizeof(newProjectPath_) - 1] = '\0';
     openBrowsePath_ = std::string(NE_PROJECT_ROOT);
+}
+
+void EditorUI::setPlayMode(bool play) {
+    playMode_ = play;
+    Time::setScale(play ? 1.0f : 0.0f);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,7 +192,7 @@ void EditorUI::applyEditorStyle() {
 // Main draw entry point
 // ─────────────────────────────────────────────────────────────────────────────
 
-void EditorUI::draw(Scene* scene, Camera* camera, Project* project, float dt) {
+void EditorUI::draw(Scene* scene, Camera* camera, Project* project, ResourceManager* resources, float dt) {
     // Full-viewport dockspace with passthrough so the 3D render shows behind.
     // We use a fixed ID so the DockBuilder setup below targets the right node.
     ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -199,8 +207,7 @@ void EditorUI::draw(Scene* scene, Camera* camera, Project* project, float dt) {
                                | ImGuiWindowFlags_NoBringToFrontOnFocus
                                | ImGuiWindowFlags_NoNavFocus
                                | ImGuiWindowFlags_NoDocking
-                               | ImGuiWindowFlags_NoBackground
-                               | ImGuiWindowFlags_MenuBar;
+                               | ImGuiWindowFlags_NoBackground;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -238,13 +245,18 @@ void EditorUI::draw(Scene* scene, Camera* camera, Project* project, float dt) {
         ImGui::DockBuilderFinish(dockspaceId);
     }
 
+    if (ImGuiDockNode* centralNode = ImGui::DockBuilderGetCentralNode(dockspaceId)) {
+        viewportPos_ = glm::vec2(centralNode->Pos.x, centralNode->Pos.y);
+        viewportSize_ = glm::vec2(centralNode->Size.x, centralNode->Size.y);
+    }
+
     ImGui::End();  // DockSpaceHost
 
     drawMenuBar(project, scene);
 
     if (showSceneTree_)   drawSceneTree(scene);
     if (showInspector_)   drawInspector();
-    if (showFileBrowser_) drawFileBrowser(project);
+    if (showFileBrowser_) drawFileBrowser(project, resources);
 
     drawViewportOverlay(camera, dt);
     drawGizmo(camera, scene);
@@ -252,6 +264,7 @@ void EditorUI::draw(Scene* scene, Camera* camera, Project* project, float dt) {
     // Modal dialogs.
     drawAboutWindow();
     drawBuildWindow(project);
+    drawSettingsWindow(project);
     drawNewProjectDialog(project);
     drawOpenProjectDialog(project);
 }
@@ -262,13 +275,13 @@ void EditorUI::draw(Scene* scene, Camera* camera, Project* project, float dt) {
 
 void EditorUI::drawMenuBar(Project* project, Scene* scene) {
     if (ImGui::BeginMainMenuBar()) {
-        if (ImGui::BeginMenu("Project")) {
+        // ── 1. File Menu ──────────────────────────────────────────────
+        if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Project...")) {
                 showNewProjectDialog_ = true;
             }
             if (ImGui::MenuItem("Open Project...")) {
                 showOpenProjectDialog_ = true;
-                // Reset browse path to a reasonable starting location.
                 openBrowsePath_ = std::string(NE_PROJECT_ROOT);
             }
             bool hasProject = project && project->isLoaded();
@@ -277,13 +290,11 @@ void EditorUI::drawMenuBar(Project* project, Scene* scene) {
             }
             ImGui::Separator();
             if (hasProject) {
-                ImGui::TextDisabled("  %s", project->name().c_str());
+                ImGui::TextDisabled("  Project: %s", project->name().c_str());
             } else {
                 ImGui::TextDisabled("  (no project)");
             }
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("File")) {
+            ImGui::Separator();
             if (ImGui::MenuItem("New Scene"))        { /* TODO */ }
             if (ImGui::MenuItem("Open Scene..."))    { /* TODO */ }
             ImGui::Separator();
@@ -293,17 +304,29 @@ void EditorUI::drawMenuBar(Project* project, Scene* scene) {
             if (ImGui::MenuItem("Quit", "Esc"))      { quitRequested_ = true; }
             ImGui::EndMenu();
         }
+
+        // ── 2. Edit Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("Edit")) {
             if (ImGui::MenuItem("Undo", "Ctrl+Z"))   { /* TODO */ }
             if (ImGui::MenuItem("Redo", "Ctrl+Y"))   { /* TODO */ }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Copy", "Ctrl+C"))   { /* TODO */ }
+            if (ImGui::MenuItem("Paste", "Ctrl+V"))  { /* TODO */ }
+            if (ImGui::MenuItem("Duplicate", "Ctrl+D")) { /* TODO */ }
             ImGui::EndMenu();
         }
+
+        // ── 3. View Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("View")) {
-            ImGui::MenuItem("Scene Tree",   nullptr, &showSceneTree_);
-            ImGui::MenuItem("Inspector",    nullptr, &showInspector_);
-            ImGui::MenuItem("File Browser", nullptr, &showFileBrowser_);
+            ImGui::MenuItem("Scene Tree",       nullptr, &showSceneTree_);
+            ImGui::MenuItem("Inspector",        nullptr, &showInspector_);
+            ImGui::MenuItem("File Browser",     nullptr, &showFileBrowser_);
+            ImGui::Separator();
+            ImGui::MenuItem("Viewport Overlay", nullptr, &showViewportOverlay_);
             ImGui::EndMenu();
         }
+
+        // ── 4. Scene Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("Scene")) {
             Node* parentNode = selectedNode_ ? selectedNode_ : scene;
             bool hasParent = parentNode != nullptr;
@@ -311,17 +334,23 @@ void EditorUI::drawMenuBar(Project* project, Scene* scene) {
                 nodeToCreateChildUnder_ = parentNode;
                 createType_ = 1;
             }
-            if (ImGui::MenuItem("Add MeshNode (Cube)", nullptr, false, hasParent)) {
-                nodeToCreateChildUnder_ = parentNode;
-                createType_ = 2;
+            if (ImGui::BeginMenu("Create 3D Object", hasParent)) {
+                if (ImGui::MenuItem("Cube")) {
+                    nodeToCreateChildUnder_ = parentNode;
+                    createType_ = 2;
+                }
+                ImGui::EndMenu();
             }
-            if (ImGui::MenuItem("Add Directional Light", nullptr, false, hasParent)) {
-                nodeToCreateChildUnder_ = parentNode;
-                createType_ = 3;
-            }
-            if (ImGui::MenuItem("Add Point Light", nullptr, false, hasParent)) {
-                nodeToCreateChildUnder_ = parentNode;
-                createType_ = 4;
+            if (ImGui::BeginMenu("Create Light", hasParent)) {
+                if (ImGui::MenuItem("Directional Light")) {
+                    nodeToCreateChildUnder_ = parentNode;
+                    createType_ = 3;
+                }
+                if (ImGui::MenuItem("Point Light")) {
+                    nodeToCreateChildUnder_ = parentNode;
+                    createType_ = 4;
+                }
+                ImGui::EndMenu();
             }
             ImGui::Separator();
             bool canDelete = selectedNode_ != nullptr && selectedNode_->parent() != nullptr;
@@ -330,12 +359,29 @@ void EditorUI::drawMenuBar(Project* project, Scene* scene) {
             }
             ImGui::EndMenu();
         }
+
+        // ── 5. Settings Menu ───────────────────────────────────────────
+        if (ImGui::BeginMenu("Settings")) {
+            bool hasProject = project && project->isLoaded();
+            if (ImGui::MenuItem("Settings", nullptr, false, hasProject)) {
+                showSettingsWindow_ = true;
+            }
+            ImGui::EndMenu();
+        }
+
+        // ── 6. Build Menu ─────────────────────────────────────────────
         if (ImGui::BeginMenu("Build")) {
+            if (ImGui::MenuItem("Build")) {
+                // Same action as the build button
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("Build Settings...", "Ctrl+Shift+B")) {
                 showBuildWindow_ = true;
             }
             ImGui::EndMenu();
         }
+
+        // ── 7. Help Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("Help")) {
             if (ImGui::MenuItem("About NextEngine")) {
                 showAboutWindow_ = true;
@@ -354,7 +400,7 @@ void EditorUI::drawMenuBar(Project* project, Scene* scene) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.29f, 0.56f, 0.85f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.62f, 0.90f, 1.0f));
             }
-            if (ImGui::SmallButton("Scene##mode")) { playMode_ = false; }
+            if (ImGui::SmallButton("Scene##mode")) { setPlayMode(false); }
             if (sceneActive) ImGui::PopStyleColor(2);
 
             ImGui::SameLine();
@@ -364,12 +410,38 @@ void EditorUI::drawMenuBar(Project* project, Scene* scene) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.70f, 0.35f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.78f, 0.40f, 1.0f));
             }
-            if (ImGui::SmallButton("Play##mode")) { playMode_ = true; }
+            if (ImGui::SmallButton("Play##mode")) { setPlayMode(true); }
             if (playActive) ImGui::PopStyleColor(2);
         }
 
         ImGui::EndMainMenuBar();
     }
+}
+
+static std::string toLower(const std::string& str) {
+    std::string lower = str;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c){ return std::tolower(c); });
+    return lower;
+}
+
+static bool nodeMatchesSearch(Node* node, const std::string& query) {
+    if (query.empty()) return true;
+    
+    std::string nameLower = toLower(node->name());
+    
+    std::string typeLower = "node";
+    if (dynamic_cast<MeshNode*>(node)) typeLower = "meshnode";
+    else if (dynamic_cast<LightNode*>(node)) typeLower = "lightnode";
+    else if (dynamic_cast<Scene*>(node)) typeLower = "scene";
+
+    if (nameLower.find(query) != std::string::npos || typeLower.find(query) != std::string::npos) {
+        return true;
+    }
+    
+    for (auto& child : node->children()) {
+        if (nodeMatchesSearch(child.get(), query)) return true;
+    }
+    return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -378,6 +450,11 @@ void EditorUI::drawMenuBar(Project* project, Scene* scene) {
 
 void EditorUI::drawSceneTree(Scene* scene) {
     ImGui::Begin("Scene Tree", &showSceneTree_);
+
+    ImGui::PushItemWidth(-1);
+    ImGui::InputTextWithHint("##SceneTreeSearch", "Search by name or type...", sceneTreeSearchBuf_, sizeof(sceneTreeSearchBuf_));
+    ImGui::PopItemWidth();
+    ImGui::Separator();
 
     if (scene) {
         drawSceneTreeNode(scene);
@@ -429,6 +506,17 @@ void EditorUI::drawSceneTree(Scene* scene) {
         nodeToDelete_ = nullptr;
     }
 
+    if (nodeToReparent_ && newParent_) {
+        if (Node* oldParent = nodeToReparent_->parent()) {
+            std::unique_ptr<Node> detached = oldParent->detachChild(nodeToReparent_);
+            if (detached) {
+                newParent_->addChild(std::move(detached));
+            }
+        }
+        nodeToReparent_ = nullptr;
+        newParent_ = nullptr;
+    }
+
     if (nodeToCreateChildUnder_ && createType_ != 0) {
         // Find default mesh/material in the scene
         Mesh* defaultMesh = nullptr;
@@ -452,6 +540,12 @@ void EditorUI::drawSceneTree(Scene* scene) {
             nodeToCreateChildUnder_->createChild<LightNode>("Directional Light", LightType::Directional);
         } else if (createType_ == 4) {
             nodeToCreateChildUnder_->createChild<LightNode>("Point Light", LightType::Point);
+        } else if (createType_ == 5) {
+            std::filesystem::path p(draggedScenePath_);
+            // Crée un nœud conteneur avec le nom de la scène.
+            // À terme, le sérialiseur (Claude) chargera l'arbre depuis p.string() et l'attachera ici.
+            Node* instance = nodeToCreateChildUnder_->createChild<Node>(p.stem().string() + " (Scene)");
+            (void)instance; // évite l'avertissement unused variable
         }
 
         nodeToCreateChildUnder_ = nullptr;
@@ -462,6 +556,11 @@ void EditorUI::drawSceneTree(Scene* scene) {
 }
 
 void EditorUI::drawSceneTreeNode(Node* node) {
+    std::string query = toLower(sceneTreeSearchBuf_);
+    if (!nodeMatchesSearch(node, query)) {
+        return; // Filter out this node and its children
+    }
+
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow
                              | ImGuiTreeNodeFlags_OpenOnDoubleClick
                              | ImGuiTreeNodeFlags_SpanAvailWidth;
@@ -471,11 +570,54 @@ void EditorUI::drawSceneTreeNode(Node* node) {
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     if (node == selectedNode_)
         flags |= ImGuiTreeNodeFlags_Selected;
-    if (!node->parent())
+    
+    // Auto-expand if searching or if it's the root node
+    if (!node->parent() || !query.empty())
         flags |= ImGuiTreeNodeFlags_DefaultOpen;
 
     const char* icon = nodeTypeIcon(node);
-    bool open = ImGui::TreeNodeEx(reinterpret_cast<void*>(node), flags, "%s %s", icon, node->name().c_str());
+    bool open = false;
+
+    if (nodeToRename_ == node) {
+        // Draw the node hierarchy properly but with an input text over it
+        open = ImGui::TreeNodeEx(reinterpret_cast<void*>(node), flags, "%s", icon);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+        ImGui::SetKeyboardFocusHere();
+        if (ImGui::InputText("##rename_node", nodeRenameBuf_, sizeof(nodeRenameBuf_), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
+            node->setName(nodeRenameBuf_);
+            nodeToRename_ = nullptr;
+        } else if (ImGui::IsItemDeactivated() && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+            node->setName(nodeRenameBuf_);
+            nodeToRename_ = nullptr;
+        }
+        ImGui::PopStyleVar();
+    } else {
+        open = ImGui::TreeNodeEx(reinterpret_cast<void*>(node), flags, "%s %s", icon, node->name().c_str());
+    }
+
+    if (ImGui::BeginDragDropSource()) {
+        ImGui::SetDragDropPayload("SCENE_NODE", &node, sizeof(Node*));
+        ImGui::Text("Move %s", node->name().c_str());
+        ImGui::EndDragDropSource();
+    }
+
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("SCENE_NODE")) {
+            Node* draggedNode = *(Node**)payload->Data;
+            if (draggedNode != node && draggedNode->parent() != node && !isDescendantOf(node, draggedNode)) {
+                nodeToReparent_ = draggedNode;
+                newParent_ = node;
+            }
+        }
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_SCENE")) {
+            nodeToCreateChildUnder_ = node;
+            createType_ = 5;
+            draggedScenePath_ = (const char*)payload->Data;
+        }
+        ImGui::EndDragDropTarget();
+    }
 
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
         selectedNode_ = node;
@@ -483,6 +625,13 @@ void EditorUI::drawSceneTreeNode(Node* node) {
     // Right-click context menu on individual node
     if (ImGui::BeginPopupContextItem()) {
         selectedNode_ = node; // Select on right-click
+
+        if (ImGui::MenuItem("Rename")) {
+            nodeToRename_ = node;
+            std::strncpy(nodeRenameBuf_, node->name().c_str(), sizeof(nodeRenameBuf_) - 1);
+            nodeRenameBuf_[sizeof(nodeRenameBuf_) - 1] = '\0';
+        }
+        ImGui::Separator();
 
         if (ImGui::BeginMenu("Create Child")) {
             if (ImGui::MenuItem("Node")) {
@@ -556,11 +705,15 @@ void EditorUI::drawInspector() {
     }
 
     // ── MeshNode ─────────────────────────────────────────────────────────
-    if (node->mesh()) {
+    if (auto* meshNode = dynamic_cast<MeshNode*>(node)) {
         ImGui::SeparatorText("Mesh");
         ImGui::Text("Mesh: (assigned)");
-        if (node->material())
+        if (meshNode->material())
             ImGui::Text("Material: (assigned)");
+            
+        ImGui::Spacing();
+        ImGui::Checkbox("Cast Shadows", &meshNode->castShadows());
+        ImGui::Checkbox("Include to light baking", &meshNode->includeInLightBaking());
     }
 
     // ── LightNode ────────────────────────────────────────────────────────
@@ -580,7 +733,11 @@ void EditorUI::drawInspector() {
     // ── Behaviours ───────────────────────────────────────────────────────
     if (node->hasBehaviours()) {
         ImGui::SeparatorText("Behaviours");
-        ImGui::Text("%d behaviour(s) attached", node->behaviourCount());
+        for (const auto& b : node->behaviours()) {
+            ImGui::PushID(b.get());
+            b->onDrawInspector();
+            ImGui::PopID();
+        }
     }
 
     ImGui::End();
@@ -590,7 +747,7 @@ void EditorUI::drawInspector() {
 // File Browser — shows the contents of the loaded project
 // ─────────────────────────────────────────────────────────────────────────────
 
-void EditorUI::drawFileBrowser(Project* project) {
+void EditorUI::drawFileBrowser(Project* project, ResourceManager* resources) {
     ImGui::Begin("File Browser", &showFileBrowser_);
 
     if (!project || !project->isLoaded()) {
@@ -611,43 +768,83 @@ void EditorUI::drawFileBrowser(Project* project) {
 
     fs::path browsePath(currentBrowsePath_);
 
-    // ── Header: project name + relative path ─────────────────────────────
-    ImGui::TextColored(ImVec4(0.29f, 0.56f, 0.85f, 1.0f), "%s", project->name().c_str());
-    ImGui::SameLine();
+    // ── Header: Breadcrumb Navigation ─────────────────────────────
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    
+    // Project root button
+    if (ImGui::Button(project->name().c_str())) {
+        currentBrowsePath_ = root.string();
+    }
 
-    // Show the path relative to the project root.
-    std::string relPath = fs::relative(browsePath, root).string();
-    if (relPath == ".") relPath = "/";
-    else relPath = "/" + relPath;
-    ImGui::TextDisabled("%s", relPath.c_str());
-
-    ImGui::Separator();
-
-    // ".." to go up (if we're not at the project root).
     if (browsePath != root) {
-        if (ImGui::Selectable("[D] ..", false, ImGuiSelectableFlags_None)) {
-            fs::path parent = browsePath.parent_path();
-            // Don't navigate above the project root.
-            if (parent.string().find(root.string()) != std::string::npos)
-                currentBrowsePath_ = parent.string();
-            else
-                currentBrowsePath_ = root.string();
+        std::vector<fs::path> components;
+        fs::path p = browsePath;
+        // Collect path components up to root
+        while (p != root && !p.empty() && p.string().find(root.string()) != std::string::npos) {
+            components.push_back(p);
+            p = p.parent_path();
+        }
+        std::reverse(components.begin(), components.end());
+
+        for (const auto& comp : components) {
+            ImGui::SameLine(0.0f, 4.0f);
+            ImGui::TextDisabled(">");
+            ImGui::SameLine(0.0f, 4.0f);
+            if (ImGui::Button(comp.filename().string().c_str())) {
+                currentBrowsePath_ = comp.string();
+            }
         }
     }
+    ImGui::PopStyleColor();
+
+    ImGui::SameLine(ImGui::GetWindowWidth() - 360.0f);
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::InputTextWithHint("##FileSearch", "Search files...", fileBrowserSearchBuf_, sizeof(fileBrowserSearchBuf_));
+
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(100.0f);
+    ImGui::SliderFloat("##Zoom", &fileBrowserZoom_, 0.5f, 3.0f, "Zoom %.1f");
+
+    if (ImGui::IsWindowHovered()) {
+        float scroll = ImGui::GetIO().MouseWheel;
+        if (scroll != 0.0f && ImGui::GetIO().KeyCtrl) {
+            fileBrowserZoom_ += scroll * 0.15f; // Faster zoom with scroll
+            fileBrowserZoom_ = std::clamp(fileBrowserZoom_, 0.5f, 3.0f);
+        }
+    }
+
+    ImGui::Separator();
 
     // ── List entries ─────────────────────────────────────────────────────
     try {
         std::vector<fs::directory_entry> dirs;
         std::vector<fs::directory_entry> files;
-        for (auto& entry : fs::directory_iterator(browsePath)) {
-            auto name = entry.path().filename().string();
-            if (name.empty() || name[0] == '.') continue;
-            if (name == "build") continue;
+        std::string query = toLower(fileBrowserSearchBuf_);
 
-            if (entry.is_directory())
-                dirs.push_back(entry);
-            else
-                files.push_back(entry);
+        if (query.empty()) {
+            for (auto& entry : fs::directory_iterator(browsePath)) {
+                auto name = entry.path().filename().string();
+                if (name.empty() || name[0] == '.') continue;
+                if (name == "build") continue;
+
+                if (entry.is_directory()) dirs.push_back(entry);
+                else files.push_back(entry);
+            }
+        } else {
+            // Recursive search when a query is entered
+            for (auto& entry : fs::recursive_directory_iterator(project->rootPath())) {
+                auto name = entry.path().filename().string();
+                if (name.empty() || name[0] == '.') continue;
+                if (name == "build") continue;
+
+                std::string nameLower = toLower(name);
+                std::string extLower = toLower(entry.path().extension().string());
+                
+                if (nameLower.find(query) != std::string::npos || extLower.find(query) != std::string::npos) {
+                    if (entry.is_directory()) dirs.push_back(entry);
+                    else files.push_back(entry);
+                }
+            }
         }
 
         auto cmp = [](const fs::directory_entry& a, const fs::directory_entry& b) {
@@ -656,26 +853,142 @@ void EditorUI::drawFileBrowser(Project* project) {
         std::sort(dirs.begin(), dirs.end(), cmp);
         std::sort(files.begin(), files.end(), cmp);
 
+        bool useGrid = fileBrowserZoom_ > 1.0f;
+        float iconSize = 64.0f * fileBrowserZoom_;
+        float cellSize = iconSize + 20.0f;
+
+        if (useGrid) {
+            float panelWidth = ImGui::GetContentRegionAvail().x;
+            int columnCount = std::max(1, static_cast<int>(panelWidth / cellSize));
+            ImGui::Columns(columnCount, nullptr, false);
+        }
+
+        std::string pathToDelete_;
+
+        auto drawItemContextMenu = [&](const std::string& pathStr, const std::string& filename) {
+            if (ImGui::BeginPopupContextItem()) {
+                if (ImGui::MenuItem("Rename")) {
+                    fileToRename_ = pathStr;
+                    std::strncpy(fileRenameBuf_, filename.c_str(), sizeof(fileRenameBuf_) - 1);
+                    fileRenameBuf_[sizeof(fileRenameBuf_) - 1] = '\0';
+                }
+                if (ImGui::MenuItem("Delete")) {
+                    pathToDelete_ = pathStr;
+                }
+                ImGui::EndPopup();
+            }
+        };
+
+        auto handleInlineRename = [&](const std::string& pathStr, float width) {
+            if (fileToRename_ == pathStr) {
+                ImGui::SetNextItemWidth(width);
+                ImGui::SetKeyboardFocusHere();
+                if (ImGui::InputText(("##rename_" + pathStr).c_str(), fileRenameBuf_, sizeof(fileRenameBuf_), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
+                    try { fs::rename(fileToRename_, fs::path(fileToRename_).parent_path() / fileRenameBuf_); } catch(...) {}
+                    fileToRename_.clear();
+                } else if (ImGui::IsItemDeactivated() && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+                    try { fs::rename(fileToRename_, fs::path(fileToRename_).parent_path() / fileRenameBuf_); } catch(...) {}
+                    fileToRename_.clear();
+                }
+                return true;
+            }
+            return false;
+        };
+
         char buffer[256];
         for (auto& d : dirs) {
-            std::snprintf(buffer, sizeof(buffer), "[D] %s", d.path().filename().string().c_str());
-            if (ImGui::Selectable(buffer, false, ImGuiSelectableFlags_AllowDoubleClick)) {
-                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-                    currentBrowsePath_ = d.path().string();
+            std::string pathStr = d.path().string();
+            std::string filename = d.path().filename().string();
+            if (useGrid) {
+                ImGui::BeginGroup();
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
+                ImGui::Button(("[DIR]\n" + filename).c_str(), ImVec2(iconSize, iconSize));
+                ImGui::PopStyleColor();
+                drawItemContextMenu(pathStr, filename);
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                    currentBrowsePath_ = pathStr;
+                
+                if (!handleInlineRename(pathStr, iconSize)) {
+                    ImGui::TextWrapped("%s", filename.c_str());
+                }
+                ImGui::EndGroup();
+                ImGui::NextColumn();
+            } else {
+                if (!handleInlineRename(pathStr, -1.0f)) {
+                    std::snprintf(buffer, sizeof(buffer), "[D] %s", filename.c_str());
+                    if (ImGui::Selectable(buffer, false, ImGuiSelectableFlags_AllowDoubleClick)) {
+                        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                            currentBrowsePath_ = pathStr;
+                    }
+                    drawItemContextMenu(pathStr, filename);
+                }
             }
         }
         for (auto& f : files) {
-            std::snprintf(buffer, sizeof(buffer), "%s %s", fileIcon(f), f.path().filename().string().c_str());
-            ImGui::Selectable(buffer);
-            if (ImGui::IsItemHovered()) {
-                auto sz = f.file_size();
-                if (sz < 1024)
-                    ImGui::SetTooltip("%llu bytes", static_cast<unsigned long long>(sz));
-                else if (sz < 1024 * 1024)
-                    ImGui::SetTooltip("%.1f KB", sz / 1024.0);
-                else
-                    ImGui::SetTooltip("%.1f MB", sz / (1024.0 * 1024.0));
+            std::string pathStr = f.path().string();
+            std::string filename = f.path().filename().string();
+            auto ext = f.path().extension().string();
+            
+            if (useGrid) {
+                ImGui::BeginGroup();
+                
+                if (ext == ".png" || ext == ".jpg" || ext == ".bmp") {
+                    Texture* tex = resources->loadTexture(f.path().string());
+                    if (tex && tex->getImGuiTextureID()) {
+                        ImGui::Image(tex->getImGuiTextureID(), ImVec2(iconSize, iconSize));
+                    } else {
+                        ImGui::Button("[IMG]", ImVec2(iconSize, iconSize));
+                    }
+                } else if (ext == ".scene") {
+                    ImGui::Button("[SCENE]", ImVec2(iconSize, iconSize));
+                } else if (ext == ".wav" || ext == ".mp3" || ext == ".ogg") {
+                    ImGui::Button("[AUDIO]", ImVec2(iconSize, iconSize));
+                } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf") {
+                    ImGui::Button("[3D]", ImVec2(iconSize, iconSize));
+                } else {
+                    ImGui::Button("[FILE]", ImVec2(iconSize, iconSize));
+                }
+
+                if (ext == ".scene") {
+                    if (ImGui::BeginDragDropSource()) {
+                        ImGui::SetDragDropPayload("FILE_SCENE", pathStr.c_str(), pathStr.size() + 1);
+                        ImGui::Text("Instantiate %s", filename.c_str());
+                        ImGui::EndDragDropSource();
+                    }
+                }
+
+                drawItemContextMenu(pathStr, filename);
+
+                if (!handleInlineRename(pathStr, iconSize)) {
+                    ImGui::TextWrapped("%s", filename.c_str());
+                }
+                ImGui::EndGroup();
+                ImGui::NextColumn();
+            } else {
+                if (!handleInlineRename(pathStr, -1.0f)) {
+                    std::snprintf(buffer, sizeof(buffer), "%s %s", fileIcon(f), filename.c_str());
+                    ImGui::Selectable(buffer);
+                    drawItemContextMenu(pathStr, filename);
+
+                }
+                
+                // Drag source for .scene files in list mode
+                if (ext == ".scene") {
+                    if (ImGui::BeginDragDropSource()) {
+                        ImGui::SetDragDropPayload("FILE_SCENE", pathStr.c_str(), pathStr.size() + 1);
+                        ImGui::Text("Instantiate %s", filename.c_str());
+                        ImGui::EndDragDropSource();
+                    }
+                }
             }
+        }
+        
+        if (!pathToDelete_.empty()) {
+            try { fs::remove_all(pathToDelete_); } catch (...) {}
+        }
+
+        if (useGrid) {
+            ImGui::Columns(1);
         }
     } catch (const fs::filesystem_error&) {
         ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "Error reading directory");
@@ -689,6 +1002,7 @@ void EditorUI::drawFileBrowser(Project* project) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void EditorUI::drawViewportOverlay(Camera* camera, float dt) {
+    if (!showViewportOverlay_) return;
     (void)dt;
 
     ImGuiWindowFlags overlayFlags = ImGuiWindowFlags_NoDecoration
@@ -699,8 +1013,8 @@ void EditorUI::drawViewportOverlay(Camera* camera, float dt) {
                                   | ImGuiWindowFlags_NoNav
                                   | ImGuiWindowFlags_NoMove;
 
-    ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImVec2 pos(vp->WorkPos.x + vp->WorkSize.x * 0.5f - 80.0f, vp->WorkPos.y + 8.0f);
+    // Place overlay on the top left of the central viewport area
+    ImVec2 pos(viewportPos_.x + 16.0f, viewportPos_.y + 16.0f);
     ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.60f);
 
@@ -719,6 +1033,30 @@ void EditorUI::drawViewportOverlay(Camera* camera, float dt) {
         ImGui::TextDisabled("TAB: toggle cursor");
     }
     ImGui::End();
+
+    // Toolbar on the left, centered vertically in the viewport
+    ImVec2 toolbarPos(viewportPos_.x + 16.0f, viewportPos_.y + viewportSize_.y * 0.5f - 60.0f);
+    ImGui::SetNextWindowPos(toolbarPos, ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.60f);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f, 4.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 4.0f));
+    if (ImGui::Begin("##Toolbar", nullptr, overlayFlags)) {
+        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.290f, 0.565f, 0.851f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.350f, 0.620f, 0.900f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.250f, 0.500f, 0.800f, 1.0f));
+        
+        if (ImGui::Selectable(" T ", gizmoMode_ == 0, 0, ImVec2(24, 24))) gizmoMode_ = 0;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Translate (T)");
+        if (ImGui::Selectable(" R ", gizmoMode_ == 1, 0, ImVec2(24, 24))) gizmoMode_ = 1;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rotate (R)");
+        if (ImGui::Selectable(" S ", gizmoMode_ == 2, 0, ImVec2(24, 24))) gizmoMode_ = 2;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scale (S)");
+        
+        ImGui::PopStyleColor(3);
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(2);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1103,6 +1441,13 @@ float distanceToSegment(const glm::vec2& p, const glm::vec2& a, const glm::vec2&
 }
 
 void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
+    // Handle hotkeys for gizmo mode
+    if (!ImGui::GetIO().WantTextInput) {
+        if (ImGui::IsKeyPressed(ImGuiKey_T)) gizmoMode_ = 0;
+        if (ImGui::IsKeyPressed(ImGuiKey_R)) gizmoMode_ = 1;
+        if (ImGui::IsKeyPressed(ImGuiKey_S)) gizmoMode_ = 2;
+    }
+
     // 1. Gizmo is only active in SCENE mode and when both camera and scene are valid
     if (playMode_ || !camera || !scene) {
         grabbedAxis_ = -1;
@@ -1187,6 +1532,8 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
     if (isMouseClicked && hoveredAxis != -1 && grabbedAxis_ == -1 && hasGizmo) {
         grabbedAxis_ = hoveredAxis;
         dragStartNodePos_ = nodePos;
+        dragStartNodeRotEuler_ = quatToEulerDeg(selectedNode_->transform().rotation);
+        dragStartNodeScale_ = selectedNode_->transform().scale;
         dragStartMousePos_ = mousePos;
     }
 
@@ -1202,12 +1549,27 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
                 float screenProj = glm::dot(mouseDelta, u);
                 float worldDelta = screenProj * (worldLength / len2D);
 
-                glm::vec3 newPos = dragStartNodePos_;
-                if (axis == 0) newPos.x += worldDelta;
-                else if (axis == 1) newPos.y += worldDelta;
-                else if (axis == 2) newPos.z += worldDelta;
-
-                selectedNode_->transform().position = newPos;
+                if (gizmoMode_ == 0) { // Translate
+                    glm::vec3 newPos = dragStartNodePos_;
+                    if (axis == 0) newPos.x += worldDelta;
+                    else if (axis == 1) newPos.y += worldDelta;
+                    else if (axis == 2) newPos.z += worldDelta;
+                    selectedNode_->transform().position = newPos;
+                } else if (gizmoMode_ == 1) { // Rotate
+                    glm::vec3 newRot = dragStartNodeRotEuler_;
+                    float rotDelta = screenProj * 50.0f; // Scale mouse delta to angle
+                    if (axis == 0) newRot.x -= rotDelta; // Usually right moves negative on X? Adjust by feel
+                    else if (axis == 1) newRot.y -= rotDelta;
+                    else if (axis == 2) newRot.z -= rotDelta;
+                    selectedNode_->transform().rotation = eulerDegToQuat(newRot);
+                } else if (gizmoMode_ == 2) { // Scale
+                    glm::vec3 newScale = dragStartNodeScale_;
+                    float scaleDelta = screenProj * (worldLength / len2D) * 0.5f;
+                    if (axis == 0) newScale.x += scaleDelta;
+                    else if (axis == 1) newScale.y += scaleDelta;
+                    else if (axis == 2) newScale.z += scaleDelta;
+                    selectedNode_->transform().scale = newScale;
+                }
             }
         }
     } else {
@@ -1312,24 +1674,34 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
             thickness
         );
 
-        // Draw filled arrow head (triangle)
-        glm::vec2 dir = ends2D[i] - center2D;
-        float dLen = glm::length(dir);
-        if (dLen > 1.0f) {
-            dir = dir / dLen;
-            glm::vec2 perp = glm::vec2(-dir.y, dir.x);
+        // Draw shape at the end based on gizmo mode
+        if (gizmoMode_ == 0) {
+            // Translate: Triangle arrow head
+            glm::vec2 dir = ends2D[i] - center2D;
+            float dLen = glm::length(dir);
+            if (dLen > 1.0f) {
+                dir = dir / dLen;
+                glm::vec2 perp = glm::vec2(-dir.y, dir.x);
 
-            float headLen = isHovered ? 14.0f : 11.0f;
-            float headWidth = isHovered ? 7.0f : 5.5f;
+                float headLen = isHovered ? 14.0f : 11.0f;
+                float headWidth = isHovered ? 7.0f : 5.5f;
 
-            glm::vec2 p0 = ends2D[i] + dir * headLen;
-            glm::vec2 p1 = ends2D[i] - dir * headLen + perp * headWidth;
-            glm::vec2 p2 = ends2D[i] - dir * headLen - perp * headWidth;
+                glm::vec2 p0 = ends2D[i] + dir * headLen;
+                glm::vec2 p1 = ends2D[i] - dir * headLen + perp * headWidth;
+                glm::vec2 p2 = ends2D[i] - dir * headLen - perp * headWidth;
 
-            drawList->AddTriangleFilled(
-                ImVec2(p0.x, p0.y),
-                ImVec2(p1.x, p1.y),
-                ImVec2(p2.x, p2.y),
+                drawList->AddTriangleFilled(ImVec2(p0.x, p0.y), ImVec2(p1.x, p1.y), ImVec2(p2.x, p2.y), col);
+            }
+        } else if (gizmoMode_ == 1) {
+            // Rotate: Circle
+            float radius = isHovered ? 8.0f : 6.0f;
+            drawList->AddCircleFilled(ImVec2(ends2D[i].x, ends2D[i].y), radius, col);
+        } else if (gizmoMode_ == 2) {
+            // Scale: Box
+            float halfSize = isHovered ? 6.0f : 4.5f;
+            drawList->AddRectFilled(
+                ImVec2(ends2D[i].x - halfSize, ends2D[i].y - halfSize),
+                ImVec2(ends2D[i].x + halfSize, ends2D[i].y + halfSize),
                 col
             );
         }
@@ -1348,6 +1720,78 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
         0,
         1.0f
     );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings
+// ─────────────────────────────────────────────────────────────────────────────
+
+void EditorUI::drawSettingsWindow(Project* project) {
+    if (!showSettingsWindow_) return;
+
+    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Settings", &showSettingsWindow_)) {
+        if (!project || !project->isLoaded()) {
+            ImGui::TextDisabled("No project loaded.");
+            ImGui::End();
+            return;
+        }
+
+        if (ImGui::BeginTabBar("SettingsTabs")) {
+            
+            if (ImGui::BeginTabItem("General")) {
+                ImGui::Spacing();
+                char nameBuf[128];
+                strncpy(nameBuf, project->name().c_str(), sizeof(nameBuf));
+                if (ImGui::InputText("Project Name", nameBuf, sizeof(nameBuf))) {
+                    project->setName(nameBuf);
+                }
+                
+                ImGui::SeparatorText("Metadata");
+                ImGui::TextDisabled("Version: 1.0.0");
+                ImGui::TextDisabled("Company Name: DefaultCompany");
+
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Rendering")) {
+                ImGui::Spacing();
+                ImGui::SeparatorText("Global Quality");
+                
+                static int shadowResolution = 1;
+                const char* shadowResNames[] = { "Low (512)", "Medium (1024)", "High (2048)", "Ultra (4096)" };
+                ImGui::Combo("Shadow Resolution", &shadowResolution, shadowResNames, 4);
+
+                static int msaa = 0;
+                const char* msaaNames[] = { "Off", "2x MSAA", "4x MSAA", "8x MSAA" };
+                ImGui::Combo("Anti-aliasing", &msaa, msaaNames, 4);
+
+                static bool vsync = true;
+                ImGui::Checkbox("V-Sync", &vsync);
+                
+                ImGui::Spacing();
+                ImGui::TextDisabled("(Note: These settings will be wired to the Vulkan backend later)");
+
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Editor")) {
+                ImGui::Spacing();
+                ImGui::SeparatorText("Preferences");
+                
+                static bool autoSave = true;
+                ImGui::Checkbox("Auto-save Project", &autoSave);
+
+                static float gizmoSize = 1.0f;
+                ImGui::SliderFloat("Gizmo Size", &gizmoSize, 0.1f, 3.0f);
+
+                ImGui::EndTabItem();
+            }
+
+            ImGui::EndTabBar();
+        }
+    }
+    ImGui::End();
 }
 
 } // namespace ne

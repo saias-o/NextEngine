@@ -42,6 +42,10 @@ public:
     // Find the unique_ptr for `child` in our children_ vector, erase it (which deletes it), and return true.
     bool removeChild(Node* child);
 
+    // Detach a child from this node and return ownership. Returns nullptr if not a child.
+    std::unique_ptr<Node> detachChild(Node* child);
+
+
     // Convenience: construct a child of type T in place and return it.
     template <typename T, typename... Args>
     T* createChild(Args&&... args) {
@@ -72,6 +76,7 @@ public:
     glm::mat4 localMatrix() const { return transform_.matrix(); }
 
     const std::string& name() const { return name_; }
+    void setName(const std::string& name) { name_ = name; }
     Node* parent() const { return parent_; }
     const std::vector<std::unique_ptr<Node>>& children() const { return children_; }
 
@@ -94,6 +99,17 @@ public:
     // Behaviour queries (used by the editor inspector).
     bool hasBehaviours() const { return !behaviours_.empty(); }
     int behaviourCount() const { return static_cast<int>(behaviours_.size()); }
+    const std::vector<std::unique_ptr<Behaviour>>& behaviours() const { return behaviours_; }
+
+    template<typename T>
+    T* getBehaviour() const {
+        for (auto& b : behaviours_) {
+            if (auto* ptr = dynamic_cast<T*>(b.get())) {
+                return ptr;
+            }
+        }
+        return nullptr;
+    }
 
 protected:
     std::string name_;

@@ -11,9 +11,9 @@ class Node;
 class Behaviour {
 public:
     virtual ~Behaviour() = default;
-
     virtual void onReady() {}
     virtual void onUpdate(float /*dt*/) {}
+    virtual void onDrawInspector() {}
 
     Node* node() const { return node_; }
 
