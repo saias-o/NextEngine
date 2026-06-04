@@ -1,12 +1,15 @@
 #include "graphics/ResourceManager.hpp"
 
+#include "core/Log.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/Mesh.hpp"
+#include "graphics/Primitives.hpp"
 #include "graphics/Texture.hpp"
 #include "graphics/VulkanDevice.hpp"
 
 #include <array>
 #include <stdexcept>
+#include <string>
 
 namespace ne {
 
@@ -68,26 +71,38 @@ void ResourceManager::createMaterialPool() {
         throw std::runtime_error("failed to create material descriptor pool");
 }
 
+Mesh* ResourceManager::createMesh(const std::string& id, const std::vector<Vertex>& vertices,
+                                  const std::vector<uint32_t>& indices) {
+    auto mesh = std::make_unique<Mesh>(device_, vertices, indices);
+    Mesh* ptr = mesh.get();
+    meshes_.emplace(id, std::move(mesh));
+    reverseMeshMap_[ptr] = id;
+    return ptr;
+}
+
 Mesh* ResourceManager::loadMesh(const std::string& path) {
     if (auto it = meshes_.find(path); it != meshes_.end())
         return it->second.get();
     auto mesh = Mesh::fromObjFile(device_, path);
     Mesh* ptr = mesh.get();
     meshes_.emplace(path, std::move(mesh));
+    reverseMeshMap_[ptr] = path;
     return ptr;
 }
 
-Mesh* ResourceManager::createMesh(const std::string& key, const std::vector<Vertex>& vertices,
-                                  const std::vector<uint32_t>& indices) {
-    if (auto it = meshes_.find(key); it != meshes_.end())
+Mesh* ResourceManager::getMesh(const std::string& id) {
+    if (auto it = meshes_.find(id); it != meshes_.end())
         return it->second.get();
-    auto mesh = std::make_unique<Mesh>(device_, vertices, indices);
-    Mesh* ptr = mesh.get();
-    meshes_.emplace(key, std::move(mesh));
-    return ptr;
+    if (id == "builtin:cube")
+        return createMesh(id, cubeVertices(), cubeIndices());
+    if (id.rfind("builtin:", 0) == 0) {
+        Log::warn("getMesh: unknown built-in primitive '", id, "'");
+        return nullptr;
+    }
+    return loadMesh(id);  // treat as an .obj file path
 }
 
-Texture* ResourceManager::loadTexture(const std::string& path) {
+Texture* ResourceManager::getTexture(const std::string& path) {
     if (auto it = textures_.find(path); it != textures_.end())
         return it->second.get();
     auto texture = std::make_unique<Texture>(device_, path);
@@ -96,37 +111,24 @@ Texture* ResourceManager::loadTexture(const std::string& path) {
     return ptr;
 }
 
-Material* ResourceManager::createMaterial(const std::string& key, Texture* texture,
-                                          const glm::vec4& baseColor) {
+Material* ResourceManager::getMaterial(const std::string& texturePath, const glm::vec4& baseColor) {
+    // Content-addressed cache key: texture path + base color.
+    std::string key = texturePath + "#" + std::to_string(baseColor.r) + "," +
+        std::to_string(baseColor.g) + "," + std::to_string(baseColor.b) + "," +
+        std::to_string(baseColor.a);
     if (auto it = materials_.find(key); it != materials_.end())
         return it->second.get();
+
     auto material = std::make_unique<Material>(device_, materialSetLayout_, materialPool_,
-                                               texture, baseColor);
+                                               getTexture(texturePath), texturePath, baseColor);
     Material* ptr = material.get();
     materials_.emplace(key, std::move(material));
     return ptr;
 }
 
-Mesh* ResourceManager::mesh(const std::string& key) const {
-    auto it = meshes_.find(key);
-    return it != meshes_.end() ? it->second.get() : nullptr;
-}
-
-Material* ResourceManager::material(const std::string& key) const {
-    auto it = materials_.find(key);
-    return it != materials_.end() ? it->second.get() : nullptr;
-}
-
-std::string ResourceManager::meshKey(const Mesh* mesh) const {
-    for (auto& [key, ptr] : meshes_)
-        if (ptr.get() == mesh) return key;
-    return {};
-}
-
-std::string ResourceManager::materialKey(const Material* material) const {
-    for (auto& [key, ptr] : materials_)
-        if (ptr.get() == material) return key;
-    return {};
+std::string ResourceManager::meshId(const Mesh* mesh) const {
+    auto it = reverseMeshMap_.find(mesh);
+    return it != reverseMeshMap_.end() ? it->second : "";
 }
 
 } // namespace ne

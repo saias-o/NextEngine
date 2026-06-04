@@ -1,6 +1,7 @@
 #include "scene/SceneSerializer.hpp"
 
 #include "core/Log.hpp"
+#include "graphics/Material.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "scene/Behaviour.hpp"
 #include "scene/BehaviourRegistry.hpp"
@@ -34,7 +35,15 @@ glm::vec4 jsonToVec4(const json& j, const glm::vec4& fallback = glm::vec4(0.0f))
 // ── Node -> JSON ─────────────────────────────────────────────────────────────
 json serializeNode(Node& node, ResourceManager& resources) {
     json j;
-    if (LightNode* light = node.asLight()) {
+    if (Scene* scene = dynamic_cast<Scene*>(&node)) {
+        j["type"] = "Scene";
+        const auto& s = scene->settings();
+        j["settings"] = {
+            {"ambient", vec3ToJson(s.ambientLight)},
+            {"clearColor", vec3ToJson(s.clearColor)},
+            {"postProcessing", s.enablePostProcessing}
+        };
+    } else if (LightNode* light = node.asLight()) {
         j["type"] = "LightNode";
         j["lightType"] = static_cast<int>(light->type);
         j["color"] = vec3ToJson(light->color);
@@ -44,8 +53,12 @@ json serializeNode(Node& node, ResourceManager& resources) {
         j["bakeMode"] = static_cast<int>(light->bakeMode);
     } else if (node.mesh()) {
         j["type"] = "MeshNode";
-        j["mesh"] = resources.meshKey(node.mesh());
-        j["material"] = resources.materialKey(node.material());
+        j["mesh"] = resources.meshId(node.mesh());
+        if (Material* mat = node.material()) {
+            j["texture"] = mat->texturePath();
+            j["baseColor"] = {mat->baseColor().r, mat->baseColor().g,
+                              mat->baseColor().b, mat->baseColor().a};
+        }
     } else {
         j["type"] = "Node";
     }
@@ -84,7 +97,15 @@ std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources)
     const std::string name = j.value("name", "Node");
 
     std::unique_ptr<Node> node;
-    if (type == "LightNode") {
+    if (type == "Scene") {
+        auto scene = std::make_unique<Scene>();
+        if (auto it = j.find("settings"); it != j.end()) {
+            scene->settings().ambientLight = glm::vec4(jsonToVec3(it->value("ambient", json())), 0.0f);
+            scene->settings().clearColor = glm::vec4(jsonToVec3(it->value("clearColor", json())), 1.0f);
+            scene->settings().enablePostProcessing = it->value("postProcessing", true);
+        }
+        node = std::move(scene);
+    } else if (type == "LightNode") {
         auto light = std::make_unique<LightNode>(name,
             static_cast<LightType>(j.value("lightType", 0)));
         light->color = jsonToVec3(j.value("color", json()), glm::vec3(1.0f));
@@ -94,8 +115,12 @@ std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources)
         light->bakeMode = static_cast<LightBakeMode>(j.value("bakeMode", 0));
         node = std::move(light);
     } else if (type == "MeshNode") {
-        Mesh* mesh = resources.mesh(j.value("mesh", std::string{}));
-        Material* material = resources.material(j.value("material", std::string{}));
+        Mesh* mesh = resources.getMesh(j.value("mesh", std::string{}));
+        Material* material = nullptr;
+        if (auto it = j.find("texture"); it != j.end()) {
+            glm::vec4 color = jsonToVec4(j.value("baseColor", json()), glm::vec4(1.0f));
+            material = resources.getMaterial(it->get<std::string>(), color);
+        }
         node = std::make_unique<MeshNode>(name, mesh, material);
     } else {
         node = std::make_unique<Node>(name);
@@ -190,9 +215,34 @@ bool SceneSerializer::loadIntoScene(Scene& scene, ResourceManager& resources,
         const json& root = doc.at("scene");
 
         scene.clearChildren();
-        if (auto it = root.find("children"); it != root.end() && it->is_array())
-            for (const json& cj : *it)
+        
+        // Load native scene settings (if new format)
+        if (auto it = root.find("settings"); it != root.end()) {
+            scene.settings().ambientLight = glm::vec4(jsonToVec3(it->value("ambient", json())), 0.0f);
+            scene.settings().clearColor = glm::vec4(jsonToVec3(it->value("clearColor", json())), 1.0f);
+            scene.settings().enablePostProcessing = it->value("postProcessing", true);
+        } else {
+            scene.settings() = SceneSettings{}; // Reset to defaults if missing
+        }
+
+        if (auto it = root.find("children"); it != root.end() && it->is_array()) {
+            for (const json& cj : *it) {
+                // Backwards compatibility for old SceneSettingsBehaviour
+                if (cj.value("name", "") == "Settings") {
+                    if (auto bit = cj.find("behaviours"); bit != cj.end() && bit->is_array()) {
+                        for (const json& bj : *bit) {
+                            if (bj.value("type", "") == "SceneSettings") {
+                                scene.settings().ambientLight = glm::vec4(jsonToVec3(bj.value("ambient", json())), 0.0f);
+                                scene.settings().clearColor = glm::vec4(jsonToVec3(bj.value("clearColor", json())), 1.0f);
+                                scene.settings().enablePostProcessing = bj.value("postProcessing", true);
+                            }
+                        }
+                    }
+                    continue; // Skip creating the legacy node
+                }
                 scene.addChild(deserializeNode(cj, resources));
+            }
+        }
 
         Log::info("loaded scene from ", path);
         return true;

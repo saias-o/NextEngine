@@ -45,13 +45,13 @@ add_library(ne_engine STATIC
     src/core/Input.cpp
     src/scene/Node.cpp
     src/scene/Scene.cpp
-    src/scene/SceneSettings.cpp
     src/scene/SceneSerializer.cpp
     src/scene/BehaviourRegistry.cpp
     src/graphics/VulkanDevice.cpp
     src/graphics/Swapchain.cpp
     src/graphics/Buffer.cpp
     src/graphics/Mesh.cpp
+    src/graphics/Primitives.cpp
     src/graphics/Pipeline.cpp
     src/graphics/Texture.cpp
     src/graphics/Material.cpp

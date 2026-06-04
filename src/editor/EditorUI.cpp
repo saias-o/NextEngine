@@ -12,7 +12,6 @@
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SceneSerializer.hpp"
-#include "scene/SceneSettings.hpp"
 
 #include <memory>
 
@@ -209,10 +208,7 @@ void EditorUI::draw(Scene* scene, Camera* camera, Project* project, ResourceMana
         if (ImGui::IsKeyPressed(ImGuiKey_V)) pasteClipboard(scene, resources);
         if (ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelected(resources);
         if (ImGui::IsKeyPressed(ImGuiKey_S)) {
-            std::string path = !currentScenePath_.empty() ? currentScenePath_
-                : ((project && project->isLoaded()) ? project->scenesDir() + "/main.scene"
-                                                     : std::string("scene.scene"));
-            saveScene(scene, resources, path);
+            saveScene(scene, resources, resolveScenePath(project));
         }
     }
 
@@ -279,7 +275,7 @@ void EditorUI::draw(Scene* scene, Camera* camera, Project* project, ResourceMana
 
     if (showSceneTree_)   drawSceneTree(scene);
     if (showInspector_)   drawInspector();
-    if (showFileBrowser_) drawFileBrowser(project, resources);
+    if (showFileBrowser_) drawFileBrowser(project, scene, resources);
 
     drawViewportOverlay(camera, dt);
     drawGizmo(camera, scene);
@@ -290,6 +286,7 @@ void EditorUI::draw(Scene* scene, Camera* camera, Project* project, ResourceMana
     drawSettingsWindow(project);
     drawNewProjectDialog(project);
     drawOpenProjectDialog(project);
+    drawSaveSceneAsDialog(project, scene, resources);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -342,13 +339,6 @@ void EditorUI::duplicateSelected(ResourceManager* resources) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void EditorUI::drawMenuBar(Project* project, Scene* scene, ResourceManager* resources) {
-    // Resolve a default scene path (last used, else under the project / cwd).
-    auto resolveScenePath = [&]() -> std::string {
-        if (!currentScenePath_.empty()) return currentScenePath_;
-        if (project && project->isLoaded()) return project->scenesDir() + "/main.scene";
-        return "scene.scene";
-    };
-
     if (ImGui::BeginMainMenuBar()) {
         // ── 1. File Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("File")) {
@@ -373,22 +363,29 @@ void EditorUI::drawMenuBar(Project* project, Scene* scene, ResourceManager* reso
             if (ImGui::MenuItem("New Scene")) {
                 if (scene) {
                     scene->clearChildren();
-                    scene->createChild<Node>("Settings")->addBehaviour<SceneSettingsBehaviour>();
                     selectedNode_ = nullptr;
                     currentScenePath_.clear();
                     history_.clear();
                 }
             }
+            if (ImGui::MenuItem("Reload Scene", "F5")) {
+                loadScene(scene, resources, resolveScenePath(project));
+            }
             if (ImGui::MenuItem("Open Scene...")) {
-                loadScene(scene, resources, resolveScenePath());
+                loadScene(scene, resources, resolveScenePath(project));
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Save Scene")) {
-                saveScene(scene, resources, resolveScenePath());
+            if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
+                saveScene(scene, resources, resolveScenePath(project));
             }
             if (ImGui::MenuItem("Save Scene As...")) {
-                // TODO: real file dialog; for now saves to the resolved path.
-                saveScene(scene, resources, resolveScenePath());
+                showSaveSceneAsDialog_ = true;
+                std::string defaultName = "main.scene";
+                if (!currentScenePath_.empty()) {
+                    std::filesystem::path p(currentScenePath_);
+                    defaultName = p.filename().string();
+                }
+                strncpy(saveScenePathBuf_, defaultName.c_str(), sizeof(saveScenePathBuf_));
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Quit", "Esc"))      { quitRequested_ = true; }
@@ -432,23 +429,23 @@ void EditorUI::drawMenuBar(Project* project, Scene* scene, ResourceManager* reso
             bool hasParent = parentNode != nullptr;
             if (ImGui::MenuItem("Add Node", nullptr, false, hasParent)) {
                 nodeToCreateChildUnder_ = parentNode;
-                createType_ = 1;
+                createType_ = CreateNodeType::Node;
             }
             if (ImGui::BeginMenu("Create 3D Object", hasParent)) {
                 if (ImGui::MenuItem("Cube")) {
                     nodeToCreateChildUnder_ = parentNode;
-                    createType_ = 2;
+                    createType_ = CreateNodeType::MeshNode;
                 }
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Create Light", hasParent)) {
                 if (ImGui::MenuItem("Directional Light")) {
                     nodeToCreateChildUnder_ = parentNode;
-                    createType_ = 3;
+                    createType_ = CreateNodeType::DirectionalLight;
                 }
                 if (ImGui::MenuItem("Point Light")) {
                     nodeToCreateChildUnder_ = parentNode;
-                    createType_ = 4;
+                    createType_ = CreateNodeType::PointLight;
                 }
                 ImGui::EndMenu();
             }
@@ -471,8 +468,11 @@ void EditorUI::drawMenuBar(Project* project, Scene* scene, ResourceManager* reso
 
         // ── 6. Build Menu ─────────────────────────────────────────────
         if (ImGui::BeginMenu("Build")) {
-            if (ImGui::MenuItem("Build")) {
-                // Same action as the build button
+            if (ImGui::MenuItem("Build Project...")) {
+                if (project && project->isLoaded()) {
+                    saveScene(scene, resources, resolveScenePath(project));
+                    showBuildWindow_ = true;
+                }
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Build Settings...", "Ctrl+Shift+B")) {
@@ -574,19 +574,19 @@ void EditorUI::drawSceneTree(Scene* scene) {
             if (ImGui::BeginMenu("Create Node")) {
                 if (ImGui::MenuItem("Node")) {
                     nodeToCreateChildUnder_ = scene;
-                    createType_ = 1;
+                    createType_ = CreateNodeType::Node;
                 }
                 if (ImGui::MenuItem("MeshNode (Cube)")) {
                     nodeToCreateChildUnder_ = scene;
-                    createType_ = 2;
+                    createType_ = CreateNodeType::MeshNode;
                 }
                 if (ImGui::MenuItem("Directional Light")) {
                     nodeToCreateChildUnder_ = scene;
-                    createType_ = 3;
+                    createType_ = CreateNodeType::DirectionalLight;
                 }
                 if (ImGui::MenuItem("Point Light")) {
                     nodeToCreateChildUnder_ = scene;
-                    createType_ = 4;
+                    createType_ = CreateNodeType::PointLight;
                 }
                 ImGui::EndMenu();
             }
@@ -612,7 +612,7 @@ void EditorUI::drawSceneTree(Scene* scene) {
         newParent_ = nullptr;
     }
 
-    if (nodeToCreateChildUnder_ && createType_ != 0) {
+    if (nodeToCreateChildUnder_ && createType_ != CreateNodeType::None) {
         // Find a default mesh/material in the scene for new MeshNodes.
         Mesh* defaultMesh = nullptr;
         Material* defaultMaterial = nullptr;
@@ -623,15 +623,15 @@ void EditorUI::drawSceneTree(Scene* scene) {
         }
 
         std::unique_ptr<Node> newNode;
-        if (createType_ == 1) {
+        if (createType_ == CreateNodeType::Node) {
             newNode = std::make_unique<Node>("Node");
-        } else if (createType_ == 2) {
+        } else if (createType_ == CreateNodeType::MeshNode) {
             newNode = std::make_unique<MeshNode>("MeshNode", defaultMesh, defaultMaterial);
-        } else if (createType_ == 3) {
+        } else if (createType_ == CreateNodeType::DirectionalLight) {
             newNode = std::make_unique<LightNode>("Directional Light", LightType::Directional);
-        } else if (createType_ == 4) {
+        } else if (createType_ == CreateNodeType::PointLight) {
             newNode = std::make_unique<LightNode>("Point Light", LightType::Point);
-        } else if (createType_ == 5 && ctxResources_) {
+        } else if (createType_ == CreateNodeType::SceneInstance && ctxResources_) {
             // Instantiate a .scene file as a subtree (the serializer loads it).
             std::filesystem::path p(draggedScenePath_);
             newNode = SceneSerializer::loadNodeFromSceneFile(draggedScenePath_, *ctxResources_);
@@ -644,7 +644,7 @@ void EditorUI::drawSceneTree(Scene* scene) {
             selectedNode_ = added;
         }
         nodeToCreateChildUnder_ = nullptr;
-        createType_ = 0;
+        createType_ = CreateNodeType::None;
     }
 
     ImGui::End();
@@ -710,7 +710,7 @@ void EditorUI::drawSceneTreeNode(Node* node) {
         }
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_SCENE")) {
             nodeToCreateChildUnder_ = node;
-            createType_ = 5;
+            createType_ = CreateNodeType::SceneInstance;
             draggedScenePath_ = (const char*)payload->Data;
         }
         ImGui::EndDragDropTarget();
@@ -733,19 +733,19 @@ void EditorUI::drawSceneTreeNode(Node* node) {
         if (ImGui::BeginMenu("Create Child")) {
             if (ImGui::MenuItem("Node")) {
                 nodeToCreateChildUnder_ = node;
-                createType_ = 1;
+                createType_ = CreateNodeType::Node;
             }
             if (ImGui::MenuItem("MeshNode (Cube)")) {
                 nodeToCreateChildUnder_ = node;
-                createType_ = 2;
+                createType_ = CreateNodeType::MeshNode;
             }
             if (ImGui::MenuItem("Directional Light")) {
                 nodeToCreateChildUnder_ = node;
-                createType_ = 3;
+                createType_ = CreateNodeType::DirectionalLight;
             }
             if (ImGui::MenuItem("Point Light")) {
                 nodeToCreateChildUnder_ = node;
-                createType_ = 4;
+                createType_ = CreateNodeType::PointLight;
             }
             ImGui::EndMenu();
         }
@@ -787,6 +787,14 @@ void EditorUI::drawInspector() {
     ImGui::SeparatorText("Node");
     ImGui::Text("Name: %s", node->name().c_str());
     ImGui::Text("Type: %s", nodeTypeLabel(node));
+
+    // ── Scene Settings ───────────────────────────────────────────────────
+    if (Scene* sceneNode = dynamic_cast<Scene*>(node)) {
+        ImGui::SeparatorText("Scene Settings");
+        ImGui::ColorEdit3("Ambient Light", &sceneNode->settings().ambientLight.x);
+        ImGui::ColorEdit3("Clear Color", &sceneNode->settings().clearColor.x);
+        ImGui::Checkbox("Post Processing", &sceneNode->settings().enablePostProcessing);
+    }
 
     // ── Transform ────────────────────────────────────────────────────────
     ImGui::SeparatorText("Transform");
@@ -844,12 +852,12 @@ void EditorUI::drawInspector() {
 // File Browser — shows the contents of the loaded project
 // ─────────────────────────────────────────────────────────────────────────────
 
-void EditorUI::drawFileBrowser(Project* project, ResourceManager* resources) {
+void EditorUI::drawFileBrowser(Project* project, Scene* scene, ResourceManager* resources) {
     ImGui::Begin("File Browser", &showFileBrowser_);
 
     if (!project || !project->isLoaded()) {
         ImGui::TextDisabled("No project loaded.");
-        ImGui::TextDisabled("Use Project > New / Open to get started.");
+        ImGui::TextDisabled("Use File > New Project or Open Project to get started.");
         ImGui::End();
         return;
     }
@@ -964,6 +972,15 @@ void EditorUI::drawFileBrowser(Project* project, ResourceManager* resources) {
 
         auto drawItemContextMenu = [&](const std::string& pathStr, const std::string& filename) {
             if (ImGui::BeginPopupContextItem()) {
+                if (ImGui::MenuItem("Show in Explorer")) {
+#ifdef _WIN32
+                    std::string winPath = pathStr;
+                    std::replace(winPath.begin(), winPath.end(), '/', '\\');
+                    std::string cmd = "explorer /select,\"" + winPath + "\"";
+                    std::system(cmd.c_str());
+#endif
+                }
+                ImGui::Separator();
                 if (ImGui::MenuItem("Rename")) {
                     fileToRename_ = pathStr;
                     std::strncpy(fileRenameBuf_, filename.c_str(), sizeof(fileRenameBuf_) - 1);
@@ -1030,14 +1047,17 @@ void EditorUI::drawFileBrowser(Project* project, ResourceManager* resources) {
                 ImGui::BeginGroup();
                 
                 if (ext == ".png" || ext == ".jpg" || ext == ".bmp") {
-                    Texture* tex = resources->loadTexture(f.path().string());
-                    if (tex && tex->getImGuiTextureID()) {
-                        ImGui::Image(tex->getImGuiTextureID(), ImVec2(iconSize, iconSize));
+                    Texture* tex = resources->getTexture(f.path().string());
+                    if (tex && texCache_.get(tex)) {
+                        ImGui::Image(texCache_.get(tex), ImVec2(iconSize, iconSize));
                     } else {
                         ImGui::Button("[IMG]", ImVec2(iconSize, iconSize));
                     }
                 } else if (ext == ".scene") {
                     ImGui::Button("[SCENE]", ImVec2(iconSize, iconSize));
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        loadScene(scene, resources, pathStr);
+                    }
                 } else if (ext == ".wav" || ext == ".mp3" || ext == ".ogg") {
                     ImGui::Button("[AUDIO]", ImVec2(iconSize, iconSize));
                 } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf") {
@@ -1064,9 +1084,12 @@ void EditorUI::drawFileBrowser(Project* project, ResourceManager* resources) {
             } else {
                 if (!handleInlineRename(pathStr, -1.0f)) {
                     std::snprintf(buffer, sizeof(buffer), "%s %s", fileIcon(f), filename.c_str());
-                    ImGui::Selectable(buffer);
+                    if (ImGui::Selectable(buffer, false, ImGuiSelectableFlags_AllowDoubleClick)) {
+                        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && ext == ".scene") {
+                            loadScene(scene, resources, pathStr);
+                        }
+                    }
                     drawItemContextMenu(pathStr, filename);
-
                 }
                 
                 // Drag source for .scene files in list mode
@@ -1143,11 +1166,11 @@ void EditorUI::drawViewportOverlay(Camera* camera, float dt) {
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.350f, 0.620f, 0.900f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.250f, 0.500f, 0.800f, 1.0f));
         
-        if (ImGui::Selectable(" T ", gizmoMode_ == 0, 0, ImVec2(24, 24))) gizmoMode_ = 0;
+        if (ImGui::Selectable(" T ", gizmoMode_ == GizmoMode::Translate, 0, ImVec2(24, 24))) gizmoMode_ = GizmoMode::Translate;
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Translate (T)");
-        if (ImGui::Selectable(" R ", gizmoMode_ == 1, 0, ImVec2(24, 24))) gizmoMode_ = 1;
+        if (ImGui::Selectable(" R ", gizmoMode_ == GizmoMode::Rotate, 0, ImVec2(24, 24))) gizmoMode_ = GizmoMode::Rotate;
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rotate (R)");
-        if (ImGui::Selectable(" S ", gizmoMode_ == 2, 0, ImVec2(24, 24))) gizmoMode_ = 2;
+        if (ImGui::Selectable(" S ", gizmoMode_ == GizmoMode::Scale, 0, ImVec2(24, 24))) gizmoMode_ = GizmoMode::Scale;
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scale (S)");
         
         ImGui::PopStyleColor(3);
@@ -1301,6 +1324,51 @@ void EditorUI::drawOpenProjectDialog(Project* project) {
     }
 }
 
+void EditorUI::drawSaveSceneAsDialog(Project* project, Scene* scene, ResourceManager* resources) {
+    if (showSaveSceneAsDialog_) {
+        ImGui::OpenPopup("Save Scene As");
+        showSaveSceneAsDialog_ = false;
+    }
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(400, 150), ImGuiCond_Appearing);
+
+    if (ImGui::BeginPopupModal("Save Scene As", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::Text("Enter scene file name (e.g. level1.scene):");
+        ImGui::Spacing();
+        
+        ImGui::InputText("##SceneName", saveScenePathBuf_, sizeof(saveScenePathBuf_));
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        if (ImGui::Button("Save", ImVec2(120, 0))) {
+            std::string fileName = saveScenePathBuf_;
+            if (fileName.find(".scene") == std::string::npos && !fileName.empty()) {
+                fileName += ".scene";
+            }
+            
+            std::string savePath = fileName;
+            if (project && project->isLoaded()) {
+                savePath = project->scenesDir() + "/" + fileName;
+            }
+            
+            if (!fileName.empty()) {
+                saveScene(scene, resources, savePath);
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        
+        ImGui::EndPopup();
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // About NextEngine dialog (modal popup)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1347,6 +1415,23 @@ void EditorUI::drawAboutWindow() {
         ImGui::TextDisabled(" Copyright (c) 2026 NextEngine Contributors.");
 
         ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.851f, 0.576f, 0.290f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.951f, 0.676f, 0.390f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.751f, 0.476f, 0.190f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        
+        if (ImGui::Button("Sponsor NextEngine (Donate)", ImVec2(ImGui::GetContentRegionAvail().x, 35.0f))) {
+#ifdef _WIN32
+            std::system("start https://github.com/sponsors/saias-o");
+#elif __APPLE__
+            std::system("open https://github.com/sponsors/saias-o");
+#else
+            std::system("xdg-open https://github.com/sponsors/saias-o");
+#endif
+        }
+        ImGui::PopStyleColor(4);
+
+        ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
 
@@ -1388,7 +1473,8 @@ void EditorUI::drawBuildWindow(Project* project) {
         {
             const char* platforms[] = { "Windows (Direct3D/Vulkan)", "Meta Quest (XR SDK)", "Linux (Vulkan)", "WebGL (WebAssembly)" };
             for (int i = 0; i < 4; ++i) {
-                bool isSelected = (selectedBuildPlatform_ == i);
+                ImGui::PushID(i);
+                bool isSelected = (static_cast<int>(selectedBuildPlatform_) == i);
                 
                 // Platforms customized with badges
                 char label[64];
@@ -1398,8 +1484,9 @@ void EditorUI::drawBuildWindow(Project* project) {
                 else std::snprintf(label, sizeof(label), " [Web] %s", platforms[i]);
 
                 if (ImGui::Selectable(label, isSelected, ImGuiSelectableFlags_None, ImVec2(0, 32))) {
-                    selectedBuildPlatform_ = i;
+                    selectedBuildPlatform_ = static_cast<BuildPlatform>(i);
                 }
+                ImGui::PopID();
             }
         }
         ImGui::EndChild();
@@ -1417,7 +1504,7 @@ void EditorUI::drawBuildWindow(Project* project) {
             ImGui::Separator();
 
             // ── Platform-Specific UI Panel ───────────────────────────────────
-            if (selectedBuildPlatform_ == 0) {
+            if (selectedBuildPlatform_ == BuildPlatform::Windows) {
                 // Windows Platform Settings
                 ImGui::SeparatorText("Windows Build Settings");
                 
@@ -1425,9 +1512,11 @@ void EditorUI::drawBuildWindow(Project* project) {
                 ImGui::Spacing();
 
                 ImGui::Text("Build Configuration:");
-                ImGui::RadioButton("Debug##win", &buildConfiguration_, 0); ImGui::SameLine();
-                ImGui::RadioButton("Release##win", &buildConfiguration_, 1); ImGui::SameLine();
-                ImGui::RadioButton("Profile##win", &buildConfiguration_, 2);
+                if (ImGui::RadioButton("Debug##win", buildConfiguration_ == BuildConfig::Debug)) buildConfiguration_ = BuildConfig::Debug; 
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Release##win", buildConfiguration_ == BuildConfig::Release)) buildConfiguration_ = BuildConfig::Release; 
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Profile##win", buildConfiguration_ == BuildConfig::Profile)) buildConfiguration_ = BuildConfig::Profile;
                 
                 ImGui::Spacing();
                 ImGui::Text("Output Binary Directory:");
@@ -1438,7 +1527,7 @@ void EditorUI::drawBuildWindow(Project* project) {
                 ImGui::Checkbox("Copy assets/ directory to output path", &buildCopyAssets_);
                 ImGui::Checkbox("Enable Link-Time Optimization (LTO / -O3)", &buildEnableLto_);
             }
-            else if (selectedBuildPlatform_ == 1) {
+            else if (selectedBuildPlatform_ == BuildPlatform::MetaQuest) {
                 // Meta Quest (XR) Settings
                 ImGui::SeparatorText("Meta Quest (XR) Settings");
                 
@@ -1467,7 +1556,7 @@ void EditorUI::drawBuildWindow(Project* project) {
                 ImGui::Spacing();
                 ImGui::TextDisabled("Note: Meta Quest target builds require Android NDK (Clang compiler) and Vulkan mobile SPIR-V shaders compilation pipeline.");
             }
-            else if (selectedBuildPlatform_ == 2) {
+            else if (selectedBuildPlatform_ == BuildPlatform::Linux) {
                 // Linux Build Settings
                 ImGui::SeparatorText("Linux Build Settings");
 
@@ -1475,15 +1564,17 @@ void EditorUI::drawBuildWindow(Project* project) {
                 ImGui::Spacing();
 
                 ImGui::Text("Build Configuration:");
-                ImGui::RadioButton("Debug##lin", &buildConfiguration_, 0); ImGui::SameLine();
-                ImGui::RadioButton("Release##lin", &buildConfiguration_, 1); ImGui::SameLine();
-                ImGui::RadioButton("Profile##lin", &buildConfiguration_, 2);
+                if (ImGui::RadioButton("Debug##lin", buildConfiguration_ == BuildConfig::Debug)) buildConfiguration_ = BuildConfig::Debug; 
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Release##lin", buildConfiguration_ == BuildConfig::Release)) buildConfiguration_ = BuildConfig::Release; 
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Profile##lin", buildConfiguration_ == BuildConfig::Profile)) buildConfiguration_ = BuildConfig::Profile;
 
                 ImGui::Spacing();
                 ImGui::Checkbox("Statically link GCC runtime libraries (libstdc++/libgcc)", &buildCopyAssets_);
                 ImGui::Checkbox("Strip local debugging symbols to reduce binary size", &buildEnableLto_);
             }
-            else if (selectedBuildPlatform_ == 3) {
+            else if (selectedBuildPlatform_ == BuildPlatform::WebGL) {
                 // WebGL Settings
                 ImGui::SeparatorText("WebGL (WebAssembly) Settings");
 
@@ -1540,14 +1631,14 @@ float distanceToSegment(const glm::vec2& p, const glm::vec2& a, const glm::vec2&
 void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
     // Handle hotkeys for gizmo mode
     if (!ImGui::GetIO().WantTextInput) {
-        if (ImGui::IsKeyPressed(ImGuiKey_T)) gizmoMode_ = 0;
-        if (ImGui::IsKeyPressed(ImGuiKey_R)) gizmoMode_ = 1;
-        if (ImGui::IsKeyPressed(ImGuiKey_S)) gizmoMode_ = 2;
+        if (ImGui::IsKeyPressed(ImGuiKey_T)) gizmoMode_ = GizmoMode::Translate;
+        if (ImGui::IsKeyPressed(ImGuiKey_R)) gizmoMode_ = GizmoMode::Rotate;
+        if (ImGui::IsKeyPressed(ImGuiKey_S)) gizmoMode_ = GizmoMode::Scale;
     }
 
     // 1. Gizmo is only active in SCENE mode and when both camera and scene are valid
     if (playMode_ || !camera || !scene) {
-        grabbedAxis_ = -1;
+        grabbedAxis_ = GizmoAxis::None;
         return;
     }
 
@@ -1608,7 +1699,7 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
             }
 
             // Check hovered axis
-            if (!ImGui::GetIO().WantCaptureMouse || grabbedAxis_ != -1) {
+            if (!ImGui::GetIO().WantCaptureMouse || grabbedAxis_ != GizmoAxis::None) {
                 float closestDist = 999.0f;
                 for (int i = 0; i < 3; ++i) {
                     if (!axisValid[i]) continue;
@@ -1626,8 +1717,8 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
     }
 
     // Detect click to grab the gizmo
-    if (isMouseClicked && hoveredAxis != -1 && grabbedAxis_ == -1 && hasGizmo) {
-        grabbedAxis_ = hoveredAxis;
+    if (isMouseClicked && hoveredAxis != -1 && grabbedAxis_ == GizmoAxis::None && hasGizmo) {
+        grabbedAxis_ = static_cast<GizmoAxis>(hoveredAxis);
         dragStartNodePos_ = nodePos;
         dragStartNodeRotEuler_ = quatToEulerDeg(selectedNode_->transform().rotation);
         dragStartNodeScale_ = selectedNode_->transform().scale;
@@ -1635,8 +1726,8 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
     }
 
     // Handle gizmo dragging movement
-    if (grabbedAxis_ != -1 && isMouseDown && hasGizmo) {
-        int axis = grabbedAxis_;
+    if (grabbedAxis_ != GizmoAxis::None && isMouseDown && hasGizmo) {
+        int axis = static_cast<int>(grabbedAxis_);
         if (axisValid[axis]) {
             glm::vec2 dir2D = ends2D[axis] - center2D;
             float len2D = glm::length(dir2D);
@@ -1646,20 +1737,20 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
                 float screenProj = glm::dot(mouseDelta, u);
                 float worldDelta = screenProj * (worldLength / len2D);
 
-                if (gizmoMode_ == 0) { // Translate
+                if (gizmoMode_ == GizmoMode::Translate) { // Translate
                     glm::vec3 newPos = dragStartNodePos_;
                     if (axis == 0) newPos.x += worldDelta;
                     else if (axis == 1) newPos.y += worldDelta;
                     else if (axis == 2) newPos.z += worldDelta;
                     selectedNode_->transform().position = newPos;
-                } else if (gizmoMode_ == 1) { // Rotate
+                } else if (gizmoMode_ == GizmoMode::Rotate) { // Rotate
                     glm::vec3 newRot = dragStartNodeRotEuler_;
                     float rotDelta = screenProj * 50.0f; // Scale mouse delta to angle
                     if (axis == 0) newRot.x -= rotDelta; // Usually right moves negative on X? Adjust by feel
                     else if (axis == 1) newRot.y -= rotDelta;
                     else if (axis == 2) newRot.z -= rotDelta;
                     selectedNode_->transform().rotation = eulerDegToQuat(newRot);
-                } else if (gizmoMode_ == 2) { // Scale
+                } else if (gizmoMode_ == GizmoMode::Scale) { // Scale
                     glm::vec3 newScale = dragStartNodeScale_;
                     float scaleDelta = screenProj * (worldLength / len2D) * 0.5f;
                     if (axis == 0) newScale.x += scaleDelta;
@@ -1670,12 +1761,12 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
             }
         }
     } else {
-        grabbedAxis_ = -1;
+        grabbedAxis_ = GizmoAxis::None;
     }
 
     // ── CLICK RAYCAST SELECTION & DESELECTION ──
     // Triggered when clicking the viewport without grabbing any gizmo handles
-    if (!ImGui::GetIO().WantCaptureMouse && isMouseClicked && hoveredAxis == -1 && grabbedAxis_ == -1) {
+    if (!ImGui::GetIO().WantCaptureMouse && isMouseClicked && hoveredAxis == -1 && grabbedAxis_ == GizmoAxis::None) {
         // 1. Generate 3D ray from 2D mouse position
         float ndcX = ((mousePos.x - vpPos.x) / vpSize.x) * 2.0f - 1.0f;
         float ndcY = ((mousePos.y - vpPos.y) / vpSize.y) * 2.0f - 1.0f;
@@ -1759,7 +1850,7 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
     for (int i = 0; i < 3; ++i) {
         if (!axisValid[i]) continue;
 
-        bool isHovered = (hoveredAxis == i || grabbedAxis_ == i);
+        bool isHovered = (hoveredAxis == i || static_cast<int>(grabbedAxis_) == i);
         ImU32 col = isHovered ? hoverColors[i] : colors[i];
         float thickness = isHovered ? 4.0f : 2.5f;
 
@@ -1772,7 +1863,7 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
         );
 
         // Draw shape at the end based on gizmo mode
-        if (gizmoMode_ == 0) {
+        if (gizmoMode_ == GizmoMode::Translate) {
             // Translate: Triangle arrow head
             glm::vec2 dir = ends2D[i] - center2D;
             float dLen = glm::length(dir);
@@ -1789,11 +1880,11 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
 
                 drawList->AddTriangleFilled(ImVec2(p0.x, p0.y), ImVec2(p1.x, p1.y), ImVec2(p2.x, p2.y), col);
             }
-        } else if (gizmoMode_ == 1) {
+        } else if (gizmoMode_ == GizmoMode::Rotate) {
             // Rotate: Circle
             float radius = isHovered ? 8.0f : 6.0f;
             drawList->AddCircleFilled(ImVec2(ends2D[i].x, ends2D[i].y), radius, col);
-        } else if (gizmoMode_ == 2) {
+        } else if (gizmoMode_ == GizmoMode::Scale) {
             // Scale: Box
             float halfSize = isHovered ? 6.0f : 4.5f;
             drawList->AddRectFilled(
@@ -1889,6 +1980,12 @@ void EditorUI::drawSettingsWindow(Project* project) {
         }
     }
     ImGui::End();
+}
+
+std::string EditorUI::resolveScenePath(Project* project) const {
+    if (!currentScenePath_.empty()) return currentScenePath_;
+    if (project && project->isLoaded()) return project->scenesDir() + "/main.scene";
+    return "scene.scene";
 }
 
 } // namespace ne

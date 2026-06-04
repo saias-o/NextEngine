@@ -22,35 +22,6 @@ namespace ne {
 
 namespace {
 
-// A unit cube with per-face normals and UVs. Color is white so the fragment
-// shader shows texture * lighting unmodified.
-const std::vector<Vertex> kCubeVertices = {
-    // +Z
-    {{-0.5f, -0.5f,  0.5f}, {0, 0, 1}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f,  0.5f}, {0, 0, 1}, {1, 1, 1}, {1, 1}},
-    {{ 0.5f,  0.5f,  0.5f}, {0, 0, 1}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f,  0.5f}, {0, 0, 1}, {1, 1, 1}, {0, 0}},
-    // -Z
-    {{ 0.5f, -0.5f, -0.5f}, {0, 0, -1}, {1, 1, 1}, {0, 1}}, {{-0.5f, -0.5f, -0.5f}, {0, 0, -1}, {1, 1, 1}, {1, 1}},
-    {{-0.5f,  0.5f, -0.5f}, {0, 0, -1}, {1, 1, 1}, {1, 0}}, {{ 0.5f,  0.5f, -0.5f}, {0, 0, -1}, {1, 1, 1}, {0, 0}},
-    // +Y
-    {{-0.5f,  0.5f,  0.5f}, {0, 1, 0}, {1, 1, 1}, {0, 1}}, {{ 0.5f,  0.5f,  0.5f}, {0, 1, 0}, {1, 1, 1}, {1, 1}},
-    {{ 0.5f,  0.5f, -0.5f}, {0, 1, 0}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f, -0.5f}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
-    // -Y
-    {{-0.5f, -0.5f, -0.5f}, {0, -1, 0}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f, -0.5f}, {0, -1, 0}, {1, 1, 1}, {1, 1}},
-    {{ 0.5f, -0.5f,  0.5f}, {0, -1, 0}, {1, 1, 1}, {1, 0}}, {{-0.5f, -0.5f,  0.5f}, {0, -1, 0}, {1, 1, 1}, {0, 0}},
-    // +X
-    {{ 0.5f, -0.5f,  0.5f}, {1, 0, 0}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f, -0.5f}, {1, 0, 0}, {1, 1, 1}, {1, 1}},
-    {{ 0.5f,  0.5f, -0.5f}, {1, 0, 0}, {1, 1, 1}, {1, 0}}, {{ 0.5f,  0.5f,  0.5f}, {1, 0, 0}, {1, 1, 1}, {0, 0}},
-    // -X
-    {{-0.5f, -0.5f, -0.5f}, {-1, 0, 0}, {1, 1, 1}, {0, 1}}, {{-0.5f, -0.5f,  0.5f}, {-1, 0, 0}, {1, 1, 1}, {1, 1}},
-    {{-0.5f,  0.5f,  0.5f}, {-1, 0, 0}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f, -0.5f}, {-1, 0, 0}, {1, 1, 1}, {0, 0}},
-};
-
-const std::vector<uint32_t> kCubeIndices = {
-     0,  1,  2,  2,  3,  0,   4,  5,  6,  6,  7,  4,
-     8,  9, 10, 10, 11,  8,  12, 13, 14, 14, 15, 12,
-    16, 17, 18, 18, 19, 16,  20, 21, 22, 22, 23, 20,
-};
-
 // Sample behaviour: continuously spins its node around an axis. Children inherit
 // the rotation through the transform hierarchy. Serializable (registered below).
 class RotatorBehaviour : public Behaviour {
@@ -87,15 +58,15 @@ void buildDemoScene(Scene& scene, ResourceManager& resources) {
     // Register the game's serializable behaviours so saved scenes round-trip.
     BehaviourRegistry::instance().registerType<RotatorBehaviour>("Rotator");
 
-    // Shared resources, loaded once and cached by the ResourceManager.
-    // (To load the bugatti instead — untextured, no UVs — use:
-    //  resources.loadMesh(assetPath("models/bugatti/bugatti.obj")).)
-    Mesh* cube = resources.createMesh("cube", kCubeVertices, kCubeIndices);
-    Texture* checker = resources.loadTexture(assetPath("assets/textures/checker.png"));
-    // Three materials sharing the texture but tinted differently (per-material data).
-    Material* matWhite = resources.createMaterial("white", checker, glm::vec4(1.0f));
-    Material* matWarm = resources.createMaterial("warm", checker, glm::vec4(1.0f, 0.55f, 0.4f, 1.0f));
-    Material* matCool = resources.createMaterial("cool", checker, glm::vec4(0.45f, 0.7f, 1.0f, 1.0f));
+    // Content-addressed assets: a built-in cube primitive and materials described
+    // by (texture path, tint). The serialized scene fully describes these, so it
+    // reloads without the game re-registering anything.
+    // (To use the bugatti instead — untextured, no UVs — use getMesh(path).)
+    Mesh* cube = resources.getMesh("builtin:cube");
+    const std::string checker = assetPath("assets/textures/checker.png");
+    Material* matWhite = resources.getMaterial(checker, glm::vec4(1.0f));
+    Material* matWarm = resources.getMaterial(checker, glm::vec4(1.0f, 0.55f, 0.4f, 1.0f));
+    Material* matCool = resources.getMaterial(checker, glm::vec4(0.45f, 0.7f, 1.0f, 1.0f));
 
     // A small hierarchy to show transform inheritance: a central "planet" with
     // an orbiting "moon", which itself has an orbiting "sub-moon". They share the

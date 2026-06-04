@@ -16,8 +16,8 @@ struct MaterialParams {
 }
 
 Material::Material(VulkanDevice& device, VkDescriptorSetLayout layout, VkDescriptorPool pool,
-                   Texture* texture, const glm::vec4& baseColor)
-    : device_(device), texture_(texture) {
+                   Texture* texture, std::string texturePath, const glm::vec4& baseColor)
+    : device_(device), texture_(texture), texturePath_(std::move(texturePath)), baseColor_(baseColor) {
     MaterialParams params{baseColor};
     paramsBuffer_ = std::make_unique<Buffer>(device_, sizeof(MaterialParams),
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryUsage::HostVisible);
