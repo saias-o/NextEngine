@@ -58,8 +58,6 @@ add_library(ne_engine STATIC
     src/graphics/ResourceManager.cpp
     src/graphics/ImGuiLayer.cpp
     src/render/Renderer.cpp
-    src/editor/EditorUI.cpp
-    src/editor/CommandHistory.cpp
     src/project/Project.cpp
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
@@ -116,14 +114,24 @@ if (MINGW)
     target_link_options(ne_engine PUBLIC -static -static-libgcc -static-libstdc++)
 endif()
 
-# ── Game executable ─────────────────────────────────────────────────────────
-# Thin target: the entry point plus the game's own scene/behaviours. Iterating
-# on the game only recompiles this, not the engine library.
+# ── Editor library ──────────────────────────────────────────────────────────
+# The editor (UI panels, commands, input/camera control) lives on top of the
+# engine, not inside it — so a shipped game can link ne_engine without it.
+add_library(ne_editor STATIC
+    src/editor/EditorApp.cpp
+    src/editor/EditorUI.cpp
+    src/editor/CommandHistory.cpp
+)
+target_link_libraries(ne_editor PUBLIC ne_engine)
+target_compile_options(ne_editor PRIVATE -Wall -Wextra)
+
+# ── Editor executable (the app the Hub launches) ────────────────────────────
+# Thin target: entry point + the game's scene/behaviours, linking the editor.
 add_executable(NextEngine
     src/main.cpp
     src/game/DemoScene.cpp
 )
-target_link_libraries(NextEngine PRIVATE ne_engine)
+target_link_libraries(NextEngine PRIVATE ne_editor)
 target_compile_options(NextEngine PRIVATE -Wall -Wextra)
 add_dependencies(NextEngine Shaders)
 

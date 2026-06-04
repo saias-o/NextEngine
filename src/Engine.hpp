@@ -15,16 +15,16 @@ class ResourceManager;
 class Scene;
 class ImGuiLayer;
 class Renderer;
-class EditorUI;
 class Project;
 
 // How a game populates the scene at startup. Provided by the executable (game
 // code), so the engine library has no built-in content.
 using SceneSetup = std::function<void(Scene&, ResourceManager&)>;
 
-// Top-level application object. Owns every subsystem and drives the main loop
-// (input, scene update, UI, present). Rendering is delegated to the Renderer;
-// the Engine keeps orchestration. Declaration order of the members matters:
+// Runtime: owns the window, GPU, scene, renderer and the loop. It is
+// editor-agnostic — an application layer (editor or game) drives it via an
+// onFrame() callback invoked each frame between the ImGui begin/end, and reads
+// its state through the accessors. Declaration order of members matters:
 // device_ outlives the GPU resources that reference it during destruction.
 class Engine {
 public:
@@ -33,12 +33,21 @@ public:
     Engine(const Engine&) = delete;
     Engine& operator=(const Engine&) = delete;
 
+    // Per-frame application hook (UI + its own input), called inside the ImGui
+    // frame, before the scene behaviours update and the render.
+    using FrameFn = std::function<void(float dt)>;
+    void setOnFrame(FrameFn fn) { onFrame_ = std::move(fn); }
+
     void run();
 
-private:
-    void updateCursorCapture(bool isPlayMode);
-    void processInput(float dt);
+    // Accessors for the application layer.
+    Scene& scene() { return *scene_; }
+    Camera& camera() { return camera_; }
+    ResourceManager& resources() { return *resources_; }
+    Project& project() { return *project_; }
+    Window& window() { return *window_; }
 
+private:
     std::unique_ptr<Window> window_;
     std::unique_ptr<VulkanDevice> device_;
     std::unique_ptr<Swapchain> swapchain_;
@@ -46,11 +55,10 @@ private:
     std::unique_ptr<Scene> scene_;
     std::unique_ptr<ImGuiLayer> imgui_;
     std::unique_ptr<Renderer> renderer_;
-    std::unique_ptr<EditorUI> editorUI_;
     std::unique_ptr<Project> project_;
 
+    FrameFn onFrame_;
     Camera camera_;
-    bool wasPlayMode_ = false;  // edge-detect play-mode enter/exit for cursor
 };
 
 } // namespace ne
