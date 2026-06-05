@@ -52,7 +52,7 @@ GeometryAllocation GeometryRegistry::allocate(const std::vector<Vertex>& vertice
     
     // Allocate vertex block
     allocInfo.size = vertexSize;
-    allocInfo.alignment = sizeof(Vertex);
+    allocInfo.alignment = 0; // Must be power of 2 or 0. sizeof(Vertex) is 68 (not a power of 2)!
     VkDeviceSize vertexOffsetBytes;
     if (vmaVirtualAllocate(vertexBlock_, &allocInfo, &alloc.vertexVirtualAlloc, &vertexOffsetBytes) != VK_SUCCESS)
         throw std::runtime_error("failed to allocate vertex space in GeometryRegistry");
