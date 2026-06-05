@@ -22,8 +22,8 @@ VkVertexInputBindingDescription Vertex::bindingDescription() {
     return desc;
 }
 
-std::array<VkVertexInputAttributeDescription, 4> Vertex::attributeDescriptions() {
-    std::array<VkVertexInputAttributeDescription, 4> attrs{};
+std::array<VkVertexInputAttributeDescription, 6> Vertex::attributeDescriptions() {
+    std::array<VkVertexInputAttributeDescription, 6> attrs{};
     attrs[0].binding = 0;
     attrs[0].location = 0;
     attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -40,19 +40,28 @@ std::array<VkVertexInputAttributeDescription, 4> Vertex::attributeDescriptions()
     attrs[3].location = 3;
     attrs[3].format = VK_FORMAT_R32G32_SFLOAT;
     attrs[3].offset = offsetof(Vertex, texCoord);
+    attrs[4].binding = 0;
+    attrs[4].location = 4;
+    attrs[4].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[4].offset = offsetof(Vertex, lightmapUV);
+    attrs[5].binding = 0;
+    attrs[5].location = 5;
+    attrs[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attrs[5].offset = offsetof(Vertex, tangent);
     return attrs;
 }
 
-Mesh::Mesh(VulkanDevice& device, const std::vector<Vertex>& vertices,
+Mesh::Mesh(GeometryRegistry& registry, const std::vector<Vertex>& vertices,
            const std::vector<uint32_t>& indices)
-    : device_(device), indexCount_(static_cast<uint32_t>(indices.size())) {
-    createVertexBuffer(vertices);
-    createIndexBuffer(indices);
+    : registry_(registry) {
+    allocation_ = registry_.allocate(vertices, indices);
 }
 
-Mesh::~Mesh() = default;
+Mesh::~Mesh() {
+    registry_.free(allocation_);
+}
 
-std::unique_ptr<Mesh> Mesh::fromObjFile(VulkanDevice& device, const std::string& path) {
+std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::string& path) {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
@@ -112,6 +121,9 @@ std::unique_ptr<Mesh> Mesh::fromObjFile(VulkanDevice& device, const std::string&
             } else {
                 v.texCoord = glm::vec2(0.0f);
             }
+            // No lightmap unwrap for arbitrary .obj: fall back to the texture UV
+            // (may overlap → lower bake quality, but never crashes).
+            v.lightmapUV = v.texCoord;
 
             uint32_t newIndex = static_cast<uint32_t>(vertices.size());
             uniqueVertices[key] = newIndex;
@@ -120,49 +132,55 @@ std::unique_ptr<Mesh> Mesh::fromObjFile(VulkanDevice& device, const std::string&
         }
     }
 
+    // Compute tangents
+    for (size_t i = 0; i < indices.size(); i += 3) {
+        Vertex& v0 = vertices[indices[i]];
+        Vertex& v1 = vertices[indices[i+1]];
+        Vertex& v2 = vertices[indices[i+2]];
+
+        glm::vec3 e1 = v1.pos - v0.pos;
+        glm::vec3 e2 = v2.pos - v0.pos;
+        glm::vec2 dUV1 = v1.texCoord - v0.texCoord;
+        glm::vec2 dUV2 = v2.texCoord - v0.texCoord;
+
+        float f = 1.0f / (dUV1.x * dUV2.y - dUV2.x * dUV1.y);
+        glm::vec3 tangent(0.0f);
+        if (!std::isinf(f) && !std::isnan(f)) {
+            tangent = (e1 * dUV2.y - e2 * dUV1.y) * f;
+        }
+
+        v0.tangent += glm::vec4(tangent, 0.0f);
+        v1.tangent += glm::vec4(tangent, 0.0f);
+        v2.tangent += glm::vec4(tangent, 0.0f);
+    }
+
+    for (auto& v : vertices) {
+        glm::vec3 n = v.normal;
+        glm::vec3 t = glm::vec3(v.tangent);
+        if (glm::length(t) < 0.0001f) {
+            glm::vec3 c1 = glm::cross(n, glm::vec3(0.0f, 0.0f, 1.0f));
+            glm::vec3 c2 = glm::cross(n, glm::vec3(0.0f, 1.0f, 0.0f));
+            t = glm::length(c1) > glm::length(c2) ? c1 : c2;
+        }
+        v.tangent = glm::vec4(glm::normalize(t - n * glm::dot(n, t)), 1.0f);
+    }
+
     Log::info("loaded '", path, "': ", vertices.size(), " vertices, ",
               indices.size() / 3, " triangles");
 
-    return std::make_unique<Mesh>(device, vertices, indices);
-}
-
-void Mesh::createVertexBuffer(const std::vector<Vertex>& vertices) {
-    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-
-    Buffer staging(device_, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        MemoryUsage::HostVisible);
-    staging.write(vertices.data(), bufferSize);
-
-    vertexBuffer_ = std::make_unique<Buffer>(device_, bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        MemoryUsage::GpuOnly);
-
-    device_.copyBuffer(staging.handle(), vertexBuffer_->handle(), bufferSize);
-}
-
-void Mesh::createIndexBuffer(const std::vector<uint32_t>& indices) {
-    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-
-    Buffer staging(device_, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        MemoryUsage::HostVisible);
-    staging.write(indices.data(), bufferSize);
-
-    indexBuffer_ = std::make_unique<Buffer>(device_, bufferSize,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        MemoryUsage::GpuOnly);
-
-    device_.copyBuffer(staging.handle(), indexBuffer_->handle(), bufferSize);
+    return std::make_unique<Mesh>(registry, vertices, indices);
 }
 
 void Mesh::bind(VkCommandBuffer cmd) const {
-    VkBuffer buffers[] = {vertexBuffer_->handle()};
+    // In hybrid rendering, binding is usually done globally, but if we do it per-mesh:
+    VkBuffer buffers[] = {registry_.vertexBuffer()->handle()};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(cmd, 0, 1, buffers, offsets);
-    vkCmdBindIndexBuffer(cmd, indexBuffer_->handle(), 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer(cmd, registry_.indexBuffer()->handle(), 0, VK_INDEX_TYPE_UINT32);
 }
 
 void Mesh::draw(VkCommandBuffer cmd) const {
-    vkCmdDrawIndexed(cmd, indexCount_, 1, 0, 0, 0);
+    vkCmdDrawIndexed(cmd, allocation_.indexCount, 1, allocation_.firstIndex, allocation_.vertexOffset, 0);
 }
 
 } // namespace ne

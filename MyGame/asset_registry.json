@@ -1,0 +1,37 @@
+{
+    "12321802291044240470": {
+        "hash": 0,
+        "path": "C:/Users/MotionUp/Documents/Projets Dev/NextEngine_DevClaude/assets/textures/checker.png",
+        "type": "Texture"
+    },
+    "14912609481778952929": {
+        "hash": 18249094634347106339,
+        "path": "assets/models/bugatti/bugatti.blend",
+        "type": "Unknown"
+    },
+    "17529559623320602914": {
+        "hash": 16933942505915610355,
+        "path": "scenes/port.scene",
+        "type": "Scene"
+    },
+    "1764280298202630826": {
+        "hash": 1253810461382323932,
+        "path": "assets/models/bugatti/bugatti.mtl",
+        "type": "Unknown"
+    },
+    "3541001873901761428": {
+        "hash": 18164922757133443595,
+        "path": "assets/models/bugatti/bugatti.obj",
+        "type": "Mesh"
+    },
+    "5040655024241874792": {
+        "hash": 7287497444689088596,
+        "path": "assets/models/bugatti/README.txt",
+        "type": "Unknown"
+    },
+    "5381623013035980930": {
+        "hash": 16745983008072443978,
+        "path": "scenes/main.scene",
+        "type": "Scene"
+    }
+}

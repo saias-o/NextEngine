@@ -84,15 +84,18 @@ VulkanDevice::VulkanDevice(Window& window) {
     setupDebugMessenger();
     createSurface(window);
     pickPhysicalDevice();
+    queryCapabilities();
     createLogicalDevice();
     createAllocator();
-    createCommandPool();
+    createCommandPools();
     createPipelineCache();
 }
 
 VulkanDevice::~VulkanDevice() {
     savePipelineCache();
     vkDestroyPipelineCache(device_, pipelineCache_, nullptr);
+    if (computeCommandPool_ != commandPool_)
+        vkDestroyCommandPool(device_, computeCommandPool_, nullptr);
     vkDestroyCommandPool(device_, commandPool_, nullptr);
     vmaDestroyAllocator(allocator_);
     vkDestroyDevice(device_, nullptr);
@@ -132,13 +135,21 @@ void VulkanDevice::createInstance() {
     if (kEnableValidationLayers && !validationEnabled_)
         Log::warn("validation layers requested but not available, continuing without them");
 
+    // Request Vulkan 1.3 when the loader supports it (for dynamic rendering,
+    // synchronization2, timeline semaphores…), capped at what's available.
+    uint32_t loaderVersion = VK_API_VERSION_1_0;
+    if (vkEnumerateInstanceVersion(&loaderVersion) != VK_SUCCESS)
+        loaderVersion = VK_API_VERSION_1_0;
+    uint32_t requestedApi = loaderVersion >= VK_API_VERSION_1_3
+                          ? VK_API_VERSION_1_3 : loaderVersion;
+
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "NextEngine";
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName = "NextEngine";
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_0;
+    appInfo.apiVersion = requestedApi;
 
     auto extensions = requiredInstanceExtensions();
 
@@ -180,13 +191,25 @@ QueueFamilyIndices VulkanDevice::findQueueFamilies(VkPhysicalDevice dev) const {
     vkGetPhysicalDeviceQueueFamilyProperties(dev, &count, nullptr);
     std::vector<VkQueueFamilyProperties> families(count);
     vkGetPhysicalDeviceQueueFamilyProperties(dev, &count, families.data());
+
     for (uint32_t i = 0; i < count; i++) {
-        if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+        const VkQueueFlags flags = families[i].queueFlags;
+        if (flags & VK_QUEUE_GRAPHICS_BIT && !idx.graphicsFamily.has_value())
             idx.graphicsFamily = i;
         VkBool32 presentSupport = false;
         vkGetPhysicalDeviceSurfaceSupportKHR(dev, i, surface_, &presentSupport);
-        if (presentSupport) idx.presentFamily = i;
-        if (idx.isComplete()) break;
+        if (presentSupport && !idx.presentFamily.has_value()) idx.presentFamily = i;
+
+        // Prefer a dedicated compute family (compute but NOT graphics) for true
+        // async compute; otherwise remember any compute-capable family.
+        if (flags & VK_QUEUE_COMPUTE_BIT) {
+            if (!(flags & VK_QUEUE_GRAPHICS_BIT)) {
+                idx.computeFamily = i;
+                idx.computeIsDedicated = true;
+            } else if (!idx.computeFamily.has_value()) {
+                idx.computeFamily = i;  // fallback: graphics+compute family
+            }
+        }
     }
     return idx;
 }
@@ -259,11 +282,94 @@ void VulkanDevice::pickPhysicalDevice() {
     throw std::runtime_error("no suitable GPU found");
 }
 
+// ------------------------------------------------------------- capabilities
+
+void VulkanDevice::queryCapabilities() {
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(physicalDevice_, &props);
+
+    // Negotiated API version = min(loader, requested 1.3, device).
+    uint32_t loaderVersion = VK_API_VERSION_1_0;
+    if (vkEnumerateInstanceVersion(&loaderVersion) != VK_SUCCESS)
+        loaderVersion = VK_API_VERSION_1_0;
+    uint32_t api = loaderVersion >= VK_API_VERSION_1_3 ? VK_API_VERSION_1_3 : loaderVersion;
+    if (props.apiVersion < api) api = props.apiVersion;
+    capabilities_.apiVersion = api;
+    capabilities_.discreteGpu = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+    capabilities_.maxSamples = maxUsableSampleCount();
+
+    // Modern feature query (core Vulkan 1.1/1.2/1.3 feature structs). Only valid
+    // to chain when the device exposes at least 1.3; otherwise leave caps false.
+    if (api >= VK_API_VERSION_1_3) {
+        VkPhysicalDeviceVulkan11Features f11{}; f11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        VkPhysicalDeviceVulkan12Features f12{}; f12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        VkPhysicalDeviceVulkan13Features f13{}; f13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        VkPhysicalDeviceFeatures2 f2{}; f2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        f2.pNext = &f13; f13.pNext = &f12; f12.pNext = &f11;
+        vkGetPhysicalDeviceFeatures2(physicalDevice_, &f2);
+
+        capabilities_.dynamicRendering = f13.dynamicRendering;
+        capabilities_.synchronization2 = f13.synchronization2;
+        capabilities_.timelineSemaphore = f12.timelineSemaphore;
+        capabilities_.descriptorIndexing = f12.descriptorIndexing
+                                         && f12.runtimeDescriptorArray
+                                         && f12.shaderSampledImageArrayNonUniformIndexing;
+        capabilities_.bufferDeviceAddress = f12.bufferDeviceAddress;
+        capabilities_.drawIndirectCount = f12.drawIndirectCount;
+        capabilities_.multiview = f11.multiview;
+    }
+    
+    // Physical device base features
+    VkPhysicalDeviceFeatures baseFeatures{};
+    vkGetPhysicalDeviceFeatures(physicalDevice_, &baseFeatures);
+    capabilities_.multiDrawIndirect = baseFeatures.multiDrawIndirect;
+
+    // Hardware ray tracing: detected (for the desktop "Ultra" tier), not enabled
+    // yet — enabling it pulls in acceleration structures (future work).
+    {
+        uint32_t count = 0;
+        vkEnumerateDeviceExtensionProperties(physicalDevice_, nullptr, &count, nullptr);
+        std::vector<VkExtensionProperties> exts(count);
+        vkEnumerateDeviceExtensionProperties(physicalDevice_, nullptr, &count, exts.data());
+        bool rayQueryExt = false, accelExt = false;
+        for (auto& e : exts) {
+            if (strcmp(e.extensionName, VK_KHR_RAY_QUERY_EXTENSION_NAME) == 0) rayQueryExt = true;
+            if (strcmp(e.extensionName, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) == 0) accelExt = true;
+        }
+        capabilities_.rayQuery = rayQueryExt && accelExt;
+    }
+
+    capabilities_.dedicatedComputeQueue = findQueueFamilies(physicalDevice_).computeIsDedicated;
+
+    // Tier heuristic (combinable at runtime via descriptor/pipeline switching).
+    if (capabilities_.discreteGpu && capabilities_.rayQuery)
+        capabilities_.tier = QualityTier::Ultra;
+    else if (capabilities_.discreteGpu)
+        capabilities_.tier = QualityTier::High;
+    else if (capabilities_.dynamicRendering)
+        capabilities_.tier = QualityTier::Medium;
+    else
+        capabilities_.tier = QualityTier::Low;
+
+    Log::info("Vulkan ", VK_API_VERSION_MAJOR(api), ".", VK_API_VERSION_MINOR(api),
+              " | tier ", toString(capabilities_.tier),
+              " | dynRender=", capabilities_.dynamicRendering,
+              " sync2=", capabilities_.synchronization2,
+              " timeline=", capabilities_.timelineSemaphore,
+              " bindless=", capabilities_.descriptorIndexing,
+              " multiview=", capabilities_.multiview,
+              " rayQuery=", capabilities_.rayQuery,
+              " asyncCompute=", capabilities_.dedicatedComputeQueue);
+}
+
 // ------------------------------------------------------------ logical device
 
 void VulkanDevice::createLogicalDevice() {
     auto idx = findQueueFamilies(physicalDevice_);
-    std::set<uint32_t> uniqueFamilies = {idx.graphicsFamily.value(), idx.presentFamily.value()};
+    computeFamily_ = idx.computeFamily.value_or(idx.graphicsFamily.value());
+
+    std::set<uint32_t> uniqueFamilies = {
+        idx.graphicsFamily.value(), idx.presentFamily.value(), computeFamily_};
 
     float priority = 1.0f;
     std::vector<VkDeviceQueueCreateInfo> queueCIs;
@@ -277,12 +383,12 @@ void VulkanDevice::createLogicalDevice() {
     }
 
     VkPhysicalDeviceFeatures features{};
+    features.samplerAnisotropy = VK_TRUE;
 
     VkDeviceCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     ci.queueCreateInfoCount = static_cast<uint32_t>(queueCIs.size());
     ci.pQueueCreateInfos = queueCIs.data();
-    ci.pEnabledFeatures = &features;
     ci.enabledExtensionCount = static_cast<uint32_t>(kDeviceExtensions.size());
     ci.ppEnabledExtensionNames = kDeviceExtensions.data();
     if (validationEnabled_) {
@@ -290,21 +396,60 @@ void VulkanDevice::createLogicalDevice() {
         ci.ppEnabledLayerNames = kValidationLayers.data();
     }
 
+    // Enable the modern core features we detected (gated). Declared here so they
+    // outlive vkCreateDevice. Falls back to plain 1.0 device creation otherwise.
+    VkPhysicalDeviceVulkan11Features e11{}; e11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    VkPhysicalDeviceVulkan12Features e12{}; e12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    VkPhysicalDeviceVulkan13Features e13{}; e13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    VkPhysicalDeviceFeatures2 e2{}; e2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+
+    if (capabilities_.apiVersion >= VK_API_VERSION_1_3) {
+        e2.pNext = &e13; e13.pNext = &e12; e12.pNext = &e11;
+        e13.dynamicRendering = capabilities_.dynamicRendering;
+        e13.synchronization2 = capabilities_.synchronization2;
+        e12.timelineSemaphore = capabilities_.timelineSemaphore;
+        e12.descriptorIndexing = capabilities_.descriptorIndexing;
+        e12.runtimeDescriptorArray = capabilities_.descriptorIndexing;
+        e12.shaderSampledImageArrayNonUniformIndexing = capabilities_.descriptorIndexing;
+        e12.descriptorBindingPartiallyBound = capabilities_.descriptorIndexing;
+        e12.bufferDeviceAddress = capabilities_.bufferDeviceAddress;
+        e12.drawIndirectCount = capabilities_.drawIndirectCount;
+        e11.multiview = capabilities_.multiview;
+        e2.features.samplerAnisotropy = VK_TRUE;
+        e2.features.multiDrawIndirect = capabilities_.multiDrawIndirect;
+        ci.pNext = &e2;  // when using features2, pEnabledFeatures must be null
+    } else {
+        ci.pEnabledFeatures = &features;
+    }
+
     if (vkCreateDevice(physicalDevice_, &ci, nullptr, &device_) != VK_SUCCESS)
         throw std::runtime_error("failed to create logical device");
 
     vkGetDeviceQueue(device_, idx.graphicsFamily.value(), 0, &graphicsQueue_);
     vkGetDeviceQueue(device_, idx.presentFamily.value(), 0, &presentQueue_);
+    vkGetDeviceQueue(device_, computeFamily_, 0, &computeQueue_);
 }
 
-void VulkanDevice::createCommandPool() {
+void VulkanDevice::createCommandPools() {
     auto idx = findQueueFamilies(physicalDevice_);
+
     VkCommandPoolCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     ci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     ci.queueFamilyIndex = idx.graphicsFamily.value();
     if (vkCreateCommandPool(device_, &ci, nullptr, &commandPool_) != VK_SUCCESS)
         throw std::runtime_error("failed to create command pool");
+
+    // Separate pool for the async-compute family, or reuse the graphics pool when
+    // there's no distinct compute family.
+    if (computeFamily_ != idx.graphicsFamily.value()) {
+        VkCommandPoolCreateInfo cci = ci;
+        cci.queueFamilyIndex = computeFamily_;
+        if (vkCreateCommandPool(device_, &cci, nullptr, &computeCommandPool_) != VK_SUCCESS)
+            throw std::runtime_error("failed to create compute command pool");
+    } else {
+        computeCommandPool_ = commandPool_;
+    }
 }
 
 void VulkanDevice::createAllocator() {
@@ -312,7 +457,9 @@ void VulkanDevice::createAllocator() {
     ci.physicalDevice = physicalDevice_;
     ci.device = device_;
     ci.instance = instance_;
-    ci.vulkanApiVersion = VK_API_VERSION_1_0;
+    ci.vulkanApiVersion = capabilities_.apiVersion;
+    if (capabilities_.bufferDeviceAddress)
+        ci.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
     if (vmaCreateAllocator(&ci, &allocator_) != VK_SUCCESS)
         throw std::runtime_error("failed to create memory allocator");
 }
@@ -359,6 +506,12 @@ VkSampleCountFlagBits VulkanDevice::maxUsableSampleCount() const {
     return VK_SAMPLE_COUNT_1_BIT;
 }
 
+float VulkanDevice::maxAnisotropy() const {
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(physicalDevice_, &props);
+    return props.limits.maxSamplerAnisotropy;
+}
+
 VkFormat VulkanDevice::findSupportedFormat(const std::vector<VkFormat>& candidates,
     VkImageTiling tiling, VkFormatFeatureFlags features) const
 {
@@ -380,8 +533,14 @@ VkFormat VulkanDevice::findDepthFormat() const {
 }
 
 void VulkanDevice::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) const {
+    copyBuffer(src, dst, size, 0, 0);
+}
+
+void VulkanDevice::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) const {
     VkCommandBuffer cmd = beginSingleTimeCommands();
     VkBufferCopy copyRegion{};
+    copyRegion.srcOffset = srcOffset;
+    copyRegion.dstOffset = dstOffset;
     copyRegion.size = size;
     vkCmdCopyBuffer(cmd, src, dst, 1, &copyRegion);
     endSingleTimeCommands(cmd);

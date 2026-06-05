@@ -4,27 +4,50 @@ namespace ne {
 
 // A unit cube with per-face normals and UVs. Color is white so the fragment
 // shader shows texture * lighting unmodified.
+//
+// Beyond the (repeating, per-face) texture UV, each vertex also carries a
+// non-overlapping `lightmapUV`: the 6 faces are packed into a 3x2 grid of [0,1]^2
+// (one cell each), with a small inset so adjacent faces don't bleed into each
+// other when baked. This is the cube's lightmap unwrap.
 const std::vector<Vertex>& cubeVertices() {
-    static const std::vector<Vertex> verts = {
-        // +Z
-        {{-0.5f, -0.5f,  0.5f}, {0, 0, 1}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f,  0.5f}, {0, 0, 1}, {1, 1, 1}, {1, 1}},
-        {{ 0.5f,  0.5f,  0.5f}, {0, 0, 1}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f,  0.5f}, {0, 0, 1}, {1, 1, 1}, {0, 0}},
-        // -Z
-        {{ 0.5f, -0.5f, -0.5f}, {0, 0, -1}, {1, 1, 1}, {0, 1}}, {{-0.5f, -0.5f, -0.5f}, {0, 0, -1}, {1, 1, 1}, {1, 1}},
-        {{-0.5f,  0.5f, -0.5f}, {0, 0, -1}, {1, 1, 1}, {1, 0}}, {{ 0.5f,  0.5f, -0.5f}, {0, 0, -1}, {1, 1, 1}, {0, 0}},
-        // +Y
-        {{-0.5f,  0.5f,  0.5f}, {0, 1, 0}, {1, 1, 1}, {0, 1}}, {{ 0.5f,  0.5f,  0.5f}, {0, 1, 0}, {1, 1, 1}, {1, 1}},
-        {{ 0.5f,  0.5f, -0.5f}, {0, 1, 0}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f, -0.5f}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
-        // -Y
-        {{-0.5f, -0.5f, -0.5f}, {0, -1, 0}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f, -0.5f}, {0, -1, 0}, {1, 1, 1}, {1, 1}},
-        {{ 0.5f, -0.5f,  0.5f}, {0, -1, 0}, {1, 1, 1}, {1, 0}}, {{-0.5f, -0.5f,  0.5f}, {0, -1, 0}, {1, 1, 1}, {0, 0}},
-        // +X
-        {{ 0.5f, -0.5f,  0.5f}, {1, 0, 0}, {1, 1, 1}, {0, 1}}, {{ 0.5f, -0.5f, -0.5f}, {1, 0, 0}, {1, 1, 1}, {1, 1}},
-        {{ 0.5f,  0.5f, -0.5f}, {1, 0, 0}, {1, 1, 1}, {1, 0}}, {{ 0.5f,  0.5f,  0.5f}, {1, 0, 0}, {1, 1, 1}, {0, 0}},
-        // -X
-        {{-0.5f, -0.5f, -0.5f}, {-1, 0, 0}, {1, 1, 1}, {0, 1}}, {{-0.5f, -0.5f,  0.5f}, {-1, 0, 0}, {1, 1, 1}, {1, 1}},
-        {{-0.5f,  0.5f,  0.5f}, {-1, 0, 0}, {1, 1, 1}, {1, 0}}, {{-0.5f,  0.5f, -0.5f}, {-1, 0, 0}, {1, 1, 1}, {0, 0}},
-    };
+    static const std::vector<Vertex> verts = [] {
+        struct Corner { glm::vec3 pos; glm::vec2 uv; };
+        struct Face { glm::vec3 normal; Corner corners[4]; };
+        // Per-corner texture UVs, shared by every face.
+        const glm::vec2 c0{0, 1}, c1{1, 1}, c2{1, 0}, c3{0, 0};
+        const Face faces[6] = {
+            {{0, 0, 1},  {{{-0.5f,-0.5f, 0.5f},c0},{{ 0.5f,-0.5f, 0.5f},c1},{{ 0.5f, 0.5f, 0.5f},c2},{{-0.5f, 0.5f, 0.5f},c3}}},
+            {{0, 0,-1},  {{{ 0.5f,-0.5f,-0.5f},c0},{{-0.5f,-0.5f,-0.5f},c1},{{-0.5f, 0.5f,-0.5f},c2},{{ 0.5f, 0.5f,-0.5f},c3}}},
+            {{0, 1, 0},  {{{-0.5f, 0.5f, 0.5f},c0},{{ 0.5f, 0.5f, 0.5f},c1},{{ 0.5f, 0.5f,-0.5f},c2},{{-0.5f, 0.5f,-0.5f},c3}}},
+            {{0,-1, 0},  {{{-0.5f,-0.5f,-0.5f},c0},{{ 0.5f,-0.5f,-0.5f},c1},{{ 0.5f,-0.5f, 0.5f},c2},{{-0.5f,-0.5f, 0.5f},c3}}},
+            {{1, 0, 0},  {{{ 0.5f,-0.5f, 0.5f},c0},{{ 0.5f,-0.5f,-0.5f},c1},{{ 0.5f, 0.5f,-0.5f},c2},{{ 0.5f, 0.5f, 0.5f},c3}}},
+            {{-1,0, 0},  {{{-0.5f,-0.5f,-0.5f},c0},{{-0.5f,-0.5f, 0.5f},c1},{{-0.5f, 0.5f, 0.5f},c2},{{-0.5f, 0.5f,-0.5f},c3}}},
+        };
+
+        constexpr float kInset = 0.06f;  // fraction of a cell kept as padding
+        std::vector<Vertex> out;
+        out.reserve(24);
+        for (int f = 0; f < 6; ++f) {
+            const int col = f % 3, row = f / 3;
+            // For axis-aligned faces, standard tangent
+            glm::vec4 tangent;
+            if (faces[f].normal.z > 0.5f) tangent = glm::vec4(1, 0, 0, 1);
+            else if (faces[f].normal.z < -0.5f) tangent = glm::vec4(-1, 0, 0, 1);
+            else if (faces[f].normal.y > 0.5f) tangent = glm::vec4(1, 0, 0, 1);
+            else if (faces[f].normal.y < -0.5f) tangent = glm::vec4(1, 0, 0, 1);
+            else if (faces[f].normal.x > 0.5f) tangent = glm::vec4(0, 0, -1, 1);
+            else if (faces[f].normal.x < -0.5f) tangent = glm::vec4(0, 0, 1, 1);
+            else tangent = glm::vec4(1, 0, 0, 1);
+
+            for (const Corner& c : faces[f].corners) {
+                // Map the corner's 0/1 UV into this face's grid cell, inset.
+                float lu = (col + kInset + c.uv.x * (1.0f - 2.0f * kInset)) / 3.0f;
+                float lv = (row + kInset + c.uv.y * (1.0f - 2.0f * kInset)) / 2.0f;
+                out.push_back(Vertex{c.pos, faces[f].normal, {1, 1, 1}, c.uv, {lu, lv}, tangent});
+            }
+        }
+        return out;
+    }();
     return verts;
 }
 

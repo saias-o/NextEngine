@@ -9,13 +9,14 @@ namespace ne {
 
 class VulkanDevice;
 
-// A graphics pipeline configured for the Vertex layout, built against an
-// existing render pass and descriptor set layout.
+// A graphics pipeline configured for the Vertex layout, built against dynamic
+// rendering attachment formats (no VkRenderPass) and descriptor set layouts.
 class Pipeline {
 public:
     Pipeline(VulkanDevice& device, const std::string& vertPath, const std::string& fragPath,
-             VkRenderPass renderPass, const std::vector<VkDescriptorSetLayout>& setLayouts,
-             VkSampleCountFlagBits samples);
+             const std::vector<VkFormat>& colorFormats, VkFormat depthFormat,
+             const std::vector<VkDescriptorSetLayout>& setLayouts,
+             VkSampleCountFlagBits samples, bool useVertexInput = true, bool useDepth = true);
     ~Pipeline();
     Pipeline(const Pipeline&) = delete;
     Pipeline& operator=(const Pipeline&) = delete;

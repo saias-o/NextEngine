@@ -6,12 +6,18 @@ namespace ne {
 
 // A yaw/pitch fly camera. Holds position + orientation and produces Vulkan-ready
 // view and projection matrices (the projection already flips Y for Vulkan).
+
+struct Frustum {
+    glm::vec4 planes[6];
+};
+
 class Camera {
 public:
     void setPerspective(float fovYRadians, float aspect, float nearZ, float farZ);
 
     glm::mat4 view() const;
     glm::mat4 projection() const { return projection_; }
+    Frustum getFrustum() const;
 
     // Direction vectors derived from yaw/pitch (world up is +Y).
     glm::vec3 front() const;

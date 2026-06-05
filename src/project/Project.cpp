@@ -52,6 +52,9 @@ bool Project::create(const std::string& parentDir, const std::string& projectNam
         return false;
     }
 
+    assetRegistry_.sync(rootPath_);
+    assetRegistry_.save(rootPath_);
+
     Log::info("Created project '", name_, "' at ", rootPath_);
     return true;
 }
@@ -107,6 +110,10 @@ bool Project::load(const std::string& neprojPath) {
     filePath_      = path.string();
     rootPath_      = path.parent_path().string();
     loaded_        = true;
+
+    assetRegistry_.load(rootPath_);
+    assetRegistry_.sync(rootPath_);
+    assetRegistry_.save(rootPath_);
 
     Log::info("Loaded project '", name_, "' from ", rootPath_);
     return true;

@@ -29,6 +29,8 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     scene_ = std::make_unique<Scene>();
     project_ = std::make_unique<Project>();
 
+    resources_->setRegistry(&project_->assetRegistry());
+
     if (!initialProject.empty() && !project_->load(initialProject))
         Log::warn("Failed to load initial project: ", initialProject);
 
@@ -36,10 +38,10 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     if (!project_->isLoaded() && sceneSetup)
         sceneSetup(*scene_, *resources_);
 
-    imgui_ = std::make_unique<ImGuiLayer>(*device_, *window_, swapchain_->renderPass(),
-        swapchain_->imageCount(), swapchain_->samples());
+    imgui_ = std::make_unique<ImGuiLayer>(*device_, *window_, swapchain_->colorFormat(),
+        swapchain_->imageCount(), VK_SAMPLE_COUNT_1_BIT);
     renderer_ = std::make_unique<Renderer>(*device_, *swapchain_, *window_,
-        resources_->materialSetLayout(), *imgui_);
+        *resources_, *imgui_);
 
     // Default editor/viewport camera placement (the app may move it).
     camera_.position = {0.0f, 2.5f, 8.0f};
@@ -69,7 +71,7 @@ void Engine::run() {
         imgui_->beginFrame();
         if (onFrame_)
             onFrame_(realDt);              // application: its input + UI
-        scene_->updateTree(Time::delta()); // behaviours: scaled time (pausable)
+        scene_->update(Time::delta());     // behaviours: scaled time (pausable)
         imgui_->endFrame();  // finalize draw data even if the frame is skipped (resize)
 
         renderer_->drawFrame(*scene_, camera_);

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "editor/CommandHistory.hpp"
+#include "editor/EditorEnums.hpp"
+#include "editor/ImGuiTextureCache.hpp"
 
 #include <string>
 #include <glm/glm.hpp>
@@ -13,6 +15,12 @@ class Node;
 class Project;
 class ResourceManager;
 
+class MenuBarPanel;
+class SceneHierarchyPanel;
+class InspectorPanel;
+class FileBrowserPanel;
+class ViewportPanel;
+
 // The full editor interface (Godot/Unity-style). Draws a dockable layout:
 // main menu bar, scene tree (left), inspector (right), file browser (bottom),
 // and a viewport area with Scene / Play Mode tabs.
@@ -21,6 +29,11 @@ class ResourceManager;
 // behind ImGui (passthrough central dock node). This class only draws the UI
 // overlays — it does NOT own or manage the render pipeline.
 class EditorUI {
+    friend class MenuBarPanel;
+    friend class SceneHierarchyPanel;
+    friend class InspectorPanel;
+    friend class FileBrowserPanel;
+    friend class ViewportPanel;
 public:
     EditorUI();
 
@@ -46,25 +59,19 @@ public:
     }
 
 private:
-    void drawMenuBar(Project* project, Scene* scene, ResourceManager* resources);
-    void drawSceneTree(Scene* scene);
-
     // Scene update: serialization, clipboard and undo/redo.
     void saveScene(Scene* scene, ResourceManager* resources, const std::string& path);
     void loadScene(Scene* scene, ResourceManager* resources, const std::string& path);
     void copySelected(ResourceManager* resources);
     void pasteClipboard(Scene* scene, ResourceManager* resources);
     void duplicateSelected(ResourceManager* resources);
-    void drawSceneTreeNode(Node* node);
-    void drawInspector();
-    void drawFileBrowser(Project* project, ResourceManager* resources);
-    void drawViewportOverlay(Camera* camera, float dt);
     void drawGizmo(Camera* camera, Scene* scene);
     void drawAboutWindow();
     void drawBuildWindow(Project* project);
     void drawSettingsWindow(Project* project);
     void drawNewProjectDialog(Project* project);
     void drawOpenProjectDialog(Project* project);
+    void drawSaveSceneAsDialog(Project* project, Scene* scene, ResourceManager* resources);
     void applyEditorStyle();
 
     // Panel visibility toggles (View menu)
@@ -92,16 +99,22 @@ private:
     // Project dialogs
     bool showNewProjectDialog_  = false;
     bool showOpenProjectDialog_ = false;
+    bool showSaveSceneAsDialog_ = false;
     bool showAboutWindow_       = false;
     bool showBuildWindow_       = false;
     bool showSettingsWindow_    = false;
     char newProjectName_[128]   = "MyGame";
     char newProjectPath_[512]   = "";
+    char saveScenePathBuf_[512] = "main.scene";
+    void rebuildSceneHierarchy(Scene* scene);
+
+    std::string resolveScenePath(Project* project) const;
+
     std::string openBrowsePath_;  // for the open-project file browser
 
     // Build settings state
-    int selectedBuildPlatform_ = 0; // 0=Windows, 1=Meta Quest (XR), 2=Linux, 3=WebGL
-    int buildConfiguration_ = 1;     // 0=Debug, 1=Release, 2=Profile
+    BuildPlatform selectedBuildPlatform_ = BuildPlatform::Windows;
+    BuildConfig buildConfiguration_ = BuildConfig::Release;
     char buildOutputPath_[512] = "build/bin";
     bool buildCopyAssets_ = true;
     bool buildEnableLto_ = false;
@@ -111,7 +124,7 @@ private:
     // Deferred operations for C++ memory safety & avoiding iterator invalidation
     Node* nodeToDelete_ = nullptr;
     Node* nodeToCreateChildUnder_ = nullptr;
-    int createType_ = 0; // 0=None, 1=Node, 2=MeshNode, 3=DirLight, 4=PointLight, 5=SceneInstance
+    CreateNodeType createType_ = CreateNodeType::None;
     std::string draggedScenePath_;
 
     Node* nodeToReparent_ = nullptr;
@@ -129,8 +142,8 @@ private:
     char fileBrowserSearchBuf_[128] = "";
 
     // Gizmo state for dragging & viewport deselect
-    int gizmoMode_ = 0; // 0=Translate, 1=Rotate, 2=Scale
-    int grabbedAxis_ = -1; // -1 = None, 0 = X, 1 = Y, 2 = Z
+    GizmoMode gizmoMode_ = GizmoMode::Translate;
+    GizmoAxis grabbedAxis_ = GizmoAxis::None;
     glm::vec3 dragStartNodePos_{0.0f};
     glm::vec3 dragStartNodeRotEuler_{0.0f};
     glm::vec3 dragStartNodeScale_{1.0f};
@@ -144,6 +157,7 @@ private:
     std::string clipboard_;          // JSON of a copied node subtree
     std::string currentScenePath_;   // last saved/opened .scene path
     ResourceManager* ctxResources_ = nullptr;  // set each frame in draw()
+    ImGuiTextureCache texCache_;     // cache for ImGui texture IDs
 };
 
 } // namespace ne

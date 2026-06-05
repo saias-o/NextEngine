@@ -6,6 +6,8 @@
 
 namespace ne {
 
+uint32_t Node::g_hierarchyVersion = 1;
+
 glm::mat4 Transform::matrix() const {
     glm::mat4 m = glm::translate(glm::mat4(1.0f), position);
     m *= glm::mat4_cast(rotation);
@@ -21,6 +23,7 @@ Node* Node::addChild(std::unique_ptr<Node> child) {
     child->parent_ = this;
     Node* ptr = child.get();
     children_.push_back(std::move(child));
+    g_hierarchyVersion++;
     return ptr;
 }
 
@@ -36,6 +39,7 @@ bool Node::removeChild(Node* child) {
     for (auto it = children_.begin(); it != children_.end(); ++it) {
         if (it->get() == child) {
             children_.erase(it);
+            g_hierarchyVersion++;
             return true;
         }
     }
@@ -49,6 +53,7 @@ std::unique_ptr<Node> Node::detachChild(Node* child) {
             std::unique_ptr<Node> detached = std::move(*it);
             children_.erase(it);
             detached->parent_ = nullptr;
+            g_hierarchyVersion++;
             return detached;
         }
     }
@@ -65,6 +70,20 @@ void Node::updateTree(float dt) {
     }
     for (auto& child : children_)
         child->updateTree(dt);
+}
+
+void Node::updateTransforms(const glm::mat4& parentWorld, bool parentDirty) {
+    glm::mat4 currentLocal = localMatrix();
+    bool dirty = parentDirty || (currentLocal != lastLocalMatrix_);
+    
+    if (dirty) {
+        worldTransform_ = parentWorld * currentLocal;
+        lastLocalMatrix_ = currentLocal;
+    }
+    
+    for (auto& child : children_) {
+        child->updateTransforms(worldTransform_, dirty);
+    }
 }
 
 void Node::traverse(const glm::mat4& parentWorld,

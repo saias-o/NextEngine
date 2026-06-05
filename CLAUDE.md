@@ -208,15 +208,22 @@ Le moteur est construit par étapes numérotées :
       s'attachent aux nœuds — l'orbite de la démo est pilotée par un
       `RotatorBehaviour`, pas par du code en dur dans l'Engine.
 - [~] **Étape 6 — Éclairage.**
-      - [x] Temps réel simple : normales dans `Vertex`, Blinn-Phong en espace
-            monde, `LightNode` directionnelle + ponctuelle collectées par
-            traversée dans un UBO d'éclairage (binding 2, étage fragment).
-      - Pensé pour le **baked** : le fragment sépare un terme **indirect**
-            (ambient aujourd'hui → lightmap demain, hook `mode`/`counts.y`) et un
-            terme **direct** temps réel ; `LightNode::bakeMode` indiquera au
-            futur bake quelles lumières précalculer. *Reste à faire* : étape de
-            bake offline + UV de lightmap + échantillonnage du lightmap.
-      - [ ] PBR (metallic-roughness) + normal mapping, plus tard.
+      - [x] Temps réel : normales dans `Vertex`, Blinn-Phong en espace monde,
+            lumières **Directional / Point / Spot** (`LightNode`) collectées par
+            traversée dans un UBO d'éclairage unifié (`GpuLight[16]`, set 0
+            binding 1). La math vit dans `shaders/lighting.glsl` (source unique).
+      - [x] **Ombres temps réel** (Directional + Spot) : shadow mapping 2D-array
+            (`graphics/ShadowMap`, jusqu'à 4 casters), PCF matériel + biais. Les
+            Point lights éclairent sans ombre (cubemap hors scope).
+      - [x] **Lightmap baking GPU** (sans GI) : `render/LightBaker` rend chaque
+            mesh « Include in light baking » dans une lightmap via `bake.frag`
+            (même `lighting.glsl` → résultat **identique** au temps réel), stockant
+            l'irradiance diffuse ; le spéculaire reste live. Toggle Realtime/Baked
+            + bouton « Generate Bake » (`SceneSettings`). Canal `lightmapUV`
+            (unwrap propre du cube ; fallback `.obj`). *Limites v1* : lightmaps non
+            sérialisées (re-bake au chargement), pas de dilation de seams, pas
+            d'unwrap auto pour `.obj` arbitraires.
+      - [x] PBR (metallic-roughness) + normal mapping, tonemapping HDR.
 - [x] **Étape 7 — Outillage.**
       - [x] Pipeline cache (`VkPipelineCache` sérialisé sur disque, dans
             `VulkanDevice`) et **MSAA** (couleur multisamplée + resolve dans

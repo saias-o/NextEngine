@@ -25,8 +25,9 @@ std::vector<char> readFile(const std::string& filename) {
 } // namespace
 
 Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std::string& fragPath,
-                   VkRenderPass renderPass, const std::vector<VkDescriptorSetLayout>& setLayouts,
-                   VkSampleCountFlagBits samples)
+                   const std::vector<VkFormat>& colorFormats, VkFormat depthFormat,
+                   const std::vector<VkDescriptorSetLayout>& setLayouts,
+                   VkSampleCountFlagBits samples, bool useVertexInput, bool useDepth)
     : device_(device) {
     auto vertCode = readFile(vertPath);
     auto fragCode = readFile(fragPath);
@@ -52,10 +53,12 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInput.vertexBindingDescriptionCount = 1;
-    vertexInput.pVertexBindingDescriptions = &bindingDesc;
-    vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size());
-    vertexInput.pVertexAttributeDescriptions = attrDescs.data();
+    if (useVertexInput) {
+        vertexInput.vertexBindingDescriptionCount = 1;
+        vertexInput.pVertexBindingDescriptions = &bindingDesc;
+        vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size());
+        vertexInput.pVertexAttributeDescriptions = attrDescs.data();
+    }
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -84,8 +87,8 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthTestEnable = useDepth ? VK_TRUE : VK_FALSE;
+    depthStencil.depthWriteEnable = useDepth ? VK_TRUE : VK_FALSE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
@@ -109,11 +112,12 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
     dynamicState.pDynamicStates = dynamicStates.data();
 
-    // Per-object model matrix delivered via push constants (vertex stage).
+    // Per-object push constants: model matrix (vertex) + params (fragment).
+    // Matches PushConstants in shader.vert / shader.frag (mat4 + vec4 = 80 bytes).
     VkPushConstantRange pushRange{};
-    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushRange.offset = 0;
-    pushRange.size = sizeof(glm::mat4);
+    pushRange.size = sizeof(glm::mat4) + sizeof(glm::vec4);
 
     VkPipelineLayoutCreateInfo layoutCI{};
     layoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -125,8 +129,16 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
     if (vkCreatePipelineLayout(device_.device(), &layoutCI, nullptr, &layout_) != VK_SUCCESS)
         throw std::runtime_error("failed to create pipeline layout");
 
+    // Dynamic rendering: declare the attachment formats instead of a render pass.
+    VkPipelineRenderingCreateInfo renderingInfo{};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    renderingInfo.colorAttachmentCount = static_cast<uint32_t>(colorFormats.size());
+    renderingInfo.pColorAttachmentFormats = colorFormats.empty() ? nullptr : colorFormats.data();
+    renderingInfo.depthAttachmentFormat = depthFormat;
+
     VkGraphicsPipelineCreateInfo pipelineCI{};
     pipelineCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineCI.pNext = &renderingInfo;
     pipelineCI.stageCount = 2;
     pipelineCI.pStages = stages;
     pipelineCI.pVertexInputState = &vertexInput;
@@ -138,7 +150,7 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
     pipelineCI.pColorBlendState = &colorBlend;
     pipelineCI.pDynamicState = &dynamicState;
     pipelineCI.layout = layout_;
-    pipelineCI.renderPass = renderPass;
+    pipelineCI.renderPass = VK_NULL_HANDLE;
     pipelineCI.subpass = 0;
 
     if (vkCreateGraphicsPipelines(device_.device(), device_.pipelineCache(), 1, &pipelineCI, nullptr,

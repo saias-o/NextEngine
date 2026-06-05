@@ -14,18 +14,16 @@ namespace ne {
 Swapchain::Swapchain(VulkanDevice& device, Window& window)
     : device_(device), window_(window) {
     samples_ = device_.maxUsableSampleCount();
+    depthFormat_ = device_.findDepthFormat();
     createSwapchain();
     createImageViews();
-    createRenderPass();
     createColorResources();
     createDepthResources();
-    createFramebuffers();
     createRenderFinishedSemaphores();
 }
 
 Swapchain::~Swapchain() {
     cleanup();
-    vkDestroyRenderPass(device_.device(), renderPass_, nullptr);
 }
 
 void Swapchain::recreate() {
@@ -42,17 +40,17 @@ void Swapchain::recreate() {
     createImageViews();
     createColorResources();
     createDepthResources();
-    createFramebuffers();
     createRenderFinishedSemaphores();
 }
 
 void Swapchain::cleanup() {
     for (auto sem : renderFinishedSemaphores_) vkDestroySemaphore(device_.device(), sem, nullptr);
-    vkDestroyImageView(device_.device(), colorImageView_, nullptr);
-    vmaDestroyImage(device_.allocator(), colorImage_, colorAllocation_);
+    if (colorImageView_) vkDestroyImageView(device_.device(), colorImageView_, nullptr);
+    if (colorImage_) vmaDestroyImage(device_.allocator(), colorImage_, colorAllocation_);
+    colorImageView_ = VK_NULL_HANDLE;
+    colorImage_ = VK_NULL_HANDLE;
     vkDestroyImageView(device_.device(), depthImageView_, nullptr);
     vmaDestroyImage(device_.allocator(), depthImage_, depthAllocation_);
-    for (auto fb : framebuffers_) vkDestroyFramebuffer(device_.device(), fb, nullptr);
     for (auto iv : imageViews_) vkDestroyImageView(device_.device(), iv, nullptr);
     vkDestroySwapchainKHR(device_.device(), swapchain_, nullptr);
 }
@@ -141,86 +139,10 @@ void Swapchain::createImageViews() {
         imageViews_[i] = device_.createImageView(images_[i], imageFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
-void Swapchain::createRenderPass() {
-    // Attachment 0: multisampled color (rendered into, then resolved away).
-    VkAttachmentDescription colorAttach{};
-    colorAttach.format = imageFormat_;
-    colorAttach.samples = samples_;
-    colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;  // resolved, not kept
-    colorAttach.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttach.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttach.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttach.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    // Attachment 1: multisampled depth.
-    VkAttachmentDescription depthAttach{};
-    depthAttach.format = device_.findDepthFormat();
-    depthAttach.samples = samples_;
-    depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttach.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttach.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttach.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttach.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    // Attachment 2: single-sample resolve target = the swap-chain image.
-    VkAttachmentDescription resolveAttach{};
-    resolveAttach.format = imageFormat_;
-    resolveAttach.samples = VK_SAMPLE_COUNT_1_BIT;
-    resolveAttach.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    resolveAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    resolveAttach.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    resolveAttach.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    resolveAttach.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    resolveAttach.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentReference colorRef{};
-    colorRef.attachment = 0;
-    colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference depthRef{};
-    depthRef.attachment = 1;
-    depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference resolveRef{};
-    resolveRef.attachment = 2;
-    resolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorRef;
-    subpass.pDepthStencilAttachment = &depthRef;
-    subpass.pResolveAttachments = &resolveRef;
-
-    VkSubpassDependency dep{};
-    dep.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dep.dstSubpass = 0;
-    dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-                     | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dep.srcAccessMask = 0;
-    dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-                     | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-                      | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-    std::array<VkAttachmentDescription, 3> attachments = {colorAttach, depthAttach, resolveAttach};
-
-    VkRenderPassCreateInfo rpci{};
-    rpci.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    rpci.attachmentCount = static_cast<uint32_t>(attachments.size());
-    rpci.pAttachments = attachments.data();
-    rpci.subpassCount = 1;
-    rpci.pSubpasses = &subpass;
-    rpci.dependencyCount = 1;
-    rpci.pDependencies = &dep;
-
-    if (vkCreateRenderPass(device_.device(), &rpci, nullptr, &renderPass_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create render pass");
-}
-
 void Swapchain::createColorResources() {
+    // No separate MSAA target when single-sampled: render straight to the swap image.
+    if (samples_ == VK_SAMPLE_COUNT_1_BIT) return;
+
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -276,26 +198,6 @@ void Swapchain::createDepthResources() {
         throw std::runtime_error("failed to create depth image");
 
     depthImageView_ = device_.createImageView(depthImage_, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
-}
-
-void Swapchain::createFramebuffers() {
-    framebuffers_.resize(imageViews_.size());
-    for (size_t i = 0; i < imageViews_.size(); i++) {
-        // Order must match the render pass: msaa color, depth, resolve(swap image).
-        std::array<VkImageView, 3> attachments = {colorImageView_, depthImageView_, imageViews_[i]};
-
-        VkFramebufferCreateInfo ci{};
-        ci.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        ci.renderPass = renderPass_;
-        ci.attachmentCount = static_cast<uint32_t>(attachments.size());
-        ci.pAttachments = attachments.data();
-        ci.width = extent_.width;
-        ci.height = extent_.height;
-        ci.layers = 1;
-
-        if (vkCreateFramebuffer(device_.device(), &ci, nullptr, &framebuffers_[i]) != VK_SUCCESS)
-            throw std::runtime_error("failed to create framebuffer");
-    }
 }
 
 } // namespace ne

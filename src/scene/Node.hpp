@@ -74,6 +74,10 @@ public:
     // recursively, all descendants.
     void updateTree(float dt);
 
+    void updateTransforms(const glm::mat4& parentWorld, bool parentDirty);
+
+    const glm::mat4& worldTransform() const { return worldTransform_; }
+
     Transform& transform() { return transform_; }
     const Transform& transform() const { return transform_; }
     glm::mat4 localMatrix() const { return transform_.matrix(); }
@@ -120,6 +124,12 @@ protected:
     Node* parent_ = nullptr;
     std::vector<std::unique_ptr<Node>> children_;
     std::vector<std::unique_ptr<Behaviour>> behaviours_;
+
+    glm::mat4 worldTransform_{1.0f};
+    glm::mat4 lastLocalMatrix_{0.0f};
+
+public:
+    static uint32_t g_hierarchyVersion;
 };
 
 } // namespace ne

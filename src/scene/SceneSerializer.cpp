@@ -41,7 +41,8 @@ json serializeNode(Node& node, ResourceManager& resources) {
         j["settings"] = {
             {"ambient", vec3ToJson(s.ambientLight)},
             {"clearColor", vec3ToJson(s.clearColor)},
-            {"postProcessing", s.enablePostProcessing}
+            {"postProcessing", s.enablePostProcessing},
+            {"lightingMode", static_cast<int>(s.lightingMode)}
         };
     } else if (LightNode* light = node.asLight()) {
         j["type"] = "LightNode";
@@ -50,15 +51,20 @@ json serializeNode(Node& node, ResourceManager& resources) {
         j["intensity"] = light->intensity;
         j["direction"] = vec3ToJson(light->direction);
         j["range"] = light->range;
+        j["spotInnerAngle"] = light->spotInnerAngle;
+        j["spotOuterAngle"] = light->spotOuterAngle;
+        j["castShadows"] = light->castShadows;
         j["bakeMode"] = static_cast<int>(light->bakeMode);
-    } else if (node.mesh()) {
+    } else if (MeshNode* meshNode = dynamic_cast<MeshNode*>(&node)) {
         j["type"] = "MeshNode";
         j["mesh"] = resources.meshId(node.mesh());
         if (Material* mat = node.material()) {
-            j["texture"] = mat->texturePath();
-            j["baseColor"] = {mat->baseColor().r, mat->baseColor().g,
-                              mat->baseColor().b, mat->baseColor().a};
+            j["texture"] = mat->desc().albedoId;
+            j["baseColor"] = {mat->desc().baseColor.r, mat->desc().baseColor.g,
+                              mat->desc().baseColor.b, mat->desc().baseColor.a};
         }
+        j["castShadows"] = meshNode->castShadows();
+        j["includeInLightBaking"] = meshNode->includeInLightBaking();
     } else {
         j["type"] = "Node";
     }
@@ -103,6 +109,7 @@ std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources)
             scene->settings().ambientLight = glm::vec4(jsonToVec3(it->value("ambient", json())), 0.0f);
             scene->settings().clearColor = glm::vec4(jsonToVec3(it->value("clearColor", json())), 1.0f);
             scene->settings().enablePostProcessing = it->value("postProcessing", true);
+            scene->settings().lightingMode = static_cast<LightingMode>(it->value("lightingMode", 0));
         }
         node = std::move(scene);
     } else if (type == "LightNode") {
@@ -112,16 +119,41 @@ std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources)
         light->intensity = j.value("intensity", 1.0f);
         light->direction = jsonToVec3(j.value("direction", json()), glm::vec3(0, -1, 0));
         light->range = j.value("range", 10.0f);
+        light->spotInnerAngle = j.value("spotInnerAngle", 25.0f);
+        light->spotOuterAngle = j.value("spotOuterAngle", 35.0f);
+        light->castShadows = j.value("castShadows", true);
         light->bakeMode = static_cast<LightBakeMode>(j.value("bakeMode", 0));
         node = std::move(light);
     } else if (type == "MeshNode") {
-        Mesh* mesh = resources.getMesh(j.value("mesh", std::string{}));
+        AssetID meshId = kAssetInvalid;
+        if (j.contains("mesh")) {
+            if (j["mesh"].is_number_integer()) {
+                meshId = j["mesh"].get<AssetID>();
+            } else if (j["mesh"].is_string()) {
+                meshId = resources.getOrRegister(j["mesh"].get<std::string>(), AssetType::Mesh);
+            }
+        }
+        
+        Mesh* mesh = resources.getMesh(meshId);
         Material* material = nullptr;
         if (auto it = j.find("texture"); it != j.end()) {
+            AssetID texID = kAssetInvalid;
+            if (it->is_number_integer()) {
+                texID = it->get<AssetID>();
+            } else if (it->is_string()) {
+                texID = resources.getOrRegister(it->get<std::string>(), AssetType::Texture);
+            }
+
             glm::vec4 color = jsonToVec4(j.value("baseColor", json()), glm::vec4(1.0f));
-            material = resources.getMaterial(it->get<std::string>(), color);
+            MaterialDesc desc;
+            desc.albedoId = texID;
+            desc.baseColor = color;
+            material = resources.getMaterial(desc);
         }
-        node = std::make_unique<MeshNode>(name, mesh, material);
+        auto meshNode = std::make_unique<MeshNode>(name, mesh, material);
+        meshNode->castShadows() = j.value("castShadows", true);
+        meshNode->includeInLightBaking() = j.value("includeInLightBaking", false);
+        node = std::move(meshNode);
     } else {
         node = std::make_unique<Node>(name);
     }

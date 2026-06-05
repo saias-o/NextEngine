@@ -21,8 +21,8 @@ public:
     Buffer& operator=(const Buffer&) = delete;
 
     // Copies `size` bytes into the (HostVisible) buffer and flushes it.
-    void write(const void* data, VkDeviceSize size);
-
+    void write(const void* data, VkDeviceSize size, VkDeviceSize offset = 0);
+    void flush(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
     VkBuffer handle() const { return buffer_; }
     VkDeviceSize size() const { return size_; }
     void* mapped() const { return mapped_; }

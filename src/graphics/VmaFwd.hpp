@@ -7,3 +7,5 @@
 // exact same typedefs VMA itself uses, so including both is harmless.
 VK_DEFINE_HANDLE(VmaAllocator)
 VK_DEFINE_HANDLE(VmaAllocation)
+VK_DEFINE_HANDLE(VmaVirtualBlock)
+VK_DEFINE_HANDLE(VmaVirtualAllocation)

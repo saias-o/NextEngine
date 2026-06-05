@@ -29,6 +29,7 @@ public:
 
 private:
     friend class Node;  // sets node_ on attach, drives ready_/lifecycle
+    friend class Scene; // flattens behaviours and drives lifecycle
     Node* node_ = nullptr;
     bool ready_ = false;
 };

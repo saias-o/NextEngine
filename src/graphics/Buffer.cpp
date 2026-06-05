@@ -35,11 +35,16 @@ Buffer::~Buffer() {
     vmaDestroyBuffer(device_.allocator(), buffer_, allocation_);
 }
 
-void Buffer::write(const void* data, VkDeviceSize size) {
+void Buffer::write(const void* data, VkDeviceSize size, VkDeviceSize offset) {
     if (!mapped_)
         throw std::runtime_error("write() called on a non host-visible buffer");
-    memcpy(mapped_, data, static_cast<size_t>(size));
+    memcpy(static_cast<uint8_t*>(mapped_) + offset, data, static_cast<size_t>(size));
     vmaFlushAllocation(device_.allocator(), allocation_, 0, size);
+}
+
+void Buffer::flush(VkDeviceSize size, VkDeviceSize offset) {
+    if (!mapped_) return;
+    vmaFlushAllocation(device_.allocator(), allocation_, offset, size);
 }
 
 } // namespace ne

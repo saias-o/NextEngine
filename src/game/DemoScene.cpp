@@ -10,6 +10,8 @@
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/Scene.hpp"
+#include "project/AssetRegistry.hpp"
+#include "scene/GLTFLoader.hpp"
 
 #include "nlohmann/json.hpp"
 
@@ -62,11 +64,29 @@ void buildDemoScene(Scene& scene, ResourceManager& resources) {
     // by (texture path, tint). The serialized scene fully describes these, so it
     // reloads without the game re-registering anything.
     // (To use the bugatti instead — untextured, no UVs — use getMesh(path).)
-    Mesh* cube = resources.getMesh("builtin:cube");
+    Mesh* cube = resources.getMesh(kAssetBuiltinCube);
     const std::string checker = assetPath("assets/textures/checker.png");
-    Material* matWhite = resources.getMaterial(checker, glm::vec4(1.0f));
-    Material* matWarm = resources.getMaterial(checker, glm::vec4(1.0f, 0.55f, 0.4f, 1.0f));
-    Material* matCool = resources.getMaterial(checker, glm::vec4(0.45f, 0.7f, 1.0f, 1.0f));
+    AssetID checkerId = resources.getOrRegister(checker, AssetType::Texture);
+
+    MaterialDesc descWhite; descWhite.albedoId = checkerId; descWhite.baseColor = glm::vec4(1.0f);
+    Material* matWhite = resources.getMaterial(descWhite);
+
+    MaterialDesc descWarm; descWarm.albedoId = checkerId; descWarm.baseColor = glm::vec4(1.0f, 0.55f, 0.4f, 1.0f);
+    Material* matWarm = resources.getMaterial(descWarm);
+
+    MaterialDesc descCool; descCool.albedoId = checkerId; descCool.baseColor = glm::vec4(0.45f, 0.7f, 1.0f, 1.0f);
+    Material* matCool = resources.getMaterial(descCool);
+
+    // A large flat ground plane (a scaled cube) so the directional/spot shadows
+    // have a surface to land on. Static receiver: it doesn't cast and is a good
+    // candidate for the light bake.
+    MaterialDesc descGround; descGround.albedoId = checkerId; descGround.baseColor = glm::vec4(0.8f, 0.8f, 0.85f, 1.0f);
+    Material* matGround = resources.getMaterial(descGround);
+    MeshNode* ground = scene.createChild<MeshNode>("ground", cube, matGround);
+    ground->transform().position = {0.0f, -2.5f, 0.0f};
+    ground->transform().scale = {20.0f, 0.2f, 20.0f};
+    ground->castShadows() = false;
+    ground->includeInLightBaking() = true;
 
     // A small hierarchy to show transform inheritance: a central "planet" with
     // an orbiting "moon", which itself has an orbiting "sub-moon". They share the
@@ -83,6 +103,10 @@ void buildDemoScene(Scene& scene, ResourceManager& resources) {
     Node* subMoon = moon->createChild<MeshNode>("sub-moon", cube, matCool);
     subMoon->transform().position = {2.0f, 0.0f, 0.0f};
     subMoon->transform().scale = glm::vec3(0.5f);
+
+    // Load glTF model
+    std::string gltfPath = assetPath("assets/models/DamagedHelmet.glb");
+    GLTFLoader::load(gltfPath, scene, resources);
 
     // A directional "sun" (warm, slightly overhead).
     LightNode* sun = scene.createChild<LightNode>("sun", LightType::Directional);

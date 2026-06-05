@@ -1,171 +1,140 @@
-# NextEngine — Bilan & pistes d'amélioration
+# NextEngine — Bilan & feuille de route
 
-> Document de travail pour plus tard. État au terme de l'étape 6 (éclairage
-> temps réel). Aucune action requise — c'est une liste de réflexion priorisée.
-> Voir `CLAUDE.md` pour l'architecture et la feuille de route officielle.
-
----
-
-## 1. État des lieux
-
-Ce qui est solide aujourd'hui :
-- Architecture modulaire RAII propre (`core/`, `graphics/`, `scene/`), ownership
-  clair, copies interdites, ordre de destruction maîtrisé.
-- Mémoire GPU via VMA, abstraite derrière `MemoryUsage`.
-- Chargement de meshes (`.obj`) et textures (`stb_image`).
-- Graphe de scène à nœuds + `Behaviour` (façon Godot/Unity).
-- Caméra fly + inputs, éclairage Blinn-Phong temps réel pensé pour le baked.
-- Build reproductible (deps vendues), git + LFS en place.
-
-Ce document liste ce qui reste fragile, améliorable, ou à construire.
+> Document prospectif : où en est le moteur et quoi construire ensuite pour un
+> rendu **photoréaliste, extrêmement optimisé et compatible mobile / VR**, sans
+> trahir la philosophie **légère et multiplateforme**. Le détail du volet rendu
+> avancé (analyse de l'état de l'art, techniques écartées et pourquoi) vit dans
+> **`RENDU_AVANCE.md`** ; ce bilan en donne la version intégrée et priorisée.
 
 ---
 
-## 2. Prochaines étapes (suite logique de la roadmap)
+## 0. État actuel (le socle est sain)
 
-Dans l'ordre de valeur conseillé :
+RAII et ownership clairs, split `ne_engine` / exe / `ne_editor`, `Renderer`
+découpé de l'`Engine`, sérialisation JSON round-trip, undo/redo, `Time`/`Input`,
+assets content-addressed (`AssetRegistry` + GUID), frustum culling, MSAA,
+pipeline cache.
 
-1. **Outillage (étape 7)** — le plus rentable maintenant.
-   - ~~**Pipeline cache**~~ **[FAIT]** (`VkPipelineCache` sérialisé sur disque
-     dans `VulkanDevice`).
-   - ~~**MSAA**~~ **[FAIT]** (couleur multisamplée + resolve dans `Swapchain`,
-     sample count auto plafonné à 4×).
-   - ~~**Dear ImGui**~~ **[FAIT]** `graphics/ImGuiLayer` + backends GLFW/Vulkan
-     vendus ; panneau debug (FPS, caméra, lumières en direct) ; toggle curseur
-     (TAB) dans `Window`.
-   - ~~**Vulkan SDK / validation layers**~~ **[FAIT]** Layers MSYS2 activées via
-     `./run.sh` (`VK_LAYER_PATH` + `ucrt64/bin` en tête du PATH). Le moteur passe
-     la validation sans erreur.
+**Éclairage (fait)** : Directional / Point / Spot unifiées (`GpuLight[16]`),
+ombres temps réel 2D-array (`ShadowMap`, PCF), **lightmap baking GPU sans GI**
+(`LightBaker`) avec toggle Realtime/Baked. Toute la math d'éclairage est
+centralisée dans `shaders/lighting.glsl` (source unique) — couture idéale pour la
+suite.
 
-2. **Couche jeu (étape 8)** — ~~**split moteur (lib `ne_engine`) / jeu (exe)**~~
-   **[FAIT]** : le jeu (scène + behaviours) vit dans `game/` (exe), l'`Engine`
-   reçoit un `SceneSetup` ; itérer le jeu ne recompile plus le moteur. *Reste* :
-   sérialisation de scène (load/save), point d'entrée encore plus simple.
-
-3. **Scripting Lua (étape 8b)** — *décidé, différé* (voir « Décision scripting »
-   dans `CLAUDE.md`). Lua vendu (source C, zéro DLL) + sol2 + `ScriptBehaviour`
-   + hot-reload par file-watcher → itérer la logique sans recompiler/relier le
-   moteur. À faire après que `Material`/`ResourceManager` aient stabilisé l'API.
-   (Pas de hot-reload DLL natif : réveille le bug `ld`/libstdc++. Pas de C#.)
-
-4. **XR / OpenXR (étape 9, objectif final)** — voir §6.
-
-5. **Matériaux & PBR** — ~~`Material` + `ResourceManager` + chemins unifiés~~
-   **[FAIT]** (set 0 global / set 1 matériau, cache d'assets, `core/Paths.hpp`).
-   Reste le **PBR** (metallic-roughness) par-dessus le `Material` actuel.
-
-6. **Baked GI** (la suite du « pense déjà au baked » déjà amorcé) : étape de
-   bake offline, UV de lightmap (2e jeu d'UV dans `Vertex`), texture lightmap
-   échantillonnée dans le terme *indirect* du fragment shader. Le hook
-   `LightNode::bakeMode` et la séparation indirect/direct sont déjà là.
+**Le manque structurel** : rendu **forward**, Blinn-Phong, **aucun compute**,
+**pas de HDR**, **pas de G-buffer**, **pas de multiview**. C'est ce que la Phase 0
+corrige.
 
 ---
 
-## 3. Bouts de code à améliorer
+## 1. Cap rendu : photoréaliste + optimisé + mobile/VR
 
-### Correctness (à traiter en priorité)
-- ~~**Sémaphore `renderFinished` par frame au lieu de par image**~~ **[FAIT]**
-  Déplacé dans `Swapchain` (un sémaphore par image, indexé par `imageIndex`,
-  recréé avec la swapchain).
-- ~~**Macros GLM non globales**~~ **[FAIT]** Définies globalement dans
-  `CMakeLists.txt` (`target_compile_definitions`), `#define` locaux retirés.
+Décision (cf. `RENDU_AVANCE.md`) : on ne garde de l'état de l'art que les
+techniques **compute, déterministes et view-independent** — celles qui tiennent
+sur mobile/VR et restent légères. On **écarte le path tracing matériel**
+(ReSTIR PT/G-PT, RTXDI) : pas de RT cores exploitables sur Quest, et son denoiser
+temporel crée du ghosting rédhibitoire en VR. (Au mieux option desktop ultra,
+très long terme — pas le cœur.)
 
-### Perf (pas urgent à cette échelle, mais à garder en tête)
-- **3 traversées de scène par frame** : `updateTree` (behaviours),
-  `gatherLights`, puis `recordCommandBuffer`. Acceptable maintenant ; à terme,
-  une passe de collecte unique produisant une liste de draw + une liste de
-  lumières (un « RenderView ») serait plus propre et plus rapide.
-- **Pas de frustum culling** : tout est dessiné. `Mesh` calcule déjà une AABB
-  au chargement mais la **jette** — la conserver permettrait le culling.
-- **Copies one-time synchrones** (`VulkanDevice::copyBuffer` /
-  `Texture` transitions) font un `vkQueueWaitIdle` à chaque fois. OK à l'init ;
-  à éviter si on charge des assets en cours de jeu (→ transferts asynchrones).
-- **Matrice normale recalculée par sommet** dans `shader.vert`
-  (`transpose(inverse(model))`). La passer en push constant ou la précalculer
-  serait moins coûteux sur de gros meshes.
+**Colonne vertébrale** : une **matrice de scalabilité** Low→Ultra, combinable à
+l'exécution (commutation de `VkDescriptorSet`/pipelines), alignée sur les
+capacités GPU interrogées au démarrage. C'est le « regress gracefully » qui colle
+à la philosophie : un même moteur, du Quest au desktop.
 
-### Qualité / hygiène
-- ~~**Aucun warning compilateur activé**~~ **[FAIT]** `-Wall -Wextra` activés
-  sur les TU du moteur (third-party restent en `-w`) ; build sans warning.
-- ~~**Pas de système de log**~~ **[FAIT]** `core/Log.hpp` (info/warn/error) ;
-  les `cout`/`cerr` épars y sont routés.
-- ~~**Chemins d'assets** incohérents (modèles absolus, shaders relatifs au
-  cwd)~~ **[FAIT]** `core/Paths.hpp` : tout absolu (`assetPath`/`shaderPath`),
-  cwd-indépendant. (Reste à rendre relatif-à-l'exe pour packager un jeu.)
-- **Couleurs / gamma** : albédo en sRGB, cible sRGB, mais l'éclairage est
-  additionné sans vraie gestion linéaire ni tone mapping. À formaliser quand on
-  passera au PBR.
+### Phase 0 — Fondations rendu **(DÈS MAINTENANT)**
 
----
+Sans ça, rien de la GI avancée n'est possible. C'est l'essentiel du travail réel.
 
-## 4. Classes / abstractions à ajouter
+- **PBR metallic-roughness + normal mapping** : remplacer Blinn-Phong (BRDF
+  changée à un seul endroit, `lighting.glsl`). *Le* saut visuel vers le moderne.
+- **HDR + tonemapping (ACES)** : cible de rendu R16F → passe plein-écran → swapchain
+  (`SceneSettings.enablePostProcessing` existe, inutilisé). Indispensable dès que
+  l'éclairage dépasse 1.0.
+- **Infrastructure compute** : `ComputePipeline`, dispatch, images storage,
+  barrières **sync2**. Brique de toute la GI future.
+- **Rendu différé / Visibility buffer** : G-buffer (pos monde, normale, albedo,
+  rugosité/métal). Entrée obligatoire des cascades et des caches ; réduit l'overdraw
+  (bon en mobile TBDR).
+- **Multiview (stéréo) dès maintenant** : concevoir **toutes** les nouvelles passes
+  multiview-aware (un render, deux vues). Fondation VR — ne pas câbler « une vue mono ».
+- **GPU-driven + bindless** : indirect draw/dispatch, `VK_EXT_descriptor_indexing`.
+  Moderne, et nécessaire au sampling efficace des caches.
+- **Support assets PBR** (compagnon immédiat, sinon le PBR n'a rien à afficher) :
+  **chargement glTF** (matériaux PBR, hiérarchies) + **mipmaps/anisotropie** sur
+  `Texture` (aujourd'hui `mipLevels=1`).
 
-- ~~**`Material`**~~ **[FAIT]** `Material` (texture + `baseColor`, descriptor
-  set 1) référencé par `MeshNode` ; créés/cachés par `ResourceManager`. *Reste* :
-  tri des draws par matériau, plusieurs pipelines (transparence), PBR.
-- **`CameraNode`** (différé) — la caméra est un membre de `Engine`. En faire un
-  nœud serait cohérent avec « tout est nœud » (et utile multi-caméra / XR), MAIS
-  l'éditeur introduit une distinction caméra-d'éditeur (outil, hors scène) vs
-  caméra-de-jeu (`CameraNode` dans la scène, active en Play Mode). À trancher
-  avant d'ajouter la classe, pour ne pas créer une abstraction inutilisée.
-- ~~**`ResourceManager` / cache d'assets**~~ **[FAIT]** mutualise meshes/textures/
-  matériaux par clé ; `core/Paths.hpp` centralise la résolution (assets +
-  shaders, absolus, cwd-indépendant).
-- ~~**`Renderer`**~~ **[FAIT]** `render/Renderer` possède toute la machinerie de
-  frame ; `Engine` n'est plus que l'orchestration. Couture pour le chemin XR (§6).
-- ~~**`Input`**~~ **[FAIT]** `core/Input` (statique, échantillonné 1×/frame),
-  accessible aux `Behaviour`. Dogfoodé dans `Engine::processInput`.
-- ~~**`Time`**~~ **[FAIT]** `core/Time` (delta scaled/unscaled, elapsed, scale) ;
-  `updateTree` utilise le delta scaled → pause gameplay possible (scale=0).
-- **API scène manquante sur `Node`** : `removeChild`, suppression/`destroy`,
-  `findChild(name)` / chemins, activation (`enabled`). Lifecycle behaviour :
-  `onDestroy`, flag `enabled`.
-- **`LightingSystem`** — sortir `gatherLights` + l'UBO de l'`Engine` quand le
-  nombre de lumières et de types grandira (et pour les ombres).
-- **`ScriptBehaviour` + binding Lua** (étape 8b, décidé/différé) — `Behaviour`
-  qui délègue `onReady`/`onUpdate` à des fonctions Lua ; Lua vendu (source C) +
-  sol2 + file-watcher hot-reload. Cf. « Décision scripting » dans `CLAUDE.md`.
+### Plus tard (validé phase par phase, pas maintenant)
+
+- **Phase 1 — Radiance Cascades 2D** : GI diffuse **sans bruit**, 100 % compute,
+  zéro TAA → idéal mobile/VR. Remplace l'ambient constant par un vrai indirect.
+- **Phase 2 — World Radiance Cache + spatial hashing** (idTech 8) : ombrage
+  **découplé de l'écran** → **ombré une fois, échantillonné par les deux yeux**.
+  Le gain VR le plus fort. Async compute, mises à jour entrelacées (~14 Mo).
+- **Phase 3 — Volumétrie froxel** : brouillard / lumière volumétrique / SSS,
+  alimentés par les cascades.
+- *(Écarté du cœur)* réflexions/PT par ray-query : option desktop ultra seulement.
 
 ---
 
-## 5. Dette technique & environnement
-- ~~**Validation layers absentes**~~ **[FAIT]** activées via `./run.sh`.
-- **Tests / CI** : aucun. Au minimum, un smoke test « init + 1 frame headless »
-  et un build CI.
-- **Toolchain MSYS2** : link statique en contournement du crash `ld` (cf.
-  `CLAUDE.md`). Vrai correctif : réinstaller `mingw-w64-ucrt-x86_64-gcc/binutils`.
-- ~~**Curseur souris toujours capturé**~~ **[FAIT]** toggle TAB
-  (`Window::setCursorCaptured`).
+## 2. Pipeline d'assets (au-delà de glTF/mipmaps de la Phase 0)
+
+- Animations / skinning (via glTF) quand la couche jeu en aura besoin.
+
+## 3. Couche jeu **(plus tard)**
+
+- **Scripting Lua** (étape 8b décidée) : `ScriptBehaviour : Behaviour` délégant à
+  Lua (sol2 vendu, hot-reload file-watcher) — itérer sans recompiler le moteur.
+- **Physique légère** (Jolt, ou maison) : collisions / rigidbodies.
+
+## 4. Capstone — XR / OpenXR **(plus tard)**
+
+Objectif final. Réutilise tout le pipeline de scène ; seul le chemin de
+présentation diffère. **Le multiview de la Phase 0 est exactement la fondation
+qui le prépare** — d'où son inclusion immédiate. À faire après que le rendu soit
+moderne (PBR/HDR + GI), pour ne pas figer de choix sur un rendu basique.
 
 ---
 
-## 6. Spécifique XR / OpenXR (objectif final)
+## 5. Transversal — propreté & Vulkan moderne (au fil de l'eau)
 
-À garder en tête dès les refactos intermédiaires :
-- **Rendu stéréo (2 vues)** : view/proj deviennent des tableaux [2]. Viser le
-  **multiview** Vulkan (`VK_KHR_multiview`) — une seule passe, `gl_ViewIndex`
-  dans le shader.
-- **Présentation découplée** : aujourd'hui `Swapchain` suppose 1 fenêtre / 1 vue
-  mono. Le chemin de présentation doit pouvoir être la **swapchain OpenXR** à la
-  place de la swapchain GLFW. → motive l'extraction d'un `Renderer` (§4) qui rend
-  vers des cibles abstraites, indépendamment de la source de présentation.
-- **Poses** : casque + contrôleurs alimentent des `CameraNode` / nœuds de la
-  scène — d'où l'intérêt d'avoir la caméra dans le graphe.
-- Le pipeline de scène (graphe, matériaux, éclairage) est **partagé** entre
-  desktop et XR ; seule la présentation diffère.
+- **Vulkan moderne** : **dynamic rendering** (VK 1.3, supprime le boilerplate
+  render-pass/framebuffer de `Swapchain`/`ShadowMap`/`LightBaker`), **sync2**,
+  **timeline semaphores** (indispensables pour la synchro graphics↔compute async).
+  Moderne *et* plus léger — à introduire pendant la Phase 0.
+- **Découpler `Texture` d'ImGui** (violation de couche : une classe graphics ne
+  doit pas connaître l'UI).
+- **Finir l'éclatement d'`EditorUI`** (god-class) en panels — déjà entamé.
+
+## 6. Polish court terme (limites v1 de l'éclairage)
+
+- Lightmaps **non sérialisées** → exporter (PNG/EXR + GUID). *(La GI Phase 1
+  réduira l'intérêt du baking statique, sauf pour le tier Low mobile.)*
+- Pas de dilation de seams sur les lightmaps → passe de dilation (~30 lignes).
+- Pas d'unwrap auto `.obj` (fallback UV chevauchants) → xatlas si utile.
+- Ombres de Point lights absentes (cubemap, hors scope initial).
 
 ---
 
-## 7. Ordre d'attaque conseillé (résumé)
+## 7. Priorisation
 
-1. ~~Vulkan SDK + validation layers, sémaphore `renderFinished`, macros GLM.~~ FAIT
-2. ~~`-Wall -Wextra`, petit `Log`.~~ FAIT
-3. ~~ImGui + pipeline cache + MSAA (étape 7).~~ FAIT
-4. ~~`Material` + `ResourceManager` + unification des chemins d'assets.~~ FAIT
-5. ~~Extraire `Renderer`~~ FAIT ; ~~`Input`/`Time`~~ FAIT ; `CameraNode` **différé**
-   (l'éditeur introduit caméra-éditeur vs caméra-de-jeu : à décider avant de
-   l'ajouter, sinon classe inutilisée). ← le reste de l'item 5
-6. ~~Split moteur(lib)/jeu(exe)~~ FAIT ; reste : sérialisation de scène, couche jeu.
-7. Scripting Lua + `ScriptBehaviour` + hot-reload (étape 8b).
-8. PBR, ombres, baked GI.
-9. OpenXR (étape 9).
+| # | Chantier | Quand | Pourquoi |
+|---|---|---|---|
+| 1 | **Phase 0 rendu** (PBR, HDR, compute, deferred, multiview, GPU-driven, glTF) | **Maintenant** | Fondations de tout : moderne, scalable, prêt GI + VR |
+| 2 | Dynamic rendering / sync2 / timeline (cleanup) | Pendant Phase 0 | Allège le code, requis pour l'async compute |
+| 3 | **Phase 1 — Radiance Cascades 2D** | Plus tard | 1re GI sans bruit, mobile/VR |
+| 4 | **Phase 2 — World Radiance Cache** | Plus tard | Découple l'ombrage, clé VR |
+| 5 | **Phase 3 — Volumétrie froxel** | Plus tard | Brouillard / volumétrique |
+| 6 | Lua scripting | Plus tard | Itération gameplay |
+| 7 | Physique | Plus tard | Vrais jeux |
+| 8 | **OpenXR / stéréo** | Plus tard | Objectif final, après un rendu moderne |
+
+> Règle d'or : **fondations (Phase 0) avant GI avancée**, **rendu moderne avant
+> XR**, **déterministe avant stochastique** (VR). Mener les nettoyages Vulkan au
+> fil de l'eau, pas en gros chantier dédié.
+
+---
+
+## Différé volontairement
+
+- **Tests & CI** : écartés pour l'instant (choix assumé). À reconsidérer quand le
+  moteur se stabilise et que les régressions deviennent coûteuses.

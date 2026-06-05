@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NextEngine | The Future of Creation</title>
+    
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="NextEngine is a powerful, retro-futuristic, open-source C++ engine built natively for LLMs and human creators. The future of creation is here.">
+    <meta name="keywords" content="NextEngine, Game Engine, Open Source, C++, Vulkan, LLM, AI Engine, Pixel Art, Retro-Futuristic">
+    <meta name="author" content="saias-o">
+    
+    <!-- OpenGraph Tags -->
+    <meta property="og:title" content="NextEngine | The Future of Creation">
+    <meta property="og:description" content="A powerful, LLM-native, open-source game engine built for agents and humans.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://github.com/saias-o/NextEngine">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Main Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- LLM indexer hints & structured data -->
+    <link rel="help" type="text/plain" href="llms.txt" title="AI Agent documentation summary">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "NextEngine",
+      "operatingSystem": "Windows 10/11, Linux",
+      "applicationCategory": "DeveloperApplication",
+      "softwareVersion": "v0.1.0-BETA",
+      "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "description": "NextEngine is a modular, high-performance C++ game engine designed natively for autonomous AI agents (LLMs) and human creators, featuring a Vulkan graphics pipeline.",
+      "applicationSubCategory": "3D Game Engine / Runtime Environment",
+      "programmingLanguage": "C++17, C++20",
+      "codeRepository": "https://github.com/saias-o/NextEngine",
+      "author": {
+        "@type": "Person",
+        "name": "saias-o"
+      }
+    }
+    </script>
+</head>
+<body class="crt-enabled">
+    <!-- CRT Screen Overlay Effects -->
+    <div class="crt-overlay"></div>
+    <div class="crt-bezel"></div>
+    <div class="scanlines"></div>
+    <div class="flicker"></div>
+
+    <div class="terminal-container">
+        <!-- Main Header -->
+        <header class="terminal-header">
+            <div class="header-logo" id="logo-container">
+                <span class="logo-pixel">■</span>
+                <span class="logo-text blink">NEXTENGINE</span>
+                <span class="logo-version">v0.1.0-BETA</span>
+            </div>
+            
+            <!-- Sound & Graphic Controls -->
+            <div class="system-controls">
+                <button id="btn-toggle-crt" class="ctrl-btn" title="Toggle CRT Filter" aria-label="Toggle CRT Scanline Overlay">
+                    [CRT: <span class="status-indicator active">ON</span>]
+                </button>
+                <button id="btn-toggle-sound" class="ctrl-btn" title="Toggle Sound Engine" aria-label="Toggle Synthesizer Sound Engine">
+                    [SOUND: <span class="status-indicator">OFF</span>]
+                </button>
+            </div>
+        </header>
+
+        <!-- Navigation System (SPA Tabs) -->
+        <nav class="terminal-nav" aria-label="Main Navigation">
+            <button id="nav-home" class="nav-item active" data-tab="home" aria-label="Initialize Home Console">
+                <span class="nav-num">[01]</span> <span class="nav-label">INITIALIZE</span>
+            </button>
+            <button id="nav-features" class="nav-item" data-tab="features" aria-label="Capabilities Manifest and API bindings specs">
+                <span class="nav-num">[02]</span> <span class="nav-label">CAPABILITIES</span>
+            </button>
+            <button id="nav-doc" class="nav-item" data-tab="doc" aria-label="Engine API and developer documentation">
+                <span class="nav-num">[03]</span> <span class="nav-label">DOCUMENTATION</span>
+            </button>
+            <button id="nav-download" class="nav-item" data-tab="download" aria-label="Engine and Hub install executable binaries">
+                <span class="nav-num">[04]</span> <span class="nav-label">INSTALL.EXE</span>
+            </button>
+            <button id="nav-changelog" class="nav-item" data-tab="changelog" aria-label="View engine releases and changelogs from GitHub">
+                <span class="nav-num">[05]</span> <span class="nav-label">CHANGELOG</span>
+            </button>
+            <button id="nav-donate" class="nav-item nav-right-align" data-tab="donate" aria-label="Sponsor project via GitHub Sponsors">
+                <span class="nav-num">[06]</span> <span class="nav-label" style="display: inline-flex; align-items: center; gap: 6px;">DONATE <svg class="pixel-heart" viewBox="0 0 5 5" width="10" height="10" style="fill: currentColor; display: inline-block; vertical-align: middle;"><rect x="1" y="0" width="1" height="1"/><rect x="3" y="0" width="1" height="1"/><rect x="0" y="1" width="5" height="1"/><rect x="0" y="2" width="5" height="1"/><rect x="1" y="3" width="3" height="1"/><rect x="2" y="4" width="1" height="1"/></svg></span>
+            </button>
+        </nav>
+
+        <!-- Main Screen Content Area -->
+        <main class="terminal-body" id="main-content">
+            
+            <!-- ================= HOME SECTION ================= -->
+            <section id="sec-home" class="tab-panel active">
+                <div class="hero-layout">
+                    <!-- Slogan & Intro -->
+                    <div class="hero-left">
+                        <div class="terminal-prompt-box">
+                            <span class="prompt-user">guest@nextengine</span>:<span class="prompt-dir">~</span>$ ./run_slogan
+                            <h1 class="slogan-text" id="slogan-typing">NextEngine, the future of creation.</h1>
+                        </div>
+
+                        <div class="interactive-terminal">
+                            <div class="term-header">
+                                <div class="term-dots">
+                                    <span class="dot red"></span>
+                                    <span class="dot yellow"></span>
+                                    <span class="dot green"></span>
+                                </div>
+                                <span class="term-title">ne_agent_runtime.log</span>
+                            </div>
+                            <div class="term-window" id="terminal-screen">
+                                <div class="term-line output-line">&gt; Initializing NextEngine Core modules...</div>
+                                <div class="term-line output-line">&gt; Vulkan Graphics Pipeline loaded successfully.</div>
+                                <div class="term-line output-line">&gt; LLM cognitive layer connection established [LLM-Native].</div>
+                                <div class="term-line output-line">&gt; Ready for human-agent collaboration.</div>
+                                <div class="term-line output-line text-cyan">&gt; Type 'help' or click features to explore capabilities.</div>
+                                <div class="term-line input-line">
+                                    <span class="term-prompt">&gt;</span>
+                                    <input type="text" id="terminal-cli" autocomplete="off" placeholder="type command here..." maxlength="30">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="hero-actions">
+                            <button class="btn-primary start-transition" data-target="download" id="hero-btn-download">
+                                DOWNLOAD ENGINE
+                            </button>
+                            <button class="btn-secondary start-transition" data-target="doc" id="hero-btn-features">
+                                VIEW DOCUMENTATION
+                            </button>
+                            <button class="btn-secondary start-transition btn-donate-hero" data-target="donate" id="hero-btn-donate" style="display: inline-flex; align-items: center; gap: 6px;">
+                                DONATE <svg class="pixel-heart" viewBox="0 0 5 5" width="10" height="10" style="fill: currentColor; display: inline-block; vertical-align: middle;"><rect x="1" y="0" width="1" height="1"/><rect x="3" y="0" width="1" height="1"/><rect x="0" y="1" width="5" height="1"/><rect x="0" y="2" width="5" height="1"/><rect x="1" y="3" width="3" height="1"/><rect x="2" y="4" width="1" height="1"/></svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Magical Low-Res 3D Render -->
+                    <div class="hero-right">
+                        <div class="canvas-pixel-border">
+                            <div class="canvas-overlay-label">[COSMIC_SPACE_WAVES]</div>
+                            <div id="threejs-container" class="retro-canvas-container">
+                                <!-- ThreeJS Canvas will be appended here -->
+                            </div>
+                            <div class="canvas-footer-stats">
+                                <span id="stat-fps">FPS: 60.00</span>
+                                <span id="stat-poly">VERTICES: 1,337</span>
+                                <span id="stat-mode">RENDER: WIRE / VOXEL</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= FEATURES SECTION ================= -->
+            <section id="sec-features" class="tab-panel">
+                <div class="section-header">
+                    <h2>// CAPABILITIES_MANIFEST</h2>
+                    <p>Designed for autonomous LLM agents. Perfectly tuned for human engineers.</p>
+                </div>
+
+                <div class="features-grid">
+                    <!-- Feature 1: LLM Native -->
+                    <div class="feature-card" id="feat-llm">
+                        <div class="feat-icon">🤖</div>
+                        <h3>01. LLM-Native Core</h3>
+                        <p class="feat-desc">
+                            NextEngine features built-in JSON API interfaces, text-based project state descriptors, and structural C++ bindings designed specifically to let Large Language Models read, manipulate, compile, and run scenes in real-time.
+                        </p>
+                        <div class="code-snippet-box">
+                            <span class="code-title">agent_request.json</span>
+                            <pre class="code-snippet"><code>{
+  "action": "spawn_entity",
+  "template": "futuristic_voxel_crystal",
+  "position": [0.0, 1.5, -2.0],
+  "script": "rotate_y.lua"
+}</code></pre>
+                        </div>
+                    </div>
+
+                    <!-- Feature 2: Human Empowered -->
+                    <div class="feature-card" id="feat-human">
+                        <div class="feat-icon">🛠️</div>
+                        <h3>02. Human Customizability</h3>
+                        <p class="feat-desc">
+                            No layers of slow visual scripting in your way. Develop directly in pure, highly-optimized C++17/20, configure with JSON structures, and use lightweight ImGui interfaces to build custom developer extensions. 
+                        </p>
+                        <div class="code-snippet-box">
+                            <span class="code-title">custom_node.cpp</span>
+                            <pre class="code-snippet"><code>void Update(float dt) override {
+    Position.y += sin(time) * dt;
+    VulkanRenderer::DrawMesh(cube);
+}</code></pre>
+                        </div>
+                    </div>
+
+                    <!-- Feature 3: Free & Open Source -->
+                    <div class="feature-card" id="feat-foss">
+                        <div class="feat-icon">🔓</div>
+                        <h3>03. GPL v3 Free Software</h3>
+                        <p class="feat-desc">
+                            NextEngine is 100% Free Software licensed under the GNU General Public License v3 (GPL v3). Copy it, modify it, share it, and host your own engine builds with complete freedom and zero licensing fees.
+                        </p>
+                        <p class="feat-desc" style="font-size: 0.8rem; border-top: 1px solid var(--color-border); padding-top: 10px; margin-top: 4px; color: var(--color-text-muted);">
+                            <strong>License terms:</strong> Modifying the engine core requires releasing your changes under GPL v3. Writing custom game scripts without modifying the engine itself permits publishing and selling your game under any closed/proprietary license.
+                        </p>
+                        <div class="github-badge-box">
+                            <a href="https://github.com/saias-o/NextEngine" target="_blank" rel="noopener" class="github-badge-btn" id="features-git-btn">
+                                <span class="git-icon">🐙</span> SOURCE CODE ON GITHUB
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= DOCUMENTATION SECTION ================= -->
+            <section id="sec-doc" class="tab-panel">
+                <div class="section-header">
+                    <h2>// ENGINE_API_DOCUMENTATION</h2>
+                    <p>Complete C++ developer guides and source code API references for NextEngine.</p>
+                </div>
+
+                <div class="doc-layout">
+                    <!-- Doc Sidebar Navigation -->
+                    <aside class="doc-sidebar" aria-label="Documentation Navigation">
+                        <button class="doc-sidebar-item active" data-doc="doc-intro">01. Getting Started</button>
+                        <button class="doc-sidebar-item" data-doc="doc-node">02. ne::Node</button>
+                        <button class="doc-sidebar-item" data-doc="doc-scene">03. ne::Scene</button>
+                        <button class="doc-sidebar-item" data-doc="doc-behaviour">04. ne::Behaviour</button>
+                        <button class="doc-sidebar-item" data-doc="doc-resource">05. ne::ResourceManager</button>
+                        <button class="doc-sidebar-item" data-doc="doc-editorui">06. ne::EditorUI</button>
+                        <button class="doc-sidebar-item" data-doc="doc-command">07. ne::Command System</button>
+                        <button class="doc-sidebar-item" data-doc="doc-llm">08. LLM Native Guide</button>
+                        <button class="doc-sidebar-item" data-doc="doc-tut-first">09. Your First Game</button>
+                        <button class="doc-sidebar-item" data-doc="doc-tut-input">10. Inputs &amp; Movement</button>
+                        <button class="doc-sidebar-item" data-doc="doc-tut-assets">11. Assets &amp; Rendering</button>
+                        <button class="doc-sidebar-item" data-doc="doc-tut-camera">12. Controlling the Camera</button>
+                        <button class="doc-sidebar-item" data-doc="doc-tut-lights">13. Lighting &amp; Shadows</button>
+                        <button class="doc-sidebar-item" data-doc="doc-tut-inspector">14. Custom Inspector UI</button>
+                        <button class="doc-sidebar-item" data-doc="doc-tut-compile">15. Compilation &amp; Standalone</button>
+                    </aside>
+
+                    <!-- Doc Content Area -->
+                    <div class="doc-content">
+                        <!-- Sub-panel: Getting Started -->
+                        <div id="doc-intro" class="doc-section active">
+                            <h3>01. Getting Started with NextEngine</h3>
+                            <p>
+                                NextEngine is designed around a component-hierarchical architecture resembling modern engines like Godot or Unity, but optimized for minimal overhead, direct C++ execution, and native Large Language Model (LLM) interaction.
+                            </p>
+                            <p>
+                                To make NextEngine familiar to game creators, here is how its core structural components map to Unity conventions:
+                            </p>
+                            
+                            <table style="width:100%; border-collapse: collapse; margin: 15px 0; font-size: 0.85rem; border: 1px solid var(--color-border);">
+                                <thead>
+                                    <tr style="background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--color-border);">
+                                        <th style="padding: 10px; text-align: left; border-right: 1px solid var(--color-border); color: #fff;">NextEngine C++ Type</th>
+                                        <th style="padding: 10px; text-align: left; border-right: 1px solid var(--color-border); color: #fff;">Unity C# Equivalent</th>
+                                        <th style="padding: 10px; text-align: left; color: #fff;">Function / Purpose</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr style="border-bottom: 1px solid var(--color-border);">
+                                        <td style="padding: 10px; border-right: 1px solid var(--color-border); font-family: var(--font-mono); color: var(--color-accent-emerald);">ne::Node</td>
+                                        <td style="padding: 10px; border-right: 1px solid var(--color-border); font-family: var(--font-mono);">GameObject</td>
+                                        <td style="padding: 10px; color: var(--color-text-dim);">The fundamental object in the scene hierarchy. Contains transform and children.</td>
+                                    </tr>
+                                    <tr style="border-bottom: 1px solid var(--color-border);">
+                                        <td style="padding: 10px; border-right: 1px solid var(--color-border); font-family: var(--font-mono); color: var(--color-accent-emerald);">ne::Behaviour</td>
+                                        <td style="padding: 10px; border-right: 1px solid var(--color-border); font-family: var(--font-mono);">MonoBehaviour</td>
+                                        <td style="padding: 10px; color: var(--color-text-dim);">The base scripting component for attaching custom game logic and lifecycle tick callbacks.</td>
+                                    </tr>
+                                    <tr style="border-bottom: 1px solid var(--color-border);">
+                                        <td style="padding: 10px; border-right: 1px solid var(--color-border); font-family: var(--font-mono); color: var(--color-accent-emerald);">ne::Transform</td>
+                                        <td style="padding: 10px; border-right: 1px solid var(--color-border); font-family: var(--font-mono);">Transform</td>
+                                        <td style="padding: 10px; color: var(--color-text-dim);">Struct containing position (vec3), rotation (quat), and scale (vec3) parameters.</td>
+                                    </tr>
+                                    <tr style="border-bottom: 1px solid var(--color-border);">
+                                        <td style="padding: 10px; border-right: 1px solid var(--color-border); font-family: var(--font-mono); color: var(--color-accent-emerald);">ne::Input</td>
+                                        <td style="padding: 10px; border-right: 1px solid var(--color-border); font-family: var(--font-mono);">Input</td>
+                                        <td style="padding: 10px; color: var(--color-text-dim);">Static utility class to query keyboard button states and mouse deltas synchronously.</td>
+                                    </tr>
+                                    <tr style="border-bottom: 1px solid var(--color-border);">
+                                        <td style="padding: 10px; border-right: 1px solid var(--color-border); font-family: var(--font-mono); color: var(--color-accent-emerald);">ne::MeshNode</td>
+                                        <td style="padding: 10px; border-right: 1px solid var(--color-border); font-family: var(--font-mono);">MeshRenderer + MeshFilter</td>
+                                        <td style="padding: 10px; color: var(--color-text-dim);">A subclass node that references an asset mesh and material descriptor to draw 3D models.</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 10px; border-right: 1px solid var(--color-border); font-family: var(--font-mono); color: var(--color-accent-emerald);">onDrawInspector()</td>
+                                        <td style="padding: 10px; border-right: 1px solid var(--color-border); font-family: var(--font-mono);">OnInspectorGUI()</td>
+                                        <td style="padding: 10px; color: var(--color-text-dim);">Virtual function override to draw custom ImGui variable sliders and debug properties.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <p>
+                                Rather than wrapping engine compilation in opaque binaries, NextEngine provides developers with immediate C++ compiler access. Game modules are compiled as dynamic link libraries (DLLs) which the core editor hot-swaps, allowing quick iteration loops.
+                            </p>
+                            <div class="info-alert">
+                                <strong>Architecture Tip:</strong> The core scene graph is purely data-oriented. Nodes contain matrices, translations, and hierarchy relations. All Vulkan resource uploads and draws are driven by the central engine loop querying mesh nodes.
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: ne::Node -->
+                        <div id="doc-node" class="doc-section">
+                            <h3>02. ne::Node Reference</h3>
+                            <p>
+                                `ne::Node` is the base class for all elements in the scene hierarchy. It handles parent-child relations and computes recursive local-to-world transform transformations.
+                            </p>
+                            <p>
+                                Below is the active class declaration extracted directly from <code>src/scene/Node.hpp</code>:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">scene/Node.hpp (C++ Header)</span>
+                                <pre class="code-snippet"><code>namespace ne {
+ 
+class Node {
+public:
+    explicit Node(std::string name = "Node");
+    virtual ~Node();
+    Node(const Node&) = delete;
+    Node& operator=(const Node&) = delete;
+
+    // Takes ownership of `child` and sets its parent. Returns borrowed raw pointer.
+    Node* addChild(std::unique_ptr&lt;Node&gt; child);
+    
+    // Find the unique_ptr for `child`, erase it (which deletes it), and return true.
+    bool removeChild(Node* child);
+    
+    // Detach a child from this node and return ownership unique_ptr.
+    std::unique_ptr&lt;Node&gt; detachChild(Node* child);
+
+    // Construct a child of type T in-place. Automatically forwards constructor args.
+    template &lt;typename T, typename... Args&gt;
+    T* createChild(Args&amp;&amp;... args);
+
+    // Attach behaviours for scripting
+    template &lt;typename T, typename... Args&gt;
+    T* addBehaviour(Args&amp;&amp;... args);
+    Behaviour* addBehaviour(std::unique_ptr&lt;Behaviour&gt; behaviour);
+
+    // Transforms &amp; Hierarchy
+    void updateTransforms(const glm::mat4&amp; parentWorld, bool parentDirty);
+    const glm::mat4&amp; worldTransform() const;
+    Transform&amp; transform();
+    Node* parent() const;
+    const std::vector&lt;std::unique_ptr&lt;Node&gt;&gt;&amp; children() const;
+    
+    // Depth-first scene tree traversal
+    void traverse(const std::function&lt;void(Node&amp;, const glm::mat4&amp;)&gt;&amp; visit);
+};
+
+} // namespace ne</code></pre>
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: ne::Scene -->
+                        <div id="doc-scene" class="doc-section">
+                            <h3>03. ne::Scene Reference</h3>
+                            <p>
+                                A `ne::Scene` represents the database of the current world. It inherits from `ne::Node` as the root of the hierarchy tree, but manages flattened collections of meshes and lights for high-speed Vulkan rendering.
+                            </p>
+                            <p>
+                                Below is the class definition from <code>src/scene/Scene.hpp</code>:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">scene/Scene.hpp (C++ Header)</span>
+                                <pre class="code-snippet"><code>namespace ne {
+
+struct SceneSettings {
+    glm::vec4 ambientLight{0.04f, 0.04f, 0.05f, 0.0f};
+    glm::vec4 clearColor{0.1f, 0.1f, 0.1f, 1.0f};
+    bool enablePostProcessing = true;
+};
+
+class Scene : public Node {
+public:
+    Scene();
+
+    // Invokes updateTree on the root, recursively updating all behaviours
+    void update(float dt);
+
+    SceneSettings&amp; settings();
+    const std::vector&lt;MeshNode*&gt;&amp; meshes() const;
+    const std::vector&lt;LightNode*&gt;&amp; lights() const;
+};
+
+} // namespace ne</code></pre>
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: ne::Behaviour -->
+                        <div id="doc-behaviour" class="doc-section">
+                            <h3>04. ne::Behaviour Reference</h3>
+                            <p>
+                                `ne::Behaviour` is the base class for custom scripting (analogous to Unity's MonoBehaviour). Behaviours hook into the node lifecycle methods `onReady` and `onUpdate`.
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">scene/Behaviour.hpp (C++ Header)</span>
+                                <pre class="code-snippet"><code>namespace ne {
+
+class Behaviour {
+public:
+    virtual ~Behaviour() = default;
+    
+    // Lifecycle hooks
+    virtual void onReady() {}
+    virtual void onUpdate(float dt) {}
+    virtual void onDrawInspector() {}
+
+    // Serialization for saving/loading scenes
+    virtual const char* typeName() const { return nullptr; }
+    virtual void save(nlohmann::json&amp;) const {}
+    virtual void load(const nlohmann::json&amp;) {}
+
+    Node* node() const { return node_; }
+};
+
+} // namespace ne</code></pre>
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: ne::ResourceManager -->
+                        <div id="doc-resource" class="doc-section">
+                            <h3>05. ne::ResourceManager Reference</h3>
+                            <p>
+                                `ne::ResourceManager` handles loading and caching of Vulkan textures, meshes, and materials. It ensures assets are uploaded to GPU memory only once and are referenced via unique GUIDs.
+                            </p>
+                            <p>
+                                Below is the resource management structure from <code>src/graphics/ResourceManager.hpp</code>:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">graphics/ResourceManager.hpp (C++ Header)</span>
+                                <pre class="code-snippet"><code>namespace ne {
+
+class ResourceManager {
+public:
+    ResourceManager(VulkanDevice&amp; device, AssetRegistry* registry = nullptr);
+    ~ResourceManager();
+
+    // Load and cache GPU resources
+    Mesh* getMesh(AssetID id);
+    Texture* getTexture(AssetID id);
+    Material* getMaterial(AssetID textureId, const glm::vec4&amp; baseColor);
+
+    // Direct model loading (.obj format)
+    Mesh* loadMesh(AssetID id);
+    
+    // Dynamic register hook for scripts
+    AssetID getOrRegister(const std::string&amp; path, AssetType type);
+
+    VkDescriptorSetLayout materialSetLayout() const;
+    VkDescriptorSet allocateMaterialSet(VkDescriptorSetLayout layout);
+};
+
+} // namespace ne</code></pre>
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: ne::EditorUI -->
+                        <div id="doc-editorui" class="doc-section">
+                            <h3>06. ne::EditorUI &amp; Panel Architecture</h3>
+                            <p>
+                                NextEngine features a modular, dockable Editor interface using Dear ImGui. The editor is structured into separate panel files to avoid large class coupling, allowing humans and LLM agents to easily maintain and extend visual panels.
+                            </p>
+                            
+                            <h4>Editor UI Layout &amp; Panel Guides (For Humans)</h4>
+                            <p>
+                                When you launch the NextEngine editor, it lays out several dockable panels on the screen to manage your game state. Here is a description of how to use each panel:
+                            </p>
+                            <ul style="list-style-type: disc; list-style-position: inside; font-size: 0.85rem; color: var(--color-text-dim); display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+                                <li>
+                                    <strong>Scene Hierarchy Panel (Left) :</strong> 
+                                    Lists all objects currently active in your scene in a tree structure. You can click objects to select them, double-click to rename them, and drag-and-drop nodes to change their parent-child relationships. Right-clicking a node allows you to create new children or delete the node.
+                                </li>
+                                <li>
+                                    <strong>Inspector Panel (Right) :</strong> 
+                                    Shows detailed properties of the selected node. It displays local transform coordinates (Position, Rotation, Scale inputs) and lists all attached components (`ne::Behaviour`). If the node is a light source or a mesh, it provides settings to change light colors or select mesh models.
+                                </li>
+                                <li>
+                                    <strong>File Browser Panel (Bottom) :</strong> 
+                                    A built-in filesystem navigator showing your project's assets directory. You can double-click folders to browse, search files, and drag assets (like <code>.scene</code> or <code>.obj</code> models) directly into the viewport or scene tree to load them.
+                                </li>
+                                <li>
+                                    <strong>Viewport Panel (Center) :</strong> 
+                                    The 3D Vulkan canvas rendering your game. It features tabs at the top to toggle between <strong>Scene Mode</strong> (where you can view and translate objects using translation/rotation gizmos) and <strong>Play Mode</strong> (which executes behaviour script logic in real-time).
+                                </li>
+                                <li>
+                                    <strong>Menu Bar Panel (Top) :</strong> 
+                                    The top file menu bar. Allows saving the scene, loading projects, compiling the game, opening project settings, or toggling the visibility of specific panels.
+                                </li>
+                            </ul>
+
+                            <p>
+                                Below is the class definition of the coordinator from <code>src/editor/EditorUI.hpp</code>:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">editor/EditorUI.hpp (C++ Header)</span>
+                                <pre class="code-snippet"><code>namespace ne {
+
+class EditorUI {
+public:
+    EditorUI();
+    
+    // Draw the full dockable editor layout
+    void draw(Scene* scene, Camera* camera, Project* project, ResourceManager* resources, float dt);
+
+    Node* selectedNode() const;
+    bool isPlayMode() const;
+    void setPlayMode(bool play);
+    bool quitRequested() const;
+    
+    bool isViewportHovered(float mx, float my) const;
+
+private:
+    // Deferred operations for C++ memory safety (avoids iterator invalidation)
+    Node* nodeToDelete_ = nullptr;
+    Node* nodeToCreateChildUnder_ = nullptr;
+    CreateNodeType createType_ = CreateNodeType::None;
+    Node* nodeToReparent_ = nullptr;
+    Node* newParent_ = nullptr;
+
+    // Viewport and Gizmos
+    GizmoMode gizmoMode_ = GizmoMode::Translate;
+    GizmoAxis grabbedAxis_ = GizmoAxis::None;
+    glm::vec2 viewportPos_{0.0f};
+    glm::vec2 viewportSize_{0.0f};
+
+    // Undo/Redo command stack
+    CommandHistory history_;
+    std::string clipboard_; // JSON string of a copied node subtree
+};
+
+} // namespace ne</code></pre>
+                            </div>
+                            <div class="info-alert">
+                                <strong>Panel Splitting:</strong> The editor viewport is a transparent passthrough overlay drawn directly on top of the Vulkan rendering canvas. Scene hierarchy tree, inspector, and file system browser are rendered as dockable ImGui panel modules: <code>SceneHierarchyPanel</code>, <code>InspectorPanel</code>, <code>FileBrowserPanel</code>.
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: ne::Command -->
+                        <div id="doc-command" class="doc-section">
+                            <h3>07. ne::Command (Undo/Redo System)</h3>
+                            <p>
+                                NextEngine implements a command history stack for undo and redo actions in the Editor. Every modification (moving nodes, renaming, deleting, spawning nodes) is wrapped in a subclass of `ne::Command` that keeps track of the delta state.
+                            </p>
+                            <p>
+                                Below is the C++ interface definition from <code>src/editor/Command.hpp</code>:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">editor/Command.hpp (C++ Header)</span>
+                                <pre class="code-snippet"><code>namespace ne {
+
+// Base interface for undoable editor operations
+class Command {
+public:
+    virtual ~Command() = default;
+    virtual void execute() = 0;
+    virtual void undo() = 0;
+    virtual const char* name() const { return "Command"; }
+};
+
+// Spawn a new node
+class AddNodeCommand : public Command {
+public:
+    AddNodeCommand(Node* parent, std::unique_ptr&lt;Node&gt; node);
+    void execute() override;
+    void undo() override;
+};
+
+// Re-parent a node (via scene tree drag &amp; drop)
+class ReparentNodeCommand : public Command {
+public:
+    ReparentNodeCommand(Node* node, Node* newParent);
+    void execute() override;
+    void undo() override;
+};
+
+// Modify local transform properties
+class TransformCommand : public Command {
+public:
+    TransformCommand(Node* node, const Transform&amp; oldT, const Transform&amp; newT);
+    void execute() override;
+    void undo() override;
+};
+
+} // namespace ne</code></pre>
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: LLM Agent -->
+                        <div id="doc-llm" class="doc-section">
+                            <h3>08. LLM Native Agent Guide</h3>
+                            <p>
+                                NextEngine is engineered natively for autonomous Large Language Models (LLMs) and coding agents. Instead of forcing agents to click UI buttons, the engine exposes clean text-based communication sockets and JSON files.
+                            </p>
+                            
+                            <h4>1. Scene tree Inspection</h4>
+                            <p>
+                                AI agents can query the entire hierarchy of the world in a clean, structured JSON format rather than parsing complex binary buffers. A typical scene descriptor exported by <code>SceneSerializer</code> looks like:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">scene_serialization.json</span>
+                                <pre class="code-snippet"><code>{
+  "scene": {
+    "name": "MySampleWorld",
+    "ambientLight": [0.04, 0.04, 0.05, 0.0],
+    "nodes": [
+      {
+        "name": "MainCube",
+        "type": "MeshNode",
+        "transform": {
+          "position": [0.0, 1.0, 0.0],
+          "rotation": [1.0, 0.0, 0.0, 0.0],
+          "scale": [2.0, 2.0, 2.0]
+        },
+        "behaviours": [
+          {
+            "type": "OrbitalMovement",
+            "properties": { "speed": 1.5 }
+          }
+        ]
+      }
+    ]
+  }
+}</code></pre>
+                            </div>
+
+                            <h4>2. TCP Socket Command Protocol</h4>
+                            <p>
+                                Running the engine starts a local TCP listener on port <code>localhost:8090</code>. An agent can connect and send command payloads as JSON packets to manipulate the runtime scene state directly:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">socket_payload.json</span>
+                                <pre class="code-snippet"><code>{
+  "command": "spawn_entity",
+  "template": "mesh_voxel_cube",
+  "name": "AgentVoxel",
+  "position": [1.5, 0.0, -3.0],
+  "script": "rotate_y.lua"
+}</code></pre>
+                            </div>
+
+                            <h4>3. Hot-Reload Scripting Loop</h4>
+                            <p>
+                                To let LLM agents test C++ files and Lua scripts without closing the engine:
+                            </p>
+                            <ul style="list-style-type: square; list-style-position: inside; font-size: 0.85rem; color: var(--color-text-dim); display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+                                <li>Agents write code to <code>src/game/</code> files.</li>
+                                <li>Agents submit a compile/reload command via the terminal loop or the TCP socket.</li>
+                                <li>The engine hot-reloads Lua scripts, compiles C++ game logic DLLs, and swaps them dynamically at runtime.</li>
+                            </ul>
+                        </div>
+
+                        <!-- Sub-panel: Your First Game -->
+                        <div id="doc-tut-first" class="doc-section">
+                            <h3>09. Creating Your First Game</h3>
+                            <p>
+                                Building a game in NextEngine starts by creating behavior logic scripts (by subclassing `ne::Behaviour`) and attaching them to nodes in the scene tree hierarchy.
+                            </p>
+                            <p>
+                                Follow this step-by-step example to create a rotating spinner object:
+                            </p>
+                            
+                            <h4>Step 1: Write the C++ Script Logic</h4>
+                            <p>
+                                Create a header file for your logic under <code>src/game/Spinner.hpp</code>. Override <code>onReady()</code> to initialize state, and <code>onUpdate(dt)</code> to animate coordinates every frame:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">src/game/Spinner.hpp (C++ Header)</span>
+                                <pre class="code-snippet"><code>#include "scene/Behaviour.hpp"
+#include "scene/Node.hpp"
+
+class Spinner : public ne::Behaviour {
+public:
+    float rotationSpeed = 2.0f; // Radians per second
+
+    // Executed once when the node enters the scene tree
+    void onReady() override {
+        node()->setName("VoxelSpinner");
+    }
+
+    // Executed every frame
+    void onUpdate(float dt) override {
+        // Query the parent node's transform
+        auto& t = node()->transform();
+        
+        // Rotate around Y axis
+        t.rotation = glm::rotate(t.rotation, rotationSpeed * dt, glm::vec3(0.0f, 1.0f, 0.0f));
+    }
+
+    // Set stable type identification for scene saving
+    const char* typeName() const override { return "Spinner"; }
+};</code></pre>
+                            </div>
+
+                            <h4>Step 2: Attach the Behaviour to a Scene Node</h4>
+                            <p>
+                                In your main game initialization scene setup, create a new 3D mesh node and attach your behaviour script component:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">src/game/GameInitializer.cpp (C++ Logic)</span>
+                                <pre class="code-snippet"><code>#include "scene/Scene.hpp"
+#include "scene/MeshNode.hpp"
+#include "game/Spinner.hpp"
+
+void initializeGame(ne::Scene* scene, ne::ResourceManager* resources) {
+    // 1. Create a child mesh node under the scene root
+    auto* spinnerNode = scene->createChild&lt;ne::MeshNode&gt;("MyRotatingMesh");
+    
+    // 2. Configure mesh and material
+    auto meshId = resources->getOrRegister("models/crystal.obj");
+    spinnerNode->setMesh(resources->getMesh(meshId));
+    
+    // 3. Attach custom spinner logic
+    spinnerNode->addBehaviour&lt;Spinner&gt;();
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: Inputs & Movement -->
+                        <div id="doc-tut-input" class="doc-section">
+                            <h3>10. Handling Inputs and Player Movement</h3>
+                            <p>
+                                In NextEngine, keyboard and mouse inputs are managed through the <code>ne::Input</code> system (`src/core/Input.hpp`). The input manager queries the low-level GLFW buffer once per frame, offering a clean, synchronous state access.
+                            </p>
+                            <p>
+                                Below is a complete implementation of a keyboard-controlled Player movement script:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">src/game/PlayerController.hpp (C++ Header)</span>
+                                <pre class="code-snippet"><code>#include "scene/Behaviour.hpp"
+#include "scene/Node.hpp"
+#include "core/Input.hpp"
+#include &lt;GLFW/glfw3.h&gt; // Keyboard key codes
+
+class PlayerController : public ne::Behaviour {
+public:
+    float speed = 5.0f;
+    glm::vec3 movementBounds{10.0f, 0.0f, 10.0f};
+
+    void onUpdate(float dt) override {
+        glm::vec3 direction{0.0f};
+
+        // Query key states using ne::Input
+        if (ne::Input::keyDown(GLFW_KEY_W)) direction.z -= 1.0f; // Forward
+        if (ne::Input::keyDown(GLFW_KEY_S)) direction.z += 1.0f; // Backward
+        if (ne::Input::keyDown(GLFW_KEY_A)) direction.x -= 1.0f; // Left
+        if (ne::Input::keyDown(GLFW_KEY_D)) direction.x += 1.0f; // Right
+
+        // Translate the node
+        if (glm::length(direction) > 0.0f) {
+            direction = glm::normalize(direction);
+            auto& t = node()->transform();
+            
+            t.position += direction * speed * dt;
+            
+            // Constrain positions to bounds
+            t.position.x = glm::clamp(t.position.x, -movementBounds.x, movementBounds.x);
+            t.position.z = glm::clamp(t.position.z, -movementBounds.z, movementBounds.z);
+        }
+    }
+
+    const char* typeName() const override { return "PlayerController"; }
+};</code></pre>
+                            </div>
+                            <div class="info-alert">
+                                <strong>Input Consistency:</strong> Querying input via <code>ne::Input</code> instead of direct GLFW calls prevents differences in input detection between multiple behaviors updating in the same frame.
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: Assets & Rendering -->
+                        <div id="doc-tut-assets" class="doc-section">
+                            <h3>11. Loading Assets &amp; Material Management</h3>
+                            <p>
+                                NextEngine is built on Vulkan 1.2 which requires uploading vertices and textures to GPU buffers before drawing. The `ne::ResourceManager` automates this process by caching assets and binding them to shaders.
+                            </p>
+                            
+                            <h4>Loading a 3D Mesh and Applying Textures</h4>
+                            <p>
+                                To load character assets, register their relative filesystem paths. The resource manager checks for duplicate files, reads formatting data, uploads vertices, and returns cached pointers:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">src/game/AssetLoader.cpp (C++ Logic)</span>
+                                <pre class="code-snippet"><code>#include "graphics/ResourceManager.hpp"
+#include "scene/MeshNode.hpp"
+
+ne::MeshNode* spawnTexturedModel(ne::Scene* scene, ne::ResourceManager* resources) {
+    // 1. Register asset files (returns GUID hashes)
+    ne::AssetID meshHash = resources->getOrRegister("models/knight.obj", ne::AssetType::Mesh);
+    ne::AssetID textureHash = resources->getOrRegister("textures/knight_color.png", ne::AssetType::Texture);
+
+    // 2. Fetch or allocate material (Descriptor Set layout 1 bind)
+    // Passes texture hash and base diffuse color vec4 multiplier
+    ne::Material* material = resources->getMaterial(textureHash, glm::vec4(1.0f));
+
+    // 3. Create a scene node and assign loaded materials
+    auto* knightNode = scene->createChild&lt;ne::MeshNode&gt;("KnightPlayer");
+    knightNode->setMesh(resources->getMesh(meshHash));
+    knightNode->setMaterial(material);
+    
+    // Scale and place model in scene space
+    knightNode->transform().scale = glm::vec3(0.5f);
+    knightNode->transform().position = glm::vec3(0.0f, 0.0f, -5.0f);
+
+    return knightNode;
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: Controlling the Camera -->
+                        <div id="doc-tut-camera" class="doc-section">
+                            <h3>12. Controlling the Camera</h3>
+                            <p>
+                                NextEngine uses the <code>ne::Camera</code> class (`src/core/Camera.hpp`) to compute view-projection matrices. To create a fly-camera control mechanism, you update camera positions using direction vectors derived from mouse movements.
+                            </p>
+                            <p>
+                                The yaw/pitch angles represent the Euler orientation. The camera converts these angles into unit vectors:
+                            </p>
+                            <ul style="list-style-type: disc; list-style-position: inside; font-size: 0.85rem; color: var(--color-text-dim); display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+                                <li><code>front()</code>: The direction vector pointing straight ahead.</li>
+                                <li><code>right()</code>: The direction pointing to the right of the camera viewport.</li>
+                                <li><code>up()</code>: The direction pointing directly above the camera.</li>
+                            </ul>
+
+                            <h4>Implementing a Dynamic Fly Camera Controller</h4>
+                            <p>
+                                This script controls the rendering camera, allowing the developer/player to look around by holding the right mouse button and move using the WASD keys:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">src/game/FlyCameraController.hpp (C++ Header)</span>
+                                <pre class="code-snippet"><code>#include "scene/Behaviour.hpp"
+#include "core/Camera.hpp"
+#include "core/Input.hpp"
+#include &lt;GLFW/glfw3.h&gt;
+
+class FlyCameraController : public ne::Behaviour {
+public:
+    float speed = 8.0f;
+    float mouseSensitivity = 0.15f;
+    ne::Camera* activeCamera = nullptr; // Set during scene init
+
+    void onUpdate(float dt) override {
+        if (!activeCamera) return;
+
+        // 1. Mouse rotation (Only when holding Right Mouse Button)
+        if (ne::Input::mouseButtonDown(GLFW_MOUSE_BUTTON_RIGHT)) {
+            glm::vec2 mouseDelta = ne::Input::mouseDelta();
+            
+            // Adjust camera Euler angles
+            activeCamera->rotate(
+                mouseDelta.x * mouseSensitivity, 
+                -mouseDelta.y * mouseSensitivity
+            );
+        }
+
+        // 2. Keyboard travel relative to facing direction
+        glm::vec3 travelDirection{0.0f};
+        if (ne::Input::keyDown(GLFW_KEY_W)) travelDirection += activeCamera->front();
+        if (ne::Input::keyDown(GLFW_KEY_S)) travelDirection -= activeCamera->front();
+        if (ne::Input::keyDown(GLFW_KEY_A)) travelDirection -= activeCamera->right();
+        if (ne::Input::keyDown(GLFW_KEY_D)) travelDirection += activeCamera->right();
+
+        if (glm::length(travelDirection) &gt; 0.0f) {
+            activeCamera->position += glm::normalize(travelDirection) * speed * dt;
+        }
+    }
+
+    const char* typeName() const override { return "FlyCameraController"; }
+};</code></pre>
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: Lighting & Shadows -->
+                        <div id="doc-tut-lights" class="doc-section">
+                            <h3>13. Lighting and Realtime Shadows</h3>
+                            <p>
+                                Illumination in NextEngine is driven by the <code>ne::LightNode</code> components (`src/scene/LightNode.hpp`). The engine supports both Directional (sunlight-style) and Point (local light bulb-style) light sources:
+                            </p>
+                            <ul style="list-style-type: square; list-style-position: inside; font-size: 0.85rem; color: var(--color-text-dim); display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+                                <li><strong>ne::LightType::Directional:</strong> Emits parallel rays throughout the scene. Direction is computed from the node's local vector (rotated by world transform matrix).</li>
+                                <li><strong>ne::LightType::Point:</strong> Emits light outwards in all directions from the node position. Uses the node transform coordinates and the <code>range</code> limit parameters.</li>
+                            </ul>
+
+                            <h4>Configuring Scene Lights &amp; Shadow Casters</h4>
+                            <p>
+                                The example below shows how to add directional lighting and point light sources to the scene, and how to enable shadow casting for individual meshes:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">src/game/LightSpawner.cpp (C++ Logic)</span>
+                                <pre class="code-snippet"><code>#include "scene/Scene.hpp"
+#include "scene/LightNode.hpp"
+#include "scene/MeshNode.hpp"
+
+void configureSceneLighting(ne::Scene* scene, ne::MeshNode* playerNode) {
+    // 1. Create a sun-like Directional Light
+    auto* sunNode = scene->createChild&lt;ne::LightNode&gt;("Sun", ne::LightType::Directional);
+    sunNode->color = glm::vec3(1.0f, 0.98f, 0.92f); // Warm sun
+    sunNode->intensity = 3.0f;
+    sunNode->direction = glm::normalize(glm::vec3(-0.3f, -1.0f, -0.4f));
+
+    // 2. Create a glowing Point Light near an object
+    auto* pointLight = scene->createChild&lt;ne::LightNode&gt;("Torch", ne::LightType::Point);
+    pointLight->color = glm::vec3(1.0f, 0.5f, 0.1f); // Orange fire glow
+    pointLight->intensity = 5.0f;
+    pointLight->range = 8.0f;
+    pointLight->transform().position = glm::vec3(2.0f, 1.5f, -3.0f);
+
+    // 3. Enable Shadow Casting on the player mesh
+    if (playerNode) {
+        playerNode->castShadows() = true; // Enables shadow map pass for this mesh
+    }
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: Custom Inspector UI -->
+                        <div id="doc-tut-inspector" class="doc-section">
+                            <h3>14. Custom Inspector UI</h3>
+                            <p>
+                                When building gameplay scripts in NextEngine, you can create custom visual parameters in the editor by overriding the <code>onDrawInspector()</code> method. The editor's <code>InspectorPanel</code> calls this function inside the drawing loop.
+                            </p>
+                            <p>
+                                Because the editor embeds Dear ImGui directly, you have access to a rich set of GUI widgets to write sliders, buttons, inputs, and checkbox controls to debug values in real-time.
+                            </p>
+
+                            <h4>Creating Slider and Debug Inputs</h4>
+                            <p>
+                                Below is a script showing how to expose variables and create trigger buttons:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">src/game/EnemyAI.hpp (C++ Header)</span>
+                                <pre class="code-snippet"><code>#include "scene/Behaviour.hpp"
+#include &lt;imgui.h&gt; // Expose Dear ImGui calls
+
+class EnemyAI : public ne::Behaviour {
+public:
+    float detectionRange = 12.0f;
+    int health = 100;
+    bool isAggressive = false;
+
+    void onUpdate(float dt) override {
+        // AI logic goes here...
+    }
+
+    // Overridden to customize what shows in the editor inspector panel
+    void onDrawInspector() override {
+        ImGui::Text("AI Configurations");
+        ImGui::Separator();
+
+        // 1. Slider widget for detection floating point
+        ImGui::SliderFloat("Detection Range", &amp;detectionRange, 2.0f, 30.0f);
+
+        // 2. Checkbox input for aggressive toggles
+        ImGui::Checkbox("Aggressive Mode", &amp;isAggressive);
+
+        // 3. Simple input for integer parameters
+        ImGui::InputInt("Health Status", &amp;health);
+
+        // 4. Interactive button executing instantly
+        if (ImGui::Button("Respawn / Heal Enemy")) {
+            health = 100;
+            isAggressive = false;
+        }
+    }
+
+    const char* typeName() const override { return "EnemyAI"; }
+};</code></pre>
+                            </div>
+                        </div>
+
+                        <!-- Sub-panel: Compilation & Standalone -->
+                        <div id="doc-tut-compile" class="doc-section">
+                            <h3>15. Compilation &amp; Standalone Build</h3>
+                            <p>
+                                NextEngine is structured around a standard CMake configuration pipeline (`CMakeLists.txt`), compiling your game assets and engine runtime into optimized machine binaries.
+                            </p>
+                            
+                            <h4>Building Standalone Executables via Command Line</h4>
+                            <p>
+                                Open a command line interface in your project's directory and run the compile instructions below:
+                            </p>
+                            <div class="code-snippet-box">
+                                <span class="code-title">Developer Terminal Commands (Windows / Linux)</span>
+                                <pre class="code-snippet"><code># 1. Create and configure CMake build cache directory
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+# 2. Compile all engine libraries and game scripts
+cmake --build build --config Release
+
+# 3. Running the compiled standalone game client
+# The output executable is placed under build/bin/
+./build/bin/NextEngineGame.exe</code></pre>
+                            </div>
+
+                            <h4>Packaging Assets for Shipping</h4>
+                            <p>
+                                To ship your final standalone game to players, distribute the following files from your output build directory:
+                            </p>
+                            <ul style="list-style-type: decimal; list-style-position: inside; font-size: 0.85rem; color: var(--color-text-dim); display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+                                <li><code>NextEngineGame.exe</code> / <code>NextEngineGame</code> (The core binary runner)</li>
+                                <li><code>next_game_logic.dll</code> / <code>libnext_game_logic.so</code> (The compiled hot-reloadable game code)</li>
+                                <li><code>assets/</code> folder (Containing your scene JSONs, textures, and 3D models)</li>
+                            </ul>
+                        </div>
+
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= DOWNLOAD SECTION ================= -->
+            <section id="sec-download" class="tab-panel">
+                <div class="section-header">
+                    <h2>// DOWNLOADS_TERMINAL</h2>
+                    <p>Grab the NextEngine binaries or compile from source to begin creating.</p>
+                </div>
+
+                <div class="download-layout">
+                    <!-- Platform Downloads -->
+                    <div class="download-options">
+                        <div class="download-box" id="dl-win">
+                            <div class="dl-plat-info">
+                                <span class="dl-plat-icon">🪟</span>
+                                <div class="dl-plat-text">
+                                    <span class="dl-plat-name">Windows x64 Binaries</span>
+                                    <span class="dl-plat-file">NextEngineHub-v0.1.0.exe</span>
+                                </div>
+                            </div>
+                            <button class="btn-primary dl-btn" id="btn-dl-win" onclick="alert('Downloading NextEngineHub-v0.1.0.exe (Demo Mockup)...')">
+                                DOWNLOAD HUB
+                            </button>
+                        </div>
+
+                        <div class="download-box" id="dl-linux">
+                            <div class="dl-plat-info">
+                                <span class="dl-plat-icon">🐧</span>
+                                <div class="dl-plat-text">
+                                    <span class="dl-plat-name">Linux Tarball</span>
+                                    <span class="dl-plat-file">nextengine-0.1.0-linux.tar.gz</span>
+                                </div>
+                            </div>
+                            <button class="btn-secondary dl-btn" id="btn-dl-linux" onclick="alert('Downloading nextengine-0.1.0-linux.tar.gz (Demo Mockup)...')">
+                                DOWNLOAD .TAR.GZ
+                            </button>
+                        </div>
+
+                        <div class="download-box" id="dl-source">
+                            <div class="dl-plat-info">
+                                <span class="dl-plat-icon">💻</span>
+                                <div class="dl-plat-text">
+                                    <span class="dl-plat-name">Compile from Github</span>
+                                    <span class="dl-plat-file">saias-o/NextEngine (master)</span>
+                                </div>
+                            </div>
+                            <a href="https://github.com/saias-o/NextEngine" target="_blank" rel="noopener" class="btn-secondary dl-btn git-dl-btn" id="btn-dl-source">
+                                CLONE REPOSITORY
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- System Requirements -->
+                    <div class="spec-terminal-panel">
+                        <div class="spec-title">[SYSTEM_REQUIREMENTS_CHECK]</div>
+                        <ul class="spec-list">
+                            <li><span class="spec-label">OS:</span> Windows 10/11 64-bit or modern Linux (Ubuntu 22.04+)</li>
+                            <li><span class="spec-label">GPU:</span> Vulkan 1.2 Compatible Driver (NVIDIA GTX 10-series+, AMD RX 5000+, Intel Arc)</li>
+                            <li><span class="spec-label">SDK:</span> CMake 3.20+ and a C++17 compatible compiler (MSVC 2019+, GCC 10+, Clang 11+)</li>
+                            <li><span class="spec-label">INTEGRATION:</span> API connection keys required for OpenAI/Anthropic Agent auto-coding.</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= CHANGELOG SECTION ================= -->
+            <section id="sec-changelog" class="tab-panel">
+                <div class="section-header">
+                    <h2>// ENGINE_CHANGELOG</h2>
+                    <p>NextEngine releases from GitHub</p>
+                </div>
+                
+                <div id="changelog-container" class="changelog-layout">
+                    <div class="loading-state">
+                        <span class="pulse-core">RETRIEVING LATEST DATA FROM GITHUB...</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= DONATE SECTION ================= -->
+            <section id="sec-donate" class="tab-panel">
+                <div class="section-header">
+                    <h2>// DONATE</h2>
+                    <p>NextEngine is 100% free software. Help support its independent development.</p>
+                </div>
+
+                <div class="donation-simple-container">
+                    <div class="donation-simple-box">
+                        <p class="donation-pitch">
+                            NextEngine is a free software and open source game engine developed under the GPL v3 license. There are no licensing fees, no subscription requirements, and no tracking.
+                        </p>
+                        <p class="donation-pitch">
+                            If you find NextEngine useful, your sponsorship will help fund graphics development and documentation.
+                        </p>
+                        
+                        <div class="donation-action-area">
+                            <a href="https://github.com/sponsors/saias-o" target="_blank" rel="noopener" class="btn-primary simple-sponsor-btn" id="btn-donate-github">
+                                SPONSOR VIA GITHUB SPONSORS ➔
+                            </a>
+                            <p class="reassurance-text">
+                                🔒 Secure redirect. Transactions are handled entirely by GitHub. NextEngine stores no financial or personal data.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- Main Footer -->
+        <footer class="terminal-footer">
+            <div class="footer-left">
+                <span>[ONLINE_STATUS: CONNECTED]</span>
+                <span>// ENCRYPT: SECURE_PROTOCOL_TLS</span>
+            </div>
+            <div class="footer-center">
+                <span>© 2026 NEXTENGINE DEVELOPERS. GPL v3 LICENSE.</span>
+            </div>
+            <div class="footer-right">
+                <a href="https://github.com/saias-o/NextEngine" target="_blank" rel="noopener" id="footer-github-link">GITHUB REPO</a>
+                <span>|</span>
+                <span class="pulse-core">SYSTEM ACTIVE</span>
+            </div>
+        </footer>
+    </div>
+
+
+
+    <!-- Main Logic Script -->
+    <script src="main.js"></script>
+</body>
+</html>

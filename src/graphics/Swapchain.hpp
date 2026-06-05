@@ -9,10 +9,10 @@ namespace ne {
 class VulkanDevice;
 class Window;
 
-// Owns the swap chain together with its depth buffer, render pass and
-// framebuffers. The render pass is created once and survives recreation
-// (so pipelines built against it stay valid); everything else is rebuilt
-// on resize via recreate().
+// Owns the swap chain together with its MSAA color target and depth buffer.
+// With dynamic rendering there is no VkRenderPass or VkFramebuffer: the Swapchain
+// just hands out the images / views, and the Renderer drives layout transitions
+// and vkCmdBeginRendering itself. Everything is rebuilt on resize via recreate().
 class Swapchain {
 public:
     Swapchain(VulkanDevice& device, Window& window);
@@ -24,16 +24,29 @@ public:
     void recreate();
 
     VkSwapchainKHR handle() const { return swapchain_; }
-    VkRenderPass renderPass() const { return renderPass_; }
-    VkFramebuffer framebuffer(uint32_t index) const { return framebuffers_[index]; }
     VkExtent2D extent() const { return extent_; }
     VkSampleCountFlagBits samples() const { return samples_; }
     uint32_t imageCount() const { return static_cast<uint32_t>(images_.size()); }
     float aspectRatio() const { return extent_.width / static_cast<float>(extent_.height); }
 
-    // Signalled when rendering to the given swap-chain image is done; presented
-    // image is waited on by present. One per image (not per frame-in-flight) so
-    // a semaphore is never reused while its present is still pending.
+    VkFormat colorFormat() const { return imageFormat_; }
+    VkFormat depthFormat() const { return depthFormat_; }
+
+    // Per-image present target (single-sample).
+    VkImage image(uint32_t i) const { return images_[i]; }
+    VkImageView imageView(uint32_t i) const { return imageViews_[i]; }
+
+    // Multisampled color target (rendered into, then resolved to the swap image).
+    // Null views/images when samples == 1 (render straight to the swap image).
+    VkImage msaaColorImage() const { return colorImage_; }
+    VkImageView msaaColorView() const { return colorImageView_; }
+
+    VkImage depthImage() const { return depthImage_; }
+    VkImageView depthView() const { return depthImageView_; }
+
+    // Signalled when rendering to the given swap-chain image is done. One per
+    // image (not per frame-in-flight) so a semaphore is never reused while its
+    // present is still pending.
     VkSemaphore renderFinishedSemaphore(uint32_t imageIndex) const {
         return renderFinishedSemaphores_[imageIndex];
     }
@@ -41,10 +54,8 @@ public:
 private:
     void createSwapchain();
     void createImageViews();
-    void createRenderPass();
     void createColorResources();
     void createDepthResources();
-    void createFramebuffers();
     void createRenderFinishedSemaphores();
     void cleanup();
 
@@ -59,6 +70,7 @@ private:
     std::vector<VkImage> images_;
     std::vector<VkImageView> imageViews_;
     VkFormat imageFormat_{};
+    VkFormat depthFormat_{};
     VkExtent2D extent_{};
     VkSampleCountFlagBits samples_ = VK_SAMPLE_COUNT_1_BIT;
 
@@ -71,8 +83,6 @@ private:
     VmaAllocation depthAllocation_ = VK_NULL_HANDLE;
     VkImageView depthImageView_ = VK_NULL_HANDLE;
 
-    VkRenderPass renderPass_ = VK_NULL_HANDLE;
-    std::vector<VkFramebuffer> framebuffers_;
     std::vector<VkSemaphore> renderFinishedSemaphores_;  // one per swap-chain image
 };
 

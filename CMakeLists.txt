@@ -17,7 +17,17 @@ file(MAKE_DIRECTORY ${SHADER_OUT_DIR})
 set(SHADERS
     ${SHADER_DIR}/shader.vert
     ${SHADER_DIR}/shader.frag
+    ${SHADER_DIR}/shadow.vert
+    ${SHADER_DIR}/bake.vert
+    ${SHADER_DIR}/bake.frag
+    ${SHADER_DIR}/culling.comp
+    ${SHADER_DIR}/tonemap.vert
+    ${SHADER_DIR}/tonemap.frag
 )
+
+# GLSL headers #included by the shaders above. Listed as a dependency so editing
+# them re-triggers compilation of every shader that includes them.
+file(GLOB SHADER_INCLUDES ${SHADER_DIR}/*.glsl)
 
 set(SHADER_SPIRV "")
 foreach(SHADER ${SHADERS})
@@ -25,11 +35,22 @@ foreach(SHADER ${SHADERS})
     set(SPIRV_OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}.spv)
     add_custom_command(
         OUTPUT ${SPIRV_OUTPUT}
-        COMMAND ${GLSLC} ${SHADER} -o ${SPIRV_OUTPUT}
-        DEPENDS ${SHADER}
+        COMMAND ${GLSLC} -I ${SHADER_DIR} ${SHADER} -o ${SPIRV_OUTPUT}
+        DEPENDS ${SHADER} ${SHADER_INCLUDES}
         COMMENT "Compiling ${SHADER_NAME} -> ${SHADER_NAME}.spv"
     )
     list(APPEND SHADER_SPIRV ${SPIRV_OUTPUT})
+    
+    if(SHADER_NAME STREQUAL "shader.vert" OR SHADER_NAME STREQUAL "shader.frag")
+        set(BINDLESS_OUTPUT ${SHADER_OUT_DIR}/bindless.${SHADER_NAME}.spv)
+        add_custom_command(
+            OUTPUT ${BINDLESS_OUTPUT}
+            COMMAND ${GLSLC} -I ${SHADER_DIR} -DBINDLESS ${SHADER} -o ${BINDLESS_OUTPUT}
+            DEPENDS ${SHADER} ${SHADER_INCLUDES}
+            COMMENT "Compiling bindless.${SHADER_NAME} -> bindless.${SHADER_NAME}.spv"
+        )
+        list(APPEND SHADER_SPIRV ${BINDLESS_OUTPUT})
+    endif()
 endforeach()
 
 add_custom_target(Shaders DEPENDS ${SHADER_SPIRV})
@@ -50,18 +71,26 @@ add_library(ne_engine STATIC
     src/graphics/VulkanDevice.cpp
     src/graphics/Swapchain.cpp
     src/graphics/Buffer.cpp
+    src/graphics/GeometryRegistry.cpp
     src/graphics/Mesh.cpp
     src/graphics/Primitives.cpp
     src/graphics/Pipeline.cpp
+    src/graphics/ComputePipeline.cpp
+    src/graphics/StorageImage.cpp
+    src/graphics/ShadowMap.cpp
     src/graphics/Texture.cpp
     src/graphics/Material.cpp
     src/graphics/ResourceManager.cpp
     src/graphics/ImGuiLayer.cpp
     src/render/Renderer.cpp
+    src/render/LightBaker.cpp
     src/project/Project.cpp
+    src/project/AssetRegistry.cpp
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
     src/graphics/StbImageUsage.cpp
+    src/graphics/cgltf_impl.cpp
+    src/scene/GLTFLoader.cpp
     # Dear ImGui (vendored) + GLFW/Vulkan backends
     third_party/imgui/imgui.cpp
     third_party/imgui/imgui_draw.cpp
@@ -78,6 +107,7 @@ target_include_directories(ne_engine PUBLIC
     third_party/vma
     third_party/tinyobjloader
     third_party/stb
+    third_party/cgltf
     third_party/imgui
     third_party/json
 )
@@ -97,6 +127,7 @@ set_source_files_properties(
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
     src/graphics/StbImageUsage.cpp
+    src/graphics/cgltf_impl.cpp
     third_party/imgui/imgui.cpp
     third_party/imgui/imgui_draw.cpp
     third_party/imgui/imgui_tables.cpp
@@ -121,6 +152,11 @@ add_library(ne_editor STATIC
     src/editor/EditorApp.cpp
     src/editor/EditorUI.cpp
     src/editor/CommandHistory.cpp
+    src/editor/panels/MenuBarPanel.cpp
+    src/editor/panels/SceneHierarchyPanel.cpp
+    src/editor/panels/InspectorPanel.cpp
+    src/editor/panels/FileBrowserPanel.cpp
+    src/editor/panels/ViewportPanel.cpp
 )
 target_link_libraries(ne_editor PUBLIC ne_engine)
 target_compile_options(ne_editor PRIVATE -Wall -Wextra)

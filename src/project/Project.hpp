@@ -1,5 +1,7 @@
 #pragma once
 
+#include "project/AssetRegistry.hpp"
+
 #include <string>
 
 namespace ne {
@@ -35,6 +37,9 @@ public:
     const std::string& filePath() const { return filePath_; }     // .neproj file
     const std::string& engineVersion() const { return engineVersion_; }
 
+    AssetRegistry& assetRegistry() { return assetRegistry_; }
+    const AssetRegistry& assetRegistry() const { return assetRegistry_; }
+
     // Standard project sub-directories (relative to rootPath).
     std::string assetsDir()  const { return rootPath_ + "/assets"; }
     std::string scenesDir()  const { return rootPath_ + "/scenes"; }
@@ -47,6 +52,7 @@ private:
     std::string rootPath_;
     std::string filePath_;
     std::string engineVersion_ = "0.1.0";
+    AssetRegistry assetRegistry_;
 };
 
 } // namespace ne

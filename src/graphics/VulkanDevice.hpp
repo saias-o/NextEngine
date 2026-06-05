@@ -1,5 +1,6 @@
 #pragma once
 
+#include "graphics/RenderCapabilities.hpp"
 #include "graphics/VmaFwd.hpp"
 
 #include <optional>
@@ -12,6 +13,8 @@ class Window;
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
+    std::optional<uint32_t> computeFamily;          // a compute-capable family
+    bool computeIsDedicated = false;                // compute family != graphics
     bool isComplete() const { return graphicsFamily.has_value() && presentFamily.has_value(); }
 };
 
@@ -37,10 +40,20 @@ public:
     VkSurfaceKHR surface() const { return surface_; }
     VkQueue graphicsQueue() const { return graphicsQueue_; }
     VkQueue presentQueue() const { return presentQueue_; }
+    // Async-compute queue. Falls back to the graphics queue when the GPU has no
+    // dedicated compute family (caps.dedicatedComputeQueue tells which it is).
+    VkQueue computeQueue() const { return computeQueue_; }
+    uint32_t computeQueueFamily() const { return computeFamily_; }
     VkCommandPool commandPool() const { return commandPool_; }
+    VkCommandPool computeCommandPool() const { return computeCommandPool_; }
     VmaAllocator allocator() const { return allocator_; }
     VkPipelineCache pipelineCache() const { return pipelineCache_; }
     VkSampleCountFlagBits maxUsableSampleCount() const;
+    float maxAnisotropy() const;
+
+    // What this GPU supports and which modern paths we enabled (single source of
+    // truth for advanced-rendering feature gating).
+    const RenderCapabilities& capabilities() const { return capabilities_; }
 
     QueueFamilyIndices findQueueFamilies() const { return findQueueFamilies(physicalDevice_); }
     SwapChainSupportDetails querySwapChainSupport() const { return querySwapChainSupport(physicalDevice_); }
@@ -50,6 +63,7 @@ public:
     VkFormat findDepthFormat() const;
 
     void copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) const;
+    void copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) const;
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect) const;
 
     VkCommandBuffer beginSingleTimeCommands() const;
@@ -60,8 +74,9 @@ private:
     void setupDebugMessenger();
     void createSurface(Window& window);
     void pickPhysicalDevice();
+    void queryCapabilities();
     void createLogicalDevice();
-    void createCommandPool();
+    void createCommandPools();
     void createAllocator();
     void createPipelineCache();
     void savePipelineCache() const;
@@ -80,9 +95,13 @@ private:
     VkDevice device_ = VK_NULL_HANDLE;
     VkQueue graphicsQueue_ = VK_NULL_HANDLE;
     VkQueue presentQueue_ = VK_NULL_HANDLE;
+    VkQueue computeQueue_ = VK_NULL_HANDLE;
+    uint32_t computeFamily_ = 0;
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
+    VkCommandPool computeCommandPool_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     VkPipelineCache pipelineCache_ = VK_NULL_HANDLE;
+    RenderCapabilities capabilities_;
     bool validationEnabled_ = false;
 };
 

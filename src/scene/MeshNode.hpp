@@ -21,6 +21,9 @@ public:
     Mesh* mesh() const override { return mesh_; }
     Material* material() const override { return material_; }
 
+    void setMesh(Mesh* mesh) { mesh_ = mesh; }
+    void setMaterial(Material* material) { material_ = material; }
+
     bool& castShadows() { return castShadows_; }
     bool castShadows() const { return castShadows_; }
 

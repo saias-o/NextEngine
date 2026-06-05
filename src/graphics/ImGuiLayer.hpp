@@ -12,7 +12,7 @@ class Window;
 // renderDrawData(cmd) inside the render pass.
 class ImGuiLayer {
 public:
-    ImGuiLayer(VulkanDevice& device, Window& window, VkRenderPass renderPass,
+    ImGuiLayer(VulkanDevice& device, Window& window, VkFormat colorFormat,
                uint32_t imageCount, VkSampleCountFlagBits samples);
     ~ImGuiLayer();
     ImGuiLayer(const ImGuiLayer&) = delete;
@@ -20,11 +20,12 @@ public:
 
     void beginFrame();                       // start a new ImGui frame
     void endFrame();                         // finalize draw data (ImGui::Render)
-    void renderDrawData(VkCommandBuffer cmd); // record into an active render pass
+    void renderDrawData(VkCommandBuffer cmd); // record inside an active dynamic-rendering pass
 
 private:
     VulkanDevice& device_;
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
+    VkFormat colorFormat_ = VK_FORMAT_UNDEFINED;  // kept alive for the backend's pipeline info
 };
 
 } // namespace ne

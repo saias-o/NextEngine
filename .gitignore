@@ -10,5 +10,6 @@
 .idea/
 *.user
 
-# Claude Code local (per-machine) settings
-.claude/settings.local.json
+# Local runtime files
+*.local.json
+pipeline_cache.bin
