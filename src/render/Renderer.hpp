@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "core/Camera.hpp"
+#include "project/AssetRegistry.hpp"
 
 namespace ne {
 
@@ -118,7 +119,7 @@ private:
 
     void updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera, Project* project);
     void gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera, Project* project);
-    void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Scene& scene);
+    void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Scene& scene, const Camera& camera);
 
     VulkanDevice& device_;
     Swapchain& swapchain_;
@@ -145,6 +146,22 @@ private:
     VkDescriptorSet tonemapSet_ = VK_NULL_HANDLE;
     VkSampler tonemapSampler_ = VK_NULL_HANDLE;
     float exposure_ = 1.0f;
+    
+    // Skybox pipeline
+    std::unique_ptr<Pipeline> skyboxPipeline_;
+    VkDescriptorSetLayout skyboxSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool skyboxPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet skyboxSet_ = VK_NULL_HANDLE;
+    AssetID currentSkyboxTexture_ = kAssetInvalid;
+    
+    struct SkyboxPushConstants {
+        glm::mat4 invViewProj;
+        float exposure;
+        float rotation;
+    };
+    
+    void createSkyboxPipeline();
+    void recordSkyboxPass(VkCommandBuffer cmd, Scene& scene, const Camera& camera);
 
     VkDescriptorSetLayout globalSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool globalPool_ = VK_NULL_HANDLE;

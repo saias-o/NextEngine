@@ -24,6 +24,8 @@ public:
     // the type was never registered. Caller then calls load() to fill it.
     std::unique_ptr<Behaviour> create(const std::string& typeName) const;
 
+    const std::unordered_map<std::string, Factory>& factories() const { return factories_; }
+
     // Convenience for the common case where T is default-constructible.
     template <typename T>
     void registerType(const std::string& typeName) {

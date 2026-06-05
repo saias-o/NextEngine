@@ -224,6 +224,7 @@ Le moteur est construit par étapes numérotées :
             sérialisées (re-bake au chargement), pas de dilation de seams, pas
             d'unwrap auto pour `.obj` arbitraires.
       - [x] PBR (metallic-roughness) + normal mapping, tonemapping HDR.
+      - [x] **Vulkan 1.3 Dynamic Rendering** : implémenté (suppression des RenderPass et Framebuffers).
 - [x] **Étape 7 — Outillage.**
       - [x] Pipeline cache (`VkPipelineCache` sérialisé sur disque, dans
             `VulkanDevice`) et **MSAA** (couleur multisamplée + resolve dans

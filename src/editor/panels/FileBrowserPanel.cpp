@@ -25,7 +25,7 @@ const char* fileIcon(const std::filesystem::directory_entry& entry) {
     if (entry.is_directory()) return "[D]";
     auto ext = entry.path().extension().string();
     if (ext == ".obj" || ext == ".fbx" || ext == ".gltf") return "[3D]";
-    if (ext == ".png" || ext == ".jpg" || ext == ".bmp")  return "[Img]";
+    if (ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr")  return "[Img]";
     if (ext == ".vert" || ext == ".frag" || ext == ".glsl" || ext == ".spv") return "[Sh]";
     if (ext == ".lua")   return "[Lua]";
     if (ext == ".neproj") return "[Proj]";
@@ -224,7 +224,7 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
             if (useGrid) {
                 ImGui::BeginGroup();
                 
-                if (ext == ".png" || ext == ".jpg" || ext == ".bmp") {
+                if (ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr") {
                     AssetID id = resources->getOrRegister(f.path().string(), AssetType::Texture);
                     Texture* tex = resources->getTexture(id);
                     if (tex && editor->texCache_.get(tex)) {
@@ -251,13 +251,23 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                         ImGui::Text("Instantiate %s", filename.c_str());
                         ImGui::EndDragDropSource();
                     }
-                } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".png" || ext == ".jpg") {
+                } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr") {
                     if (ImGui::BeginDragDropSource()) {
                         AssetID id = project->assetRegistry().getID(pathStr);
+                        if (id == kAssetInvalid) {
+                            AssetType type = (ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr") ? AssetType::Texture : AssetType::Mesh;
+                            id = resources->getOrRegister(pathStr, type);
+                        }
                         if (id != kAssetInvalid) {
                             ImGui::SetDragDropPayload("ASSET_ID", &id, sizeof(AssetID));
                             ImGui::Text("Assign %s", filename.c_str());
                         }
+                        ImGui::EndDragDropSource();
+                    }
+                } else if (ext == ".ogg" || ext == ".wav" || ext == ".mp3") {
+                    if (ImGui::BeginDragDropSource()) {
+                        ImGui::SetDragDropPayload("FILE_AUDIO", pathStr.c_str(), pathStr.size() + 1);
+                        ImGui::Text("Assign Audio %s", filename.c_str());
                         ImGui::EndDragDropSource();
                     }
                 }
@@ -286,13 +296,23 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                         ImGui::Text("Instantiate %s", filename.c_str());
                         ImGui::EndDragDropSource();
                     }
-                } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".png" || ext == ".jpg") {
+                } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr") {
                     if (ImGui::BeginDragDropSource()) {
                         AssetID id = project->assetRegistry().getID(pathStr);
+                        if (id == kAssetInvalid) {
+                            AssetType type = (ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr") ? AssetType::Texture : AssetType::Mesh;
+                            id = resources->getOrRegister(pathStr, type);
+                        }
                         if (id != kAssetInvalid) {
                             ImGui::SetDragDropPayload("ASSET_ID", &id, sizeof(AssetID));
                             ImGui::Text("Assign %s", filename.c_str());
                         }
+                        ImGui::EndDragDropSource();
+                    }
+                } else if (ext == ".ogg" || ext == ".wav" || ext == ".mp3") {
+                    if (ImGui::BeginDragDropSource()) {
+                        ImGui::SetDragDropPayload("FILE_AUDIO", pathStr.c_str(), pathStr.size() + 1);
+                        ImGui::Text("Assign Audio %s", filename.c_str());
                         ImGui::EndDragDropSource();
                     }
                 }

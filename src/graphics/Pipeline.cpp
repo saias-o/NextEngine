@@ -27,7 +27,8 @@ std::vector<char> readFile(const std::string& filename) {
 Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std::string& fragPath,
                    const std::vector<VkFormat>& colorFormats, VkFormat depthFormat,
                    const std::vector<VkDescriptorSetLayout>& setLayouts,
-                   VkSampleCountFlagBits samples, bool useVertexInput, bool useDepth)
+                   VkSampleCountFlagBits samples, bool useVertexInput, bool useDepth, uint32_t pushConstantSize,
+                   bool depthWrite, VkCompareOp depthCompare, VkCullModeFlags cullMode)
     : device_(device) {
     auto vertCode = readFile(vertPath);
     auto fragCode = readFile(fragPath);
@@ -76,7 +77,7 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = cullMode;
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -88,8 +89,8 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable = useDepth ? VK_TRUE : VK_FALSE;
-    depthStencil.depthWriteEnable = useDepth ? VK_TRUE : VK_FALSE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthWriteEnable = (useDepth && depthWrite) ? VK_TRUE : VK_FALSE;
+    depthStencil.depthCompareOp = depthCompare;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
@@ -117,7 +118,7 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
     VkPushConstantRange pushRange{};
     pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushRange.offset = 0;
-    pushRange.size = sizeof(glm::mat4) + sizeof(glm::vec4);
+    pushRange.size = pushConstantSize > 0 ? pushConstantSize : (sizeof(glm::mat4) + sizeof(glm::vec4));
 
     VkPipelineLayoutCreateInfo layoutCI{};
     layoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;

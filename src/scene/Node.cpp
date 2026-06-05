@@ -1,4 +1,11 @@
 #include "scene/Node.hpp"
+#include "scene/Behaviour.hpp"
+#include "scene/BehaviourRegistry.hpp"
+#include "scene/SerializationHelpers.hpp"
+#include "audio/AudioManager.hpp"
+#include "core/Log.hpp"
+
+#include <nlohmann/json.hpp>
 
 #include <glm/gtc/matrix_transform.hpp>  // GLM_FORCE_* set globally by CMake
 
@@ -17,7 +24,9 @@ glm::mat4 Transform::matrix() const {
 
 Node::Node(std::string name) : name_(std::move(name)) {}
 
-Node::~Node() = default;
+Node::~Node() {
+    AudioManager::get().stopAllOnNode(this);
+}
 
 Node* Node::addChild(std::unique_ptr<Node> child) {
     child->parent_ = this;
@@ -27,11 +36,35 @@ Node* Node::addChild(std::unique_ptr<Node> child) {
     return ptr;
 }
 
+Node* Node::addChildAt(std::unique_ptr<Node> child, size_t index) {
+    child->parent_ = this;
+    Node* ptr = child.get();
+    if (index >= children_.size()) {
+        children_.push_back(std::move(child));
+    } else {
+        children_.insert(children_.begin() + index, std::move(child));
+    }
+    g_hierarchyVersion++;
+    return ptr;
+}
+
 Behaviour* Node::addBehaviour(std::unique_ptr<Behaviour> behaviour) {
     behaviour->node_ = this;
     Behaviour* ptr = behaviour.get();
     behaviours_.push_back(std::move(behaviour));
+    g_hierarchyVersion++;
     return ptr;
+}
+
+void Node::removeBehaviour(Behaviour* b) {
+    if (!b) return;
+    for (auto it = behaviours_.begin(); it != behaviours_.end(); ++it) {
+        if (it->get() == b) {
+            behaviours_.erase(it);
+            g_hierarchyVersion++;
+            return;
+        }
+    }
 }
 
 bool Node::removeChild(Node* child) {
@@ -75,6 +108,7 @@ bool Node::isActiveInHierarchy() const {
 
 void Node::updateTree(float dt) {
     for (auto& behaviour : behaviours_) {
+        if (!behaviour->enabled()) continue;
         if (!behaviour->ready_) {
             behaviour->onReady();
             behaviour->ready_ = true;
@@ -105,6 +139,79 @@ void Node::traverse(const glm::mat4& parentWorld,
     visit(*this, world);
     for (auto& child : children_)
         child->traverse(world, visit);
+}
+
+void Node::serialize(nlohmann::json& j, ResourceManager& resources) const {
+    j["type"] = typeName();
+    j["name"] = name();
+    j["enabled"] = enabled();
+
+    const Transform& t = transform();
+    j["transform"] = {
+        {"position", vec3ToJson(t.position)},
+        {"rotation", nlohmann::json::array({t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w})},
+        {"scale", vec3ToJson(t.scale)},
+    };
+
+    nlohmann::json behavioursJson = nlohmann::json::array();
+    for (const auto& b : behaviours()) {
+        if (const char* tn = b->typeName()) {
+            nlohmann::json bj;
+            bj["type"] = tn;
+            bj["enabled"] = b->enabled();
+            b->save(bj);
+            behavioursJson.push_back(std::move(bj));
+        }
+    }
+    j["behaviours"] = std::move(behavioursJson);
+
+    nlohmann::json childrenJson = nlohmann::json::array();
+    for (const auto& child : children()) {
+        nlohmann::json cj;
+        child->serialize(cj, resources);
+        childrenJson.push_back(std::move(cj));
+    }
+    j["children"] = std::move(childrenJson);
+}
+
+void Node::deserialize(const nlohmann::json& j, ResourceManager& resources) {
+    if (j.contains("name")) setName(j["name"].get<std::string>());
+    if (j.contains("enabled")) setEnabled(j["enabled"].get<bool>());
+
+    if (j.contains("transform")) {
+        auto jt = j["transform"];
+        Transform& t = transform();
+        t.position = jsonToVec3(jt["position"]);
+        if (jt.contains("rotation")) {
+            auto r = jt["rotation"];
+            if (r.is_array() && r.size() == 4) {
+                t.rotation = glm::quat(r[3].get<float>(), r[0].get<float>(),
+                                       r[1].get<float>(), r[2].get<float>());
+            }
+        }
+        t.scale = jsonToVec3(jt["scale"], glm::vec3(1.0f));
+    }
+
+    if (j.contains("behaviours") && j["behaviours"].is_array()) {
+        for (const auto& bj : j["behaviours"]) {
+            if (!bj.contains("type")) continue;
+            std::string tn = bj["type"].get<std::string>();
+            if (tn == "SceneSettings") continue; // Handled by Scene::deserialize for backwards compatibility
+            
+            if (auto b = BehaviourRegistry::instance().create(tn)) {
+                if (bj.contains("enabled")) {
+                    b->setEnabled(bj["enabled"].get<bool>());
+                }
+                b->load(bj);
+                addBehaviour(std::move(b));
+            } else {
+                Log::warn("Failed to deserialize behaviour of type: ", tn);
+            }
+        }
+    }
+
+    // Note: children deserialization is handled by SceneSerializer directly
+    // because it needs to use NodeRegistry to instantiate polymorphic children.
 }
 
 } // namespace ne

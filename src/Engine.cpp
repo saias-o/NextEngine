@@ -11,6 +11,13 @@
 #include "project/Project.hpp"
 #include "render/Renderer.hpp"
 #include "scene/Scene.hpp"
+#include "scene/BehaviourRegistry.hpp"
+#include "scene/NodeRegistry.hpp"
+#include "scene/MeshNode.hpp"
+#include "scene/LightNode.hpp"
+#include "audio/AudioManager.hpp"
+#include "audio/AudioSourceBehaviour.hpp"
+#include "scene/CharacterBehaviour.hpp"
 
 #include <thread>
 #include <chrono>
@@ -41,6 +48,23 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     if (!project_->isLoaded() && sceneSetup)
         sceneSetup(*scene_, *resources_);
 
+    AudioManager::get().init();
+    
+    // Register built-in behaviours
+    BehaviourRegistry::instance().registerType<AudioSourceBehaviour>("AudioSource");
+    BehaviourRegistry::instance().registerType<CharacterBehaviour>("Character");
+
+    // Register built-in nodes
+    NodeRegistry::instance().registerType<Node>("Node");
+    NodeRegistry::instance().registerType<Scene>("Scene");
+    NodeRegistry::instance().registerType<MeshNode>("MeshNode");
+    NodeRegistry::instance().registerType<LightNode>("LightNode");
+    if (project_->isLoaded()) {
+        AudioManager::get().setProjectRoot(project_->rootPath());
+        AudioManager::get().setDefaultSettings(project_->defaultAudioSettings());
+        AudioManager::get().setMasterVolume(project_->masterVolume());
+    }
+
     imgui_ = std::make_unique<ImGuiLayer>(*device_, *window_, swapchain_->colorFormat(),
         swapchain_->imageCount(), VK_SAMPLE_COUNT_1_BIT);
     renderer_ = std::make_unique<Renderer>(*device_, *swapchain_, *window_,
@@ -53,6 +77,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
 }
 
 Engine::~Engine() {
+    AudioManager::get().shutdown();
     vkDeviceWaitIdle(device_->device());
     // Subsystems are torn down by their unique_ptr destructors, in reverse
     // declaration order, while device_ is still alive (renderer_ before imgui_,
@@ -92,6 +117,7 @@ void Engine::run() {
         if (onFrame_)
             onFrame_(realDt);              // application: its input + UI
         scene_->update(Time::delta());     // behaviours: scaled time (pausable)
+        AudioManager::get().update();      // update audio spatialization
         imgui_->endFrame();  // finalize draw data even if the frame is skipped (resize)
 
         renderer_->drawFrame(*scene_, camera_, project_.get());

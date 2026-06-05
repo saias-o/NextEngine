@@ -75,10 +75,20 @@ void copyBufferToImage(VulkanDevice& device, VkBuffer buffer, VkImage image,
 } // namespace
 
 Texture::Texture(VulkanDevice& device, const std::string& path, bool srgb) : device_(device) {
-    VkFormat format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
-    
     int texWidth, texHeight, texChannels;
-    stbi_uc* pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    bool isHdr = stbi_is_hdr(path.c_str());
+    VkFormat format;
+    VkDeviceSize imageSize;
+    void* pixels = nullptr;
+    
+    if (isHdr) {
+        format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        pixels = stbi_loadf(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    } else {
+        format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+        pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    }
+    
     if (!pixels)
         throw std::runtime_error("failed to load texture '" + path + "'");
 
@@ -86,7 +96,7 @@ Texture::Texture(VulkanDevice& device, const std::string& path, bool srgb) : dev
     height_ = static_cast<uint32_t>(texHeight);
     mipLevels_ = static_cast<uint32_t>(std::floor(std::log2(std::max(width_, height_)))) + 1;
 
-    VkDeviceSize imageSize = static_cast<VkDeviceSize>(width_) * height_ * 4;
+    imageSize = static_cast<VkDeviceSize>(width_) * height_ * (isHdr ? 16 : 4);
 
     Buffer staging(device_, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::HostVisible);
     staging.write(pixels, imageSize);

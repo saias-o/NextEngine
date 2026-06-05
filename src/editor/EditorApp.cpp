@@ -1,39 +1,73 @@
 #include "editor/EditorApp.hpp"
-
 #include "Engine.hpp"
+
 #include "core/Camera.hpp"
 #include "core/Input.hpp"
+#include "core/Time.hpp"
 #include "core/Window.hpp"
+#include "scene/Scene.hpp"
 
 #include "imgui.h"
 
-#include <glm/glm.hpp>
+#include "audio/AudioManager.hpp"
+#include "project/Project.hpp"
+#include "scene/SceneSerializer.hpp"
 
 namespace ne {
 
-EditorApp::EditorApp(Engine& engine) : engine_(engine) {}
+EditorApp::EditorApp(Engine& engine) : engine_(engine) {
+    Time::setScale(0.0f); // Default to editor (paused) mode
+}
+
+void EditorApp::setPlayMode(bool play) {
+    if (playMode_ == play) return;
+    
+    if (play) {
+        if (engine_.project().isLoaded()) {
+            playModeBackup_ = engine_.project().rootPath() + "/.play_mode_backup.scene";
+            ne::SceneSerializer::saveToFile(engine_.scene(), engine_.resources(), playModeBackup_);
+        }
+        playMode_ = true;
+        Time::setScale(1.0f);
+    } else {
+        playMode_ = false;
+        Time::setScale(0.0f);
+        if (!playModeBackup_.empty()) {
+            engine_.scene().clearChildren();
+            ui_.clearSelection();
+            ne::SceneSerializer::loadIntoScene(engine_.scene(), engine_.resources(), playModeBackup_);
+            playModeBackup_.clear();
+        }
+        AudioManager::get().stopAllGlobal();
+    }
+}
 
 void EditorApp::update(float dt) {
     processInput(dt);
-    ui_.draw(&engine_.scene(), &engine_.camera(), &engine_.project(), &engine_.resources(), dt);
+    ui_.draw(this, &engine_.scene(), &engine_.camera(), &engine_.project(), &engine_.resources(), dt);
 }
 
 void EditorApp::updateCursorCapture(bool isPlayMode) {
     Window& window = engine_.window();
 
-    if (isPlayMode && !wasPlayMode_) {
-        window.setCursorCaptured(true);   // capture on entering play mode
-    } else if (!isPlayMode && wasPlayMode_) {
+    if (!isPlayMode && wasPlayMode_) {
         window.setCursorCaptured(false);  // release on leaving play mode
     }
     wasPlayMode_ = isPlayMode;
 
     if (isPlayMode) {
-        if (Input::keyPressed(GLFW_KEY_TAB))
+        if (Input::isKeyPressed(KeyCode::Tab))
             window.setCursorCaptured(!window.cursorCaptured());
+
+        // Auto-capture if clicking inside the viewport during play mode
+        if (Input::isMouseButtonPressed(MouseButton::Left) && !window.cursorCaptured()) {
+            if (ui_.isViewportHovered(Input::mousePosition().x, Input::mousePosition().y)) {
+                window.setCursorCaptured(true);
+            }
+        }
     } else {
         // Scene mode: fly only while holding right-click over the viewport.
-        bool rightClick = Input::mouseButtonDown(GLFW_MOUSE_BUTTON_RIGHT);
+        bool rightClick = Input::isMouseButtonDown(MouseButton::Right);
         if (rightClick && !window.cursorCaptured()) {
             if (!ImGui::GetIO().WantCaptureMouse)
                 window.setCursorCaptured(true);
@@ -47,9 +81,12 @@ void EditorApp::processInput(float dt) {
     Window& window = engine_.window();
     Camera& camera = engine_.camera();
 
-    if (Input::keyPressed(GLFW_KEY_ESCAPE)) {
-        if (ui_.isPlayMode()) {
-            ui_.setPlayMode(false);  // exit play mode back to scene mode
+    if (Input::isKeyPressed(KeyCode::Escape)) {
+        if (isPlayMode()) {
+            setPlayMode(false);  // exit play mode back to scene mode
+            window.setCursorCaptured(false);
+        } else if (window.cursorCaptured()) {
+            window.setCursorCaptured(false);
         } else {
             window.close();
             return;
@@ -61,7 +98,7 @@ void EditorApp::processInput(float dt) {
         return;
     }
 
-    updateCursorCapture(ui_.isPlayMode());
+    updateCursorCapture(isPlayMode());
 
     // Cursor free (UI mode): ImGui owns the mouse. But over the 3D viewport,
     // allow pan (middle-drag) and zoom (wheel).
@@ -69,32 +106,36 @@ void EditorApp::processInput(float dt) {
         ImGuiIO& io = ImGui::GetIO();
         bool inViewport = ui_.isViewportHovered(Input::mousePosition().x, Input::mousePosition().y);
         if (inViewport || !io.WantCaptureMouse) {
-            if (Input::mouseButtonDown(GLFW_MOUSE_BUTTON_MIDDLE)) {
+            if (Input::isMouseButtonDown(MouseButton::Middle)) {
                 glm::vec2 d = Input::mouseDelta();
                 constexpr float panSpeed = 0.01f;
                 camera.position -= camera.right() * d.x * panSpeed;
-                camera.position += camera.up() * d.y * panSpeed;  // screen Y is down
+                camera.position += camera.up() * d.y * panSpeed;
             }
-            if (io.MouseWheel != 0.0f)
-                camera.position += camera.front() * io.MouseWheel * 2.0f;
+            camera.position += camera.front() * io.MouseWheel * 2.0f;
         }
-        return;
+        return; // Bail out! Don't process FPS fly controls.
     }
 
-    // Captured: FPS look + WASD movement.
-    constexpr float sensitivity = 0.1f;
+    // FPS fly mode - only in Scene Mode!
+    if (isPlayMode()) {
+        return; // The editor camera should not be controlled by WASD/mouse in Play Mode.
+    }
+
+    constexpr float sensitivity = 0.003f;
     glm::vec2 d = Input::mouseDelta();
     camera.rotate(d.x * sensitivity, -d.y * sensitivity);  // screen Y is down
 
-    float speed = (Input::keyDown(GLFW_KEY_LEFT_SHIFT) ? 6.0f : 2.5f) * dt;
     glm::vec3 front = camera.front();
     glm::vec3 right = camera.right();
-    if (Input::keyDown(GLFW_KEY_W)) camera.position += front * speed;
-    if (Input::keyDown(GLFW_KEY_S)) camera.position -= front * speed;
-    if (Input::keyDown(GLFW_KEY_D)) camera.position += right * speed;
-    if (Input::keyDown(GLFW_KEY_A)) camera.position -= right * speed;
-    if (Input::keyDown(GLFW_KEY_SPACE)) camera.position += glm::vec3(0, 1, 0) * speed;
-    if (Input::keyDown(GLFW_KEY_LEFT_CONTROL)) camera.position -= glm::vec3(0, 1, 0) * speed;
+    float speed = (Input::isKeyDown(KeyCode::LeftShift) ? 6.0f : 2.5f) * dt;
+
+    if (Input::isKeyDown(KeyCode::W)) camera.position += front * speed;
+    if (Input::isKeyDown(KeyCode::S)) camera.position -= front * speed;
+    if (Input::isKeyDown(KeyCode::D)) camera.position += right * speed;
+    if (Input::isKeyDown(KeyCode::A)) camera.position -= right * speed;
+    if (Input::isKeyDown(KeyCode::Space)) camera.position += glm::vec3(0, 1, 0) * speed;
+    if (Input::isKeyDown(KeyCode::LeftControl)) camera.position -= glm::vec3(0, 1, 0) * speed;
 }
 
 } // namespace ne

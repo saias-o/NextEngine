@@ -1,6 +1,7 @@
 #pragma once
 
 #include "project/AssetRegistry.hpp"
+#include "audio/AudioManager.hpp"
 
 #include <string>
 
@@ -63,6 +64,16 @@ public:
     float shadowSoftness() const { return shadowSoftness_; }
     void setShadowSoftness(float soft) { shadowSoftness_ = soft; }
 
+    float masterVolume() const { return masterVolume_; }
+    void setMasterVolume(float vol) { masterVolume_ = vol; }
+
+    const AudioSettings& defaultAudioSettings() const { return defaultAudioSettings_; }
+    AudioSettings& defaultAudioSettings() { return defaultAudioSettings_; }
+
+    const std::unordered_map<std::string, std::string>& audioAliases() const { return audioAliases_; }
+    void setAudioAlias(const std::string& name, const std::string& path);
+    void removeAudioAlias(const std::string& name);
+
 private:
     bool loaded_ = false;
     std::string name_;
@@ -73,6 +84,11 @@ private:
     int shadowResolution_ = kDefaultShadowResolution;
     float shadowDistance_ = kDefaultShadowDistance;
     float shadowSoftness_ = kDefaultShadowSoftness;
+    
+    float masterVolume_ = 1.0f;
+    AudioSettings defaultAudioSettings_;
+    std::unordered_map<std::string, std::string> audioAliases_;
+    
     AssetRegistry assetRegistry_;
 };
 

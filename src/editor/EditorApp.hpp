@@ -16,13 +16,18 @@ public:
 
     void update(float dt);  // input + UI; call from the engine's onFrame hook
 
+    bool isPlayMode() const { return playMode_; }
+    void setPlayMode(bool play);
+
 private:
     void processInput(float dt);
     void updateCursorCapture(bool isPlayMode);
 
     Engine& engine_;
     EditorUI ui_;
+    bool playMode_ = false;
     bool wasPlayMode_ = false;
+    std::string playModeBackup_;
 };
 
 } // namespace ne

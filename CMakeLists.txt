@@ -23,6 +23,8 @@ set(SHADERS
     ${SHADER_DIR}/culling.comp
     ${SHADER_DIR}/tonemap.vert
     ${SHADER_DIR}/tonemap.frag
+    ${SHADER_DIR}/skybox.vert
+    ${SHADER_DIR}/skybox.frag
 )
 
 # GLSL headers #included by the shaders above. Listed as a dependency so editing
@@ -65,9 +67,12 @@ add_library(ne_engine STATIC
     src/core/Camera.cpp
     src/core/Input.cpp
     src/scene/Node.cpp
+    src/scene/MeshNode.cpp
+    src/scene/LightNode.cpp
     src/scene/Scene.cpp
     src/scene/SceneSerializer.cpp
     src/scene/BehaviourRegistry.cpp
+    src/scene/NodeRegistry.cpp
     src/graphics/VulkanDevice.cpp
     src/graphics/Swapchain.cpp
     src/graphics/Buffer.cpp
@@ -91,6 +96,10 @@ add_library(ne_engine STATIC
     src/graphics/StbImageUsage.cpp
     src/graphics/cgltf_impl.cpp
     src/scene/GLTFLoader.cpp
+    src/audio/AudioManager.cpp
+    src/audio/AudioUsage.cpp
+    src/audio/AudioSourceBehaviour.cpp
+    src/scene/CharacterBehaviour.cpp
     # Dear ImGui (vendored) + GLFW/Vulkan backends
     third_party/imgui/imgui.cpp
     third_party/imgui/imgui_draw.cpp
@@ -110,6 +119,7 @@ target_include_directories(ne_engine PUBLIC
     third_party/cgltf
     third_party/imgui
     third_party/json
+    third_party/miniaudio
 )
 target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm)
 
@@ -128,6 +138,7 @@ set_source_files_properties(
     src/graphics/TinyObjUsage.cpp
     src/graphics/StbImageUsage.cpp
     src/graphics/cgltf_impl.cpp
+    src/audio/AudioUsage.cpp
     third_party/imgui/imgui.cpp
     third_party/imgui/imgui_draw.cpp
     third_party/imgui/imgui_tables.cpp
@@ -171,6 +182,14 @@ target_link_libraries(NextEngine PRIVATE ne_editor)
 target_compile_options(NextEngine PRIVATE -Wall -Wextra)
 add_dependencies(NextEngine Shaders)
 
+if (WIN32)
+    add_custom_command(TARGET NextEngine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:glfw>"
+        "$<TARGET_FILE_DIR:NextEngine>"
+    )
+endif()
+
 # ── Hub executable ──────────────────────────────────────────────────────────
 add_executable(NextEngineHub
     src/hub/main.cpp
@@ -178,3 +197,11 @@ add_executable(NextEngineHub
 )
 target_link_libraries(NextEngineHub PRIVATE ne_engine)
 target_compile_options(NextEngineHub PRIVATE -Wall -Wextra)
+
+if (WIN32)
+    add_custom_command(TARGET NextEngineHub POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:glfw>"
+        "$<TARGET_FILE_DIR:NextEngineHub>"
+    )
+endif()

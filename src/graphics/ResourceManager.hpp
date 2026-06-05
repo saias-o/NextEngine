@@ -69,6 +69,7 @@ public:
     GeometryRegistry& geometry() { return *geometryRegistry_; }
 
     void setRegistry(AssetRegistry* registry) { registry_ = registry; }
+    AssetRegistry* getRegistry() const { return registry_; }
 
     // Register a texture in the bindless array, returns its index.
     uint32_t getBindlessTextureIndex(Texture* texture);

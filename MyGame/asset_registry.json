@@ -1,4 +1,9 @@
 {
+    "10077622763627457338": {
+        "hash": 0,
+        "path": "C:/Users/MotionUp/Documents/Projets Dev/NextEngine_DevClaude\\MyGame\\assets\\textures\\hdri_sky_809.jpg",
+        "type": "Texture"
+    },
     "12321802291044240470": {
         "hash": 0,
         "path": "C:/Users/MotionUp/Documents/Projets Dev/NextEngine_DevClaude/assets/textures/checker.png",
@@ -19,6 +24,11 @@
         "path": "assets/models/bugatti/bugatti.mtl",
         "type": "Unknown"
     },
+    "1893114040346601968": {
+        "hash": 3649688196952778170,
+        "path": "assets/textures/hdri_sky_809.jpg",
+        "type": "Texture"
+    },
     "3541001873901761428": {
         "hash": 18164922757133443595,
         "path": "assets/models/bugatti/bugatti.obj",
@@ -30,8 +40,13 @@
         "type": "Unknown"
     },
     "5381623013035980930": {
-        "hash": 16745983008072443978,
+        "hash": 17462135523459067261,
         "path": "scenes/main.scene",
         "type": "Scene"
+    },
+    "8479490816213088483": {
+        "hash": 12285289649730020934,
+        "path": "assets/sounds/big_band_banger.ogg",
+        "type": "Audio"
     }
 }

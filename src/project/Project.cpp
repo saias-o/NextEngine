@@ -55,6 +55,8 @@ bool Project::create(const std::string& parentDir, const std::string& projectNam
     assetRegistry_.sync(rootPath_);
     assetRegistry_.save(rootPath_);
 
+    AudioManager::get().setProjectRoot(rootPath_);
+
     Log::info("Created project '", name_, "' at ", rootPath_);
     return true;
 }
@@ -86,6 +88,11 @@ bool Project::load(const std::string& neprojPath) {
     std::string loadedName;
     std::string loadedVersion;
     int loadedMaxFps = kDefaultMaxFps;
+    int loadedShadowRes = kDefaultShadowResolution;
+    float loadedShadowDist = kDefaultShadowDistance;
+    float loadedShadowSoft = kDefaultShadowSoftness;
+    float loadedMasterVolume = 1.0f;
+    AudioSettings loadedAudioSettings;
 
     while (std::getline(file, line)) {
         line = trim(line);
@@ -101,8 +108,19 @@ bool Project::load(const std::string& neprojPath) {
         else if (key == "engine_version") loadedVersion = value;
         else if (key == "max_fps")        loadedMaxFps  = std::stoi(value);
         else if (key == "shadow_resolution") shadowResolution_ = std::stoi(value);
-        else if (key == "shadow_distance")   shadowDistance_   = std::stof(value);
-        else if (key == "shadow_softness")   shadowSoftness_   = std::stof(value);
+        else if (key == "shadow_dist")    loadedShadowDist = std::stof(value);
+        else if (key == "shadow_soft")    loadedShadowSoft = std::stof(value);
+        else if (key == "audio_master_vol") loadedMasterVolume = std::stof(value);
+        else if (key == "audio_default_vol") loadedAudioSettings.volume = std::stof(value);
+        else if (key == "audio_default_loop") loadedAudioSettings.loop = (value == "1");
+        else if (key == "audio_default_spatial") loadedAudioSettings.spatialized = (value == "1");
+        else if (key == "audio_default_min_dist") loadedAudioSettings.minDistance = std::stof(value);
+        else if (key == "audio_default_max_dist") loadedAudioSettings.maxDistance = std::stof(value);
+        else if (key.find("audio_alias_") == 0) {
+            std::string aliasName = key.substr(12);
+            audioAliases_[aliasName] = value;
+            AudioManager::get().setAlias(aliasName, value);
+        }
     }
 
     if (loadedName.empty()) {
@@ -113,6 +131,10 @@ bool Project::load(const std::string& neprojPath) {
     name_          = loadedName;
     engineVersion_ = loadedVersion.empty() ? "0.1.0" : loadedVersion;
     maxFps_        = loadedMaxFps;
+    shadowDistance_ = loadedShadowDist;
+    shadowSoftness_ = loadedShadowSoft;
+    masterVolume_ = loadedMasterVolume;
+    defaultAudioSettings_ = loadedAudioSettings;
     filePath_      = path.string();
     rootPath_      = path.parent_path().string();
     loaded_        = true;
@@ -120,6 +142,8 @@ bool Project::load(const std::string& neprojPath) {
     assetRegistry_.load(rootPath_);
     assetRegistry_.sync(rootPath_);
     assetRegistry_.save(rootPath_);
+
+    AudioManager::get().setProjectRoot(rootPath_);
 
     Log::info("Loaded project '", name_, "' from ", rootPath_);
     return true;
@@ -144,11 +168,31 @@ bool Project::save() const {
     file << "engine_version=" << engineVersion_ << "\n";
     file << "max_fps=" << maxFps_ << "\n";
     file << "shadow_resolution=" << shadowResolution_ << "\n";
-    file << "shadow_distance=" << shadowDistance_ << "\n";
-    file << "shadow_softness=" << shadowSoftness_ << "\n";
+    file << "shadow_dist=" << shadowDistance_ << "\n";
+    file << "shadow_soft=" << shadowSoftness_ << "\n";
+    file << "audio_master_vol=" << masterVolume_ << "\n";
+    file << "audio_default_vol=" << defaultAudioSettings_.volume << "\n";
+    file << "audio_default_loop=" << (defaultAudioSettings_.loop ? "1" : "0") << "\n";
+    file << "audio_default_spatial=" << (defaultAudioSettings_.spatialized ? "1" : "0") << "\n";
+    file << "audio_default_min_dist=" << defaultAudioSettings_.minDistance << "\n";
+    file << "audio_default_max_dist=" << defaultAudioSettings_.maxDistance << "\n";
+    
+    for (const auto& [aliasName, aliasPath] : audioAliases_) {
+        file << "audio_alias_" << aliasName << "=" << aliasPath << "\n";
+    }
 
     Log::info("Saved project '", name_, "' to ", filePath_);
     return true;
+}
+
+void Project::setAudioAlias(const std::string& name, const std::string& path) {
+    audioAliases_[name] = path;
+    AudioManager::get().setAlias(name, path);
+}
+
+void Project::removeAudioAlias(const std::string& name) {
+    audioAliases_.erase(name);
+    AudioManager::get().removeAlias(name);
 }
 
 } // namespace ne

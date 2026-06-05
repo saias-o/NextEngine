@@ -6,6 +6,7 @@
 
 #include <string>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace ne {
 
@@ -25,9 +26,9 @@ class ViewportPanel;
 // main menu bar, scene tree (left), inspector (right), file browser (bottom),
 // and a viewport area with Scene / Play Mode tabs.
 //
-// The viewport itself is the Vulkan render, drawn as the window background
-// behind ImGui (passthrough central dock node). This class only draws the UI
-// overlays — it does NOT own or manage the render pipeline.
+class EditorApp;
+
+// The main user interface of the editor, composed of several ImGui panels.
 class EditorUI {
     friend class MenuBarPanel;
     friend class SceneHierarchyPanel;
@@ -36,19 +37,17 @@ class EditorUI {
     friend class ViewportPanel;
 public:
     EditorUI();
+    ~EditorUI() = default;
 
     // Draw the full editor UI. Call between ImGui::NewFrame() and
     // ImGui::Render(), before endFrame().
-    void draw(Scene* scene, Camera* camera, Project* project, ResourceManager* resources, float dt);
+    void draw(EditorApp* app, Scene* scene, Camera* camera, Project* project, ResourceManager* resources, float dt);
 
     // The currently selected node (nullptr = none).
     Node* selectedNode() const { return selectedNode_; }
+    Project* ctxProject() const { return ctxProject_; }
 
-    // Is the editor in "play" mode? (vs "scene" editing mode)
-    bool isPlayMode() const { return playMode_; }
-
-    // Set the play mode
-    void setPlayMode(bool play);
+    void clearSelection() { selectedNode_ = nullptr; }
 
     // Request to quit the application
     bool quitRequested() const { return quitRequested_; }
@@ -65,7 +64,15 @@ private:
     void copySelected(ResourceManager* resources);
     void pasteClipboard(Scene* scene, ResourceManager* resources);
     void duplicateSelected(ResourceManager* resources);
+    
+    // Gizmo internal methods
     void drawGizmo(Camera* camera, Scene* scene);
+    void updateGizmoHover(const glm::vec3& rayOrigin, const glm::vec3& rayDir, const glm::vec2& mousePos, int& outHoveredAxis);
+    void handleGizmoDrag(const glm::vec3& rayOrigin, const glm::vec3& rayDir, const glm::vec2& mousePos);
+    void performRaycastSelection(Scene* scene, const glm::vec3& rayOrigin, const glm::vec3& rayDir);
+    void renderGizmoRotationRings(ImDrawList* drawList, Camera* camera, const glm::mat4& viewProj, int hoveredAxis);
+    void renderGizmoTranslateScale(ImDrawList* drawList, int hoveredAxis);
+    
     void drawAboutWindow();
     void drawBuildWindow(Project* project);
     void drawSettingsWindow(Project* project);
@@ -83,18 +90,13 @@ private:
     // Selection
     Node* selectedNode_ = nullptr;
 
-    // Scene / Play mode
-    bool playMode_ = false;
-
-    // Request quit
+    // Editor layout and state
     bool quitRequested_ = false;
+    bool dockLayoutBuilt_ = false;
 
     // File browser state
     std::string currentBrowsePath_;
     float fileBrowserZoom_ = 1.0f;
-
-    // Dock layout
-    bool dockLayoutBuilt_ = false;
 
     // Project dialogs
     bool showNewProjectDialog_  = false;
@@ -124,6 +126,7 @@ private:
     // Deferred operations for C++ memory safety & avoiding iterator invalidation
     Node* nodeToDelete_ = nullptr;
     Node* nodeToCreateChildUnder_ = nullptr;
+    Node* nodeToCreateParentFor_ = nullptr;
     CreateNodeType createType_ = CreateNodeType::None;
     std::string draggedScenePath_;
 
@@ -146,8 +149,18 @@ private:
     GizmoAxis grabbedAxis_ = GizmoAxis::None;
     glm::vec3 dragStartNodePos_{0.0f};
     glm::vec3 dragStartNodeRotEuler_{0.0f};
+    glm::quat dragStartNodeRotQuat_{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 dragStartNodeScale_{1.0f};
     glm::vec2 dragStartMousePos_{0.0f};
+    glm::vec3 dragStartHitPos3D_{0.0f};
+
+    // Transient Gizmo drawing state (populated each frame)
+    glm::vec3 gizmoNodePos_{0.0f};
+    float gizmoWorldLength_{0.0f};
+    glm::vec2 gizmoCenter2D_{0.0f};
+    glm::vec2 gizmoEnds2D_[3];
+    glm::vec3 gizmoLocalAxes_[3];
+    bool gizmoAxisValid_[3]{false, false, false};
 
     glm::vec2 viewportPos_{0.0f, 0.0f};
     glm::vec2 viewportSize_{0.0f, 0.0f};
@@ -156,7 +169,11 @@ private:
     CommandHistory history_;
     std::string clipboard_;          // JSON of a copied node subtree
     std::string currentScenePath_;   // last saved/opened .scene path
+    EditorApp* app_ = nullptr;
+    Scene* ctxScene_ = nullptr;
+    Camera* ctxCamera_ = nullptr;
     ResourceManager* ctxResources_ = nullptr;  // set each frame in draw()
+    Project* ctxProject_ = nullptr;            // set each frame in draw()
     ImGuiTextureCache texCache_;     // cache for ImGui texture IDs
 };
 

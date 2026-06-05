@@ -90,6 +90,67 @@ private:
     Node* newParent_;
 };
 
+// ── Create a parent node (Option A: Pivot Matching) ──────────────────────────
+class CreateParentCommand : public Command {
+public:
+    CreateParentCommand(Node* target, std::unique_ptr<Node> newParent)
+        : target_(target), oldParent_(target->parent()), pendingParent_(std::move(newParent)) {
+        if (oldParent_) {
+            const auto& children = oldParent_->children();
+            for (size_t i = 0; i < children.size(); ++i) {
+                if (children[i].get() == target_) {
+                    targetIndex_ = i;
+                    break;
+                }
+            }
+        }
+    }
+
+    void execute() override {
+        if (!oldParent_ || !pendingParent_) return;
+
+        // Save target transform and transfer it to the new parent
+        originalTargetTransform_ = target_->transform();
+        pendingParent_->transform() = originalTargetTransform_;
+        target_->transform() = Transform(); // reset to identity
+
+        // Reparent target_ under new parent, and insert new parent in place of target_
+        auto ownedTarget = oldParent_->detachChild(target_);
+        if (!ownedTarget) return;
+
+        addedParent_ = oldParent_->addChildAt(std::move(pendingParent_), targetIndex_);
+        addedParent_->addChild(std::move(ownedTarget));
+    }
+
+    void undo() override {
+        if (!oldParent_ || !addedParent_) return;
+
+        // Revert parenting
+        auto ownedTarget = addedParent_->detachChild(target_);
+        if (!ownedTarget) return;
+
+        pendingParent_ = oldParent_->detachChild(addedParent_);
+        addedParent_ = nullptr;
+
+        oldParent_->addChildAt(std::move(ownedTarget), targetIndex_);
+
+        // Restore target's original transform
+        target_->transform() = originalTargetTransform_;
+    }
+
+    const char* name() const override { return "Create Parent"; }
+
+    Node* parentNode() const { return addedParent_ ? addedParent_ : pendingParent_.get(); }
+
+private:
+    Node* target_;
+    Node* oldParent_;
+    std::unique_ptr<Node> pendingParent_;
+    Node* addedParent_ = nullptr;
+    size_t targetIndex_ = 0;
+    Transform originalTargetTransform_;
+};
+
 // ── Set a node's transform (e.g. after an inspector/gizmo edit) ──────────────
 class TransformCommand : public Command {
 public:

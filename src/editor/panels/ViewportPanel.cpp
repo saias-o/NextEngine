@@ -1,5 +1,6 @@
 #include "editor/panels/ViewportPanel.hpp"
 #include "editor/EditorUI.hpp"
+#include "editor/EditorApp.hpp"
 #include "core/Camera.hpp"
 
 #include <imgui.h>
@@ -23,7 +24,7 @@ void ViewportPanel::draw(EditorUI* editor, Camera* camera, float dt) {
     ImGui::SetNextWindowBgAlpha(0.60f);
 
     if (ImGui::Begin("##ViewportOverlay", nullptr, overlayFlags)) {
-        if (editor->playMode_)
+        if (editor->app_ && editor->app_->isPlayMode())
             ImGui::TextColored(ImVec4(0.3f, 0.85f, 0.4f, 1.0f), "PLAY MODE");
         else
             ImGui::TextColored(ImVec4(0.5f, 0.7f, 1.0f, 1.0f), "SCENE MODE");

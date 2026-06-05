@@ -26,8 +26,13 @@ enum class LightBakeMode {
 // A light source in the scene graph (cf. Godot Light3D / Unity Light).
 class LightNode : public Node {
 public:
+    LightNode() : Node("LightNode"), type(LightType::Directional) {}
     explicit LightNode(std::string name, LightType type = LightType::Directional)
         : Node(std::move(name)), type(type) {}
+
+    const char* typeName() const override { return "LightNode"; }
+    void serialize(nlohmann::json& j, ResourceManager& resources) const override;
+    void deserialize(const nlohmann::json& j, ResourceManager& resources) override;
 
     LightNode* asLight() override { return this; }
     const LightNode* asLightConst() const override { return this; }

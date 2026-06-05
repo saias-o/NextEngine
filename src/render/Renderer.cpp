@@ -77,6 +77,7 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
     createHdrResources();
     createPipeline(resources_.materialSetLayout());
     createTonemapPipeline();
+    createSkyboxPipeline();
     createUniformBuffers();
     shadowMap_ = std::make_unique<ShadowMap>(device_);
     createGlobalDescriptorPool();
@@ -103,6 +104,9 @@ Renderer::~Renderer() {
     if (tonemapPool_) vkDestroyDescriptorPool(device_.device(), tonemapPool_, nullptr);
     if (tonemapSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), tonemapSetLayout_, nullptr);
     
+    if (skyboxPool_) vkDestroyDescriptorPool(device_.device(), skyboxPool_, nullptr);
+    if (skyboxSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), skyboxSetLayout_, nullptr);
+
     if (cullingSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), cullingSetLayout_, nullptr);
     if (cullingPool_) vkDestroyDescriptorPool(device_.device(), cullingPool_, nullptr);
     // pipeline_ and the buffers are torn down by their destructors.
@@ -775,6 +779,97 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex) {
     vkCmdEndRendering(cmd);
 }
 
+void Renderer::createSkyboxPipeline() {
+    VkDescriptorSetLayoutBinding samplerBinding{};
+    samplerBinding.binding = 0;
+    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerBinding.descriptorCount = 1;
+    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &samplerBinding;
+
+    if (vkCreateDescriptorSetLayout(device_.device(), &layoutInfo, nullptr, &skyboxSetLayout_) != VK_SUCCESS)
+        throw std::runtime_error("failed to create skybox descriptor set layout");
+
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.maxSets = 1;
+
+    if (vkCreateDescriptorPool(device_.device(), &poolInfo, nullptr, &skyboxPool_) != VK_SUCCESS)
+        throw std::runtime_error("failed to create skybox descriptor pool");
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = skyboxPool_;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &skyboxSetLayout_;
+
+    if (vkAllocateDescriptorSets(device_.device(), &allocInfo, &skyboxSet_) != VK_SUCCESS)
+        throw std::runtime_error("failed to allocate skybox descriptor set");
+
+    std::vector<VkDescriptorSetLayout> setLayouts = {skyboxSetLayout_};
+    std::vector<VkFormat> colorFormats = {VK_FORMAT_R16G16B16A16_SFLOAT};
+    
+    // Disable depth write, but keep depth test (LESS_OR_EQUAL since Z=1.0)
+    skyboxPipeline_ = std::make_unique<Pipeline>(device_, shaderPath("skybox.vert.spv"),
+        shaderPath("skybox.frag.spv"), colorFormats, swapchain_.depthFormat(), setLayouts,
+        swapchain_.samples(), false, true, sizeof(SkyboxPushConstants),
+        false, VK_COMPARE_OP_LESS_OR_EQUAL, VK_CULL_MODE_NONE);
+}
+
+void Renderer::recordSkyboxPass(VkCommandBuffer cmd, Scene& scene, const Camera& camera) {
+    if (scene.settings().skyboxTexture == kAssetInvalid) return;
+    
+    Texture* tex = resources_.getTexture(scene.settings().skyboxTexture);
+    if (!tex) return;
+
+    if (scene.settings().skyboxTexture != currentSkyboxTexture_) {
+        // Update descriptor set with the texture
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = tex->imageView();
+        imageInfo.sampler = tex->sampler();
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = skyboxSet_;
+        write.dstBinding = 0;
+        write.dstArrayElement = 0;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.descriptorCount = 1;
+        write.pImageInfo = &imageInfo;
+        vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
+        
+        currentSkyboxTexture_ = scene.settings().skyboxTexture;
+    }
+
+    skyboxPipeline_->bind(cmd);
+
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipeline_->layout(),
+        0, 1, &skyboxSet_, 0, nullptr);
+
+    SkyboxPushConstants pc{};
+    glm::mat4 view = camera.view();
+    view[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f); // remove translation
+    pc.invViewProj = glm::inverse(camera.projection() * view);
+    pc.exposure = scene.settings().skyboxExposure;
+    pc.rotation = scene.settings().skyboxRotation;
+
+    vkCmdPushConstants(cmd, skyboxPipeline_->layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SkyboxPushConstants), &pc);
+
+    // Draw full screen triangle
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+}
+
 void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera, Project* project) {
     camera.setPerspective(glm::radians(45.0f), swapchain_.aspectRatio(), 0.1f, 100.0f);
     
@@ -791,7 +886,7 @@ void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera,
     lightingBuffers_[frame]->write(&lighting, sizeof(lighting));
 }
 
-void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Scene& scene) {
+void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Scene& scene, const Camera& camera) {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS)
@@ -1051,6 +1146,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
         if (cpuDrawLog < 5) cpuDrawLog++;
     }
 
+    recordSkyboxPass(cmd, scene, camera);
+
     vkCmdEndRendering(cmd);
 
     recordTonemapPass(cmd, imageIndex);
@@ -1102,7 +1199,7 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     updateUniformBuffer(currentFrame_, scene, camera, project);
 
     vkResetCommandBuffer(commandBuffers_[currentFrame_], 0);
-    recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex, scene);
+    recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex, scene, camera);
 
     if (doBake_) {
         settings.bakeRequested = false;

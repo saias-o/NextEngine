@@ -21,9 +21,8 @@ ombres temps réel 2D-array (`ShadowMap`, PCF), **lightmap baking GPU sans GI**
 centralisée dans `shaders/lighting.glsl` (source unique) — couture idéale pour la
 suite.
 
-**Le manque structurel** : rendu **forward**, Blinn-Phong, **aucun compute**,
-**pas de HDR**, **pas de G-buffer**, **pas de multiview**. C'est ce que la Phase 0
-corrige.
+**Le manque structurel** : rendu **toujours en forward**, **pas de G-buffer**,
+**pas de multiview**. (L'infrastructure Compute, le PBR, le HDR et le Dynamic Rendering sont déjà en place). C'est ce que la suite de la Phase 0 corrige.
 
 ---
 
@@ -45,14 +44,9 @@ capacités GPU interrogées au démarrage. C'est le « regress gracefully » qui
 
 Sans ça, rien de la GI avancée n'est possible. C'est l'essentiel du travail réel.
 
-- **PBR metallic-roughness + normal mapping** : remplacer Blinn-Phong (BRDF
-  changée à un seul endroit, `lighting.glsl`). *Le* saut visuel vers le moderne.
-- **HDR + tonemapping (ACES)** : cible de rendu R16F → passe plein-écran → swapchain
-  (`SceneSettings.enablePostProcessing` existe, inutilisé). Indispensable dès que
-  l'éclairage dépasse 1.0.
-- **Infrastructure compute** : `ComputePipeline`, dispatch, images storage,
-  barrières **sync2**. Brique de toute la GI future.
-- **Rendu différé / Visibility buffer** : G-buffer (pos monde, normale, albedo,
+- **(FAIT) PBR metallic-roughness + normal mapping** et **HDR + tonemapping (ACES)** : implémentés.
+- **(FAIT) Infrastructure compute** : `ComputePipeline`, dispatch, GPU culling et async compute en place. Brique de toute la GI future.
+- **Rendu différé / Visibility buffer** (À FAIRE) : G-buffer (pos monde, normale, albedo,
   rugosité/métal). Entrée obligatoire des cascades et des caches ; réduit l'overdraw
   (bon en mobile TBDR).
 - **Multiview (stéréo) dès maintenant** : concevoir **toutes** les nouvelles passes
@@ -97,10 +91,8 @@ moderne (PBR/HDR + GI), pour ne pas figer de choix sur un rendu basique.
 
 ## 5. Transversal — propreté & Vulkan moderne (au fil de l'eau)
 
-- **Vulkan moderne** : **dynamic rendering** (VK 1.3, supprime le boilerplate
-  render-pass/framebuffer de `Swapchain`/`ShadowMap`/`LightBaker`), **sync2**,
+- **Vulkan moderne** : **dynamic rendering** (VK 1.3) est **déjà implémenté** (suppression du boilerplate render-pass/framebuffer). Reste à intégrer **sync2** et
   **timeline semaphores** (indispensables pour la synchro graphics↔compute async).
-  Moderne *et* plus léger — à introduire pendant la Phase 0.
 - **Découpler `Texture` d'ImGui** (violation de couche : une classe graphics ne
   doit pas connaître l'UI).
 - **Finir l'éclatement d'`EditorUI`** (god-class) en panels — déjà entamé.

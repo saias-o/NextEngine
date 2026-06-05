@@ -12,6 +12,7 @@
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SceneSerializer.hpp"
+#include "audio/AudioManager.hpp"
 
 #include "editor/panels/MenuBarPanel.hpp"
 #include "editor/panels/SceneHierarchyPanel.hpp"
@@ -26,6 +27,8 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include "editor/EditorApp.hpp"
+
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
@@ -37,6 +40,18 @@ namespace ne {
 // Construction
 // ─────────────────────────────────────────────────────────────────────────────
 
+namespace {
+bool intersectRayPlane(const glm::vec3& rayOrigin, const glm::vec3& rayDir, const glm::vec3& planeOrigin, const glm::vec3& planeNormal, float& t) {
+    float denom = glm::dot(planeNormal, rayDir);
+    if (std::abs(denom) > 1e-6f) {
+        glm::vec3 p0l0 = planeOrigin - rayOrigin;
+        t = glm::dot(p0l0, planeNormal) / denom;
+        return (t >= 0.0f);
+    }
+    return false;
+}
+} // namespace
+
 EditorUI::EditorUI() {
     applyEditorStyle();
     // Default open path for the "Open Project" dialog.
@@ -44,15 +59,6 @@ EditorUI::EditorUI() {
     newProjectPath_[sizeof(newProjectPath_) - 1] = '\0';
     openBrowsePath_ = std::string(NE_PROJECT_ROOT);
 }
-
-void EditorUI::setPlayMode(bool play) {
-    playMode_ = play;
-    Time::setScale(play ? 1.0f : 0.0f);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Style — dark professional look inspired by Godot / modern editors
-// ─────────────────────────────────────────────────────────────────────────────
 
 void EditorUI::applyEditorStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
@@ -144,8 +150,12 @@ void EditorUI::applyEditorStyle() {
 // Main draw entry point
 // ─────────────────────────────────────────────────────────────────────────────
 
-void EditorUI::draw(Scene* scene, Camera* camera, Project* project, ResourceManager* resources, float dt) {
-    ctxResources_ = resources;  // so deferred scene-tree ops can reach resources
+void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* project, ResourceManager* resources, float dt) {
+    app_ = app;
+    ctxScene_ = scene;
+    ctxCamera_ = camera;
+    ctxProject_ = project;
+    ctxResources_ = resources;
 
     // Keyboard shortcuts (skip while typing in a text field).
     ImGuiIO& io = ImGui::GetIO();
@@ -745,16 +755,37 @@ float distanceToSegment(const glm::vec2& p, const glm::vec2& a, const glm::vec2&
     return glm::length(p - projection);
 }
 
+namespace GizmoConfig {
+    constexpr float RotationSensitivity = 50.0f;
+    constexpr float RingThicknessRatio = 0.08f;
+    constexpr int RingSegments = 64;
+    constexpr float SelectionThresholdTranslate = 10.0f;
+    constexpr float SelectionThresholdHead = 18.0f;
+    constexpr float GizmoScreenScale = 0.15f;
+    constexpr float MinWorldLength = 0.01f;
+    
+    constexpr ImU32 ColorX = IM_COL32(239, 68, 68, 255);
+    constexpr ImU32 ColorY = IM_COL32(16, 185, 129, 255);
+    constexpr ImU32 ColorZ = IM_COL32(59, 130, 246, 255);
+    
+    constexpr ImU32 HoverColorX = IM_COL32(252, 165, 165, 255);
+    constexpr ImU32 HoverColorY = IM_COL32(110, 231, 183, 255);
+    constexpr ImU32 HoverColorZ = IM_COL32(147, 197, 253, 255);
+    
+    constexpr float LineThicknessDefault = 2.5f;
+    constexpr float LineThicknessHover = 4.0f;
+    constexpr float RingThicknessDefault = 1.5f;
+    constexpr float RingThicknessHover = 2.5f;
+}
+
 void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
-    // Handle hotkeys for gizmo mode
     if (!ImGui::GetIO().WantTextInput) {
         if (ImGui::IsKeyPressed(ImGuiKey_T)) gizmoMode_ = GizmoMode::Translate;
         if (ImGui::IsKeyPressed(ImGuiKey_R)) gizmoMode_ = GizmoMode::Rotate;
         if (ImGui::IsKeyPressed(ImGuiKey_S)) gizmoMode_ = GizmoMode::Scale;
     }
 
-    // 1. Gizmo is only active in SCENE mode and when both camera and scene are valid
-    if (playMode_ || !camera || !scene) {
+    if ((app_ && app_->isPlayMode()) || !camera || !scene || !selectedNode_) {
         grabbedAxis_ = GizmoAxis::None;
         return;
     }
@@ -765,266 +796,280 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
     bool isMouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
     bool isMouseClicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
 
-    // Setup viewport details
     ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImVec2 vpPos = vp->WorkPos;
-    ImVec2 vpSize = vp->WorkSize;
+    viewportPos_ = glm::vec2(vp->WorkPos.x, vp->WorkPos.y);
+    viewportSize_ = glm::vec2(vp->WorkSize.x, vp->WorkSize.y);
 
-    // ViewProjection matrix
     glm::mat4 viewProj = camera->projection() * camera->view();
     glm::mat4 invVP = glm::inverse(viewProj);
 
-    // Track if we clicked on the gizmo
+    float ndcX = ((mousePos.x - viewportPos_.x) / viewportSize_.x) * 2.0f - 1.0f;
+    float ndcY = ((mousePos.y - viewportPos_.y) / viewportSize_.y) * 2.0f - 1.0f;
+    glm::vec4 nearW = invVP * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
+    glm::vec4 farW = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
+    glm::vec3 rayOrigin = glm::vec3(nearW) / nearW.w;
+    glm::vec3 rayDir = glm::normalize((glm::vec3(farW) / farW.w) - rayOrigin);
+
+    gizmoNodePos_ = selectedNode_->transform().position;
+    glm::quat nodeRot = selectedNode_->transform().rotation;
+    
+    gizmoLocalAxes_[0] = (gizmoMode_ == GizmoMode::Rotate) ? nodeRot * glm::vec3(1,0,0) : glm::vec3(1,0,0);
+    gizmoLocalAxes_[1] = (gizmoMode_ == GizmoMode::Rotate) ? nodeRot * glm::vec3(0,1,0) : glm::vec3(0,1,0);
+    gizmoLocalAxes_[2] = (gizmoMode_ == GizmoMode::Rotate) ? nodeRot * glm::vec3(0,0,1) : glm::vec3(0,0,1);
+
+    glm::vec4 clipCenter = viewProj * glm::vec4(gizmoNodePos_, 1.0f);
+    if (clipCenter.w <= 0.0f) return;
+    
+    glm::vec3 ndcCenter = glm::vec3(clipCenter) / clipCenter.w;
+    gizmoCenter2D_ = glm::vec2(viewportPos_.x + (ndcCenter.x + 1.0f) * 0.5f * viewportSize_.x, viewportPos_.y + (ndcCenter.y + 1.0f) * 0.5f * viewportSize_.y);
+
+    gizmoWorldLength_ = std::max(GizmoConfig::MinWorldLength, glm::length(camera->position - gizmoNodePos_) * GizmoConfig::GizmoScreenScale);
+
+    for (int i = 0; i < 3; ++i) {
+        glm::vec3 axisEnd3D = gizmoNodePos_ + gizmoLocalAxes_[i] * gizmoWorldLength_;
+        glm::vec4 clipEnd = viewProj * glm::vec4(axisEnd3D, 1.0f);
+        if (clipEnd.w > 0.0f) {
+            glm::vec3 ndcEnd = glm::vec3(clipEnd) / clipEnd.w;
+            gizmoEnds2D_[i] = glm::vec2(viewportPos_.x + (ndcEnd.x + 1.0f) * 0.5f * viewportSize_.x, viewportPos_.y + (ndcEnd.y + 1.0f) * 0.5f * viewportSize_.y);
+            gizmoAxisValid_[i] = true;
+        } else {
+            gizmoAxisValid_[i] = false;
+        }
+    }
+
     int hoveredAxis = -1;
-    bool hasGizmo = (selectedNode_ != nullptr);
-    glm::vec2 center2D(0.0f);
-    glm::vec2 ends2D[3];
-    bool axisValid[3] = { false, false, false };
-    float worldLength = 0.0f;
-    glm::vec3 nodePos(0.0f);
+    updateGizmoHover(rayOrigin, rayDir, mousePos, hoveredAxis);
 
-    if (hasGizmo) {
-        nodePos = selectedNode_->transform().position;
-        glm::vec4 clipCenter = viewProj * glm::vec4(nodePos, 1.0f);
-        if (clipCenter.w > 0.0f) {
-            glm::vec3 ndcCenter = glm::vec3(clipCenter) / clipCenter.w;
-            center2D = glm::vec2(
-                vpPos.x + (ndcCenter.x + 1.0f) * 0.5f * vpSize.x,
-                vpPos.y + (ndcCenter.y + 1.0f) * 0.5f * vpSize.y
-            );
-
-            float dist = glm::length(camera->position - nodePos);
-            worldLength = dist * 0.15f;
-            if (worldLength < 0.01f) worldLength = 0.01f;
-
-            glm::vec3 axes3D[3] = {
-                nodePos + glm::vec3(worldLength, 0.0f, 0.0f),
-                nodePos + glm::vec3(0.0f, worldLength, 0.0f),
-                nodePos + glm::vec3(0.0f, 0.0f, worldLength)
-            };
-
-            for (int i = 0; i < 3; ++i) {
-                glm::vec4 clipEnd = viewProj * glm::vec4(axes3D[i], 1.0f);
-                if (clipEnd.w > 0.0f) {
-                    glm::vec3 ndcEnd = glm::vec3(clipEnd) / clipEnd.w;
-                    ends2D[i] = glm::vec2(
-                        vpPos.x + (ndcEnd.x + 1.0f) * 0.5f * vpSize.x,
-                        vpPos.y + (ndcEnd.y + 1.0f) * 0.5f * vpSize.y
-                    );
-                    axisValid[i] = true;
-                }
+    if (isMouseClicked && hoveredAxis != -1 && grabbedAxis_ == GizmoAxis::None) {
+        grabbedAxis_ = static_cast<GizmoAxis>(hoveredAxis);
+        dragStartNodePos_ = gizmoNodePos_;
+        dragStartNodeRotEuler_ = glm::degrees(glm::eulerAngles(selectedNode_->transform().rotation));
+        dragStartNodeRotQuat_ = selectedNode_->transform().rotation;
+        dragStartNodeScale_ = selectedNode_->transform().scale;
+        dragStartMousePos_ = mousePos;
+        
+        if (gizmoMode_ == GizmoMode::Rotate) {
+            float t;
+            if (intersectRayPlane(rayOrigin, rayDir, gizmoNodePos_, gizmoLocalAxes_[hoveredAxis], t)) {
+                dragStartHitPos3D_ = rayOrigin + rayDir * t;
             }
+        }
+    }
 
-            // Check hovered axis
-            if (!ImGui::GetIO().WantCaptureMouse || grabbedAxis_ != GizmoAxis::None) {
-                float closestDist = 999.0f;
-                for (int i = 0; i < 3; ++i) {
-                    if (!axisValid[i]) continue;
-                    float dSeg = distanceToSegment(mousePos, center2D, ends2D[i]);
-                    float dHead = glm::length(mousePos - ends2D[i]);
-                    if (dSeg < 10.0f || dHead < 18.0f) {
-                        if (dSeg < closestDist) {
-                            closestDist = dSeg;
-                            hoveredAxis = i;
-                        }
+    if (grabbedAxis_ != GizmoAxis::None && isMouseDown) {
+        handleGizmoDrag(rayOrigin, rayDir, mousePos);
+    } else if (!isMouseDown) {
+        grabbedAxis_ = GizmoAxis::None;
+    }
+
+    if (!ImGui::GetIO().WantCaptureMouse && isMouseClicked && hoveredAxis == -1 && grabbedAxis_ == GizmoAxis::None) {
+        performRaycastSelection(scene, rayOrigin, rayDir);
+    }
+
+    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+    if (gizmoMode_ == GizmoMode::Rotate) {
+        renderGizmoRotationRings(drawList, camera, viewProj, hoveredAxis);
+    } else {
+        renderGizmoTranslateScale(drawList, hoveredAxis);
+    }
+
+    drawList->AddCircleFilled(ImVec2(gizmoCenter2D_.x, gizmoCenter2D_.y), 5.0f, ImColor(255, 255, 255, 220));
+    drawList->AddCircle(ImVec2(gizmoCenter2D_.x, gizmoCenter2D_.y), 5.0f, ImColor(0, 0, 0, 255), 0, 1.0f);
+}
+
+void EditorUI::updateGizmoHover(const glm::vec3& rayOrigin, const glm::vec3& rayDir, const glm::vec2& mousePos, int& outHoveredAxis) {
+    if (ImGui::GetIO().WantCaptureMouse && grabbedAxis_ == GizmoAxis::None) return;
+    
+    if (gizmoMode_ == GizmoMode::Rotate) {
+        float closestDistToRing = 9999.0f;
+        for (int i = 0; i < 3; ++i) {
+            float t;
+            if (intersectRayPlane(rayOrigin, rayDir, gizmoNodePos_, gizmoLocalAxes_[i], t)) {
+                glm::vec3 hitPos = rayOrigin + rayDir * t;
+                float distFromCenter = glm::length(hitPos - gizmoNodePos_);
+                if (std::abs(distFromCenter - gizmoWorldLength_) < gizmoWorldLength_ * GizmoConfig::RingThicknessRatio) {
+                    if (t < closestDistToRing) {
+                        closestDistToRing = t;
+                        outHoveredAxis = i;
                     }
                 }
             }
         }
-    }
-
-    // Detect click to grab the gizmo
-    if (isMouseClicked && hoveredAxis != -1 && grabbedAxis_ == GizmoAxis::None && hasGizmo) {
-        grabbedAxis_ = static_cast<GizmoAxis>(hoveredAxis);
-        dragStartNodePos_ = nodePos;
-        dragStartNodeRotEuler_ = glm::degrees(glm::eulerAngles(selectedNode_->transform().rotation));
-        dragStartNodeScale_ = selectedNode_->transform().scale;
-        dragStartMousePos_ = mousePos;
-    }
-
-    // Handle gizmo dragging movement
-    if (grabbedAxis_ != GizmoAxis::None && isMouseDown && hasGizmo) {
-        int axis = static_cast<int>(grabbedAxis_);
-        if (axisValid[axis]) {
-            glm::vec2 dir2D = ends2D[axis] - center2D;
-            float len2D = glm::length(dir2D);
-            if (len2D > 1.0f) {
-                glm::vec2 u = dir2D / len2D;
-                glm::vec2 mouseDelta = mousePos - dragStartMousePos_;
-                float screenProj = glm::dot(mouseDelta, u);
-                float worldDelta = screenProj * (worldLength / len2D);
-
-                if (gizmoMode_ == GizmoMode::Translate) { // Translate
-                    glm::vec3 newPos = dragStartNodePos_;
-                    if (axis == 0) newPos.x += worldDelta;
-                    else if (axis == 1) newPos.y += worldDelta;
-                    else if (axis == 2) newPos.z += worldDelta;
-                    selectedNode_->transform().position = newPos;
-                } else if (gizmoMode_ == GizmoMode::Rotate) { // Rotate
-                    glm::vec3 newRot = dragStartNodeRotEuler_;
-                    float rotDelta = screenProj * 50.0f; // Scale mouse delta to angle
-                    if (axis == 0) newRot.x -= rotDelta; // Usually right moves negative on X? Adjust by feel
-                    else if (axis == 1) newRot.y -= rotDelta;
-                    else if (axis == 2) newRot.z -= rotDelta;
-                    selectedNode_->transform().rotation = glm::quat(glm::radians(newRot));
-                } else if (gizmoMode_ == GizmoMode::Scale) { // Scale
-                    glm::vec3 newScale = dragStartNodeScale_;
-                    float scaleDelta = screenProj * (worldLength / len2D) * 0.5f;
-                    if (axis == 0) newScale.x += scaleDelta;
-                    else if (axis == 1) newScale.y += scaleDelta;
-                    else if (axis == 2) newScale.z += scaleDelta;
-                    selectedNode_->transform().scale = newScale;
-                }
-            }
-        }
     } else {
-        grabbedAxis_ = GizmoAxis::None;
-    }
-
-    // ── CLICK RAYCAST SELECTION & DESELECTION ──
-    // Triggered when clicking the viewport without grabbing any gizmo handles
-    if (!ImGui::GetIO().WantCaptureMouse && isMouseClicked && hoveredAxis == -1 && grabbedAxis_ == GizmoAxis::None) {
-        // 1. Generate 3D ray from 2D mouse position
-        float ndcX = ((mousePos.x - vpPos.x) / vpSize.x) * 2.0f - 1.0f;
-        float ndcY = ((mousePos.y - vpPos.y) / vpSize.y) * 2.0f - 1.0f;
-
-        // In Vulkan coordinate projection mapping, near is 0.0f, far is 1.0f
-        glm::vec4 nearNDC(ndcX, ndcY, 0.0f, 1.0f);
-        glm::vec4 farNDC(ndcX, ndcY, 1.0f, 1.0f);
-
-        glm::vec4 nearWorld4 = invVP * nearNDC;
-        glm::vec3 rayOrigin = glm::vec3(nearWorld4) / nearWorld4.w;
-
-        glm::vec4 farWorld4 = invVP * farNDC;
-        glm::vec3 rayDir = glm::normalize((glm::vec3(farWorld4) / farWorld4.w) - rayOrigin);
-
-        // 2. Perform Ray-Sphere intersection traversal
-        Node* closestNode = nullptr;
-        float closestT = 99999.0f;
-
-        scene->traverse([&](Node& n, const glm::mat4& worldMatrix) {
-            // Do not allow selecting the root scene node via raycasting!
-            if (!n.parent()) return;
-
-            glm::vec3 objWorldPos = glm::vec3(worldMatrix[3]);
-
-            // Calculate world scale of object
-            float sx = glm::length(glm::vec3(worldMatrix[0]));
-            float sy = glm::length(glm::vec3(worldMatrix[1]));
-            float sz = glm::length(glm::vec3(worldMatrix[2]));
-            float maxScale = glm::max(sx, glm::max(sy, sz));
-
-            // Bounding radius
-            float radius = 0.5f * maxScale;
-            if (n.mesh()) {
-                radius = 1.0f * maxScale; // MeshNodes (Cubes)
-            } else if (n.asLightConst()) {
-                radius = 0.6f * maxScale; // LightNodes
-            }
-
-            glm::vec3 oc = rayOrigin - objWorldPos;
-            float b = glm::dot(rayDir, oc);
-            float c = glm::dot(oc, oc) - radius * radius;
-            float discriminant = b * b - c;
-
-            if (discriminant >= 0.0f) {
-                float t = -b - glm::sqrt(discriminant);
-                if (t > 0.0f && t < closestT) {
-                    closestT = t;
-                    closestNode = &n;
+        float closestDist = 9999.0f;
+        for (int i = 0; i < 3; ++i) {
+            if (!gizmoAxisValid_[i]) continue;
+            float dSeg = distanceToSegment(mousePos, gizmoCenter2D_, gizmoEnds2D_[i]);
+            float dHead = glm::length(mousePos - gizmoEnds2D_[i]);
+            if (dSeg < GizmoConfig::SelectionThresholdTranslate || dHead < GizmoConfig::SelectionThresholdHead) {
+                if (dSeg < closestDist) {
+                    closestDist = dSeg;
+                    outHoveredAxis = i;
                 }
             }
-        });
-
-        // 3. Apply selection or deselect
-        if (closestNode) {
-            selectedNode_ = closestNode;
-        } else {
-            selectedNode_ = nullptr; // Clicked on empty space: deselect!
         }
-        return;
     }
+}
 
-    // ── DRAWING THE GIZMO ──
-    if (!hasGizmo) return;
+void EditorUI::handleGizmoDrag(const glm::vec3& rayOrigin, const glm::vec3& rayDir, const glm::vec2& mousePos) {
+    int axis = static_cast<int>(grabbedAxis_);
+    if (gizmoMode_ == GizmoMode::Rotate) {
+        float t;
+        if (intersectRayPlane(rayOrigin, rayDir, dragStartNodePos_, gizmoLocalAxes_[axis], t)) {
+            glm::vec3 currentHitPos = rayOrigin + rayDir * t;
+            glm::vec3 vStart = glm::normalize(dragStartHitPos3D_ - dragStartNodePos_);
+            glm::vec3 vCurr = glm::normalize(currentHitPos - dragStartNodePos_);
+            
+            float cosTheta = glm::clamp(glm::dot(vStart, vCurr), -1.0f, 1.0f);
+            float angle = glm::acos(cosTheta);
+            
+            if (glm::dot(glm::cross(vStart, vCurr), gizmoLocalAxes_[axis]) < 0.0f) {
+                angle = -angle;
+            }
+            selectedNode_->transform().rotation = glm::angleAxis(angle, gizmoLocalAxes_[axis]) * dragStartNodeRotQuat_;
+        }
+    } else if (gizmoAxisValid_[axis]) {
+        glm::vec2 dir2D = gizmoEnds2D_[axis] - gizmoCenter2D_;
+        float len2D = glm::length(dir2D);
+        if (len2D > 1.0f) {
+            glm::vec2 u = dir2D / len2D;
+            float screenProj = glm::dot(mousePos - dragStartMousePos_, u);
+            float worldDelta = screenProj * (gizmoWorldLength_ / len2D);
 
-    // Draw the Gizmo on the Background Draw List
-    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+            if (gizmoMode_ == GizmoMode::Translate) {
+                glm::vec3 newPos = dragStartNodePos_;
+                if (axis == 0) newPos.x += worldDelta;
+                else if (axis == 1) newPos.y += worldDelta;
+                else if (axis == 2) newPos.z += worldDelta;
+                selectedNode_->transform().position = newPos;
+            } else if (gizmoMode_ == GizmoMode::Scale) {
+                glm::vec3 newScale = dragStartNodeScale_;
+                float scaleDelta = screenProj * (gizmoWorldLength_ / len2D) * 0.5f;
+                if (axis == 0) newScale.x += scaleDelta;
+                else if (axis == 1) newScale.y += scaleDelta;
+                else if (axis == 2) newScale.z += scaleDelta;
+                selectedNode_->transform().scale = newScale;
+            }
+        }
+    }
+}
 
-    ImU32 colors[3] = {
-        ImColor(239, 68, 68, 255),  // X: Bright Red (#EF4444)
-        ImColor(16, 185, 129, 255), // Y: Emerald Green (#10B981)
-        ImColor(59, 130, 246, 255)  // Z: Royal Blue (#3B82F6)
-    };
+void EditorUI::performRaycastSelection(Scene* scene, const glm::vec3& rayOrigin, const glm::vec3& rayDir) {
+    Node* closestNode = nullptr;
+    float closestT = 99999.0f;
+    scene->traverse([&](Node& n, const glm::mat4& worldMatrix) {
+        if (!n.parent()) return;
+        glm::vec3 objWorldPos = glm::vec3(worldMatrix[3]);
+        float sx = glm::length(glm::vec3(worldMatrix[0]));
+        float sy = glm::length(glm::vec3(worldMatrix[1]));
+        float sz = glm::length(glm::vec3(worldMatrix[2]));
+        float maxScale = glm::max(sx, glm::max(sy, sz));
 
-    ImU32 hoverColors[3] = {
-        ImColor(252, 165, 165, 255), // X Hover: Pinkish Red
-        ImColor(110, 231, 183, 255), // Y Hover: Minty Green
-        ImColor(147, 197, 253, 255)  // Z Hover: Light Blue
-    };
+        float radius = 0.5f * maxScale;
+        if (n.mesh()) radius = 1.0f * maxScale;
+        else if (n.asLightConst()) radius = 0.6f * maxScale;
 
-    // Draw axes lines & arrow heads
+        glm::vec3 oc = rayOrigin - objWorldPos;
+        float b = glm::dot(rayDir, oc);
+        float c = glm::dot(oc, oc) - radius * radius;
+        float discriminant = b * b - c;
+
+        if (discriminant >= 0.0f) {
+            float t = -b - glm::sqrt(discriminant);
+            if (t > 0.0f && t < closestT) {
+                closestT = t;
+                closestNode = &n;
+            }
+        }
+    });
+    selectedNode_ = closestNode;
+}
+
+void EditorUI::renderGizmoRotationRings(ImDrawList* drawList, Camera* camera, const glm::mat4& viewProj, int hoveredAxis) {
+    ImU32 colors[3] = { GizmoConfig::ColorX, GizmoConfig::ColorY, GizmoConfig::ColorZ };
+    ImU32 hoverColors[3] = { GizmoConfig::HoverColorX, GizmoConfig::HoverColorY, GizmoConfig::HoverColorZ };
+    
+    glm::vec3 renderAxes[3] = { gizmoLocalAxes_[0], gizmoLocalAxes_[1], gizmoLocalAxes_[2] };
+    if (grabbedAxis_ != GizmoAxis::None) {
+        renderAxes[0] = dragStartNodeRotQuat_ * glm::vec3(1,0,0);
+        renderAxes[1] = dragStartNodeRotQuat_ * glm::vec3(0,1,0);
+        renderAxes[2] = dragStartNodeRotQuat_ * glm::vec3(0,0,1);
+    }
+    
     for (int i = 0; i < 3; ++i) {
-        if (!axisValid[i]) continue;
+        bool isHovered = (hoveredAxis == i || static_cast<int>(grabbedAxis_) == i);
+        ImU32 col = isHovered ? hoverColors[i] : colors[i];
+        ImVec4 colV = ImGui::ColorConvertU32ToFloat4(col);
+        
+        glm::vec3 normal = renderAxes[i];
+        glm::vec3 u = glm::normalize(glm::cross(normal, std::abs(normal.x) > 0.9f ? glm::vec3(0,1,0) : glm::vec3(1,0,0)));
+        glm::vec3 v = glm::cross(normal, u);
+        
+        std::vector<ImVec2> pointsFront;
+        std::vector<ImVec2> pointsBack;
+        
+        for (int s = 0; s <= GizmoConfig::RingSegments; ++s) {
+            float theta = (static_cast<float>(s) / GizmoConfig::RingSegments) * glm::two_pi<float>();
+            glm::vec3 pos3D = gizmoNodePos_ + (u * std::cos(theta) + v * std::sin(theta)) * gizmoWorldLength_;
+            
+            glm::vec4 clipPos = viewProj * glm::vec4(pos3D, 1.0f);
+            if (clipPos.w > 0.0f) {
+                glm::vec3 ndcPos = glm::vec3(clipPos) / clipPos.w;
+                ImVec2 p2d(viewportPos_.x + (ndcPos.x + 1.0f) * 0.5f * viewportSize_.x, viewportPos_.y + (ndcPos.y + 1.0f) * 0.5f * viewportSize_.y);
+                
+                if (glm::dot(glm::normalize(pos3D - camera->position), glm::normalize(pos3D - gizmoNodePos_)) > 0.0f) {
+                    pointsBack.push_back(p2d);
+                } else {
+                    pointsFront.push_back(p2d);
+                }
+            }
+        }
+        
+        float thickness = isHovered ? GizmoConfig::RingThicknessHover : GizmoConfig::RingThicknessDefault;
+        if (!pointsBack.empty()) {
+            ImU32 backCol = ImGui::ColorConvertFloat4ToU32(ImVec4(colV.x, colV.y, colV.z, colV.w * 0.2f));
+            for (size_t p = 1; p < pointsBack.size(); ++p) drawList->AddLine(pointsBack[p-1], pointsBack[p], backCol, thickness);
+        }
+        if (!pointsFront.empty()) {
+            for (size_t p = 1; p < pointsFront.size(); ++p) drawList->AddLine(pointsFront[p-1], pointsFront[p], col, thickness);
+        }
+    }
+}
+
+void EditorUI::renderGizmoTranslateScale(ImDrawList* drawList, int hoveredAxis) {
+    ImU32 colors[3] = { GizmoConfig::ColorX, GizmoConfig::ColorY, GizmoConfig::ColorZ };
+    ImU32 hoverColors[3] = { GizmoConfig::HoverColorX, GizmoConfig::HoverColorY, GizmoConfig::HoverColorZ };
+
+    for (int i = 0; i < 3; ++i) {
+        if (!gizmoAxisValid_[i]) continue;
 
         bool isHovered = (hoveredAxis == i || static_cast<int>(grabbedAxis_) == i);
         ImU32 col = isHovered ? hoverColors[i] : colors[i];
-        float thickness = isHovered ? 4.0f : 2.5f;
+        float thickness = isHovered ? GizmoConfig::LineThicknessHover : GizmoConfig::LineThicknessDefault;
 
-        // Draw main axis segment
-        drawList->AddLine(
-            ImVec2(center2D.x, center2D.y),
-            ImVec2(ends2D[i].x, ends2D[i].y),
-            col,
-            thickness
-        );
+        drawList->AddLine(ImVec2(gizmoCenter2D_.x, gizmoCenter2D_.y), ImVec2(gizmoEnds2D_[i].x, gizmoEnds2D_[i].y), col, thickness);
 
-        // Draw shape at the end based on gizmo mode
         if (gizmoMode_ == GizmoMode::Translate) {
-            // Translate: Triangle arrow head
-            glm::vec2 dir = ends2D[i] - center2D;
+            glm::vec2 dir = gizmoEnds2D_[i] - gizmoCenter2D_;
             float dLen = glm::length(dir);
             if (dLen > 1.0f) {
                 dir = dir / dLen;
                 glm::vec2 perp = glm::vec2(-dir.y, dir.x);
-
                 float headLen = isHovered ? 14.0f : 11.0f;
                 float headWidth = isHovered ? 7.0f : 5.5f;
-
-                glm::vec2 p0 = ends2D[i] + dir * headLen;
-                glm::vec2 p1 = ends2D[i] - dir * headLen + perp * headWidth;
-                glm::vec2 p2 = ends2D[i] - dir * headLen - perp * headWidth;
-
+                glm::vec2 p0 = gizmoEnds2D_[i] + dir * headLen;
+                glm::vec2 p1 = gizmoEnds2D_[i] - dir * headLen + perp * headWidth;
+                glm::vec2 p2 = gizmoEnds2D_[i] - dir * headLen - perp * headWidth;
                 drawList->AddTriangleFilled(ImVec2(p0.x, p0.y), ImVec2(p1.x, p1.y), ImVec2(p2.x, p2.y), col);
             }
-        } else if (gizmoMode_ == GizmoMode::Rotate) {
-            // Rotate: Circle
-            float radius = isHovered ? 8.0f : 6.0f;
-            drawList->AddCircleFilled(ImVec2(ends2D[i].x, ends2D[i].y), radius, col);
         } else if (gizmoMode_ == GizmoMode::Scale) {
-            // Scale: Box
             float halfSize = isHovered ? 6.0f : 4.5f;
             drawList->AddRectFilled(
-                ImVec2(ends2D[i].x - halfSize, ends2D[i].y - halfSize),
-                ImVec2(ends2D[i].x + halfSize, ends2D[i].y + halfSize),
-                col
+                ImVec2(gizmoEnds2D_[i].x - halfSize, gizmoEnds2D_[i].y - halfSize),
+                ImVec2(gizmoEnds2D_[i].x + halfSize, gizmoEnds2D_[i].y + halfSize), col
             );
         }
     }
-
-    // Draw small center sphere (anchor point)
-    drawList->AddCircleFilled(
-        ImVec2(center2D.x, center2D.y),
-        5.0f,
-        ImColor(255, 255, 255, 220)
-    );
-    drawList->AddCircle(
-        ImVec2(center2D.x, center2D.y),
-        5.0f,
-        ImColor(0, 0, 0, 255),
-        0,
-        1.0f
-    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1123,6 +1168,108 @@ void EditorUI::drawSettingsWindow(Project* project) {
 
                 static float gizmoSize = 1.0f;
                 ImGui::SliderFloat("Gizmo Size", &gizmoSize, 0.1f, 3.0f);
+
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Audio")) {
+                ImGui::Spacing();
+                ImGui::SeparatorText("Global");
+                float masterVol = project->masterVolume();
+                if (ImGui::SliderFloat("Master Volume", &masterVol, 0.0f, 1.0f)) {
+                    project->setMasterVolume(masterVol);
+                    AudioManager::get().setMasterVolume(masterVol);
+                }
+
+                ImGui::Spacing();
+                ImGui::SeparatorText("Default Settings");
+                AudioSettings defSettings = project->defaultAudioSettings();
+                bool changed = false;
+                changed |= ImGui::SliderFloat("Default Volume", &defSettings.volume, 0.0f, 1.0f);
+                changed |= ImGui::Checkbox("Loop by Default", &defSettings.loop);
+                changed |= ImGui::Checkbox("Spatialized by Default", &defSettings.spatialized);
+                if (defSettings.spatialized) {
+                    changed |= ImGui::DragFloat("Min Distance", &defSettings.minDistance, 0.5f, 0.1f, 1000.0f);
+                    changed |= ImGui::DragFloat("Max Distance", &defSettings.maxDistance, 1.0f, 1.0f, 10000.0f);
+                }
+                
+                if (changed) {
+                    project->defaultAudioSettings() = defSettings;
+                    AudioManager::get().setDefaultSettings(defSettings);
+                }
+                
+                ImGui::Spacing();
+                ImGui::SeparatorText("Audio Assets Aliases");
+                ImGui::TextDisabled("Map friendly names to audio files.");
+                
+                // List existing
+                std::string toRemove = "";
+                if (ImGui::BeginTable("AudioAliasesTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+                    ImGui::TableSetupColumn("Alias Name", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("File Path", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("##Action", ImGuiTableColumnFlags_WidthFixed, 30.0f);
+                    ImGui::TableHeadersRow();
+
+                    for (const auto& [name, path] : project->audioAliases()) {
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%s", name.c_str());
+                        ImGui::TableNextColumn();
+                        ImGui::TextDisabled("%s", path.c_str());
+                        ImGui::TableNextColumn();
+                        ImGui::PushID(name.c_str());
+                        if (ImGui::Button("X", ImVec2(24, 0))) {
+                            toRemove = name;
+                        }
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTable();
+                }
+
+                if (!toRemove.empty()) {
+                    project->removeAudioAlias(toRemove);
+                }
+                
+                ImGui::Spacing();
+                ImGui::SeparatorText("Register New Audio Alias");
+                ImGui::TextDisabled("Drag & Drop .ogg files below, or type manually.");
+                
+                static char newAliasName[64] = "";
+                static char newAliasPath[256] = "";
+                
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputTextWithHint("##AliasName", "Alias Name (e.g. 'Explosion')", newAliasName, sizeof(newAliasName));
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputTextWithHint("##AliasPath", "File Path (e.g. 'assets/audio/exp.ogg')", newAliasPath, sizeof(newAliasPath));
+                
+                // Drag & Drop target on the inputs
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_AUDIO")) {
+                        const char* pathStr = (const char*)payload->Data;
+                        std::filesystem::path fp(pathStr);
+                        if (fp.extension() == ".ogg") {
+                            std::filesystem::path root(project->rootPath());
+                            std::string relPath = std::filesystem::relative(fp, root).string();
+                            std::replace(relPath.begin(), relPath.end(), '\\', '/');
+                            std::strncpy(newAliasPath, relPath.c_str(), sizeof(newAliasPath) - 1);
+                            
+                            if (strlen(newAliasName) == 0) {
+                                std::string stem = fp.stem().string();
+                                std::strncpy(newAliasName, stem.c_str(), sizeof(newAliasName) - 1);
+                            }
+                            project->assetRegistry().registerAsset(relPath, AssetType::Audio);
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+                
+                if (ImGui::Button("Add / Update Alias", ImVec2(-1, 0))) {
+                    if (strlen(newAliasName) > 0 && strlen(newAliasPath) > 0) {
+                        project->setAudioAlias(newAliasName, newAliasPath);
+                        newAliasName[0] = '\0';
+                        newAliasPath[0] = '\0';
+                    }
+                }
 
                 ImGui::EndTabItem();
             }

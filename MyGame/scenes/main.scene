@@ -3,28 +3,25 @@
     "behaviours": [],
     "children": [
       {
-        "behaviours": [
-          {
-            "ambient": [
-              0.03999999910593033,
-              0.03999999910593033,
-              0.05000000074505806
-            ],
-            "clearColor": [
-              0.10000000149011612,
-              0.10000000149011612,
-              0.10000000149011612
-            ],
-            "postProcessing": true,
-            "type": "SceneSettings"
-          }
+        "baseColor": [
+          0.800000011920929,
+          0.800000011920929,
+          0.8500000238418579,
+          1.0
         ],
+        "behaviours": [],
+        "castShadows": false,
         "children": [],
-        "name": "Settings",
+        "enabled": true,
+        "includeInLightBaking": true,
+        "mesh": 1,
+        "meshEnabled": true,
+        "name": "ground",
+        "texture": 11906147407999800251,
         "transform": {
           "position": [
             0.0,
-            0.0,
+            -2.5,
             0.0
           ],
           "rotation": [
@@ -34,14 +31,20 @@
             1.0
           ],
           "scale": [
-            1.0,
-            1.0,
-            1.0
+            20.0,
+            0.20000000298023224,
+            20.0
           ]
         },
-        "type": "Node"
+        "type": "MeshNode"
       },
       {
+        "baseColor": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
         "behaviours": [
           {
             "axis": [
@@ -49,12 +52,20 @@
               1.0,
               0.0
             ],
+            "enabled": true,
             "speed": 40.0,
             "type": "Rotator"
           }
         ],
+        "castShadows": true,
         "children": [
           {
+            "baseColor": [
+              1.0,
+              0.550000011920929,
+              0.4000000059604645,
+              1.0
+            ],
             "behaviours": [
               {
                 "axis": [
@@ -62,17 +73,29 @@
                   1.0,
                   0.0
                 ],
+                "enabled": true,
                 "speed": 90.0,
                 "type": "Rotator"
               }
             ],
+            "castShadows": true,
             "children": [
               {
+                "baseColor": [
+                  0.44999998807907104,
+                  0.699999988079071,
+                  1.0,
+                  1.0
+                ],
                 "behaviours": [],
+                "castShadows": true,
                 "children": [],
-                "material": "cool",
-                "mesh": "cube",
+                "enabled": true,
+                "includeInLightBaking": false,
+                "mesh": 1,
+                "meshEnabled": true,
                 "name": "sub-moon",
+                "texture": 11906147407999800251,
                 "transform": {
                   "position": [
                     2.0,
@@ -94,9 +117,12 @@
                 "type": "MeshNode"
               }
             ],
-            "material": "warm",
-            "mesh": "cube",
+            "enabled": true,
+            "includeInLightBaking": false,
+            "mesh": 1,
+            "meshEnabled": true,
             "name": "moon",
+            "texture": 11906147407999800251,
             "transform": {
               "position": [
                 2.0,
@@ -104,10 +130,10 @@
                 0.0
               ],
               "rotation": [
-                0.0,
-                0.9627373814582825,
-                0.0,
-                -0.27043795585632324
+                -0.0,
+                -0.5986999273300171,
+                -0.0,
+                0.8009734153747559
               ],
               "scale": [
                 0.44999998807907104,
@@ -118,9 +144,12 @@
             "type": "MeshNode"
           }
         ],
-        "material": "white",
-        "mesh": "cube",
+        "enabled": true,
+        "includeInLightBaking": false,
+        "mesh": 1,
+        "meshEnabled": true,
         "name": "planet",
+        "texture": 11906147407999800251,
         "transform": {
           "position": [
             0.0,
@@ -128,10 +157,10 @@
             0.0
           ],
           "rotation": [
-            -0.0,
-            -0.45358049869537354,
-            -0.0,
-            -0.8912153244018555
+            0.0,
+            0.5926513671875,
+            0.0,
+            -0.8054590821266174
           ],
           "scale": [
             1.0,
@@ -142,8 +171,85 @@
         "type": "MeshNode"
       },
       {
+        "behaviours": [
+          {
+            "enabled": true,
+            "gravity": 9.8100004196167,
+            "jumpForce": 5.0,
+            "moveSpeed": 5.0,
+            "type": "Character"
+          }
+        ],
+        "children": [
+          {
+            "baseColor": [
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "behaviours": [],
+            "castShadows": true,
+            "children": [],
+            "enabled": true,
+            "includeInLightBaking": false,
+            "mesh": 4611686018427387904,
+            "meshEnabled": true,
+            "name": "node_damagedHelmet_-6514_prim0",
+            "texture": 9223372036854775808,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "type": "MeshNode"
+          }
+        ],
+        "enabled": true,
+        "name": "node_damagedHelmet_-6514",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.7071068286895752,
+            0.0,
+            0.0,
+            0.7071068286895752
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "type": "Node"
+      },
+      {
         "bakeMode": 0,
-        "behaviours": [],
+        "behaviours": [
+          {
+            "audioName": "big_band_banger",
+            "enabled": true,
+            "type": "AudioSource"
+          }
+        ],
+        "castShadows": true,
         "children": [],
         "color": [
           1.0,
@@ -155,10 +261,13 @@
           -0.8638684153556824,
           -0.2591605484485626
         ],
+        "enabled": true,
         "intensity": 1.0,
         "lightType": 0,
         "name": "sun",
         "range": 10.0,
+        "spotInnerAngle": 25.0,
+        "spotOuterAngle": 35.0,
         "transform": {
           "position": [
             0.0,
@@ -187,6 +296,7 @@
               1.0,
               0.0
             ],
+            "enabled": true,
             "speed": 70.0,
             "type": "Rotator"
           }
@@ -195,6 +305,7 @@
           {
             "bakeMode": 0,
             "behaviours": [],
+            "castShadows": true,
             "children": [],
             "color": [
               0.30000001192092896,
@@ -206,10 +317,13 @@
               -1.0,
               0.0
             ],
+            "enabled": true,
             "intensity": 4.0,
             "lightType": 1,
             "name": "lamp",
             "range": 8.0,
+            "spotInnerAngle": 25.0,
+            "spotOuterAngle": 35.0,
             "transform": {
               "position": [
                 3.5,
@@ -231,6 +345,7 @@
             "type": "LightNode"
           }
         ],
+        "enabled": true,
         "name": "light-pivot",
         "transform": {
           "position": [
@@ -239,10 +354,10 @@
             0.0
           ],
           "rotation": [
-            0.0,
-            0.038481444120407104,
-            0.0,
-            0.9992592930793762
+            -0.0,
+            -0.9477446675300598,
+            -0.0,
+            -0.3190297782421112
           ],
           "scale": [
             1.0,
@@ -251,9 +366,69 @@
           ]
         },
         "type": "Node"
+      },
+      {
+        "behaviours": [],
+        "enabled": true,
+        "name": "port (Scene)",
+        "prefabAssetId": 17529559623320602914,
+        "settings": {
+          "ambient": [
+            0.10000000149011612,
+            0.10000000149011612,
+            0.10000000149011612
+          ],
+          "clearColor": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "lightingMode": 0,
+          "postProcessing": true,
+          "skyboxExposure": 1.0,
+          "skyboxRotation": 0.0,
+          "skyboxTexture": 0
+        },
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "type": "Scene"
       }
     ],
+    "enabled": true,
     "name": "Scene",
+    "settings": {
+      "ambient": [
+        0.10000000149011612,
+        0.10000000149011612,
+        0.10000000149011612
+      ],
+      "clearColor": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "lightingMode": 0,
+      "postProcessing": true,
+      "skyboxExposure": 1.0,
+      "skyboxRotation": 0.0,
+      "skyboxTexture": 0
+    },
     "transform": {
       "position": [
         0.0,
@@ -272,7 +447,7 @@
         1.0
       ]
     },
-    "type": "Node"
+    "type": "Scene"
   },
   "version": 1
 }

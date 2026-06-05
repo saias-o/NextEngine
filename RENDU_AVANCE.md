@@ -60,20 +60,16 @@ pour la cible — séduisant sur le papier, inadapté à Quest/mobile.
 
 ## 2. Pré-requis : NextEngine n'est pas encore prêt pour ça
 
-État actuel : **forward rendering**, Blinn-Phong (refactoré dans `lighting.glsl`),
-ombres shadow-map 2D-array, lightmaps GPU (`LightBaker`), **aucun pipeline
-compute**, **pas de cible HDR**, **pas de G-buffer/deferred**, **pas de
-multiview**, file graphics unique. On ne peut pas brancher des Radiance Cascades
+État actuel : **PBR**, **HDR**, **Dynamic Rendering** (Vulkan 1.3) et **Infrastructure Compute** (F1) implémentés,
+ombres shadow-map 2D-array, lightmaps GPU (`LightBaker`). Cependant, le rendu est **toujours en Forward** (pas de G-buffer/deferred), **pas de multiview**.
+On ne peut pas encore brancher des Radiance Cascades
 là-dessus. Fondations indispensables **avant** la GI avancée :
 
-- **F1. Infrastructure compute.** `ComputePipeline`, dispatch, images storage
-  (`VK_IMAGE_USAGE_STORAGE`), barrières **sync2**. Brique de tout le reste.
-- **F2. PBR metallic-roughness + normal mapping.** La GI alimente une BRDF PBR ;
-  Blinn-Phong ne suffit pas au photoréalisme. Couture déjà prête (`lighting.glsl`).
-- **F3. Pipeline HDR + tonemapping (ACES).** L'éclairage (et la GI) dépasse 1.0 :
-  cible de rendu R16F → passe plein-écran de tonemap → swapchain. `SceneSettings.
-  enablePostProcessing` existe déjà (inutilisé).
-- **F4. Rendu différé / Visibility buffer.** G-buffer (pos monde, normale, albedo,
+- **(FAIT) F1. Infrastructure compute.** `ComputePipeline`, dispatch, barrières compute, GPU culling fonctionnels.
+- **(FAIT) F2. PBR metallic-roughness + normal mapping.**
+- **(FAIT) F3. Pipeline HDR + tonemapping (ACES).**
+- **(FAIT) Dynamic Rendering (Vulkan 1.3).**
+- **F4. Rendu différé / Visibility buffer.** (À FAIRE) G-buffer (pos monde, normale, albedo,
   rugosité/métal) : entrée obligatoire des Radiance Cascades et des caches.
 - **F5. Multiview (stéréo) dès maintenant.** Concevoir **toutes** les nouvelles
   passes multiview-aware (un seul render, deux vues) — fondation VR de `CLAUDE.md`.
@@ -87,10 +83,10 @@ là-dessus. Fondations indispensables **avant** la GI avancée :
 
 ## 3. Feuille de route phasée (recommandée)
 
-**Phase 0 — Fondations (gros morceau, prérequis absolu)**
-F2 PBR → F3 HDR/tonemap → F1 compute infra → F4 deferred/visibility buffer →
-F5 multiview → F6 GPU-driven/bindless. *Résultat : un renderer moderne, scalable,
-prêt pour la GI et la VR.*
+**Phase 0 — Fondations (suite du prérequis absolu)**
+F4 deferred/visibility buffer →
+F5 multiview → F6 GPU-driven/bindless. (F1 Compute, PBR, HDR et Dynamic Rendering sont déjà FAITS).
+*Résultat : un renderer moderne, scalable, prêt pour la GI et la VR.*
 
 **Phase 1 — Radiance Cascades 2D (screen-space GI)**
 Première GI **sans bruit**, 100 % compute, mobile/VR friendly. Diffuse indirect +

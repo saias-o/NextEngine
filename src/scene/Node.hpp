@@ -11,11 +11,14 @@
 #include <type_traits>
 #include <vector>
 
+#include <nlohmann/json_fwd.hpp>
+
 namespace ne {
 
 class Mesh;
 class Material;
 class LightNode;
+class ResourceManager;
 
 // Local transform: translation, rotation (quaternion) and scale.
 struct Transform {
@@ -38,6 +41,9 @@ public:
 
     // Takes ownership of `child`, sets its parent, returns a borrowed pointer.
     Node* addChild(std::unique_ptr<Node> child);
+
+    // Takes ownership of `child` and inserts it at the specified index, sets its parent, returns a borrowed pointer.
+    Node* addChildAt(std::unique_ptr<Node> child, size_t index);
 
     // Find the unique_ptr for `child` in our children_ vector, erase it (which deletes it), and return true.
     bool removeChild(Node* child);
@@ -66,6 +72,9 @@ public:
     // Attach an already-constructed behaviour (e.g. from the BehaviourRegistry
     // during deserialization); returns it (borrowed).
     Behaviour* addBehaviour(std::unique_ptr<Behaviour> behaviour);
+
+    // Remove a specific behaviour instance.
+    void removeBehaviour(Behaviour* b);
 
     // Remove all children (and, transitively, their subtrees).
     void clearChildren() { children_.clear(); }
@@ -107,6 +116,10 @@ public:
     virtual Material* material() const { return nullptr; }
     virtual LightNode* asLight() { return nullptr; }
     virtual const LightNode* asLightConst() const { return nullptr; }
+
+    virtual const char* typeName() const { return "Node"; }
+    virtual void serialize(nlohmann::json& j, ResourceManager& resources) const;
+    virtual void deserialize(const nlohmann::json& j, ResourceManager& resources);
 
     // Behaviour queries (used by the editor inspector).
     bool hasBehaviours() const { return !behaviours_.empty(); }

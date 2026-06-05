@@ -6,6 +6,8 @@
 #include "scene/LightNode.hpp"
 #include "scene/SceneSerializer.hpp"
 #include "editor/Command.hpp"
+#include "project/Project.hpp"
+#include "graphics/ResourceManager.hpp"
 
 #include <imgui.h>
 #include <filesystem>
@@ -146,10 +148,17 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
             newNode = std::make_unique<LightNode>("Point Light", LightType::Point);
         } else if (editor->createType_ == CreateNodeType::SpotLight) {
             newNode = std::make_unique<LightNode>("Spot Light", LightType::Spot);
-        } else if (editor->createType_ == CreateNodeType::SceneInstance && editor->ctxResources_) {
+        } else if (editor->createType_ == CreateNodeType::SceneInstance && editor->ctxResources_ && editor->ctxProject_) {
             std::filesystem::path p(editor->draggedScenePath_);
             newNode = SceneSerializer::loadNodeFromSceneFile(editor->draggedScenePath_, *editor->ctxResources_);
-            if (newNode) newNode->setName(p.stem().string() + " (Scene)");
+            if (newNode) {
+                newNode->setName(p.stem().string() + " (Scene)");
+                if (Scene* s = dynamic_cast<Scene*>(newNode.get())) {
+                    std::string relativePath = std::filesystem::path(editor->draggedScenePath_).lexically_relative(editor->ctxProject_->rootPath()).generic_string();
+                    AssetID id = editor->ctxResources_->getOrRegister(relativePath, AssetType::Scene);
+                    s->setPrefabAssetId(id);
+                }
+            }
         }
 
         if (newNode) {
@@ -159,6 +168,26 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
         }
         editor->nodeToCreateChildUnder_ = nullptr;
         editor->createType_ = CreateNodeType::None;
+    }
+
+    if (editor->nodeToCreateParentFor_) {
+        if (editor->nodeToCreateParentFor_->parent()) {
+            auto newParent = std::make_unique<Node>("Node");
+            Node* rawParent = newParent.get();
+            editor->history_.execute(std::make_unique<CreateParentCommand>(editor->nodeToCreateParentFor_, std::move(newParent)));
+            editor->selectedNode_ = rawParent;
+        }
+        editor->nodeToCreateParentFor_ = nullptr;
+    }
+
+    ImGui::Dummy(ImGui::GetContentRegionAvail());
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_SCENE")) {
+            editor->nodeToCreateChildUnder_ = scene;
+            editor->createType_ = CreateNodeType::SceneInstance;
+            editor->draggedScenePath_ = (const char*)payload->Data;
+        }
+        ImGui::EndDragDropTarget();
     }
 
     ImGui::End();
@@ -174,7 +203,8 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
                              | ImGuiTreeNodeFlags_OpenOnDoubleClick
                              | ImGuiTreeNodeFlags_SpanAvailWidth;
 
-    bool isLeaf = node->children().empty();
+    bool isNestedScene = (dynamic_cast<Scene*>(node) != nullptr && node != editor->ctxScene_ && static_cast<Scene*>(node)->prefabAssetId() != kAssetInvalid);
+    bool isLeaf = node->children().empty() || isNestedScene;
     if (isLeaf)
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     if (node == editor->selectedNode_)
@@ -184,11 +214,31 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
         flags |= ImGuiTreeNodeFlags_DefaultOpen;
 
     const char* icon = nodeTypeIcon(node);
+    if (isNestedScene) icon = "[P]";
+
     bool open = false;
 
     bool active = node->isActiveInHierarchy();
+    bool hasCustomColor = false;
+    ImVec4 customColor;
+    
+    if (active) {
+        if (isNestedScene) {
+            hasCustomColor = true;
+            customColor = ImVec4(0.6f, 0.8f, 1.0f, 1.0f); // Slightly blue
+        } else if (dynamic_cast<MeshNode*>(node)) {
+            hasCustomColor = true;
+            customColor = ImVec4(0.6f, 0.9f, 0.6f, 1.0f); // Slightly green
+        } else if (dynamic_cast<LightNode*>(node)) {
+            hasCustomColor = true;
+            customColor = ImVec4(0.9f, 0.9f, 0.5f, 1.0f); // Slightly yellow
+        }
+    }
+
     if (!active) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    } else if (hasCustomColor) {
+        ImGui::PushStyleColor(ImGuiCol_Text, customColor);
     }
 
     if (editor->nodeToRename_ == node) {
@@ -211,7 +261,7 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
         open = ImGui::TreeNodeEx(reinterpret_cast<void*>(node), flags, "%s %s", icon, node->name().c_str());
     }
 
-    if (!active) {
+    if (!active || hasCustomColor) {
         ImGui::PopStyleColor();
     }
 
@@ -240,6 +290,13 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
         editor->selectedNode_ = node;
 
+    if (isNestedScene && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && editor->ctxResources_ && editor->ctxProject_) {
+        std::string absPath = editor->ctxResources_->getRegistry()->getAbsolutePath(static_cast<Scene*>(node)->prefabAssetId());
+        if (!absPath.empty()) {
+            editor->loadScene(editor->ctxScene_, editor->ctxResources_, absPath);
+        }
+    }
+
     if (ImGui::IsItemClicked(ImGuiMouseButton_Middle))
         node->setEnabled(!node->enabled());
 
@@ -250,6 +307,15 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
             editor->nodeToRename_ = node;
             std::strncpy(editor->nodeRenameBuf_, node->name().c_str(), sizeof(editor->nodeRenameBuf_) - 1);
             editor->nodeRenameBuf_[sizeof(editor->nodeRenameBuf_) - 1] = '\0';
+        }
+        if (node->enabled()) {
+            if (ImGui::MenuItem("Hide")) {
+                node->setEnabled(false);
+            }
+        } else {
+            if (ImGui::MenuItem("Show")) {
+                node->setEnabled(true);
+            }
         }
         ImGui::Separator();
 
@@ -275,6 +341,11 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
                 editor->createType_ = CreateNodeType::SpotLight;
             }
             ImGui::EndMenu();
+        }
+
+        bool canCreateParent = node->parent() != nullptr;
+        if (ImGui::MenuItem("Create Parent", nullptr, false, canCreateParent)) {
+            editor->nodeToCreateParentFor_ = node;
         }
 
         ImGui::Separator();

@@ -12,7 +12,10 @@ public:
     static float unscaledDelta() { return unscaledDelta_; }
     static float elapsed() { return elapsed_; }        // scaled seconds since start
     static float scale() { return scale_; }
-    static void setScale(float s) { scale_ = s; }
+    static void setScale(float s) { 
+        scale_ = s; 
+        delta_ = unscaledDelta_ * scale_; 
+    }
 
 private:
     friend class Engine;

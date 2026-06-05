@@ -1,8 +1,10 @@
 #include "editor/panels/MenuBarPanel.hpp"
 #include "editor/EditorUI.hpp"
+#include "editor/EditorApp.hpp"
 #include "scene/Scene.hpp"
 #include "project/Project.hpp"
 #include "graphics/ResourceManager.hpp"
+#include "scene/SceneSerializer.hpp"
 
 #include <imgui.h>
 #include <filesystem>
@@ -171,22 +173,26 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
             float buttonWidth  = 160.0f;
             ImGui::SameLine(ImGui::GetCursorPosX() + contentWidth - buttonWidth);
 
-            bool sceneActive = !editor->playMode_;
+            bool sceneActive = !editor->app_->isPlayMode();
             if (sceneActive) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.29f, 0.56f, 0.85f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.62f, 0.90f, 1.0f));
             }
-            if (ImGui::SmallButton("Scene##mode")) { editor->setPlayMode(false); }
+            if (ImGui::SmallButton("Scene##mode")) { 
+                editor->app_->setPlayMode(false);
+            }
             if (sceneActive) ImGui::PopStyleColor(2);
 
             ImGui::SameLine();
 
-            bool playActive = editor->playMode_;
+            bool playActive = editor->app_->isPlayMode();
             if (playActive) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.70f, 0.35f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.78f, 0.40f, 1.0f));
             }
-            if (ImGui::SmallButton("Play##mode")) { editor->setPlayMode(true); }
+            if (ImGui::SmallButton("Play##mode")) { 
+                editor->app_->setPlayMode(true);
+            }
             if (playActive) ImGui::PopStyleColor(2);
         }
 

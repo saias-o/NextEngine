@@ -18,7 +18,8 @@ enum class AssetType {
     Mesh,
     Texture,
     Material,
-    Scene
+    Scene,
+    Audio
 };
 
 struct AssetMetadata {
@@ -49,6 +50,7 @@ public:
 
     AssetID getID(const std::string& relativePath) const;
     std::string getPath(AssetID id) const;
+    std::string getAbsolutePath(AssetID id) const;
     AssetType getType(AssetID id) const;
 
     // Registers a new asset or returns existing ID
@@ -67,6 +69,7 @@ private:
     void loadLocalCache(const std::string& projectRoot);
     void saveLocalCache(const std::string& projectRoot) const;
 
+    std::string projectRoot_;
     std::unordered_map<AssetID, AssetMetadata> assetsByID_;
     std::unordered_map<std::string, AssetID> assetsByPath_;
     

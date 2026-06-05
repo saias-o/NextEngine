@@ -27,11 +27,15 @@ public:
 
     Node* node() const { return node_; }
 
+    bool enabled() const { return enabled_; }
+    void setEnabled(bool enabled) { enabled_ = enabled; }
+
 private:
     friend class Node;  // sets node_ on attach, drives ready_/lifecycle
     friend class Scene; // flattens behaviours and drives lifecycle
     Node* node_ = nullptr;
     bool ready_ = false;
+    bool enabled_ = true;
 };
 
 } // namespace ne

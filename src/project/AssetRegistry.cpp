@@ -31,6 +31,7 @@ std::string assetTypeToString(AssetType type) {
         case AssetType::Texture: return "Texture";
         case AssetType::Material: return "Material";
         case AssetType::Scene: return "Scene";
+        case AssetType::Audio: return "Audio";
         default: return "Unknown";
     }
 }
@@ -40,11 +41,13 @@ AssetType stringToAssetType(const std::string& str) {
     if (str == "Texture") return AssetType::Texture;
     if (str == "Material") return AssetType::Material;
     if (str == "Scene") return AssetType::Scene;
+    if (str == "Audio") return AssetType::Audio;
     return AssetType::Unknown;
 }
 } // namespace
 
 bool AssetRegistry::load(const std::string& projectRoot) {
+    projectRoot_ = projectRoot;
     std::filesystem::path path = std::filesystem::path(projectRoot) / kRegistryFilename;
     if (!std::filesystem::exists(path)) {
         Log::info("No asset registry found, a new one will be created.");
@@ -222,6 +225,12 @@ std::string AssetRegistry::getPath(AssetID id) const {
     return it != assetsByID_.end() ? it->second.relativePath : "";
 }
 
+std::string AssetRegistry::getAbsolutePath(AssetID id) const {
+    std::string relPath = getPath(id);
+    if (relPath.empty() || projectRoot_.empty()) return "";
+    return (std::filesystem::path(projectRoot_) / relPath).string();
+}
+
 AssetType AssetRegistry::getType(AssetID id) const {
     auto it = assetsByID_.find(id);
     return it != assetsByID_.end() ? it->second.type : AssetType::Unknown;
@@ -332,6 +341,7 @@ AssetType AssetRegistry::determineType(const std::filesystem::path& path) const 
     if (ext == ".png" || ext == ".jpg" || ext == ".bmp") return AssetType::Texture;
     if (ext == ".mat") return AssetType::Material;
     if (ext == ".scene") return AssetType::Scene;
+    if (ext == ".ogg") return AssetType::Audio;
     return AssetType::Unknown;
 }
 

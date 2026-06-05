@@ -1,3 +1,14 @@
 [NextEngine Project]
 name=MyGame
 engine_version=0.1.0
+max_fps=240
+shadow_resolution=2048
+shadow_dist=25
+shadow_soft=1
+audio_master_vol=1
+audio_default_vol=1
+audio_default_loop=0
+audio_default_spatial=0
+audio_default_min_dist=1
+audio_default_max_dist=100
+audio_alias_big_band_banger=assets/sounds/big_band_banger.ogg
