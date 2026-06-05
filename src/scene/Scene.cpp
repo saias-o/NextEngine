@@ -31,6 +31,8 @@ void Scene::flattenHierarchy() {
     flatBehaviours_.clear();
 
     traverse([this](Node& n, const glm::mat4&) {
+        if (!n.isActiveInHierarchy()) return;
+        
         if (n.mesh()) {
             meshes_.push_back(static_cast<MeshNode*>(&n));
         }

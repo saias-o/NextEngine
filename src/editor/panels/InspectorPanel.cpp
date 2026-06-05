@@ -24,6 +24,12 @@ void InspectorPanel::draw(EditorUI* editor) {
     Node* node = editor->selectedNode_;
 
     ImGui::SeparatorText("Node");
+    
+    bool enabled = node->enabled();
+    if (ImGui::Checkbox("##NodeEnabled", &enabled)) {
+        node->setEnabled(enabled);
+    }
+    ImGui::SameLine();
     ImGui::Text("Name: %s", node->name().c_str());
     
     const char* typeLabel = "Node";

@@ -1052,6 +1052,13 @@ void EditorUI::drawSettingsWindow(Project* project) {
                     project->setName(nameBuf);
                 }
                 
+                ImGui::SeparatorText("Performance");
+                int maxFps = project->maxFps();
+                if (ImGui::InputInt("Max FPS (0 = Unlimited)", &maxFps)) {
+                    if (maxFps < 0) maxFps = 0;
+                    project->setMaxFps(maxFps);
+                }
+                
                 ImGui::SeparatorText("Metadata");
                 ImGui::TextDisabled("Version: 1.0.0");
                 ImGui::TextDisabled("Company Name: DefaultCompany");
@@ -1061,11 +1068,38 @@ void EditorUI::drawSettingsWindow(Project* project) {
 
             if (ImGui::BeginTabItem("Rendering")) {
                 ImGui::Spacing();
-                ImGui::SeparatorText("Global Quality");
+                ImGui::SeparatorText("Shadows");
                 
-                static int shadowResolution = 1;
-                const char* shadowResNames[] = { "Low (512)", "Medium (1024)", "High (2048)", "Ultra (4096)" };
-                ImGui::Combo("Shadow Resolution", &shadowResolution, shadowResNames, 4);
+                int currentRes = project->shadowResolution();
+                int comboIndex = 0;
+                if (currentRes == 512) comboIndex = 0;
+                else if (currentRes == 1024) comboIndex = 1;
+                else if (currentRes == 2048) comboIndex = 2;
+                else if (currentRes == 4096) comboIndex = 3;
+                else if (currentRes == 8192) comboIndex = 4;
+                
+                const char* shadowResNames[] = { "Very Low (512)", "Low (1024)", "Medium (2048)", "High (4096)", "Ultra (8192)" };
+                if (ImGui::Combo("Resolution", &comboIndex, shadowResNames, 5)) {
+                    int newRes = 2048;
+                    if (comboIndex == 0) newRes = 512;
+                    else if (comboIndex == 1) newRes = 1024;
+                    else if (comboIndex == 2) newRes = 2048;
+                    else if (comboIndex == 3) newRes = 4096;
+                    else if (comboIndex == 4) newRes = 8192;
+                    project->setShadowResolution(newRes);
+                }
+                
+                float dist = project->shadowDistance();
+                if (ImGui::DragFloat("Distance", &dist, 0.5f, 10.0f, 200.0f)) {
+                    project->setShadowDistance(dist);
+                }
+                
+                float soft = project->shadowSoftness();
+                if (ImGui::DragFloat("Softness (Blur)", &soft, 0.05f, 0.0f, 10.0f)) {
+                    project->setShadowSoftness(soft);
+                }
+
+                ImGui::SeparatorText("Global Quality");
 
                 static int msaa = 0;
                 const char* msaaNames[] = { "Off", "2x MSAA", "4x MSAA", "8x MSAA" };

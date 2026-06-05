@@ -41,7 +41,7 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code
 
 } // namespace
 
-ShadowMap::ShadowMap(VulkanDevice& device) : device_(device) {
+ShadowMap::ShadowMap(VulkanDevice& device, uint32_t initialResolution) : device_(device), resolution_(initialResolution) {
     format_ = device_.findSupportedFormat(
         {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D16_UNORM},
         VK_IMAGE_TILING_OPTIMAL,
@@ -67,7 +67,7 @@ void ShadowMap::createImage() {
     VkImageCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     info.imageType = VK_IMAGE_TYPE_2D;
-    info.extent = {kResolution, kResolution, 1};
+    info.extent = {resolution_, resolution_, 1};
     info.mipLevels = 1;
     info.arrayLayers = kMaxShadows;
     info.format = format_;
@@ -254,12 +254,13 @@ void ShadowMap::record(VkCommandBuffer cmd, int count, const DrawGeometryFn& dra
     if (count > static_cast<int>(kMaxShadows)) count = kMaxShadows;
 
     VkViewport viewport{};
-    viewport.width = static_cast<float>(kResolution);
-    viewport.height = static_cast<float>(kResolution);
+    viewport.width = static_cast<float>(resolution_);
+    viewport.height = static_cast<float>(resolution_);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     VkRect2D scissor{};
-    scissor.extent = {kResolution, kResolution};
+    scissor.offset = {0, 0};
+    scissor.extent = {resolution_, resolution_};
 
     for (int i = 0; i < count; ++i) {
         // This layer is in SHADER_READ_ONLY (init / previous frame); move it to a
@@ -281,7 +282,7 @@ void ShadowMap::record(VkCommandBuffer cmd, int count, const DrawGeometryFn& dra
 
         VkRenderingInfo rp{};
         rp.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        rp.renderArea.extent = {kResolution, kResolution};
+        rp.renderArea.extent = {resolution_, resolution_};
         rp.layerCount = 1;
         rp.pDepthAttachment = &depthAttach;
 
@@ -300,6 +301,38 @@ void ShadowMap::record(VkCommandBuffer cmd, int count, const DrawGeometryFn& dra
             VK_IMAGE_ASPECT_DEPTH_BIT, static_cast<uint32_t>(i), 1);
         cmdImageBarrier(cmd, toRead);
     }
+}
+
+bool ShadowMap::resize(uint32_t newResolution) {
+    if (resolution_ == newResolution) return false;
+    
+    resolution_ = newResolution;
+    
+    // Wait for device to finish before destroying resources
+    vkDeviceWaitIdle(device_.device());
+    
+    // Destroy old views and image
+    for (auto view : layerViews_) {
+        if (view) vkDestroyImageView(device_.device(), view, nullptr);
+    }
+    layerViews_.fill(VK_NULL_HANDLE);
+    
+    if (arrayView_) {
+        vkDestroyImageView(device_.device(), arrayView_, nullptr);
+        arrayView_ = VK_NULL_HANDLE;
+    }
+    
+    if (image_) {
+        vmaDestroyImage(device_.allocator(), image_, allocation_);
+        image_ = VK_NULL_HANDLE;
+        allocation_ = VK_NULL_HANDLE;
+    }
+    
+    // Recreate image and views (sampler and pipeline remain valid as they don't depend on resolution)
+    createImage();
+    createViews();
+    
+    return true;
 }
 
 } // namespace ne

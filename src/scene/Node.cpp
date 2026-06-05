@@ -60,6 +60,19 @@ std::unique_ptr<Node> Node::detachChild(Node* child) {
     return nullptr;
 }
 
+void Node::setEnabled(bool enabled) {
+    if (enabled_ != enabled) {
+        enabled_ = enabled;
+        g_hierarchyVersion++;
+    }
+}
+
+bool Node::isActiveInHierarchy() const {
+    if (!enabled_) return false;
+    if (parent_) return parent_->isActiveInHierarchy();
+    return true;
+}
+
 void Node::updateTree(float dt) {
     for (auto& behaviour : behaviours_) {
         if (!behaviour->ready_) {

@@ -23,7 +23,18 @@
 namespace ne {
 
 namespace {
-constexpr uint32_t kMaxMaterials = 64;
+struct MaterialData {
+    glm::vec4 baseColor;
+    float metallic;
+    float roughness;
+    float ao;
+    uint32_t albedoTexIdx;
+    uint32_t normalTexIdx;
+    uint32_t mrTexIdx;
+    uint32_t emissiveTexIdx;
+    uint32_t pad;
+    glm::vec4 emissive;
+};
 }
 
 ResourceManager::ResourceManager(VulkanDevice& device, AssetRegistry* registry)
@@ -119,7 +130,7 @@ void ResourceManager::createGlobalBindlessResources() {
     VkDescriptorSetLayoutBinding texturesBinding{};
     texturesBinding.binding = 0;
     texturesBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    texturesBinding.descriptorCount = 8192; // 8K textures limit
+    texturesBinding.descriptorCount = kMaxBindlessTextures;
     texturesBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     VkDescriptorSetLayoutBinding materialBufferBinding{};
@@ -151,7 +162,7 @@ void ResourceManager::createGlobalBindlessResources() {
 
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[0].descriptorCount = 8192;
+    poolSizes[0].descriptorCount = kMaxBindlessTextures;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[1].descriptorCount = 1;
 
@@ -174,8 +185,8 @@ void ResourceManager::createGlobalBindlessResources() {
     if (vkAllocateDescriptorSets(device_.device(), &allocInfo, &globalMaterialSet_) != VK_SUCCESS)
         throw std::runtime_error("failed to allocate global bindless descriptor set");
 
-    // Create global MaterialData SSBO (support up to 4096 materials, ~256 KB)
-    VkDeviceSize ssboSize = 4096 * 64; // MaterialData size = 64 bytes
+    // Create global MaterialData SSBO
+    VkDeviceSize ssboSize = kMaxBindlessMaterials * sizeof(MaterialData);
     globalMaterialBuffer_ = std::make_unique<Buffer>(device_, ssboSize,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         MemoryUsage::HostVisible); // MemoryUsage::HostVisible for simple CPU-side mapping
@@ -222,18 +233,6 @@ uint32_t ResourceManager::getBindlessTextureIndex(Texture* texture) {
     return index;
 }
 
-struct MaterialData {
-    glm::vec4 baseColor;
-    float metallic;
-    float roughness;
-    float ao;
-    uint32_t albedoTexIdx;
-    uint32_t normalTexIdx;
-    uint32_t mrTexIdx;
-    uint32_t emissiveTexIdx;
-    uint32_t pad;
-    glm::vec4 emissive;
-};
 
 uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const glm::vec4& emissive,
                                                float metallic, float roughness, float ao,
@@ -241,8 +240,8 @@ uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const
     if (!globalMaterialBuffer_) return 0;
     
     uint32_t index = nextMaterialIndex_++;
-    if (index >= 4096) {
-        Log::warn("Global material buffer full! Cap is 4096.");
+    if (index >= kMaxBindlessMaterials) {
+        Log::warn("Global material buffer full! Cap is ", kMaxBindlessMaterials, ".");
         return 0; // fallback to 0
     }
     

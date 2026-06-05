@@ -22,12 +22,15 @@ class VulkanDevice;
 class ShadowMap {
 public:
     static constexpr uint32_t kMaxShadows = 4;
-    static constexpr uint32_t kResolution = 2048;
-
-    explicit ShadowMap(VulkanDevice& device);
+    
+    explicit ShadowMap(VulkanDevice& device, uint32_t initialResolution = 2048);
     ~ShadowMap();
     ShadowMap(const ShadowMap&) = delete;
     ShadowMap& operator=(const ShadowMap&) = delete;
+
+    // Resizes the shadow map array. Returns true if resized, false if unchanged.
+    // If resized, the arrayView() changes and MUST be updated in descriptors.
+    bool resize(uint32_t newResolution);
 
     // Emits the scene geometry for one shadow layer. Gets the command buffer,
     // the depth pipeline layout (to push its `mat4 mvp = lightMatrix * world`)
@@ -49,6 +52,7 @@ private:
 
     VulkanDevice& device_;
     VkFormat format_{};
+    uint32_t resolution_;
 
     VkImage image_ = VK_NULL_HANDLE;
     VmaAllocation allocation_ = VK_NULL_HANDLE;

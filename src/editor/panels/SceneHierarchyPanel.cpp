@@ -186,6 +186,11 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
     const char* icon = nodeTypeIcon(node);
     bool open = false;
 
+    bool active = node->isActiveInHierarchy();
+    if (!active) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    }
+
     if (editor->nodeToRename_ == node) {
         open = ImGui::TreeNodeEx(reinterpret_cast<void*>(node), flags, "%s", icon);
         ImGui::SameLine();
@@ -204,6 +209,10 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
         ImGui::PopStyleVar();
     } else {
         open = ImGui::TreeNodeEx(reinterpret_cast<void*>(node), flags, "%s %s", icon, node->name().c_str());
+    }
+
+    if (!active) {
+        ImGui::PopStyleColor();
     }
 
     if (ImGui::BeginDragDropSource()) {
@@ -230,6 +239,9 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
 
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
         editor->selectedNode_ = node;
+
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Middle))
+        node->setEnabled(!node->enabled());
 
     if (ImGui::BeginPopupContextItem()) {
         editor->selectedNode_ = node; 

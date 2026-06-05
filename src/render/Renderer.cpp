@@ -3,6 +3,7 @@
 #include "core/Camera.hpp"
 #include "core/Paths.hpp"
 #include "core/Window.hpp"
+#include "project/Project.hpp"
 #include "graphics/Buffer.hpp"
 #include "graphics/ImGuiLayer.hpp"
 #include "graphics/Material.hpp"
@@ -46,12 +47,14 @@ glm::vec3 safeUp(const glm::vec3& dir) {
 }
 
 // Light-space view-proj for a directional light (orthographic), flipped for Vulkan.
-glm::mat4 directionalMatrix(const glm::vec3& dir) {
-    glm::vec3 eye = -dir * (kShadowOrthoDepth * 0.5f);
+glm::mat4 directionalMatrix(const glm::vec3& dir, float distance) {
+    float halfSize = distance;
+    float depth = distance * 4.0f;
+    glm::vec3 eye = -dir * (depth * 0.5f);
     glm::mat4 view = glm::lookAt(eye, glm::vec3(0.0f), safeUp(dir));
-    glm::mat4 proj = glm::ortho(-kShadowOrthoHalfSize, kShadowOrthoHalfSize,
-                                -kShadowOrthoHalfSize, kShadowOrthoHalfSize,
-                                0.1f, kShadowOrthoDepth);
+    glm::mat4 proj = glm::ortho(-halfSize, halfSize,
+                                -halfSize, halfSize,
+                                0.1f, depth);
     proj[1][1] *= -1.0f;
     return proj * view;
 }
@@ -173,9 +176,8 @@ void Renderer::createGpuDrivenBuffers() {
     drawCommandBuffers_.reserve(kMaxFramesInFlight);
     countBuffers_.reserve(kMaxFramesInFlight);
 
-    VkDeviceSize instanceBufferSize = maxInstances_ * sizeof(InstanceData);
-    // VkDrawIndexedIndirectCommand size is 20 bytes (5 uints)
-    VkDeviceSize drawCommandBufferSize = maxInstances_ * 20;
+    VkDeviceSize instanceBufferSize = kMaxInstances * sizeof(InstanceData);
+    VkDeviceSize drawCommandBufferSize = kMaxInstances * sizeof(VkDrawIndexedIndirectCommand);
 
     for (int i = 0; i < kMaxFramesInFlight; i++) {
         instanceBuffers_.push_back(std::make_unique<Buffer>(device_, instanceBufferSize,
@@ -392,6 +394,25 @@ void Renderer::createGlobalDescriptorSets() {
     }
 }
 
+void Renderer::updateGlobalShadowDescriptor() {
+    for (int i = 0; i < kMaxFramesInFlight; i++) {
+        VkDescriptorImageInfo shadowInfo{};
+        shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        shadowInfo.imageView = shadowMap_->arrayView();
+        shadowInfo.sampler = shadowMap_->sampler();
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = globalSets_[i];
+        write.dstBinding = 2;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.descriptorCount = 1;
+        write.pImageInfo = &shadowInfo;
+
+        vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
+    }
+}
+
 void Renderer::createCommandBuffers() {
     commandBuffers_.resize(kMaxFramesInFlight);
     VkCommandBufferAllocateInfo allocInfo{};
@@ -422,10 +443,11 @@ void Renderer::createSyncObjects() {
     }
 }
 
-void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera) {
+void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera, Project* project) {
     auto& settings = scene.settings();
     ubo.ambient = settings.ambientLight;
     ubo.cameraPos = glm::vec4(camera.position, 1.0f);
+    ubo.shadowParams = glm::vec4(project ? project->shadowSoftness() : 1.0f, 0.0f, 0.0f, 0.0f);
 
     int lightCount = 0;
     shadowCount_ = 0;
@@ -457,7 +479,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera)
             (light->type == LightType::Directional || light->type == LightType::Spot);
         if (wantsShadow && shadowCount_ < kMaxShadowCasters) {
             glm::mat4 lightVP = light->type == LightType::Directional
-                ? directionalMatrix(worldDir)
+                ? directionalMatrix(worldDir, project ? project->shadowDistance() : 25.0f)
                 : spotMatrix(worldPos, worldDir, light->spotOuterAngle, light->range);
             shadowMatrices_[shadowCount_] = lightVP;
             ubo.shadowMatrices[shadowCount_] = lightVP;
@@ -480,7 +502,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera)
         for (MeshNode* node : scene.meshes()) {
             if (Mesh* m = node->mesh()) {
                 if (Material* mat = node->material()) {
-                    if (instanceCount >= maxInstances_) break;
+                    if (instanceCount >= kMaxInstances) break;
                     
                     const glm::mat4& world = node->worldTransform();
                     float maxScale = std::max({
@@ -753,7 +775,7 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex) {
     vkCmdEndRendering(cmd);
 }
 
-void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera) {
+void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera, Project* project) {
     camera.setPerspective(glm::radians(45.0f), swapchain_.aspectRatio(), 0.1f, 100.0f);
     
     // Store camera frustum for culling compute shader
@@ -765,7 +787,7 @@ void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera)
     uniformBuffers_[frame]->write(&ubo, sizeof(ubo));
 
     LightingUBO lighting{};
-    gatherScene(lighting, scene, camera);
+    gatherScene(lighting, scene, camera, project);
     lightingBuffers_[frame]->write(&lighting, sizeof(lighting));
 }
 
@@ -1045,8 +1067,14 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
         throw std::runtime_error("failed to record command buffer");
 }
 
-void Renderer::drawFrame(Scene& scene, Camera& camera) {
+void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     vkWaitForFences(device_.device(), 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
+
+    if (project) {
+        if (shadowMap_->resize(project->shadowResolution())) {
+            updateGlobalShadowDescriptor();
+        }
+    }
 
     uint32_t imageIndex;
     VkResult result = vkAcquireNextImageKHR(device_.device(), swapchain_.handle(), UINT64_MAX,
@@ -1071,7 +1099,7 @@ void Renderer::drawFrame(Scene& scene, Camera& camera) {
         doBake_ = true;
     }
 
-    updateUniformBuffer(currentFrame_, scene, camera);
+    updateUniformBuffer(currentFrame_, scene, camera, project);
 
     vkResetCommandBuffer(commandBuffers_[currentFrame_], 0);
     recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex, scene);

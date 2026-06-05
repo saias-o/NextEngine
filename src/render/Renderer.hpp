@@ -22,6 +22,8 @@ class ImGuiLayer;
 class Scene;
 class Camera;
 class Mesh;
+class Project;
+class Swapchain;
 class Material;
 class ResourceManager;
 class ShadowMap;
@@ -56,6 +58,7 @@ struct GpuLight {
 struct LightingUBO {
     glm::vec4 ambient{0.0f};
     glm::vec4 cameraPos{0.0f};
+    glm::vec4 shadowParams; // x = softness, yzw = unused
     glm::ivec4 counts{0};  // x = light count, y = mode (0 realtime, 1 baked)
     GpuLight lights[kMaxLights]{};
     glm::mat4 shadowMatrices[kMaxShadowCasters]{};  // light-space view-proj per shadow caster
@@ -95,9 +98,10 @@ public:
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
 
-    void drawFrame(Scene& scene, Camera& camera);
+    void drawFrame(Scene& scene, Camera& camera, Project* project);
 
 private:
+    void updateGlobalShadowDescriptor();
     void createGlobalSetLayout();
     void createPipeline(VkDescriptorSetLayout materialSetLayout);
     void createHdrResources();
@@ -112,8 +116,8 @@ private:
     void createGpuDrivenBuffers();
     void createCullingPipeline();
 
-    void updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera);
-    void gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera);
+    void updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera, Project* project);
+    void gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera, Project* project);
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Scene& scene);
 
     VulkanDevice& device_;
@@ -153,11 +157,12 @@ private:
     std::vector<std::unique_ptr<Buffer>> originalDrawCommandBuffers_;
     std::vector<std::unique_ptr<Buffer>> drawCommandBuffers_;
     std::vector<std::unique_ptr<Buffer>> countBuffers_;
+    static constexpr uint32_t kMaxInstances = 100000;
+    
     std::unique_ptr<ComputePipeline> cullingPipeline_;
     VkDescriptorSetLayout cullingSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool cullingPool_ = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> cullingSets_;
-    uint32_t maxInstances_ = 100000;
     uint32_t currentInstanceCount_ = 0;
     Frustum cameraFrustum_;
 

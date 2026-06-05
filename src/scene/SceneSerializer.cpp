@@ -70,6 +70,7 @@ json serializeNode(Node& node, ResourceManager& resources) {
     }
 
     j["name"] = node.name();
+    j["enabled"] = node.enabled();
 
     const Transform& t = node.transform();
     j["transform"] = {
@@ -157,6 +158,8 @@ std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources)
     } else {
         node = std::make_unique<Node>(name);
     }
+
+    node->setEnabled(j.value("enabled", true));
 
     if (auto it = j.find("transform"); it != j.end()) {
         const json& tj = *it;

@@ -23,6 +23,7 @@ struct Light {
 layout(set = 0, binding = 1) uniform LightingUBO {
     vec4 ambient;       // rgb = ambient color
     vec4 cameraPos;     // xyz = camera world position
+    vec4 shadowParams;  // x = softness
     ivec4 counts;       // x = light count, y = mode (0 realtime, 1 baked)
     Light lights[MAX_LIGHTS];
     mat4 shadowMatrices[MAX_SHADOWS];
@@ -47,9 +48,10 @@ float shadowFactor(int idx, vec3 worldPos, float ndotl) {
     float depthRef = proj.z - bias;
     vec2 texel = 1.0 / vec2(textureSize(shadowMap, 0).xy);
     float sum = 0.0;
+    float softness = lights.shadowParams.x;
     for (int x = -1; x <= 1; ++x)
         for (int y = -1; y <= 1; ++y)
-            sum += texture(shadowMap, vec4(uv + vec2(x, y) * texel, float(idx), depthRef));
+            sum += texture(shadowMap, vec4(uv + vec2(x, y) * texel * softness, float(idx), depthRef));
     return sum / 9.0;
 }
 

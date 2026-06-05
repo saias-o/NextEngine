@@ -20,12 +20,16 @@ class Texture;
 struct Vertex;
 
 // Loads and caches GPU resources so the same asset is uploaded once and shared.
+// Texture / material, content-addressed (cached, uploaded once).
 // Resources are content-addressed (a mesh id, a texture id, a material's
 // texture+color) so a serialized scene fully describes its assets and loads
 // without the game pre-registering anything. Owns the material descriptor set
 // layout (set 1) and the pool its materials allocate from.
 class ResourceManager {
 public:
+    static constexpr uint32_t kMaxMaterials = 64; // Max CPU-path fallback materials
+    static constexpr uint32_t kMaxBindlessTextures = 8192;
+    static constexpr uint32_t kMaxBindlessMaterials = 4096;
     ResourceManager(VulkanDevice& device, AssetRegistry* registry = nullptr);
     ~ResourceManager();
     ResourceManager(const ResourceManager&) = delete;

@@ -84,6 +84,11 @@ public:
 
     const std::string& name() const { return name_; }
     void setName(const std::string& name) { name_ = name; }
+    
+    bool enabled() const { return enabled_; }
+    void setEnabled(bool enabled);
+    bool isActiveInHierarchy() const;
+
     Node* parent() const { return parent_; }
     const std::vector<std::unique_ptr<Node>>& children() const { return children_; }
 
@@ -120,6 +125,7 @@ public:
 
 protected:
     std::string name_;
+    bool enabled_ = true;
     Transform transform_;
     Node* parent_ = nullptr;
     std::vector<std::unique_ptr<Node>> children_;

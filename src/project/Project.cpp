@@ -85,6 +85,7 @@ bool Project::load(const std::string& neprojPath) {
     // Read key=value pairs.
     std::string loadedName;
     std::string loadedVersion;
+    int loadedMaxFps = kDefaultMaxFps;
 
     while (std::getline(file, line)) {
         line = trim(line);
@@ -98,6 +99,10 @@ bool Project::load(const std::string& neprojPath) {
 
         if (key == "name")                loadedName    = value;
         else if (key == "engine_version") loadedVersion = value;
+        else if (key == "max_fps")        loadedMaxFps  = std::stoi(value);
+        else if (key == "shadow_resolution") shadowResolution_ = std::stoi(value);
+        else if (key == "shadow_distance")   shadowDistance_   = std::stof(value);
+        else if (key == "shadow_softness")   shadowSoftness_   = std::stof(value);
     }
 
     if (loadedName.empty()) {
@@ -107,6 +112,7 @@ bool Project::load(const std::string& neprojPath) {
 
     name_          = loadedName;
     engineVersion_ = loadedVersion.empty() ? "0.1.0" : loadedVersion;
+    maxFps_        = loadedMaxFps;
     filePath_      = path.string();
     rootPath_      = path.parent_path().string();
     loaded_        = true;
@@ -136,6 +142,10 @@ bool Project::save() const {
     file << kProjectHeader << "\n";
     file << "name=" << name_ << "\n";
     file << "engine_version=" << engineVersion_ << "\n";
+    file << "max_fps=" << maxFps_ << "\n";
+    file << "shadow_resolution=" << shadowResolution_ << "\n";
+    file << "shadow_distance=" << shadowDistance_ << "\n";
+    file << "shadow_softness=" << shadowSoftness_ << "\n";
 
     Log::info("Saved project '", name_, "' to ", filePath_);
     return true;

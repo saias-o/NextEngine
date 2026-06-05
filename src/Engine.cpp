@@ -12,6 +12,9 @@
 #include "render/Renderer.hpp"
 #include "scene/Scene.hpp"
 
+#include <thread>
+#include <chrono>
+
 namespace ne {
 
 namespace {
@@ -61,6 +64,23 @@ void Engine::run() {
     while (!window_->shouldClose()) {
         window_->pollEvents();
 
+        int maxFps = project_ ? project_->maxFps() : Project::kDefaultMaxFps;
+        if (maxFps > 0) {
+            double targetTime = 1.0 / maxFps;
+            while (true) {
+                double elapsed = glfwGetTime() - last;
+                if (elapsed >= targetTime) break;
+                
+                // If we have more than 2ms to wait, sleep to save CPU.
+                // Otherwise, yield/spin for precision.
+                if (targetTime - elapsed > 0.002) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                } else {
+                    std::this_thread::yield();
+                }
+            }
+        }
+        
         double now = glfwGetTime();
         float realDt = static_cast<float>(now - last);
         last = now;
@@ -74,7 +94,7 @@ void Engine::run() {
         scene_->update(Time::delta());     // behaviours: scaled time (pausable)
         imgui_->endFrame();  // finalize draw data even if the frame is skipped (resize)
 
-        renderer_->drawFrame(*scene_, camera_);
+        renderer_->drawFrame(*scene_, camera_, project_.get());
     }
     vkDeviceWaitIdle(device_->device());
 }

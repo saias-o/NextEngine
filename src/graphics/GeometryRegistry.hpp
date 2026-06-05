@@ -23,10 +23,13 @@ struct GeometryAllocation {
 // for individual meshes using VMA's Virtual Blocks.
 class GeometryRegistry {
 public:
+    static constexpr VkDeviceSize kDefaultMaxVertices = 1 * 1024 * 1024;
+    static constexpr VkDeviceSize kDefaultMaxIndices = 3 * 1024 * 1024;
+
     // Default to ~64MB vertices (1M vertices) and ~12MB indices (3M indices).
     GeometryRegistry(VulkanDevice& device,
-                     VkDeviceSize maxVertices = 1 * 1024 * 1024,
-                     VkDeviceSize maxIndices = 3 * 1024 * 1024);
+                     VkDeviceSize maxVertices = kDefaultMaxVertices,
+                     VkDeviceSize maxIndices = kDefaultMaxIndices);
     ~GeometryRegistry();
 
     GeometryRegistry(const GeometryRegistry&) = delete;
