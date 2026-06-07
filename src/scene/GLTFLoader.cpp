@@ -245,8 +245,10 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
     // 3. Process Scene Graph
     std::vector<std::pair<MeshNode*, cgltf_skin*>> skinnedMeshes;
     if (data->scene) {
+        std::filesystem::path p(path);
+        Node* containerNode = rootNode.createChild<Node>(p.stem().string());
         for (size_t i = 0; i < data->scene->nodes_count; ++i) {
-            processNode(data->scene->nodes[i], &rootNode, resources, meshesPrimitives, materials, data, skinnedMeshes);
+            processNode(data->scene->nodes[i], containerNode, resources, meshesPrimitives, materials, data, skinnedMeshes);
         }
     }
 

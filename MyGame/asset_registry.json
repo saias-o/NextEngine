@@ -29,6 +29,11 @@
         "path": "assets/textures/hdri_sky_809.jpg",
         "type": "Texture"
     },
+    "2261376206501716444": {
+        "hash": 10970990381313044868,
+        "path": "assets/models/Zleda_walk.glb",
+        "type": "Unknown"
+    },
     "3541001873901761428": {
         "hash": 18164922757133443595,
         "path": "assets/models/bugatti/bugatti.obj",
