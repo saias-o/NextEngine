@@ -356,6 +356,37 @@ bool Input::isMouseButtonPressed(MouseButton btn) {
 glm::vec2 Input::mouseDelta() { return g_mouseDelta; }
 glm::vec2 Input::mousePosition() { return g_mousePos; }
 
+void Input::consumeMouse() {
+    for (int b = 0; b <= GLFW_MOUSE_BUTTON_LAST; ++b) {
+        g_mouseCurr[b] = false;
+        g_mousePrev[b] = false;
+    }
+    g_mouseDelta = {0.0f, 0.0f};
+    
+    // Also clear bindings that are mouse-based
+    for (auto& binding : g_bindings) {
+        if (binding.isMouse) {
+            binding.currentValue = 0.0f;
+            binding.previousValue = 0.0f;
+        }
+    }
+}
+
+void Input::consumeKeyboard() {
+    for (int k = 0; k <= GLFW_KEY_LAST; ++k) {
+        g_keyCurr[k] = false;
+        g_keyPrev[k] = false;
+    }
+    
+    // Also clear bindings that are key-based
+    for (auto& binding : g_bindings) {
+        if (binding.isKey) {
+            binding.currentValue = 0.0f;
+            binding.previousValue = 0.0f;
+        }
+    }
+}
+
 void Input::pushContext(const InputContextID& context) {
     if (std::find(g_contextStack.begin(), g_contextStack.end(), context) == g_contextStack.end()) {
         g_contextStack.push_back(context);

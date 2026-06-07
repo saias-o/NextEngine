@@ -82,10 +82,7 @@ Sans ça, rien de la GI avancée n'est possible. C'est l'essentiel du travail r�
 
 ## 4. Capstone — XR / OpenXR **(plus tard)**
 
-Objectif final. Réutilise tout le pipeline de scène ; seul le chemin de
-présentation diffère. **Le multiview de la Phase 0 est exactement la fondation
-qui le prépare** — d'où son inclusion immédiate. À faire après que le rendu soit
-moderne (PBR/HDR + GI), pour ne pas figer de choix sur un rendu basique.
+Objectif final. Réutilise tout le pipeline de scène via **un unique pipeline de rendu universel** (comme Godot et Unity) ; seul le chemin de présentation diffère. **Le multiview de la Phase 0 est exactement la fondation qui le prépare** — d'où son inclusion immédiate. À faire après que le rendu soit moderne (PBR/HDR + GI), pour ne pas figer de choix sur un rendu basique.
 
 ---
 
@@ -113,12 +110,14 @@ moderne (PBR/HDR + GI), pour ne pas figer de choix sur un rendu basique.
 |---|---|---|---|
 | 1 | **Phase 0 rendu** (PBR, HDR, compute, deferred, multiview, GPU-driven, glTF) | **Maintenant** | Fondations de tout : moderne, scalable, prêt GI + VR |
 | 2 | Dynamic rendering / sync2 / timeline (cleanup) | Pendant Phase 0 | Allège le code, requis pour l'async compute |
-| 3 | **Phase 1 — Radiance Cascades 2D** | Plus tard | 1re GI sans bruit, mobile/VR |
-| 4 | **Phase 2 — World Radiance Cache** | Plus tard | Découple l'ombrage, clé VR |
-| 5 | **Phase 3 — Volumétrie froxel** | Plus tard | Brouillard / volumétrique |
-| 6 | Lua scripting | Plus tard | Itération gameplay |
-| 7 | Physique | Plus tard | Vrais jeux |
-| 8 | **OpenXR / stéréo** | Plus tard | Objectif final, après un rendu moderne |
+| 3 | **GI (Phases 1-3)** (Radiance Cascades, World Radiance Cache, Froxel) | Plus tard | Rendu GI adapté VR/mobile (voir [RENDU_AVANCE.md](file:///c:/Users/evand/Documents/NextEngine/RENDU_AVANCE.md)) |
+| 4 | **Animation System** (glTF & BVH, skeletal mesh, skinning GPU) | Plus tard | Support d'animations complexes |
+| 5 | Lua scripting | Plus tard | Itération gameplay |
+| 6 | **Physique** (Jolt Physics, colliders, rigidbodies) | Plus tard | Vrais jeux, interactions physiques |
+| 7 | **UI 2D** (Screen & World Space, compatibilité HTML/CSS/JS) | Plus tard | Interfaces riches et world-space UI pour XR |
+| 8 | **Intégration LLM Native** (World model, MCP, agents/skills) | Plus tard | IA agentique au cœur du moteur |
+| 9 | **XR / OpenXR** (Interaction, hand tracking, passthrough) | Plus tard | Objectif final, après un rendu moderne |
+| 10 | **Build & Release Windows** (Packaging, versioning, icône) | Plus tard | Distribuer le projet en release |
 
 > Règle d'or : **fondations (Phase 0) avant GI avancée**, **rendu moderne avant
 > XR**, **déterministe avant stochastique** (VR). Mener les nettoyages Vulkan au

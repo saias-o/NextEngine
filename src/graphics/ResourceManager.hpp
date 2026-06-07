@@ -35,6 +35,8 @@ public:
     ResourceManager(const ResourceManager&) = delete;
     ResourceManager& operator=(const ResourceManager&) = delete;
 
+    VulkanDevice& device() { return device_; }
+
     // Mesh by id: a built-in primitive or an .obj AssetID.
     Mesh* getMesh(AssetID id);
     // Texture / material, content-addressed (cached, uploaded once).

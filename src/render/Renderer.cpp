@@ -15,6 +15,7 @@
 #include "graphics/VulkanDevice.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "render/LightBaker.hpp"
+#include "graphics/UIRenderer.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
@@ -74,6 +75,7 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
     : device_(device), swapchain_(swapchain), window_(window), resources_(resources), imgui_(imgui) {
     createGlobalSetLayout();
     lightBaker_ = std::make_unique<LightBaker>(device_, globalSetLayout_);
+    uiRenderer_ = std::make_unique<UIRenderer>(device_, resources_, swapchain_.colorFormat());
     createHdrResources();
     createPipeline(resources_.materialSetLayout());
     createTonemapPipeline();
@@ -775,6 +777,7 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex) {
     vkCmdPushConstants(cmd, tonemapPipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float), &exposure_);
 
     vkCmdDraw(cmd, 3, 1, 0, 0);
+    uiRenderer_->recordCommands(cmd, swapchain_.extent().width, swapchain_.extent().height);
     imgui_.renderDrawData(cmd);  // UI on top, in the LDR swapchain pass
     vkCmdEndRendering(cmd);
 }
@@ -891,6 +894,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS)
         throw std::runtime_error("failed to begin recording command buffer");
+
+    uiRenderer_->updateAsyncTextures(cmd);
 
     bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
 
@@ -1197,6 +1202,7 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     }
 
     updateUniformBuffer(currentFrame_, scene, camera, project);
+    uiRenderer_->gatherUI(scene);
 
     vkResetCommandBuffer(commandBuffers_[currentFrame_], 0);
     recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex, scene, camera);

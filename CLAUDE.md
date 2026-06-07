@@ -20,9 +20,12 @@ Permettre de créer :
 
 Conséquence d'architecture importante : Vulkan est la base commune, mais le
 chemin de présentation doit pouvoir être **soit la swapchain GLFW (desktop),
-soit la swapchain OpenXR (XR)**. Garder cette dualité en tête en concevant le
+soit la swapchain OpenXR (XR)**. Le moteur doit s'appuyer sur **un unique pipeline
+de rendu universel** (comme Godot et Unity) qui gère tous les cas d'usage avec le
+même code de rendu. Garder cette dualité en tête en concevant le
 `Renderer`/`Swapchain` : ne pas câbler en dur l'hypothèse « une fenêtre, une
-vue mono ». Le rendu XR est stéréo (deux vues) — viser le *multiview* Vulkan.
+vue mono ». Le rendu XR est stéréo (deux vues) — viser le *multiview* Vulkan
+au sein de ce pipeline unique.
 
 Le projet est parti d'un « Hello Cube » Vulkan monolithique (style
 vulkan-tutorial.com) et est progressivement transformé en vrai moteur. L'état
@@ -249,16 +252,41 @@ Le moteur est construit par étapes numérotées :
 - [ ] **Étape 8b — Scripting (Lua).** Voir « Décision scripting » ci-dessous.
       Différé : à faire une fois l'API moteur stable (après `Material`/
       `ResourceManager`), pour exposer une API propre aux scripts.
-- [ ] **Étape 9 — XR / OpenXR.** Intégration OpenXR : instance/session/espaces,
-      swapchain XR, rendu stéréo (multiview), poses casque + contrôleurs.
-      Le rendu desktop et XR partagent le même pipeline de scène ; seul le
-      chemin de présentation diffère. Objectif final du moteur.
+- [ ] **Étape 9 — Global Illumination (GI).** Implémentation d'un pipeline de GI adapté au mobile/VR :
+      - Intégration des pré-requis (Phase 0) : Deferred/Visibility Buffer, Multiview (stéréo), et GPU-driven/Bindless.
+      - Phase 1 : Radiance Cascades 2D (GI diffuse sans bruit, 100% compute).
+      - Phase 2 : World Radiance Cache + Spatial Hashing (ombrage découplé de l'écran, idéal pour les deux yeux en VR).
+      - Phase 3 : Volumétrie froxel (brouillard / lumière volumétrique / SSS).
+      - Voir détails et matrice de scalabilité (Low/Medium/High/Ultra) dans [RENDU_AVANCE.md](file:///c:/Users/evand/Documents/NextEngine/RENDU_AVANCE.md).
+- [ ] **Étape 10 — Animation System.** Importation et lecture des animations glTF et BVH liés à des skeletal meshes :
+      - Skinning GPU (compute shader ou vertex shader skinning).
+      - Gestion du squelette (hiérarchie d'os) et interpolation des poses (translation, rotation, scale).
+      - Blending d'animations, arbres de transition (Animation Tree).
+- [ ] **Étape 11 — Simulation Physique.** Intégration d'un moteur physique robuste :
+      - Utilisation de Jolt Physics (ou solution légère/maison).
+      - Gestion des Colliders (box, sphere, capsule, convex/concave mesh).
+      - Rigid bodies statiques et dynamiques, forces, gravité.
+      - Détection de collisions, Triggers, et Raycasting.
+- [ ] **Étape 12 — UI 2D (Screen & World Space).** Système d'interface utilisateur complet :
+      - Canvas 2D en Screen space (overlay classique) et en World space (panneaux interactifs dans l'espace 3D, essentiels pour la VR/XR).
+      - Intégration et compatibilité HTML/CSS/JS (via Ultralight, Webview ou équivalent) pour le design d'UI avec des technos web standard.
+- [ ] **Étape 13 — Intégration LLM Native.** Support natif d'intelligence artificielle agentique dans le moteur :
+      - World model (compréhension et représentation de l'état du monde par l'IA).
+      - Protocole MCP (Model Context Protocol) pour connecter des outils.
+      - Concept de "skills" (compétences exécutables par l'IA) et d'agents autonomes interagissant directement avec la scène.
+- [ ] **Étape 14 — XR / OpenXR.** Rendu et interactions XR via OpenXR (Objectif final du moteur) :
+      - Intégration d'OpenXR : instance, session, swapchains XR, rendu stéréo multiview.
+      - Poses de la tête (HMD) et des contrôleurs.
+      - Package d'interaction XR maison (téléportation, saisie d'objets, boutons physiques, etc.).
+      - Hand tracking natif et support du Passthrough (AR/MR).
+- [ ] **Étape 15 — Build & Release Windows.** Gestion de la release finale du jeu :
+      - Pipeline de build autonome d'un projet (packaging des assets et shaders sans dépendances de développement).
+      - Gestion des versions, métadonnées de l'exécutable, et icône du jeu.
+      - Optimisation finale de build (Link-Time Optimization, suppression des traces de debug/ImGui si nécessaire).
 
 Quand une étape est finie : cocher ici et compiler pour vérifier.
 
-Note : les étapes 1→7 construisent un renderer desktop solide ; l'étape 9 (XR)
-réutilise tout sauf la présentation. Concevoir les étapes intermédiaires en
-gardant la dualité desktop/XR à l'esprit (cf. « Objectif final »).
+Note : l'ensemble des étapes vise à construire un unique pipeline de rendu universel et partagé (Desktop et XR). L'intégration XR (Étape 14) doit réutiliser l'intégralité du pipeline de scène et n'avoir de différent que la présentation (swapchain OpenXR). Toutes les étapes intermédiaires doivent être conçues sous cette contrainte d'unification (comme Godot et Unity).
 
 ## Décision scripting (prise, différée)
 

@@ -25,6 +25,8 @@ set(SHADERS
     ${SHADER_DIR}/tonemap.frag
     ${SHADER_DIR}/skybox.vert
     ${SHADER_DIR}/skybox.frag
+    ${SHADER_DIR}/ui.vert
+    ${SHADER_DIR}/ui.frag
 )
 
 # GLSL headers #included by the shaders above. Listed as a dependency so editing
@@ -73,11 +75,27 @@ add_library(ne_engine STATIC
     src/scene/SceneSerializer.cpp
     src/scene/BehaviourRegistry.cpp
     src/scene/NodeRegistry.cpp
+    src/scene/WebCanvasNode.cpp
+    src/scene/WebBridge.cpp
+    src/scene/UINode.cpp
+    src/scene/UICanvasNode.cpp
+    src/scene/UIColorNode.cpp
+    src/scene/UIImageNode.cpp
+    src/scene/UITextNode.cpp
+    src/scene/UIInteractableNode.cpp
+    src/scene/UIButtonNode.cpp
+    src/scene/UIToggleNode.cpp
+    src/ui/UIInteractionSystem.cpp
+    src/audio/AudioManager.cpp
     src/graphics/VulkanDevice.cpp
     src/graphics/Swapchain.cpp
     src/graphics/Buffer.cpp
+    src/graphics/Material.cpp
+    src/graphics/ImGuiLayer.cpp
     src/graphics/GeometryRegistry.cpp
     src/graphics/Mesh.cpp
+    src/graphics/UIRenderer.cpp
+    src/graphics/StbImageUsage.cpp
     src/graphics/Primitives.cpp
     src/graphics/Pipeline.cpp
     src/graphics/ComputePipeline.cpp
@@ -100,6 +118,7 @@ add_library(ne_engine STATIC
     src/audio/AudioUsage.cpp
     src/audio/AudioSourceBehaviour.cpp
     src/scene/CharacterBehaviour.cpp
+    src/ui/WebEngine.cpp
     # Dear ImGui (vendored) + GLFW/Vulkan backends
     third_party/imgui/imgui.cpp
     third_party/imgui/imgui_draw.cpp
@@ -120,8 +139,14 @@ target_include_directories(ne_engine PUBLIC
     third_party/imgui
     third_party/json
     third_party/miniaudio
+    third_party/ultralight/include
 )
-target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm)
+target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm
+    ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/Ultralight.dll
+    ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/UltralightCore.dll
+    ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/WebCore.dll
+    ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/AppCore.dll
+)
 
 # Absolute paths baked at configure time so the exe runs from any cwd; and GLM
 # conventions (radians, Vulkan 0..1 depth) — PUBLIC so game code sees them too.
@@ -183,6 +208,24 @@ target_compile_options(NextEngine PRIVATE -Wall -Wextra)
 add_dependencies(NextEngine Shaders)
 
 if (WIN32)
+    # Copy Ultralight resources
+    add_custom_command(TARGET NextEngine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/third_party/ultralight/resources
+        $<TARGET_FILE_DIR:NextEngine>/resources
+    )
+
+    # Copy Ultralight DLLs
+    add_custom_command(TARGET NextEngine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/AppCore.dll
+        ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/Ultralight.dll
+        ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/UltralightCore.dll
+        ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/WebCore.dll
+        $<TARGET_FILE_DIR:NextEngine>
+    )
+
+    # Copy glfw
     add_custom_command(TARGET NextEngine POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:glfw>"
@@ -202,6 +245,10 @@ if (WIN32)
     add_custom_command(TARGET NextEngineHub POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:glfw>"
+        "${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/Ultralight.dll"
+        "${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/UltralightCore.dll"
+        "${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/WebCore.dll"
+        "${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/AppCore.dll"
         "$<TARGET_FILE_DIR:NextEngineHub>"
     )
 endif()

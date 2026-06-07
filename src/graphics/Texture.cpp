@@ -134,10 +134,10 @@ Texture::Texture(VulkanDevice& device, const std::string& path, bool srgb) : dev
     createSampler();
 }
 
-Texture::Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, uint32_t height, VkFormat format)
+Texture::Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, uint32_t height, VkFormat format, bool genMipmaps)
     : device_(device), width_(width), height_(height) {
-    mipLevels_ = 1; // Default textures are usually 1x1, no mipmaps needed
-    if (width > 1 || height > 1) {
+    mipLevels_ = 1; 
+    if (genMipmaps && (width > 1 || height > 1)) {
         mipLevels_ = static_cast<uint32_t>(std::floor(std::log2(std::max(width_, height_)))) + 1;
     }
 
@@ -300,6 +300,76 @@ void Texture::generateMipmaps() {
         0, nullptr, 0, nullptr, 1, &barrier);
 
     device_.endSingleTimeCommands(cmd);
+}
+
+void Texture::updatePixels(const uint8_t* pixels, size_t size) {
+    if (size != static_cast<size_t>(width_ * height_ * 4)) {
+        throw std::runtime_error("updatePixels size mismatch");
+    }
+
+    Buffer staging(device_, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::HostVisible);
+    staging.write(pixels, size);
+
+    transitionLayout(device_, image_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                     
+    copyBufferToImage(device_, staging.handle(), image_, width_, height_);
+
+    if (mipLevels_ > 1) {
+        generateMipmaps();
+    } else {
+        transitionLayout(device_, image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+}
+
+void Texture::updatePixelsAsync(VkCommandBuffer cmd, Buffer& stagingBuffer, uint32_t width, uint32_t height) {
+    if (width != width_ || height != height_) {
+        throw std::runtime_error("updatePixelsAsync size mismatch");
+    }
+
+    // Barrier: SHADER_READ -> TRANSFER_DST
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image_;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    // Copy buffer
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {width, height, 1};
+
+    vkCmdCopyBufferToImage(cmd, stagingBuffer.handle(), image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    // Barrier: TRANSFER_DST -> SHADER_READ
+    // For UI textures we assume mipLevels_ == 1. If not, dynamic mipmapping inside a render pass is bad.
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
 } // namespace ne

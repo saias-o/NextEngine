@@ -9,7 +9,15 @@ enum class CreateNodeType {
     DirectionalLight,
     PointLight,
     SpotLight,
-    SceneInstance
+    SceneInstance,
+    UICanvas,
+    UIColorNode,
+    UIImageNode,
+    UITextNode,
+    UIButtonNode,
+    UIToggleNode,
+    UIExample,
+    WebCanvas
 };
 
 enum class GizmoMode {

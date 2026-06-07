@@ -8,6 +8,13 @@
 #include "editor/Command.hpp"
 #include "project/Project.hpp"
 #include "graphics/ResourceManager.hpp"
+#include "scene/UICanvasNode.hpp"
+#include "scene/UIColorNode.hpp"
+#include "scene/UIImageNode.hpp"
+#include "scene/UITextNode.hpp"
+#include "scene/UIButtonNode.hpp"
+#include "scene/UIToggleNode.hpp"
+#include "scene/WebCanvasNode.hpp"
 
 #include <imgui.h>
 #include <filesystem>
@@ -106,6 +113,43 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
                     editor->nodeToCreateChildUnder_ = scene;
                     editor->createType_ = CreateNodeType::SpotLight;
                 }
+                ImGui::Separator();
+                if (ImGui::BeginMenu("UI Nodes")) {
+                    if (ImGui::MenuItem("UI Canvas")) {
+                        editor->nodeToCreateChildUnder_ = scene;
+                        editor->createType_ = CreateNodeType::UICanvas;
+                    }
+                    if (ImGui::MenuItem("Color Node")) {
+                        editor->nodeToCreateChildUnder_ = scene;
+                        editor->createType_ = CreateNodeType::UIColorNode;
+                    }
+                    if (ImGui::MenuItem("Image Node")) {
+                        editor->nodeToCreateChildUnder_ = scene;
+                        editor->createType_ = CreateNodeType::UIImageNode;
+                    }
+                    if (ImGui::MenuItem("Text Node")) {
+                        editor->nodeToCreateChildUnder_ = scene;
+                        editor->createType_ = CreateNodeType::UITextNode;
+                    }
+                    if (ImGui::MenuItem("Button Node")) {
+                        editor->nodeToCreateChildUnder_ = scene;
+                        editor->createType_ = CreateNodeType::UIButtonNode;
+                    }
+                    if (ImGui::MenuItem("Toggle Node")) {
+                        editor->nodeToCreateChildUnder_ = scene;
+                        editor->createType_ = CreateNodeType::UIToggleNode;
+                    }
+                    ImGui::EndMenu();
+                }
+                if (ImGui::MenuItem("UI Example")) {
+                    editor->nodeToCreateChildUnder_ = scene;
+                    editor->createType_ = CreateNodeType::UIExample;
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Web Canvas")) {
+                    editor->nodeToCreateChildUnder_ = scene;
+                    editor->createType_ = CreateNodeType::WebCanvas;
+                }
                 ImGui::EndMenu();
             }
         }
@@ -148,6 +192,64 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
             newNode = std::make_unique<LightNode>("Point Light", LightType::Point);
         } else if (editor->createType_ == CreateNodeType::SpotLight) {
             newNode = std::make_unique<LightNode>("Spot Light", LightType::Spot);
+        } else if (editor->createType_ == CreateNodeType::UICanvas) {
+            newNode = std::make_unique<UICanvasNode>();
+            newNode->setName("UICanvas");
+        } else if (editor->createType_ == CreateNodeType::UIColorNode) {
+            newNode = std::make_unique<UIColorNode>();
+            newNode->setName("UIColor");
+        } else if (editor->createType_ == CreateNodeType::UIImageNode) {
+            newNode = std::make_unique<UIImageNode>();
+            newNode->setName("UIImage");
+        } else if (editor->createType_ == CreateNodeType::UITextNode) {
+            newNode = std::make_unique<UITextNode>();
+            newNode->setName("UIText");
+        } else if (editor->createType_ == CreateNodeType::UIButtonNode) {
+            newNode = std::make_unique<UIButtonNode>();
+            newNode->setName("UIButton");
+        } else if (editor->createType_ == CreateNodeType::UIToggleNode) {
+            newNode = std::make_unique<UIToggleNode>();
+            newNode->setName("UIToggle");
+        } else if (editor->createType_ == CreateNodeType::UIExample) {
+            auto canvas = std::make_unique<UICanvasNode>();
+            canvas->setName("UICanvas");
+            
+            auto title = std::make_unique<UITextNode>();
+            title->setName("TitleText");
+            title->setText("UI Example");
+            title->setPosition(200.0f, 50.0f);
+            title->setFontSize(32.0f);
+            
+            auto button = std::make_unique<UIButtonNode>();
+            button->setName("Button");
+            button->setPosition(200.0f, 150.0f);
+            button->setSize(200.0f, 60.0f);
+            
+            auto btnText = std::make_unique<UITextNode>();
+            btnText->setName("ButtonText");
+            btnText->setText("Click Me!");
+            btnText->setPosition(100.0f, 30.0f);
+            btnText->setPivot(0.5f, 0.5f);
+            
+            auto icon = std::make_unique<UIImageNode>();
+            icon->setName("Icon");
+            icon->setPosition(20.0f, 30.0f);
+            icon->setSize(40.0f, 40.0f);
+            icon->setPivot(0.5f, 0.5f);
+            
+            button->addChild(std::move(icon));
+            button->addChild(std::move(btnText));
+            canvas->addChild(std::move(title));
+            canvas->addChild(std::move(button));
+            
+            newNode = std::move(canvas);
+        } else if (editor->createType_ == CreateNodeType::WebCanvas) {
+            auto webCanvas = std::make_unique<WebCanvasNode>();
+            webCanvas->setName("WebCanvas");
+            if (editor->ctxResources_) {
+                webCanvas->init(editor->ctxResources_->device(), 1920, 1080, WebCanvasNode::Mode::ScreenSpace);
+            }
+            newNode = std::move(webCanvas);
         } else if (editor->createType_ == CreateNodeType::SceneInstance && editor->ctxResources_ && editor->ctxProject_) {
             std::filesystem::path p(editor->draggedScenePath_);
             newNode = SceneSerializer::loadNodeFromSceneFile(editor->draggedScenePath_, *editor->ctxResources_);
@@ -339,6 +441,43 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
             if (ImGui::MenuItem("Spot Light")) {
                 editor->nodeToCreateChildUnder_ = node;
                 editor->createType_ = CreateNodeType::SpotLight;
+            }
+            ImGui::Separator();
+            if (ImGui::BeginMenu("UI Nodes")) {
+                if (ImGui::MenuItem("UI Canvas")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::UICanvas;
+                }
+                if (ImGui::MenuItem("Color Node")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::UIColorNode;
+                }
+                if (ImGui::MenuItem("Image Node")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::UIImageNode;
+                }
+                if (ImGui::MenuItem("Text Node")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::UITextNode;
+                }
+                if (ImGui::MenuItem("Button Node")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::UIButtonNode;
+                }
+                if (ImGui::MenuItem("Toggle Node")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::UIToggleNode;
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::MenuItem("UI Example")) {
+                editor->nodeToCreateChildUnder_ = node;
+                editor->createType_ = CreateNodeType::UIExample;
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Web Canvas")) {
+                editor->nodeToCreateChildUnder_ = node;
+                editor->createType_ = CreateNodeType::WebCanvas;
             }
             ImGui::EndMenu();
         }

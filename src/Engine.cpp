@@ -15,9 +15,19 @@
 #include "scene/NodeRegistry.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/LightNode.hpp"
+#include "scene/WebCanvasNode.hpp"
+#include "scene/UINode.hpp"
+#include "scene/UICanvasNode.hpp"
+#include "scene/UIColorNode.hpp"
+#include "scene/UIImageNode.hpp"
+#include "scene/UITextNode.hpp"
+#include "scene/UIInteractableNode.hpp"
+#include "scene/UIButtonNode.hpp"
+#include "scene/UIToggleNode.hpp"
 #include "audio/AudioManager.hpp"
 #include "audio/AudioSourceBehaviour.hpp"
 #include "scene/CharacterBehaviour.hpp"
+#include "ui/WebEngine.hpp"
 
 #include <thread>
 #include <chrono>
@@ -59,6 +69,15 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     NodeRegistry::instance().registerType<Scene>("Scene");
     NodeRegistry::instance().registerType<MeshNode>("MeshNode");
     NodeRegistry::instance().registerType<LightNode>("LightNode");
+    NodeRegistry::instance().registerType<WebCanvasNode>("WebCanvasNode");
+    NodeRegistry::instance().registerType<UINode>("UINode");
+    NodeRegistry::instance().registerType<UICanvasNode>("UICanvasNode");
+    NodeRegistry::instance().registerType<UIColorNode>("UIColorNode");
+    NodeRegistry::instance().registerType<UIImageNode>("UIImageNode");
+    NodeRegistry::instance().registerType<UITextNode>("UITextNode");
+    NodeRegistry::instance().registerType<UIInteractableNode>("UIInteractableNode");
+    NodeRegistry::instance().registerType<UIButtonNode>("UIButtonNode");
+    NodeRegistry::instance().registerType<UIToggleNode>("UIToggleNode");
     if (project_->isLoaded()) {
         AudioManager::get().setProjectRoot(project_->rootPath());
         AudioManager::get().setDefaultSettings(project_->defaultAudioSettings());
@@ -113,9 +132,20 @@ void Engine::run() {
         Time::update(realDt);  // sets scaled delta + elapsed
         Input::newFrame();     // single per-frame input snapshot
 
+        static bool wasLeftDown = false;
+        bool isLeftDown = Input::isMouseButtonDown(MouseButton::Left);
+        bool isLeftPressed = Input::isMouseButtonPressed(MouseButton::Left);
+        bool isLeftReleased = !isLeftDown && wasLeftDown;
+        wasLeftDown = isLeftDown;
+
+        if (uiInteraction_.update(*scene_, Input::mousePosition(), isLeftDown, isLeftPressed, isLeftReleased)) {
+            Input::consumeMouse();
+        }
+
         imgui_->beginFrame();
         if (onFrame_)
             onFrame_(realDt);              // application: its input + UI
+        WebEngine::get().update();         // met à jour Ultralight et ses bitmaps CPU
         scene_->update(Time::delta());     // behaviours: scaled time (pausable)
         AudioManager::get().update();      // update audio spatialization
         imgui_->endFrame();  // finalize draw data even if the frame is skipped (resize)

@@ -29,6 +29,7 @@ class Material;
 class ResourceManager;
 class ShadowMap;
 class LightBaker;
+class UIRenderer;
 
 struct UniformBufferObject {
     alignas(16) glm::mat4 view;
@@ -130,6 +131,7 @@ private:
     std::unique_ptr<Pipeline> pipeline_;
     std::unique_ptr<ShadowMap> shadowMap_;
     std::unique_ptr<LightBaker> lightBaker_;
+    std::unique_ptr<UIRenderer> uiRenderer_;
 
     // HDR offscreen target — scene renders here, then tonemapped to swapchain.
     VkImage hdrImage_ = VK_NULL_HANDLE;

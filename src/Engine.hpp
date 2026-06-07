@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Camera.hpp"
+#include "ui/UIInteractionSystem.hpp"
 
 #include <functional>
 #include <memory>
@@ -16,6 +17,7 @@ class Scene;
 class ImGuiLayer;
 class Renderer;
 class Project;
+class WebEngine;
 
 // How a game populates the scene at startup. Provided by the executable (game
 // code), so the engine library has no built-in content.
@@ -52,6 +54,9 @@ private:
     std::unique_ptr<VulkanDevice> device_;
     std::unique_ptr<Swapchain> swapchain_;
     std::unique_ptr<ResourceManager> resources_;
+
+    UIInteractionSystem uiInteraction_;
+
     std::unique_ptr<Scene> scene_;
     std::unique_ptr<ImGuiLayer> imgui_;
     std::unique_ptr<Renderer> renderer_;

@@ -28,7 +28,8 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
                    const std::vector<VkFormat>& colorFormats, VkFormat depthFormat,
                    const std::vector<VkDescriptorSetLayout>& setLayouts,
                    VkSampleCountFlagBits samples, bool useVertexInput, bool useDepth, uint32_t pushConstantSize,
-                   bool depthWrite, VkCompareOp depthCompare, VkCullModeFlags cullMode)
+                   bool depthWrite, VkCompareOp depthCompare, VkCullModeFlags cullMode,
+                   bool useBlending, VkPrimitiveTopology topology)
     : device_(device) {
     auto vertCode = readFile(vertPath);
     auto fragCode = readFile(fragPath);
@@ -63,7 +64,7 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.topology = topology;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
     VkPipelineViewportStateCreateInfo viewportState{};
@@ -97,7 +98,15 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
     VkPipelineColorBlendAttachmentState colorBlendAttach{};
     colorBlendAttach.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
                                     | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttach.blendEnable = VK_FALSE;
+    colorBlendAttach.blendEnable = useBlending ? VK_TRUE : VK_FALSE;
+    if (useBlending) {
+        colorBlendAttach.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttach.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttach.colorBlendOp = VK_BLEND_OP_ADD;
+        colorBlendAttach.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttach.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttach.alphaBlendOp = VK_BLEND_OP_ADD;
+    }
 
     VkPipelineColorBlendStateCreateInfo colorBlend{};
     colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;

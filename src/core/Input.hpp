@@ -68,6 +68,10 @@ public:
     static glm::vec2 mouseDelta();          // movement since last frame
     static glm::vec2 mousePosition();       // cursor position in window pixels
 
+    // ---- Event Consumption ----
+    static void consumeMouse();
+    static void consumeKeyboard();
+
     // ---- Context Management ----
     static void pushContext(const InputContextID& context);
     static void popContext(const InputContextID& context);

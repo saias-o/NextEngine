@@ -27,6 +27,7 @@ const char* fileIcon(const std::filesystem::directory_entry& entry) {
     if (ext == ".obj" || ext == ".fbx" || ext == ".gltf") return "[3D]";
     if (ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr")  return "[Img]";
     if (ext == ".vert" || ext == ".frag" || ext == ".glsl" || ext == ".spv") return "[Sh]";
+    if (ext == ".html" || ext == ".htm" || ext == ".css" || ext == ".js") return "[Web]";
     if (ext == ".lua")   return "[Lua]";
     if (ext == ".neproj") return "[Proj]";
     if (ext == ".scene") return "[Sc]";
@@ -239,6 +240,8 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                     }
                 } else if (ext == ".wav" || ext == ".mp3" || ext == ".ogg") {
                     ImGui::Button("[AUDIO]", ImVec2(iconSize, iconSize));
+                } else if (ext == ".html" || ext == ".htm" || ext == ".css" || ext == ".js") {
+                    ImGui::Button("[WEB]", ImVec2(iconSize, iconSize));
                 } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf") {
                     ImGui::Button("[3D]", ImVec2(iconSize, iconSize));
                 } else {
@@ -268,6 +271,12 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                     if (ImGui::BeginDragDropSource()) {
                         ImGui::SetDragDropPayload("FILE_AUDIO", pathStr.c_str(), pathStr.size() + 1);
                         ImGui::Text("Assign Audio %s", filename.c_str());
+                        ImGui::EndDragDropSource();
+                    }
+                } else if (ext == ".html" || ext == ".htm") {
+                    if (ImGui::BeginDragDropSource()) {
+                        ImGui::SetDragDropPayload("FILE_HTML", pathStr.c_str(), pathStr.size() + 1);
+                        ImGui::Text("Assign Web %s", filename.c_str());
                         ImGui::EndDragDropSource();
                     }
                 }
@@ -313,6 +322,12 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                     if (ImGui::BeginDragDropSource()) {
                         ImGui::SetDragDropPayload("FILE_AUDIO", pathStr.c_str(), pathStr.size() + 1);
                         ImGui::Text("Assign Audio %s", filename.c_str());
+                        ImGui::EndDragDropSource();
+                    }
+                } else if (ext == ".html" || ext == ".htm") {
+                    if (ImGui::BeginDragDropSource()) {
+                        ImGui::SetDragDropPayload("FILE_HTML", pathStr.c_str(), pathStr.size() + 1);
+                        ImGui::Text("Assign Web %s", filename.c_str());
                         ImGui::EndDragDropSource();
                     }
                 }
