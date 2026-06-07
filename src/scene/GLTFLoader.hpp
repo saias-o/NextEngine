@@ -4,12 +4,12 @@
 
 namespace ne {
 
-class Scene;
+class Node;
 class ResourceManager;
 
 class GLTFLoader {
 public:
-    static bool load(const std::string& path, Scene& scene, ResourceManager& resources);
+    static bool load(const std::string& path, Node& rootNode, ResourceManager& resources);
 };
 
 } // namespace ne

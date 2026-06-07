@@ -408,6 +408,202 @@
           ]
         },
         "type": "Scene"
+      },
+      {
+        "behaviours": [],
+        "children": [
+          {
+            "anchorX": 0.5,
+            "anchorY": 0.5,
+            "behaviours": [],
+            "children": [],
+            "color": [
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "enabled": true,
+            "fontSize": 32.0,
+            "height": 100.0,
+            "name": "TitleText",
+            "pivotX": 0.5,
+            "pivotY": 0.5,
+            "text": "UI Example",
+            "transform": {
+              "position": [
+                1000.0,
+                500.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "type": "UITextNode",
+            "width": 100.0,
+            "x": 200.0,
+            "y": 50.0
+          },
+          {
+            "anchorX": 0.5,
+            "anchorY": 0.5,
+            "behaviours": [],
+            "children": [
+              {
+                "anchorX": 0.5,
+                "anchorY": 0.5,
+                "behaviours": [],
+                "children": [],
+                "enabled": true,
+                "height": 40.0,
+                "name": "Icon",
+                "pivotX": 0.5,
+                "pivotY": 0.5,
+                "transform": {
+                  "position": [
+                    1020.0,
+                    630.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "type": "UIImageNode",
+                "width": 40.0,
+                "x": 20.0,
+                "y": 30.0
+              },
+              {
+                "anchorX": 0.5,
+                "anchorY": 0.5,
+                "behaviours": [],
+                "children": [],
+                "color": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "enabled": true,
+                "fontSize": 16.0,
+                "height": 100.0,
+                "name": "ButtonText",
+                "pivotX": 0.5,
+                "pivotY": 0.5,
+                "text": "Click Me!",
+                "transform": {
+                  "position": [
+                    1100.0,
+                    630.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "type": "UITextNode",
+                "width": 100.0,
+                "x": 100.0,
+                "y": 30.0
+              }
+            ],
+            "enabled": true,
+            "height": 60.0,
+            "hoverColor": [
+              0.8999999761581421,
+              0.8999999761581421,
+              0.8999999761581421,
+              1.0
+            ],
+            "interactable": true,
+            "name": "Button",
+            "normalColor": [
+              0.800000011920929,
+              0.800000011920929,
+              0.800000011920929,
+              1.0
+            ],
+            "pivotX": 0.5,
+            "pivotY": 0.5,
+            "pressedColor": [
+              0.6000000238418579,
+              0.6000000238418579,
+              0.6000000238418579,
+              1.0
+            ],
+            "transform": {
+              "position": [
+                1000.0,
+                600.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "type": "UIButtonNode",
+            "width": 200.0,
+            "x": 200.0,
+            "y": 150.0
+          }
+        ],
+        "enabled": true,
+        "height": 1080.0,
+        "name": "UICanvas",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "type": "UICanvasNode",
+        "width": 1920.0
       }
     ],
     "enabled": true,

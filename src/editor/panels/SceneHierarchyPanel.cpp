@@ -11,6 +11,7 @@
 #include "scene/UICanvasNode.hpp"
 #include "scene/UIColorNode.hpp"
 #include "scene/UIImageNode.hpp"
+#include "scene/GLTFLoader.hpp"
 #include "scene/UITextNode.hpp"
 #include "scene/UIButtonNode.hpp"
 #include "scene/UIToggleNode.hpp"
@@ -289,6 +290,12 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
             editor->createType_ = CreateNodeType::SceneInstance;
             editor->draggedScenePath_ = (const char*)payload->Data;
         }
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_MODEL")) {
+            std::string path = (const char*)payload->Data;
+            if (scene && editor->ctxResources_) {
+                GLTFLoader::load(path, *scene, *editor->ctxResources_);
+            }
+        }
         ImGui::EndDragDropTarget();
     }
 
@@ -385,6 +392,12 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
             editor->nodeToCreateChildUnder_ = node;
             editor->createType_ = CreateNodeType::SceneInstance;
             editor->draggedScenePath_ = (const char*)payload->Data;
+        }
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_MODEL")) {
+            std::string path = (const char*)payload->Data;
+            if (editor->ctxResources_) {
+                GLTFLoader::load(path, *node, *editor->ctxResources_);
+            }
         }
         ImGui::EndDragDropTarget();
     }

@@ -24,7 +24,7 @@ static std::string toLower(const std::string& str) {
 const char* fileIcon(const std::filesystem::directory_entry& entry) {
     if (entry.is_directory()) return "[D]";
     auto ext = entry.path().extension().string();
-    if (ext == ".obj" || ext == ".fbx" || ext == ".gltf") return "[3D]";
+    if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".glb") return "[3D]";
     if (ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr")  return "[Img]";
     if (ext == ".vert" || ext == ".frag" || ext == ".glsl" || ext == ".spv") return "[Sh]";
     if (ext == ".html" || ext == ".htm" || ext == ".css" || ext == ".js") return "[Web]";
@@ -242,7 +242,7 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                     ImGui::Button("[AUDIO]", ImVec2(iconSize, iconSize));
                 } else if (ext == ".html" || ext == ".htm" || ext == ".css" || ext == ".js") {
                     ImGui::Button("[WEB]", ImVec2(iconSize, iconSize));
-                } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf") {
+                } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".glb") {
                     ImGui::Button("[3D]", ImVec2(iconSize, iconSize));
                 } else {
                     ImGui::Button("[FILE]", ImVec2(iconSize, iconSize));
@@ -254,7 +254,13 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                         ImGui::Text("Instantiate %s", filename.c_str());
                         ImGui::EndDragDropSource();
                     }
-                } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr") {
+                } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".glb") {
+                    if (ImGui::BeginDragDropSource()) {
+                        ImGui::SetDragDropPayload("FILE_MODEL", pathStr.c_str(), pathStr.size() + 1);
+                        ImGui::Text("Instantiate Model %s", filename.c_str());
+                        ImGui::EndDragDropSource();
+                    }
+                } else if (ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr") {
                     if (ImGui::BeginDragDropSource()) {
                         AssetID id = project->assetRegistry().getID(pathStr);
                         if (id == kAssetInvalid) {
@@ -305,7 +311,13 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                         ImGui::Text("Instantiate %s", filename.c_str());
                         ImGui::EndDragDropSource();
                     }
-                } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr") {
+                } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".glb") {
+                    if (ImGui::BeginDragDropSource()) {
+                        ImGui::SetDragDropPayload("FILE_MODEL", pathStr.c_str(), pathStr.size() + 1);
+                        ImGui::Text("Instantiate Model %s", filename.c_str());
+                        ImGui::EndDragDropSource();
+                    }
+                } else if (ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr") {
                     if (ImGui::BeginDragDropSource()) {
                         AssetID id = project->assetRegistry().getID(pathStr);
                         if (id == kAssetInvalid) {

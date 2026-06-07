@@ -86,7 +86,7 @@ static void processNode(cgltf_node* node, Node* parent, ResourceManager& resourc
     }
 }
 
-bool GLTFLoader::load(const std::string& path, Scene& scene, ResourceManager& resources) {
+bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& resources) {
     Log::info("GLTFLoader: loading ", path);
     
     cgltf_options options = {};
@@ -246,7 +246,7 @@ bool GLTFLoader::load(const std::string& path, Scene& scene, ResourceManager& re
     std::vector<std::pair<MeshNode*, cgltf_skin*>> skinnedMeshes;
     if (data->scene) {
         for (size_t i = 0; i < data->scene->nodes_count; ++i) {
-            processNode(data->scene->nodes[i], &scene, resources, meshesPrimitives, materials, data, skinnedMeshes);
+            processNode(data->scene->nodes[i], &rootNode, resources, meshesPrimitives, materials, data, skinnedMeshes);
         }
     }
 
