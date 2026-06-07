@@ -85,6 +85,15 @@ add_library(ne_engine STATIC
     src/scene/UIInteractableNode.cpp
     src/scene/UIButtonNode.cpp
     src/scene/UIToggleNode.cpp
+    src/scene/animation/Pose.cpp
+    src/scene/animation/AnimationClip.cpp
+    src/scene/animation/ClipNode.cpp
+    src/scene/animation/BlendNode.cpp
+    src/scene/animation/AnimStateMachine.cpp
+    src/scene/animation/Animator.cpp
+    src/scene/animation/AnimBlackboard.cpp
+    src/scene/animation/AnimGraphParser.cpp
+    src/scene/animation/PlayableDirector.cpp
     src/ui/UIInteractionSystem.cpp
     src/audio/AudioManager.cpp
     src/graphics/VulkanDevice.cpp

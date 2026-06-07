@@ -73,6 +73,7 @@ struct DrawCmd {
     bool castShadows;
     bool useLightmap;            // sample the baked lightmap instead of live lighting
     VkDescriptorSet lightmapSet; // set 2 (baked lightmap, or default white)
+    int32_t boneOffset;          // offset in global BoneMatricesBuffer, or -1
 
     bool operator<(const DrawCmd& other) const {
         return material < other.material;
@@ -83,7 +84,8 @@ struct InstanceData {
     glm::mat4 model;
     glm::vec4 boundingSphere; // xyz = center, w = radius
     uint32_t materialIndex;
-    uint32_t pad[3];
+    int32_t boneOffset;
+    uint32_t pad[2];
 };
 
 // Owns the GPU frame machinery: the scene pipeline, set-0 (global) descriptors,
@@ -170,6 +172,7 @@ private:
     std::vector<VkDescriptorSet> globalSets_;
     std::vector<std::unique_ptr<Buffer>> uniformBuffers_;
     std::vector<std::unique_ptr<Buffer>> lightingBuffers_;
+    std::vector<std::unique_ptr<Buffer>> boneMatricesBuffers_;
 
     // GPU-driven rendering resources
     std::vector<std::unique_ptr<Buffer>> instanceBuffers_;

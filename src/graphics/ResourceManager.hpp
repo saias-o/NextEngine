@@ -18,6 +18,8 @@ class VulkanDevice;
 class Mesh;
 class Texture;
 struct Vertex;
+class Rig;
+class AnimationClip;
 
 // Loads and caches GPU resources so the same asset is uploaded once and shared.
 // Texture / material, content-addressed (cached, uploaded once).
@@ -42,6 +44,8 @@ public:
     // Texture / material, content-addressed (cached, uploaded once).
     Texture* getTexture(AssetID id, bool srgb = true);
     Material* getMaterial(const MaterialDesc& desc);
+    Rig* getRig(AssetID id);
+    AnimationClip* getAnimation(AssetID id);
 
     // The id a mesh was loaded with (for serialization).
     AssetID meshId(const Mesh* mesh) const;
@@ -52,11 +56,14 @@ public:
     // Register a path dynamically (e.g. for hardcoded demo scenes without pre-sync)
     AssetID getOrRegister(const std::string& path, AssetType type = AssetType::Unknown, bool srgb = true);
 
-    // Register an embedded texture (e.g. from a gltf buffer)
     AssetID registerMemoryTexture(const uint8_t* data, size_t size, bool srgb = true);
 
     // Register a dynamically generated mesh (e.g. from gltf primitive)
     AssetID registerMemoryMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
+
+    // Register memory structures directly from loaders
+    AssetID registerMemoryRig(const std::string& path, std::unique_ptr<Rig> rig);
+    AssetID registerMemoryAnimation(const std::string& subPath, std::unique_ptr<AnimationClip> clip);
 
     Texture* defaultWhiteTexture();
     Texture* defaultNormalTexture();
@@ -113,6 +120,8 @@ private:
     std::unordered_map<AssetID, std::unique_ptr<Mesh>> meshes_;
     std::unordered_map<AssetID, std::unique_ptr<Texture>> textures_;
     std::unordered_map<MaterialDesc, std::unique_ptr<Material>> materials_;
+    std::unordered_map<AssetID, std::unique_ptr<Rig>> rigs_;
+    std::unordered_map<AssetID, std::unique_ptr<AnimationClip>> animations_;
     std::unordered_map<const Mesh*, AssetID> reverseMeshMap_;  // mesh -> id
     
     std::unique_ptr<Texture> defaultWhiteTexture_;

@@ -32,6 +32,8 @@ std::string assetTypeToString(AssetType type) {
         case AssetType::Material: return "Material";
         case AssetType::Scene: return "Scene";
         case AssetType::Audio: return "Audio";
+        case AssetType::Rig: return "Rig";
+        case AssetType::Animation: return "Animation";
         default: return "Unknown";
     }
 }
@@ -42,6 +44,8 @@ AssetType stringToAssetType(const std::string& str) {
     if (str == "Material") return AssetType::Material;
     if (str == "Scene") return AssetType::Scene;
     if (str == "Audio") return AssetType::Audio;
+    if (str == "Rig") return AssetType::Rig;
+    if (str == "Animation") return AssetType::Animation;
     return AssetType::Unknown;
 }
 } // namespace
@@ -342,6 +346,8 @@ AssetType AssetRegistry::determineType(const std::filesystem::path& path) const 
     if (ext == ".mat") return AssetType::Material;
     if (ext == ".scene") return AssetType::Scene;
     if (ext == ".ogg") return AssetType::Audio;
+    if (ext == ".rig") return AssetType::Rig;
+    if (ext == ".anim") return AssetType::Animation;
     return AssetType::Unknown;
 }
 

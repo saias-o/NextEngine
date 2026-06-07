@@ -4,7 +4,10 @@
 #include "scene/Node.hpp"
 #include "graphics/Mesh.hpp"
 #include "graphics/ResourceManager.hpp"
-#include "core/Log.hpp"
+#include "scene/animation/Rig.hpp"
+#include "scene/animation/AnimationClip.hpp"
+#include "scene/animation/Animator.hpp"
+#include "scene/animation/ClipNode.hpp"
 #include "core/Log.hpp"
 
 #include <cgltf.h>
@@ -40,7 +43,8 @@ static AssetID loadGLTFTexture(cgltf_texture* tex, ResourceManager& resources, c
 
 static void processNode(cgltf_node* node, Node* parent, ResourceManager& resources,
                         const std::vector<std::vector<AssetID>>& meshesPrimitives, 
-                        const std::vector<MaterialDesc>& materials, cgltf_data* data) {
+                        const std::vector<MaterialDesc>& materials, cgltf_data* data,
+                        std::vector<std::pair<MeshNode*, cgltf_skin*>>& skinnedMeshes) {
     Node* neNode = parent->createChild<Node>(node->name ? node->name : "Node");
 
     if (node->has_translation) neNode->transform().position = toVec3(node->translation);
@@ -70,12 +74,15 @@ static void processNode(cgltf_node* node, Node* parent, ResourceManager& resourc
             }
             
             std::string primName = (node->name ? std::string(node->name) : "Mesh") + "_prim" + std::to_string(i);
-            neNode->createChild<MeshNode>(primName, resources.getMesh(primitives[i]), mat);
+            MeshNode* mNode = neNode->createChild<MeshNode>(primName, resources.getMesh(primitives[i]), mat);
+            if (node->skin) {
+                skinnedMeshes.push_back({mNode, node->skin});
+            }
         }
     }
 
     for (size_t i = 0; i < node->children_count; ++i) {
-        processNode(node->children[i], neNode, resources, meshesPrimitives, materials, data);
+        processNode(node->children[i], neNode, resources, meshesPrimitives, materials, data, skinnedMeshes);
     }
 }
 
@@ -155,6 +162,12 @@ bool GLTFLoader::load(const std::string& path, Scene& scene, ResourceManager& re
                         cgltf_accessor_read_float(attr.data, v, glm::value_ptr(vertices[v].lightmapUV), 2);
                     } else if (attr.type == cgltf_attribute_type_tangent) {
                         cgltf_accessor_read_float(attr.data, v, glm::value_ptr(vertices[v].tangent), 4);
+                    } else if (attr.type == cgltf_attribute_type_joints && attr.index == 0) {
+                        uint32_t tmp[4] = {0,0,0,0};
+                        cgltf_accessor_read_uint(attr.data, v, tmp, 4);
+                        vertices[v].boneIndices = glm::ivec4(tmp[0], tmp[1], tmp[2], tmp[3]);
+                    } else if (attr.type == cgltf_attribute_type_weights && attr.index == 0) {
+                        cgltf_accessor_read_float(attr.data, v, glm::value_ptr(vertices[v].boneWeights), 4);
                     }
                 }
             }
@@ -230,9 +243,135 @@ bool GLTFLoader::load(const std::string& path, Scene& scene, ResourceManager& re
     }
 
     // 3. Process Scene Graph
+    std::vector<std::pair<MeshNode*, cgltf_skin*>> skinnedMeshes;
     if (data->scene) {
         for (size_t i = 0; i < data->scene->nodes_count; ++i) {
-            processNode(data->scene->nodes[i], &scene, resources, meshesPrimitives, materials, data);
+            processNode(data->scene->nodes[i], &scene, resources, meshesPrimitives, materials, data, skinnedMeshes);
+        }
+    }
+
+    // 4. Process Skins (Rigs)
+    std::vector<AssetID> skinRigs(data->skins_count, kAssetInvalid);
+    for (size_t i = 0; i < data->skins_count; ++i) {
+        cgltf_skin& skin = data->skins[i];
+        auto rig = std::make_unique<Rig>();
+        
+        for (size_t j = 0; j < skin.joints_count; ++j) {
+            cgltf_node* joint = skin.joints[j];
+            std::string name = joint->name ? joint->name : "Bone_" + std::to_string(j);
+            
+            int32_t parentIndex = -1;
+            if (joint->parent) {
+                for (size_t p = 0; p < skin.joints_count; ++p) {
+                    if (skin.joints[p] == joint->parent) {
+                        parentIndex = static_cast<int32_t>(p);
+                        break;
+                    }
+                }
+            }
+            
+            glm::mat4 invBind{1.0f};
+            if (skin.inverse_bind_matrices) {
+                cgltf_accessor_read_float(skin.inverse_bind_matrices, j, glm::value_ptr(invBind), 16);
+            }
+            
+            rig->addBone(name, parentIndex, invBind);
+        }
+        
+        std::string rigName = path + "#rig" + std::to_string(i);
+        skinRigs[i] = resources.registerMemoryRig(rigName, std::move(rig));
+        Log::info("Loaded GLTF Skin: ", skin.joints_count, " joints, rigId=", skinRigs[i]);
+    }
+
+    // 5. Attach Animators
+    for (const auto& [mNode, skin] : skinnedMeshes) {
+        size_t skinIdx = skin - data->skins;
+        AssetID rigId = skinRigs[skinIdx];
+        Rig* rig = resources.getRig(rigId);
+        if (rig) {
+            mNode->addBehaviour<Animator>()->setRig(rig);
+            Log::info("Attached Animator with Rig to MeshNode ", mNode->name());
+        }
+    }
+
+    // 6. Process Animations
+    std::vector<AssetID> loadedClips;
+    for (size_t i = 0; i < data->animations_count; ++i) {
+        cgltf_animation& anim = data->animations[i];
+        std::string animName = anim.name ? anim.name : "Anim_" + std::to_string(i);
+        
+        // Find max duration
+        float duration = 0.0f;
+        for (size_t s = 0; s < anim.samplers_count; ++s) {
+            cgltf_accessor* input = anim.samplers[s].input;
+            if (input && input->count > 0) {
+                float maxTime = 0.0f;
+                cgltf_accessor_read_float(input, input->count - 1, &maxTime, 1);
+                if (maxTime > duration) duration = maxTime;
+            }
+        }
+        
+        auto clip = std::make_unique<AnimationClip>(animName, duration);
+        
+        for (size_t c = 0; c < anim.channels_count; ++c) {
+            cgltf_animation_channel& channel = anim.channels[c];
+            if (!channel.target_node) continue;
+            
+            std::string targetName = channel.target_node->name ? channel.target_node->name : "";
+            if (targetName.empty()) continue; // We need names for retargeting
+            
+            cgltf_animation_sampler* sampler = channel.sampler;
+            cgltf_accessor* input = sampler->input;
+            cgltf_accessor* output = sampler->output;
+            
+            size_t count = input->count;
+            std::vector<float> timestamps(count);
+            for (size_t v = 0; v < count; ++v) {
+                cgltf_accessor_read_float(input, v, &timestamps[v], 1);
+            }
+            
+            if (channel.target_path == cgltf_animation_path_type_translation || channel.target_path == cgltf_animation_path_type_scale) {
+                auto track = std::make_unique<TypedAnimTrack<glm::vec3>>();
+                track->target = (channel.target_path == cgltf_animation_path_type_translation) ? TrackTarget::Translation : TrackTarget::Scale;
+                track->timestamps = std::move(timestamps);
+                track->values.resize(count);
+                for (size_t v = 0; v < count; ++v) {
+                    cgltf_accessor_read_float(output, v, glm::value_ptr(track->values[v]), 3);
+                }
+                clip->addTrack(targetName, std::move(track));
+            } else if (channel.target_path == cgltf_animation_path_type_rotation) {
+                auto track = std::make_unique<TypedAnimTrack<glm::quat>>();
+                track->target = TrackTarget::Rotation;
+                track->timestamps = std::move(timestamps);
+                track->values.resize(count);
+                for (size_t v = 0; v < count; ++v) {
+                    float q[4];
+                    cgltf_accessor_read_float(output, v, q, 4);
+                    track->values[v] = glm::quat(q[3], q[0], q[1], q[2]); // wxyz
+                }
+                clip->addTrack(targetName, std::move(track));
+            }
+        }
+        
+        std::string clipPath = path + "#" + animName;
+        AssetID clipId = resources.registerMemoryAnimation(clipPath, std::move(clip));
+        loadedClips.push_back(clipId);
+        Log::info("Loaded GLTF Animation: ", animName, " duration=", duration, " id=", clipId);
+    }
+
+    // 7. Auto-play the first animation on all skinned meshes (for demo purposes)
+    if (!loadedClips.empty() && !skinnedMeshes.empty()) {
+        const AnimationClip* clip = resources.getAnimation(loadedClips[0]);
+        if (clip) {
+            for (const auto& pair : skinnedMeshes) {
+                MeshNode* mNode = pair.first;
+                if (Animator* anim = mNode->getBehaviour<Animator>()) {
+                    if (const Rig* rig = anim->rig()) {
+                        anim->setRootNode(std::make_unique<ClipNode>(clip, *rig));
+                        Log::info("Auto-playing animation on ", mNode->name());
+                    }
+                }
+            }
         }
     }
 

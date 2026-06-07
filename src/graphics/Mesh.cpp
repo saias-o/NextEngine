@@ -22,8 +22,8 @@ VkVertexInputBindingDescription Vertex::bindingDescription() {
     return desc;
 }
 
-std::array<VkVertexInputAttributeDescription, 6> Vertex::attributeDescriptions() {
-    std::array<VkVertexInputAttributeDescription, 6> attrs{};
+std::array<VkVertexInputAttributeDescription, 8> Vertex::attributeDescriptions() {
+    std::array<VkVertexInputAttributeDescription, 8> attrs{};
     attrs[0].binding = 0;
     attrs[0].location = 0;
     attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -48,6 +48,14 @@ std::array<VkVertexInputAttributeDescription, 6> Vertex::attributeDescriptions()
     attrs[5].location = 5;
     attrs[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
     attrs[5].offset = offsetof(Vertex, tangent);
+    attrs[6].binding = 0;
+    attrs[6].location = 6;
+    attrs[6].format = VK_FORMAT_R32G32B32A32_SINT;
+    attrs[6].offset = offsetof(Vertex, boneIndices);
+    attrs[7].binding = 0;
+    attrs[7].location = 7;
+    attrs[7].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attrs[7].offset = offsetof(Vertex, boneWeights);
     return attrs;
 }
 

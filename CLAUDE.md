@@ -259,9 +259,11 @@ Le moteur est construit par étapes numérotées :
       - Phase 3 : Volumétrie froxel (brouillard / lumière volumétrique / SSS).
       - Voir détails et matrice de scalabilité (Low/Medium/High/Ultra) dans [RENDU_AVANCE.md](file:///c:/Users/evand/Documents/NextEngine/RENDU_AVANCE.md).
 - [ ] **Étape 10 — Animation System.** Importation et lecture des animations glTF et BVH liés à des skeletal meshes :
-      - Skinning GPU (compute shader ou vertex shader skinning).
-      - Gestion du squelette (hiérarchie d'os) et interpolation des poses (translation, rotation, scale).
-      - Blending d'animations, arbres de transition (Animation Tree).
+      - [x] Architecture Data-Oriented (Rig, Pose, AnimationClip).
+      - [x] Graphe d'animation (FSM, BlendTree, ClipNode).
+      - [x] Timeline universelle.
+      - [ ] Skinning GPU (Vertex Shader skinning via SSBO Global).
+      - *Note technique* : Le parsing de `cgltf_skin` dans le GLTF est repoussé à une étape ultérieure. Le pipeline GPU gère les weights/indices, mais la construction dynamique du `Rig` via le loader reste à coder.
 - [ ] **Étape 11 — Simulation Physique.** Intégration d'un moteur physique robuste :
       - Utilisation de Jolt Physics (ou solution légère/maison).
       - Gestion des Colliders (box, sphere, capsule, convex/concave mesh).

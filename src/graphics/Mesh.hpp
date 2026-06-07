@@ -23,9 +23,11 @@ struct Vertex {
     glm::vec2 texCoord;
     glm::vec2 lightmapUV;  // second, non-overlapping UV set for baked lightmaps
     glm::vec4 tangent;
+    glm::ivec4 boneIndices{-1, -1, -1, -1};
+    glm::vec4 boneWeights{0.0f, 0.0f, 0.0f, 0.0f};
 
     static VkVertexInputBindingDescription bindingDescription();
-    static std::array<VkVertexInputAttributeDescription, 6> attributeDescriptions();
+    static std::array<VkVertexInputAttributeDescription, 8> attributeDescriptions();
 };
 
 // Owns device-local vertex and index buffers and knows how to bind/draw itself.

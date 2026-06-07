@@ -19,7 +19,9 @@ enum class AssetType {
     Texture,
     Material,
     Scene,
-    Audio
+    Audio,
+    Rig,
+    Animation
 };
 
 struct AssetMetadata {

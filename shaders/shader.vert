@@ -7,7 +7,7 @@ layout(set = 0, binding = 0) uniform CameraUBO {
 
 layout(push_constant) uniform PushConstants {
     mat4 model;
-    vec4 params;  // x = useLightmap (read in the fragment stage)
+    vec4 params;  // x = useLightmap, y = boneOffset
 } push;
 
 #ifdef BINDLESS
@@ -15,7 +15,8 @@ struct InstanceData {
     mat4 model;
     vec4 boundingSphere;
     uint materialIndex;
-    uint pad1, pad2, pad3;
+    int boneOffset;
+    uint pad2, pad3;
 };
 
 layout(std140, set = 3, binding = 0) readonly buffer InstanceBuffer {
@@ -23,12 +24,19 @@ layout(std140, set = 3, binding = 0) readonly buffer InstanceBuffer {
 };
 #endif
 
+// SSBO for all bone matrices in the scene
+layout(std140, set = 0, binding = 3) readonly buffer BoneBuffer {
+    mat4 boneMatrices[];
+};
+
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec3 inColor;
 layout(location = 3) in vec2 inTexCoord;
 layout(location = 4) in vec2 inLightmapUV;
 layout(location = 5) in vec4 inTangent;
+layout(location = 6) in ivec4 inBoneIndices;
+layout(location = 7) in vec4 inBoneWeights;
 
 layout(location = 0) out vec3 fragWorldPos;
 layout(location = 1) out vec3 fragNormal;
@@ -43,19 +51,43 @@ layout(location = 7) flat out uint fragMaterialIndex;
 #endif
 
 void main() {
+    mat4 modelMat;
+    int boneOffset = -1;
+
 #ifdef BINDLESS
-    mat4 modelMat = instances[gl_InstanceIndex].model;
+    modelMat = instances[gl_InstanceIndex].model;
     fragMaterialIndex = instances[gl_InstanceIndex].materialIndex;
+    boneOffset = instances[gl_InstanceIndex].boneOffset;
 #else
-    mat4 modelMat = push.model;
+    modelMat = push.model;
+    boneOffset = int(push.params.y);
 #endif
 
-    vec4 worldPos = modelMat * vec4(inPosition, 1.0);
+    vec3 localPos = inPosition;
+    vec3 localNormal = inNormal;
+    vec3 localTangent = inTangent.xyz;
+
+    if (boneOffset >= 0) {
+        mat4 skinMat = 
+            inBoneWeights.x * boneMatrices[boneOffset + inBoneIndices.x] +
+            inBoneWeights.y * boneMatrices[boneOffset + inBoneIndices.y] +
+            inBoneWeights.z * boneMatrices[boneOffset + inBoneIndices.z] +
+            inBoneWeights.w * boneMatrices[boneOffset + inBoneIndices.w];
+
+        localPos = (skinMat * vec4(inPosition, 1.0)).xyz;
+        
+        // Strictly speaking, we should use inverse transpose for normals if scale is non-uniform,
+        // but for bones, rotation/translation is the norm.
+        localNormal = mat3(skinMat) * inNormal;
+        localTangent = mat3(skinMat) * inTangent.xyz;
+    }
+
+    vec4 worldPos = modelMat * vec4(localPos, 1.0);
     fragWorldPos = worldPos.xyz;
     // Normal matrix (handles non-uniform scale). Cheap enough per-vertex.
     mat3 normalMatrix = mat3(transpose(inverse(modelMat)));
-    fragNormal = normalMatrix * inNormal;
-    fragTangent = normalize(normalMatrix * inTangent.xyz);
+    fragNormal = normalMatrix * localNormal;
+    fragTangent = normalize(normalMatrix * localTangent);
     fragBitangent = cross(fragNormal, fragTangent) * inTangent.w;
     fragColor = inColor;
     fragTexCoord = inTexCoord;

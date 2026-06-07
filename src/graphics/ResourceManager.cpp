@@ -12,6 +12,8 @@
 #include "project/AssetRegistry.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "scene/Node.hpp"
+#include "scene/animation/Rig.hpp"
+#include "scene/animation/AnimationClip.hpp"
 
 #include <stb_image.h>
 
@@ -52,6 +54,8 @@ ResourceManager::~ResourceManager() {
     materials_.clear();
     textures_.clear();
     meshes_.clear();
+    rigs_.clear();
+    animations_.clear();
     for (auto pool : materialPools_) {
         vkDestroyDescriptorPool(device_.device(), pool, nullptr);
     }
@@ -318,6 +322,20 @@ Mesh* ResourceManager::getMesh(AssetID id) {
     return loadMesh(id);  // treat as an .obj file path via registry
 }
 
+Rig* ResourceManager::getRig(AssetID id) {
+    if (id == kAssetInvalid) return nullptr;
+    auto it = rigs_.find(id);
+    if (it != rigs_.end()) return it->second.get();
+    return nullptr;
+}
+
+AnimationClip* ResourceManager::getAnimation(AssetID id) {
+    if (id == kAssetInvalid) return nullptr;
+    auto it = animations_.find(id);
+    if (it != animations_.end()) return it->second.get();
+    return nullptr;
+}
+
 Texture* ResourceManager::getTexture(AssetID id, bool srgb) {
     if (auto it = textures_.find(id); it != textures_.end())
         return it->second.get();
@@ -371,6 +389,18 @@ AssetID ResourceManager::registerMemoryMesh(const std::vector<Vertex>& vertices,
     static std::atomic<AssetID> s_dynamicId{0x4000000000000000ULL};
     AssetID id = s_dynamicId++;
     createMesh(id, vertices, indices);
+    return id;
+}
+
+AssetID ResourceManager::registerMemoryRig(const std::string& path, std::unique_ptr<Rig> rig) {
+    AssetID id = registry_ ? registry_->registerAsset(path, AssetType::Rig) : reinterpret_cast<AssetID>(rig.get());
+    rigs_[id] = std::move(rig);
+    return id;
+}
+
+AssetID ResourceManager::registerMemoryAnimation(const std::string& subPath, std::unique_ptr<AnimationClip> clip) {
+    AssetID id = registry_ ? registry_->registerAsset(subPath, AssetType::Animation) : reinterpret_cast<AssetID>(clip.get());
+    animations_[id] = std::move(clip);
     return id;
 }
 

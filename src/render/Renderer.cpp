@@ -23,11 +23,13 @@
 
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
+#include "scene/animation/Animator.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include "graphics/ComputePipeline.hpp"
 #include "graphics/Texture.hpp"
 #include <stdexcept>
@@ -135,7 +137,14 @@ void Renderer::createGlobalSetLayout() {
     shadowBinding.descriptorCount = 1;
     shadowBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings = {cameraBinding, lightingBinding, shadowBinding};
+    // Binding 3: Global SSBO for bone matrices
+    VkDescriptorSetLayoutBinding boneBinding{};
+    boneBinding.binding = 3;
+    boneBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    boneBinding.descriptorCount = 1;
+    boneBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 4> bindings = {cameraBinding, lightingBinding, shadowBinding, boneBinding};
 
     VkDescriptorSetLayoutCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -168,11 +177,16 @@ void Renderer::createPipeline(VkDescriptorSetLayout materialSetLayout) {
 void Renderer::createUniformBuffers() {
     uniformBuffers_.reserve(kMaxFramesInFlight);
     lightingBuffers_.reserve(kMaxFramesInFlight);
+    boneMatricesBuffers_.reserve(kMaxFramesInFlight);
+    // Allocate a 4MB buffer for global bone matrices (enough for 65536 bones)
+    const VkDeviceSize kBoneBufferSize = 4 * 1024 * 1024;
     for (int i = 0; i < kMaxFramesInFlight; i++) {
         uniformBuffers_.push_back(std::make_unique<Buffer>(device_, sizeof(UniformBufferObject),
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryUsage::HostVisible));
         lightingBuffers_.push_back(std::make_unique<Buffer>(device_, sizeof(LightingUBO),
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryUsage::HostVisible));
+        boneMatricesBuffers_.push_back(std::make_unique<Buffer>(device_, kBoneBufferSize,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::HostVisible));
     }
 }
 
@@ -330,11 +344,13 @@ void Renderer::createCullingPipeline() {
 }
 
 void Renderer::createGlobalDescriptorPool() {
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight) * 2;  // camera + lighting
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight);  // shadow map
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[2].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight);  // bone matrices SSBO
 
     VkDescriptorPoolCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -373,7 +389,12 @@ void Renderer::createGlobalDescriptorSets() {
         shadowInfo.imageView = shadowMap_->arrayView();
         shadowInfo.sampler = shadowMap_->sampler();
 
-        std::array<VkWriteDescriptorSet, 3> writes{};
+        VkDescriptorBufferInfo boneInfo{};
+        boneInfo.buffer = boneMatricesBuffers_[i]->handle();
+        boneInfo.offset = 0;
+        boneInfo.range = 4 * 1024 * 1024; // 4MB
+
+        std::array<VkWriteDescriptorSet, 4> writes{};
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[0].dstSet = globalSets_[i];
         writes[0].dstBinding = 0;
@@ -394,6 +415,13 @@ void Renderer::createGlobalDescriptorSets() {
         writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[2].descriptorCount = 1;
         writes[2].pImageInfo = &shadowInfo;
+
+        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[3].dstSet = globalSets_[i];
+        writes[3].dstBinding = 3;
+        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[3].descriptorCount = 1;
+        writes[3].pBufferInfo = &boneInfo;
 
         vkUpdateDescriptorSets(device_.device(),
             static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
@@ -499,6 +527,17 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera,
     int mode = settings.lightingMode == LightingMode::Baked ? 1 : 0;
     ubo.counts = glm::ivec4(lightCount, mode, 0, 0);
 
+    auto getAnimatorInParent = [](Node* n) -> Animator* {
+        while (n) {
+            if (auto* a = n->getBehaviour<Animator>()) return a;
+            n = n->parent();
+        }
+        return nullptr;
+    };
+
+    uint32_t currentBoneCount = 0;
+    glm::mat4* boneData = static_cast<glm::mat4*>(boneMatricesBuffers_[currentFrame_]->mapped());
+
     bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
     if (useGpuDriven) {
         InstanceData* instanceData = static_cast<InstanceData*>(instanceBuffers_[currentFrame_]->mapped());
@@ -516,12 +555,23 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera,
                         glm::length(glm::vec3(world[1])),
                         glm::length(glm::vec3(world[2]))
                     });
-        float radius = 0.866f; // DamagedHelmet doesn't report bounds, so we use a standard local radius for the unit cube.
-        
-        InstanceData& inst = instanceData[instanceCount];
-        inst.model = world;
-        inst.boundingSphere = glm::vec4(0.0f, 0.0f, 0.0f, radius);
+                    float radius = 0.866f; // DamagedHelmet doesn't report bounds, so we use a standard local radius for the unit cube.
+                    
+                    int32_t boneOffset = -1;
+                    if (Animator* anim = getAnimatorInParent(node)) {
+                        if (!anim->globalPose().skinningMatrices.empty()) {
+                            const auto& mats = anim->globalPose().skinningMatrices;
+                            boneOffset = currentBoneCount;
+                            std::memcpy(&boneData[boneOffset], mats.data(), mats.size() * sizeof(glm::mat4));
+                            currentBoneCount += static_cast<uint32_t>(mats.size());
+                        }
+                    }
+
+                    InstanceData& inst = instanceData[instanceCount];
+                    inst.model = world;
+                    inst.boundingSphere = glm::vec4(0.0f, 0.0f, 0.0f, radius);
                     inst.materialIndex = mat->bindlessIndex();
+                    inst.boneOffset = boneOffset;
                     
                     VkDrawIndexedIndirectCommand& draw = drawData[instanceCount];
                     auto alloc = m->geometryAllocation();
@@ -535,7 +585,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera,
                     if (frameCounter % 600 == 0) {
                         Log::info("GPU Draw: instance=", instanceCount, ", indices=", draw.indexCount, 
                                   ", vOffset=", draw.vertexOffset, ", fIndex=", draw.firstIndex, 
-                                  ", matIdx=", inst.materialIndex);
+                                  ", matIdx=", inst.materialIndex, ", boneOffset=", boneOffset);
                     }
                     if (instanceCount == 0) { frameCounter++; }
                     
@@ -548,6 +598,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera,
         
         instanceBuffers_[currentFrame_]->flush(instanceCount * sizeof(InstanceData));
         originalDrawCommandBuffers_[currentFrame_]->flush(instanceCount * sizeof(VkDrawIndexedIndirectCommand));
+        boneMatricesBuffers_[currentFrame_]->flush(currentBoneCount * sizeof(glm::mat4));
         
         // Clear countBuffer to 0 using CPU map (since it's HostVisible? Wait, countBuffers_ is MemoryUsage::GpuOnly!  
         // We must use vkCmdFillBuffer or similar in the command buffer!)
@@ -579,12 +630,25 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera,
                     if (inside) {
                         bool baked = settings.lightingMode == LightingMode::Baked
                                      && lightBaker_->has(node);
+                        
+                        int32_t boneOffset = -1;
+                        if (Animator* anim = getAnimatorInParent(node)) {
+                            if (!anim->globalPose().skinningMatrices.empty()) {
+                                const auto& mats = anim->globalPose().skinningMatrices;
+                                boneOffset = currentBoneCount;
+                                std::memcpy(&boneData[boneOffset], mats.data(), mats.size() * sizeof(glm::mat4));
+                                currentBoneCount += static_cast<uint32_t>(mats.size());
+                            }
+                        }
+
                         currentDraws_.push_back(DrawCmd{m, mat, world, node->castShadows(),
-                                                        baked, lightBaker_->lightmapSet(node)});
+                                                        baked, lightBaker_->lightmapSet(node), boneOffset});
                     }
                 }
             }
         }
+
+        boneMatricesBuffers_[currentFrame_]->flush(currentBoneCount * sizeof(glm::mat4));
 
         // Sort draws by material to minimize Vulkan pipeline descriptor set binds
         std::sort(currentDraws_.begin(), currentDraws_.end());
@@ -1141,7 +1205,9 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
             PushConstants pc{};
             pc.model = cmdDraw.world;
             // param.x > 0.5 tells shader to use baked lightmap. Since it's a stub, use 0.0.
-            pc.params = glm::vec4(scene.settings().lightingMode == LightingMode::Baked ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+            // param.y contains boneOffset
+            pc.params = glm::vec4(scene.settings().lightingMode == LightingMode::Baked ? 1.0f : 0.0f,
+                                  static_cast<float>(cmdDraw.boneOffset), 0.0f, 0.0f);
             vkCmdPushConstants(cmd, pipeline_->layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                0, sizeof(PushConstants), &pc);
 
