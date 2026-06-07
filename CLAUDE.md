@@ -267,7 +267,7 @@ Le moteur est construit par étapes numérotées :
       - Gestion des Colliders (box, sphere, capsule, convex/concave mesh).
       - Rigid bodies statiques et dynamiques, forces, gravité.
       - Détection de collisions, Triggers, et Raycasting.
-- [ ] **Étape 12 — UI 2D (Screen & World Space).** Système d'interface utilisateur complet :
+- [x] **Étape 12 — UI 2D (Screen & World Space).** Système d'interface utilisateur complet :
       - Canvas 2D en Screen space (overlay classique) et en World space (panneaux interactifs dans l'espace 3D, essentiels pour la VR/XR).
       - Intégration et compatibilité HTML/CSS/JS (via Ultralight, Webview ou équivalent) pour le design d'UI avec des technos web standard.
 - [ ] **Étape 13 — Intégration LLM Native.** Support natif d'intelligence artificielle agentique dans le moteur :
