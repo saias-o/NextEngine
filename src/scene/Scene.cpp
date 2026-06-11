@@ -4,12 +4,23 @@
 #include "scene/LightNode.hpp"
 #include "scene/SerializationHelpers.hpp"
 #include "graphics/ResourceManager.hpp"
+#include "physics/PhysicsWorld.hpp"
+#include "physics/CollisionObjectNode.hpp"
+#include "physics/AreaNode.hpp"
 
 #include <nlohmann/json.hpp>
 
 namespace ne {
 
 Scene::Scene() : Node("Scene") {
+}
+
+Scene::~Scene() {
+    // Destroy the node tree (and thus every physics body) while the PhysicsWorld
+    // is still alive — the Node base subobject (which owns children_) is otherwise
+    // torn down after this Scene's members, leaving body destructors with a
+    // dangling world pointer.
+    clearChildren();
 }
 
 void Scene::update(float dt) {
@@ -30,16 +41,46 @@ void Scene::update(float dt) {
     }
 
     updateTransforms(glm::mat4(1.0f), false);
+
+    // Freeze each Auto collision shape once, now that world transforms are fresh
+    // (runs in edit mode too, so the editor wireframe is stable and correct).
+    for (auto* body : bodies_) body->resolveAutoShapes();
+
+    // Physics only runs while time is advancing (i.e. in Play, not while editing).
+    if (dt > 0.0f && !bodies_.empty()) {
+        if (!physics_) physics_ = std::make_unique<PhysicsWorld>();
+        for (auto* body : bodies_) body->syncToPhysics(*physics_);
+        for (auto* body : bodies_) body->prePhysicsStep(*physics_, dt);  // characters move/slide
+        physics_->step(dt);
+        for (auto* body : bodies_) body->syncFromPhysics(*physics_);
+
+        // Dispatch contact events on the main thread: sensor overlaps to Area
+        // nodes, solid collisions to both bodies' collision signals.
+        for (const auto& e : physics_->drainContactEvents()) {
+            auto* n1 = static_cast<CollisionObjectNode*>(physics_->bodyUserData(e.a));
+            auto* n2 = static_cast<CollisionObjectNode*>(physics_->bodyUserData(e.b));
+            if (e.sensor) {
+                if (auto* area = dynamic_cast<AreaNode*>(n1)) area->handleOverlap(n2, e.entered);
+                if (auto* area = dynamic_cast<AreaNode*>(n2)) area->handleOverlap(n1, e.entered);
+            } else {
+                if (n1) (e.entered ? n1->collisionEntered : n1->collisionExited).emit(n2);
+                if (n2) (e.entered ? n2->collisionEntered : n2->collisionExited).emit(n1);
+            }
+        }
+
+        updateTransforms(glm::mat4(1.0f), false);  // propagate dynamic results down the tree
+    }
 }
 
 void Scene::flattenHierarchy() {
     meshes_.clear();
     lights_.clear();
     flatBehaviours_.clear();
+    bodies_.clear();
 
     traverse([this](Node& n, const glm::mat4&) {
         if (!n.isActiveInHierarchy()) return;
-        
+
         if (MeshNode* mn = dynamic_cast<MeshNode*>(&n)) {
             if (mn->meshEnabled()) {
                 meshes_.push_back(mn);
@@ -47,6 +88,9 @@ void Scene::flattenHierarchy() {
         }
         if (n.asLight()) {
             lights_.push_back(static_cast<LightNode*>(&n));
+        }
+        if (CollisionObjectNode* co = n.asCollisionObject()) {
+            bodies_.push_back(co);
         }
         for (auto& b : n.behaviours()) {
             flatBehaviours_.push_back(b.get());
@@ -65,9 +109,12 @@ void Scene::serialize(nlohmann::json& j, ResourceManager& resources) const {
         {"clearColor", vec3ToJson(settings_.clearColor)},
         {"postProcessing", settings_.enablePostProcessing},
         {"lightingMode", static_cast<int>(settings_.lightingMode)},
+        {"giEnabled", settings_.giEnabled},
+        {"giIntensity", settings_.giIntensity},
         {"skyboxTexture", settings_.skyboxTexture},
         {"skyboxExposure", settings_.skyboxExposure},
-        {"skyboxRotation", settings_.skyboxRotation}
+        {"skyboxRotation", settings_.skyboxRotation},
+        {"changeRenderingAtLoad", settings_.changeRenderingAtLoad}
     };
 }
 
@@ -82,6 +129,8 @@ void Scene::deserialize(const nlohmann::json& j, ResourceManager& resources) {
         settings_.clearColor = glm::vec4(jsonToVec3(js["clearColor"], glm::vec3(0.0f)), 1.0f);
         if (js.contains("postProcessing")) settings_.enablePostProcessing = js["postProcessing"].get<bool>();
         if (js.contains("lightingMode")) settings_.lightingMode = static_cast<LightingMode>(js["lightingMode"].get<int>());
+        if (js.contains("giEnabled")) settings_.giEnabled = js["giEnabled"].get<bool>();
+        if (js.contains("giIntensity")) settings_.giIntensity = js["giIntensity"].get<float>();
         if (js.contains("skyboxTexture")) {
             if (js["skyboxTexture"].is_number_integer()) {
                 settings_.skyboxTexture = js["skyboxTexture"].get<AssetID>();
@@ -91,6 +140,7 @@ void Scene::deserialize(const nlohmann::json& j, ResourceManager& resources) {
         }
         if (js.contains("skyboxExposure")) settings_.skyboxExposure = js["skyboxExposure"].get<float>();
         if (js.contains("skyboxRotation")) settings_.skyboxRotation = js["skyboxRotation"].get<float>();
+        if (js.contains("changeRenderingAtLoad")) settings_.changeRenderingAtLoad = js["changeRenderingAtLoad"].get<bool>();
     }
 
     // Backwards compatibility for old SceneSettingsBehaviour

@@ -4,6 +4,11 @@
 #include "scene/Node.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/LightNode.hpp"
+#include "physics/StaticBodyNode.hpp"
+#include "physics/RigidBodyNode.hpp"
+#include "physics/AreaNode.hpp"
+#include "physics/CharacterBodyNode.hpp"
+#include "physics/CollisionShapeNode.hpp"
 #include "scene/SceneSerializer.hpp"
 #include "editor/Command.hpp"
 #include "project/Project.hpp"
@@ -31,6 +36,93 @@ static std::string toLower(const std::string& str) {
     std::string lower = str;
     std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c){ return std::tolower(c); });
     return lower;
+}
+
+// Build a fresh node of the given type. Used by both "Create Child" and "Create
+// Parent" so the two stay in sync. `bodyWithCube` adds a visible cube mesh to a
+// new physics body (wanted for a standalone body, not when wrapping an existing
+// node as its parent). Returns null for None/SceneInstance (handled by callers).
+static std::unique_ptr<Node> makeNodeOfType(CreateNodeType type, Mesh* defaultMesh,
+                                            Material* defaultMaterial, ResourceManager* resources,
+                                            bool bodyWithCube) {
+    switch (type) {
+        case CreateNodeType::Node:
+            return std::make_unique<Node>("Node");
+        case CreateNodeType::MeshNode:
+            return std::make_unique<MeshNode>("MeshNode", defaultMesh, defaultMaterial);
+        case CreateNodeType::DirectionalLight:
+            return std::make_unique<LightNode>("Directional Light", LightType::Directional);
+        case CreateNodeType::PointLight:
+            return std::make_unique<LightNode>("Point Light", LightType::Point);
+        case CreateNodeType::SpotLight:
+            return std::make_unique<LightNode>("Spot Light", LightType::Spot);
+        case CreateNodeType::UICanvas: {
+            auto n = std::make_unique<UICanvasNode>(); n->setName("UICanvas"); return n;
+        }
+        case CreateNodeType::UIColorNode: {
+            auto n = std::make_unique<UIColorNode>(); n->setName("UIColor"); return n;
+        }
+        case CreateNodeType::UIImageNode: {
+            auto n = std::make_unique<UIImageNode>(); n->setName("UIImage"); return n;
+        }
+        case CreateNodeType::UITextNode: {
+            auto n = std::make_unique<UITextNode>(); n->setName("UIText"); return n;
+        }
+        case CreateNodeType::UIButtonNode: {
+            auto n = std::make_unique<UIButtonNode>(); n->setName("UIButton"); return n;
+        }
+        case CreateNodeType::UIToggleNode: {
+            auto n = std::make_unique<UIToggleNode>(); n->setName("UIToggle"); return n;
+        }
+        case CreateNodeType::UIExample: {
+            auto canvas = std::make_unique<UICanvasNode>();
+            canvas->setName("UICanvas");
+            auto title = std::make_unique<UITextNode>();
+            title->setName("TitleText"); title->setText("UI Example");
+            title->setPosition(200.0f, 50.0f); title->setFontSize(32.0f);
+            auto button = std::make_unique<UIButtonNode>();
+            button->setName("Button"); button->setPosition(200.0f, 150.0f);
+            button->setSize(200.0f, 60.0f);
+            auto btnText = std::make_unique<UITextNode>();
+            btnText->setName("ButtonText"); btnText->setText("Click Me!");
+            btnText->setPosition(100.0f, 30.0f); btnText->setPivot(0.5f, 0.5f);
+            auto icon = std::make_unique<UIImageNode>();
+            icon->setName("Icon"); icon->setPosition(20.0f, 30.0f);
+            icon->setSize(40.0f, 40.0f); icon->setPivot(0.5f, 0.5f);
+            button->addChild(std::move(icon));
+            button->addChild(std::move(btnText));
+            canvas->addChild(std::move(title));
+            canvas->addChild(std::move(button));
+            return canvas;
+        }
+        case CreateNodeType::WebCanvas: {
+            auto web = std::make_unique<WebCanvasNode>();
+            web->setName("WebCanvas");
+            if (resources)
+                web->init(resources->device(), 1920, 1080, WebCanvasNode::Mode::ScreenSpace);
+            return web;
+        }
+        case CreateNodeType::StaticBody:
+        case CreateNodeType::RigidBody:
+        case CreateNodeType::CharacterBody:
+        case CreateNodeType::Area: {
+            std::unique_ptr<CollisionObjectNode> body;
+            const char* label = "Body";
+            if (type == CreateNodeType::StaticBody) { body = std::make_unique<StaticBodyNode>(); label = "StaticBody"; }
+            else if (type == CreateNodeType::RigidBody) { body = std::make_unique<RigidBodyNode>(); label = "RigidBody"; }
+            else if (type == CreateNodeType::CharacterBody) { body = std::make_unique<CharacterBodyNode>(); label = "CharacterBody"; }
+            else { body = std::make_unique<AreaNode>(); label = "Area"; }
+            body->setName(label);
+            if (bodyWithCube)
+                body->addChild(std::make_unique<MeshNode>("Mesh", defaultMesh, defaultMaterial));
+            body->addChild(std::make_unique<CollisionShapeNode>());
+            return body;
+        }
+        case CreateNodeType::CollisionShape:
+            return std::make_unique<CollisionShapeNode>();
+        default:
+            return nullptr;  // None / SceneInstance: handled by the caller
+    }
 }
 
 static bool nodeMatchesSearch(Node* node, const std::string& query) {
@@ -147,6 +239,33 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
                     editor->createType_ = CreateNodeType::UIExample;
                 }
                 ImGui::Separator();
+                if (ImGui::BeginMenu("Physics")) {
+                    // Create under the selected node when there is one (so a body
+                    // wraps an existing mesh), otherwise under the scene root.
+                    Node* parent = editor->selectedNode_ ? editor->selectedNode_ : scene;
+                    if (ImGui::MenuItem("Static Body")) {
+                        editor->nodeToCreateChildUnder_ = parent;
+                        editor->createType_ = CreateNodeType::StaticBody;
+                    }
+                    if (ImGui::MenuItem("Rigid Body")) {
+                        editor->nodeToCreateChildUnder_ = parent;
+                        editor->createType_ = CreateNodeType::RigidBody;
+                    }
+                    if (ImGui::MenuItem("Character Body")) {
+                        editor->nodeToCreateChildUnder_ = parent;
+                        editor->createType_ = CreateNodeType::CharacterBody;
+                    }
+                    if (ImGui::MenuItem("Area (Trigger)")) {
+                        editor->nodeToCreateChildUnder_ = parent;
+                        editor->createType_ = CreateNodeType::Area;
+                    }
+                    if (ImGui::MenuItem("Collision Shape")) {
+                        editor->nodeToCreateChildUnder_ = parent;
+                        editor->createType_ = CreateNodeType::CollisionShape;
+                    }
+                    ImGui::EndMenu();
+                }
+                ImGui::Separator();
                 if (ImGui::MenuItem("Web Canvas")) {
                     editor->nodeToCreateChildUnder_ = scene;
                     editor->createType_ = CreateNodeType::WebCanvas;
@@ -183,75 +302,7 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
         }
 
         std::unique_ptr<Node> newNode;
-        if (editor->createType_ == CreateNodeType::Node) {
-            newNode = std::make_unique<Node>("Node");
-        } else if (editor->createType_ == CreateNodeType::MeshNode) {
-            newNode = std::make_unique<MeshNode>("MeshNode", defaultMesh, defaultMaterial);
-        } else if (editor->createType_ == CreateNodeType::DirectionalLight) {
-            newNode = std::make_unique<LightNode>("Directional Light", LightType::Directional);
-        } else if (editor->createType_ == CreateNodeType::PointLight) {
-            newNode = std::make_unique<LightNode>("Point Light", LightType::Point);
-        } else if (editor->createType_ == CreateNodeType::SpotLight) {
-            newNode = std::make_unique<LightNode>("Spot Light", LightType::Spot);
-        } else if (editor->createType_ == CreateNodeType::UICanvas) {
-            newNode = std::make_unique<UICanvasNode>();
-            newNode->setName("UICanvas");
-        } else if (editor->createType_ == CreateNodeType::UIColorNode) {
-            newNode = std::make_unique<UIColorNode>();
-            newNode->setName("UIColor");
-        } else if (editor->createType_ == CreateNodeType::UIImageNode) {
-            newNode = std::make_unique<UIImageNode>();
-            newNode->setName("UIImage");
-        } else if (editor->createType_ == CreateNodeType::UITextNode) {
-            newNode = std::make_unique<UITextNode>();
-            newNode->setName("UIText");
-        } else if (editor->createType_ == CreateNodeType::UIButtonNode) {
-            newNode = std::make_unique<UIButtonNode>();
-            newNode->setName("UIButton");
-        } else if (editor->createType_ == CreateNodeType::UIToggleNode) {
-            newNode = std::make_unique<UIToggleNode>();
-            newNode->setName("UIToggle");
-        } else if (editor->createType_ == CreateNodeType::UIExample) {
-            auto canvas = std::make_unique<UICanvasNode>();
-            canvas->setName("UICanvas");
-            
-            auto title = std::make_unique<UITextNode>();
-            title->setName("TitleText");
-            title->setText("UI Example");
-            title->setPosition(200.0f, 50.0f);
-            title->setFontSize(32.0f);
-            
-            auto button = std::make_unique<UIButtonNode>();
-            button->setName("Button");
-            button->setPosition(200.0f, 150.0f);
-            button->setSize(200.0f, 60.0f);
-            
-            auto btnText = std::make_unique<UITextNode>();
-            btnText->setName("ButtonText");
-            btnText->setText("Click Me!");
-            btnText->setPosition(100.0f, 30.0f);
-            btnText->setPivot(0.5f, 0.5f);
-            
-            auto icon = std::make_unique<UIImageNode>();
-            icon->setName("Icon");
-            icon->setPosition(20.0f, 30.0f);
-            icon->setSize(40.0f, 40.0f);
-            icon->setPivot(0.5f, 0.5f);
-            
-            button->addChild(std::move(icon));
-            button->addChild(std::move(btnText));
-            canvas->addChild(std::move(title));
-            canvas->addChild(std::move(button));
-            
-            newNode = std::move(canvas);
-        } else if (editor->createType_ == CreateNodeType::WebCanvas) {
-            auto webCanvas = std::make_unique<WebCanvasNode>();
-            webCanvas->setName("WebCanvas");
-            if (editor->ctxResources_) {
-                webCanvas->init(editor->ctxResources_->device(), 1920, 1080, WebCanvasNode::Mode::ScreenSpace);
-            }
-            newNode = std::move(webCanvas);
-        } else if (editor->createType_ == CreateNodeType::SceneInstance && editor->ctxResources_ && editor->ctxProject_) {
+        if (editor->createType_ == CreateNodeType::SceneInstance && editor->ctxResources_ && editor->ctxProject_) {
             std::filesystem::path p(editor->draggedScenePath_);
             newNode = SceneSerializer::loadNodeFromSceneFile(editor->draggedScenePath_, *editor->ctxResources_);
             if (newNode) {
@@ -262,6 +313,8 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
                     s->setPrefabAssetId(id);
                 }
             }
+        } else {
+            newNode = makeNodeOfType(editor->createType_, defaultMesh, defaultMaterial, editor->ctxResources_, /*bodyWithCube=*/true);
         }
 
         if (newNode) {
@@ -273,14 +326,26 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
         editor->createType_ = CreateNodeType::None;
     }
 
-    if (editor->nodeToCreateParentFor_) {
+    if (editor->nodeToCreateParentFor_ && editor->createParentType_ != CreateNodeType::None) {
         if (editor->nodeToCreateParentFor_->parent()) {
-            auto newParent = std::make_unique<Node>("Node");
-            Node* rawParent = newParent.get();
-            editor->history_.execute(std::make_unique<CreateParentCommand>(editor->nodeToCreateParentFor_, std::move(newParent)));
-            editor->selectedNode_ = rawParent;
+            // A body wrapping an existing node gets only an Auto CollisionShape
+            // (no cube) — the wrapped node is the visual, and Auto measures it.
+            Mesh* defaultMesh = nullptr;
+            Material* defaultMaterial = nullptr;
+            if (scene) {
+                scene->traverse([&](Node& n, const glm::mat4&) {
+                    if (!defaultMesh && n.mesh()) { defaultMesh = n.mesh(); defaultMaterial = n.material(); }
+                });
+            }
+            auto newParent = makeNodeOfType(editor->createParentType_, defaultMesh, defaultMaterial, editor->ctxResources_, /*bodyWithCube=*/false);
+            if (newParent) {
+                Node* rawParent = newParent.get();
+                editor->history_.execute(std::make_unique<CreateParentCommand>(editor->nodeToCreateParentFor_, std::move(newParent)));
+                editor->selectedNode_ = rawParent;
+            }
         }
         editor->nodeToCreateParentFor_ = nullptr;
+        editor->createParentType_ = CreateNodeType::None;
     }
 
     ImGui::Dummy(ImGui::GetContentRegionAvail());
@@ -488,6 +553,30 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
                 editor->createType_ = CreateNodeType::UIExample;
             }
             ImGui::Separator();
+            if (ImGui::BeginMenu("Physics")) {
+                if (ImGui::MenuItem("Static Body")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::StaticBody;
+                }
+                if (ImGui::MenuItem("Rigid Body")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::RigidBody;
+                }
+                if (ImGui::MenuItem("Character Body")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::CharacterBody;
+                }
+                if (ImGui::MenuItem("Area (Trigger)")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::Area;
+                }
+                if (ImGui::MenuItem("Collision Shape")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::CollisionShape;
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("Web Canvas")) {
                 editor->nodeToCreateChildUnder_ = node;
                 editor->createType_ = CreateNodeType::WebCanvas;
@@ -496,8 +585,37 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
         }
 
         bool canCreateParent = node->parent() != nullptr;
-        if (ImGui::MenuItem("Create Parent", nullptr, false, canCreateParent)) {
-            editor->nodeToCreateParentFor_ = node;
+        if (canCreateParent && ImGui::BeginMenu("Create Parent")) {
+            // Same type list as Create Child; wraps this node under the new parent.
+            auto parentItem = [&](const char* lbl, CreateNodeType t) {
+                if (ImGui::MenuItem(lbl)) {
+                    editor->nodeToCreateParentFor_ = node;
+                    editor->createParentType_ = t;
+                }
+            };
+            parentItem("Node", CreateNodeType::Node);
+            parentItem("MeshNode (Cube)", CreateNodeType::MeshNode);
+            parentItem("Directional Light", CreateNodeType::DirectionalLight);
+            parentItem("Point Light", CreateNodeType::PointLight);
+            parentItem("Spot Light", CreateNodeType::SpotLight);
+            ImGui::Separator();
+            if (ImGui::BeginMenu("Physics##parent")) {
+                parentItem("Static Body", CreateNodeType::StaticBody);
+                parentItem("Rigid Body", CreateNodeType::RigidBody);
+                parentItem("Character Body", CreateNodeType::CharacterBody);
+                parentItem("Area (Trigger)", CreateNodeType::Area);
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("UI Nodes##parent")) {
+                parentItem("UI Canvas", CreateNodeType::UICanvas);
+                parentItem("Color Node", CreateNodeType::UIColorNode);
+                parentItem("Image Node", CreateNodeType::UIImageNode);
+                parentItem("Text Node", CreateNodeType::UITextNode);
+                parentItem("Button Node", CreateNodeType::UIButtonNode);
+                parentItem("Toggle Node", CreateNodeType::UIToggleNode);
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenu();
         }
 
         ImGui::Separator();

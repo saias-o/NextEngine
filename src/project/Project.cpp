@@ -121,6 +121,9 @@ bool Project::load(const std::string& neprojPath) {
             audioAliases_[aliasName] = value;
             AudioManager::get().setAlias(aliasName, value);
         }
+        else if (key.find("autoload_") == 0) {
+            autoloads_[key.substr(9)] = value;
+        }
     }
 
     if (loadedName.empty()) {
@@ -181,6 +184,10 @@ bool Project::save() const {
         file << "audio_alias_" << aliasName << "=" << aliasPath << "\n";
     }
 
+    for (const auto& [autoName, autoVal] : autoloads_) {
+        file << "autoload_" << autoName << "=" << autoVal << "\n";
+    }
+
     Log::info("Saved project '", name_, "' to ", filePath_);
     return true;
 }
@@ -193,6 +200,14 @@ void Project::setAudioAlias(const std::string& name, const std::string& path) {
 void Project::removeAudioAlias(const std::string& name) {
     audioAliases_.erase(name);
     AudioManager::get().removeAlias(name);
+}
+
+void Project::setAutoload(const std::string& name, const std::string& pathOrType) {
+    autoloads_[name] = pathOrType;
+}
+
+void Project::removeAutoload(const std::string& name) {
+    autoloads_.erase(name);
 }
 
 } // namespace ne

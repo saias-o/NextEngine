@@ -1,0 +1,273 @@
+#include "scene/SceneTree.hpp"
+
+#include "scene/Scene.hpp"
+#include "scene/SceneSerializer.hpp"
+#include "scene/BehaviourRegistry.hpp"
+#include "core/Time.hpp"
+#include "core/Log.hpp"
+
+#include <nlohmann/json.hpp>
+
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+
+namespace ne {
+
+SceneTree::SceneTree(ResourceManager& resources) : resources_(resources) {}
+SceneTree::~SceneTree() { unmountWorld(); }
+
+Scene* SceneTree::mountWorld(std::unique_ptr<Scene> startScene) {
+    world_ = std::make_unique<Scene>();
+    world_->setName("World");
+    world_->setTree(this);
+
+    if (startScene) loadCurrentScene(std::move(startScene));
+
+    startAutoloads();
+    return world_.get();
+}
+
+void SceneTree::unmountWorld() {
+    if (!world_) return;
+    clearAutoloads();
+    currentScene_ = nullptr;
+    currentScenePath_.clear();
+    pendingFree_.clear();
+    pendingChange_ = false;
+    quitRequested_ = false;
+    world_.reset();  // ~Scene clears children (and their physics bodies) while alive
+}
+
+Scene& SceneTree::currentScene() {
+    return currentScene_ ? *currentScene_ : *world_;
+}
+
+void SceneTree::loadCurrentScene(std::unique_ptr<Node> sceneNode) {
+    if (!world_ || !sceneNode) return;
+    if (currentScene_) world_->removeChild(currentScene_);
+
+    Node* raw = world_->addChild(std::move(sceneNode));
+    currentScene_ = dynamic_cast<Scene*>(raw);
+    applyLevelSettings(currentScene_ ? *currentScene_ : *world_);
+}
+
+void SceneTree::applyLevelSettings(Scene& level) {
+    // A level marked "change rendering at load" imposes its environment on the
+    // World; otherwise the World keeps the settings it already has.
+    if (&level != world_.get() && level.settings().changeRenderingAtLoad)
+        world_->settings() = level.settings();
+}
+
+std::string SceneTree::resolvePath(const std::string& path) const {
+    std::filesystem::path p(path);
+    if (p.is_absolute() || projectRoot_.empty()) return path;
+    return projectRoot_ + "/" + path;
+}
+
+Node* SceneTree::instantiate(const std::string& scenePath, Node* parent) {
+    // Cache the inner scene-node JSON (type forced to Scene) so repeated spawns
+    // re-deserialize from memory instead of re-reading the file.
+    auto it = sceneCache_.find(scenePath);
+    if (it == sceneCache_.end()) {
+        std::ifstream file(resolvePath(scenePath));
+        if (!file.is_open()) {
+            Log::warn("instantiate: cannot open '", scenePath, "'");
+            return nullptr;
+        }
+        try {
+            nlohmann::json doc = nlohmann::json::parse(file);
+            nlohmann::json node = doc.at("scene");
+            node["type"] = "Scene";
+            it = sceneCache_.emplace(scenePath, node.dump()).first;
+        } catch (const std::exception& e) {
+            Log::warn("instantiate: ", e.what());
+            return nullptr;
+        }
+    }
+
+    auto node = SceneSerializer::nodeFromJson(it->second, resources_);
+    if (!node) return nullptr;
+
+    Node* target = parent ? parent : (currentScene_ ? currentScene_ : world_.get());
+    if (!target) return nullptr;
+    return target->addChild(std::move(node));
+}
+
+void SceneTree::changeScene(const std::string& scenePath) {
+    pendingScenePath_ = scenePath;
+    pendingChange_ = true;
+}
+
+void SceneTree::reloadScene() {
+    if (!currentScenePath_.empty()) changeScene(currentScenePath_);
+}
+
+void SceneTree::requestFree(Node* node) {
+    if (node) pendingFree_.push_back(node);
+}
+
+void SceneTree::applyDeferred() {
+    if (!world_) return;
+
+    // 1) Honour queued frees (safe now that update is finished).
+    for (Node* n : pendingFree_) {
+        if (n && n->parent()) n->parent()->removeChild(n);
+    }
+    pendingFree_.clear();
+
+    // 2) Swap the gameplay sub-scene if requested (World + autoloads untouched).
+    if (pendingChange_) {
+        pendingChange_ = false;
+        if (auto sub = SceneSerializer::loadNodeFromSceneFile(resolvePath(pendingScenePath_), resources_)) {
+            currentScenePath_ = pendingScenePath_;
+            loadCurrentScene(std::move(sub));
+        } else {
+            Log::warn("changeScene: failed to load '", pendingScenePath_, "'");
+        }
+    }
+}
+
+void SceneTree::setPaused(bool paused) { Time::setScale(paused ? 0.0f : 1.0f); }
+bool SceneTree::paused() const { return Time::scale() == 0.0f; }
+
+// ── Timers / tweens ──────────────────────────────────────────────────────────
+
+TimerId SceneTree::addTimer(Timer t) {
+    t.id = ++nextTimerId_;
+    timers_.push_back(std::move(t));
+    return timers_.back().id;
+}
+
+TimerId SceneTree::after(Node* owner, float seconds, std::function<void()> fn) {
+    return addTimer({0, owner, Timer::After, 0.0f, seconds, Easing::Linear, std::move(fn), {}, false});
+}
+TimerId SceneTree::every(Node* owner, float interval, std::function<void()> fn) {
+    return addTimer({0, owner, Timer::Every, 0.0f, interval, Easing::Linear, std::move(fn), {}, false});
+}
+TimerId SceneTree::tween(Node* owner, float duration, Easing easing,
+                         std::function<void(float)> fn) {
+    return addTimer({0, owner, Timer::Tween, 0.0f, duration, easing, {}, std::move(fn), false});
+}
+
+void SceneTree::cancelTimer(TimerId id) {
+    for (auto& t : timers_)
+        if (t.id == id) { t.dead = true; return; }
+}
+
+void SceneTree::cancelTimersOwnedBy(Node* owner) {
+    for (auto& t : timers_)
+        if (t.owner == owner) t.dead = true;
+}
+
+void SceneTree::tickTimers(float dt) {
+    if (dt <= 0.0f) return;  // paused → timers freeze
+
+    // Iterate by index over the initial range: a callback may append timers (run
+    // next frame) or mark some dead, but won't shift earlier indices. Copy the
+    // callable before invoking, since push_back may reallocate the vector.
+    size_t n = timers_.size();
+    for (size_t i = 0; i < n; ++i) {
+        if (timers_[i].dead) continue;
+        timers_[i].time += dt;
+
+        if (timers_[i].kind == Timer::Tween) {
+            float raw = timers_[i].duration > 0.0f ? timers_[i].time / timers_[i].duration : 1.0f;
+            bool done = raw >= 1.0f;
+            float eased = applyEasing(timers_[i].easing, done ? 1.0f : raw);
+            auto fn = timers_[i].tweenFn;
+            if (done) timers_[i].dead = true;
+            if (fn) fn(eased);
+        } else if (timers_[i].time >= timers_[i].duration) {
+            auto fn = timers_[i].fn;
+            if (timers_[i].kind == Timer::After) timers_[i].dead = true;
+            else timers_[i].time -= timers_[i].duration;  // Every: re-arm
+            if (fn) fn();
+        }
+    }
+
+    timers_.erase(std::remove_if(timers_.begin(), timers_.end(),
+                                 [](const Timer& t) { return t.dead; }),
+                  timers_.end());
+}
+
+// ── Autoloads ────────────────────────────────────────────────────────────────
+
+void SceneTree::setAutoloadDef(const std::string& name, AutoloadFactory factory) {
+    for (auto& def : autoloadDefs_) {
+        if (def.name == name) {  // dedup: a re-registration replaces the old one
+            def.factory = std::move(factory);
+            return;
+        }
+    }
+    autoloadDefs_.push_back({name, std::move(factory)});
+}
+
+void SceneTree::registerAutoloadType(const std::string& name, const std::string& behaviourType) {
+    setAutoloadDef(name, [name, behaviourType] {
+        auto node = std::make_unique<Node>(name);
+        if (auto b = BehaviourRegistry::instance().create(behaviourType))
+            node->addBehaviour(std::move(b));
+        else
+            Log::warn("autoload '", name, "': unknown behaviour type '", behaviourType, "'");
+        return node;
+    });
+}
+
+void SceneTree::registerAutoloadScene(const std::string& name, const std::string& scenePath) {
+    setAutoloadDef(name, [this, name, scenePath] {
+        auto node = SceneSerializer::loadNodeFromSceneFile(scenePath, resources_);
+        if (node) node->setName(name);
+        else {
+            Log::warn("autoload '", name, "': failed to load scene '", scenePath, "'");
+            node = std::make_unique<Node>(name);
+        }
+        return node;
+    });
+}
+
+void SceneTree::startAutoloads() {
+    if (!world_) return;
+    for (const auto& def : autoloadDefs_) {
+        if (auto node = def.factory()) {
+            Node* raw = world_->addChild(std::move(node));
+            autoloadNodes_[def.name] = raw;
+        }
+    }
+}
+
+void SceneTree::clearAutoloads() {
+    autoloadNodes_.clear();  // nodes are owned by (and destroyed with) the World
+}
+
+Node* SceneTree::autoloadNode(const std::string& name) const {
+    auto it = autoloadNodes_.find(name);
+    return it != autoloadNodes_.end() ? it->second : nullptr;
+}
+
+// ── Groups ───────────────────────────────────────────────────────────────────
+
+namespace {
+void collectGroup(Node& n, const std::string& g, std::vector<Node*>& out) {
+    if (n.isInGroup(g)) out.push_back(&n);
+    for (const auto& c : n.children()) collectGroup(*c, g, out);
+}
+Node* firstInGroupRec(Node& n, const std::string& g) {
+    if (n.isInGroup(g)) return &n;
+    for (const auto& c : n.children())
+        if (Node* found = firstInGroupRec(*c, g)) return found;
+    return nullptr;
+}
+} // namespace
+
+const std::vector<Node*>& SceneTree::group(const std::string& name) {
+    groupBuffer_.clear();
+    if (world_) collectGroup(*world_, name, groupBuffer_);
+    return groupBuffer_;
+}
+
+Node* SceneTree::firstInGroup(const std::string& name) {
+    return world_ ? firstInGroupRec(*world_, name) : nullptr;
+}
+
+} // namespace ne

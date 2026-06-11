@@ -14,6 +14,7 @@ class VulkanDevice;
 class Swapchain;
 class ResourceManager;
 class Scene;
+class SceneTree;
 class ImGuiLayer;
 class Renderer;
 class Project;
@@ -42,8 +43,16 @@ public:
 
     void run();
 
+    void setSceneOverride(Scene* scene) { sceneOverride_ = scene; }
+
+    // Runtime/Play: wrap the current edit scene in the persistent World (hosting
+    // autoloads + the swappable gameplay sub-scene) and render that instead.
+    void mountWorld();
+    void unmountWorld();
+
     // Accessors for the application layer.
     Scene& scene() { return *scene_; }
+    SceneTree& sceneTree() { return *sceneTree_; }
     Camera& camera() { return camera_; }
     ResourceManager& resources() { return *resources_; }
     Project& project() { return *project_; }
@@ -58,12 +67,16 @@ private:
     UIInteractionSystem uiInteraction_;
 
     std::unique_ptr<Scene> scene_;
+    Scene* sceneOverride_ = nullptr;
+    std::unique_ptr<SceneTree> sceneTree_;
     std::unique_ptr<ImGuiLayer> imgui_;
     std::unique_ptr<Renderer> renderer_;
     std::unique_ptr<Project> project_;
 
     FrameFn onFrame_;
     Camera camera_;
+
+    std::string playSnapshot_;  // edit doc serialized at play start, to restore on stop
 };
 
 } // namespace ne

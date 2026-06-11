@@ -8,6 +8,8 @@
 // a view-DEPENDENT specular part (kept realtime, never baked).
 // See diffuseIrradiance() / specularRadiance() / accumulate().
 
+#include "ddgi_common.glsl"
+
 const float PI = 3.14159265359;
 const int MAX_LIGHTS = 16;
 const int MAX_SHADOWS = 4;
@@ -21,17 +23,135 @@ struct Light {
 };
 
 layout(set = 0, binding = 1) uniform LightingUBO {
-    vec4 ambient;       // rgb = ambient color
+    vec4 ambient;       // rgb = ambient color (fallback when GI disabled)
     vec4 cameraPos;     // xyz = camera world position
     vec4 shadowParams;  // x = softness
     ivec4 counts;       // x = light count, y = mode (0 realtime, 1 baked)
     Light lights[MAX_LIGHTS];
     mat4 shadowMatrices[MAX_SHADOWS];
+    // --- DDGI irradiance volume params (the single GI primitive) ---
+    vec4 giOrigin;      // xyz = volume min corner (world), w = enabled (0/1)
+    vec4 giSpacing;     // xyz = probe spacing (world units)
+    ivec4 giCounts;     // xyz = probe counts per axis, w = probesPerRow in atlas
+    ivec4 giAtlas;      // x = irradiance texels/probe, y = visibility texels/probe
 } lights;
 
 layout(set = 0, binding = 2) uniform sampler2DArrayShadow shadowMap;
 
+// DDGI atlases: one octahedral tile per probe, laid out in a 2D atlas. Irradiance
+// holds incident radiance (rgb), visibility holds (mean dist, mean dist^2) for the
+// Chebyshev occlusion test. Both are LINEAR + CLAMP sampled.
+layout(set = 0, binding = 4) uniform sampler2D giIrradiance;
+layout(set = 0, binding = 5) uniform sampler2D giVisibility;
+
+// Voxelized scene albedo (the GI ray-march source). Sampled here only for the
+// debug visualization; the DDGI update compute pass reads it directly.
+layout(set = 0, binding = 6) uniform sampler3D giVoxels;
+
+// World position -> [0,1] coordinate inside the voxel/probe volume box.
+vec3 giVolumeUVW(vec3 wp) {
+    vec3 extent = lights.giSpacing.xyz * vec3(lights.giCounts.xyz - 1);
+    return (wp - lights.giOrigin.xyz) / extent;
+}
+
 struct LightTerms { vec3 diffuse; vec3 specular; };
+
+// ---------------------------------------------------------------------------
+// Indirect diffuse — DDGI irradiance volume (the single GI primitive)
+//
+// The volume is sampled the SAME way whether it was updated this frame (realtime)
+// or frozen from a bake — that is the whole point of the unified design. Dynamic
+// objects simply sample it; they are never written into any lightmap.
+// ---------------------------------------------------------------------------
+
+int giProbeIndex(ivec3 c) {
+    return c.x + c.y * lights.giCounts.x + c.z * lights.giCounts.x * lights.giCounts.y;
+}
+
+// UV of a probe's octahedral tile for direction `dir`, in an atlas of `atlasSize`
+// pixels with `texels` interior texels/probe and a 1px border (gutter) per side.
+vec2 giProbeUV(int probeIndex, vec3 dir, int texels, vec2 atlasSize) {
+    int ppr = lights.giCounts.w;
+    ivec2 tile = ivec2(probeIndex % ppr, probeIndex / ppr);
+    vec2 oct = octEncode(dir) * 0.5 + 0.5;                       // [0,1]
+    vec2 px = vec2(tile * (texels + 2)) + 1.0 + oct * float(texels);
+    return px / atlasSize;
+}
+
+// Trilinearly interpolate the 8 probes around `wp`, with DDGI's directional
+// (back-face) and Chebyshev visibility weights to kill light leaking.
+vec3 sampleIrradianceVolume(vec3 wp, vec3 N, vec3 V) {
+    ivec3 counts  = lights.giCounts.xyz;
+    vec3  spacing = lights.giSpacing.xyz;
+
+    // Self-shadow bias (Majercik): offset the sample point off the surface along
+    // the normal AND toward the camera, so the probe Chebyshev test doesn't see
+    // the surface occluding itself — removes the dark "hatched" splotches and
+    // cleans up corners/contacts.
+    float maxSpacing = max(spacing.x, max(spacing.y, spacing.z));
+    wp += (N * 0.35 + V * 0.35) * maxSpacing;
+
+    vec3  gridF   = (wp - lights.giOrigin.xyz) / spacing;
+    ivec3 base    = ivec3(floor(gridF));
+    vec3  frac    = gridF - vec3(base);
+
+    vec2 irrAtlas = vec2(textureSize(giIrradiance, 0));
+    vec2 visAtlas = vec2(textureSize(giVisibility, 0));
+    int  irrT     = lights.giAtlas.x;
+    int  visT     = lights.giAtlas.y;
+
+    vec3  sumIrr = vec3(0.0);
+    float sumW   = 0.0;
+
+    for (int i = 0; i < 8; ++i) {
+        ivec3 off = ivec3(i & 1, (i >> 1) & 1, (i >> 2) & 1);
+        ivec3 c   = clamp(base + off, ivec3(0), counts - 1);
+        int   idx = giProbeIndex(c);
+
+        vec3  probePos = lights.giOrigin.xyz + vec3(c) * spacing;
+        vec3  toProbe  = probePos - wp;
+        float dist     = length(toProbe);
+        vec3  dir      = dist > 1e-5 ? toProbe / dist : N;
+
+        // 1. Trilinear weight.
+        vec3  tw   = mix(1.0 - frac, frac, vec3(off));
+        float wTri = tw.x * tw.y * tw.z;
+
+        // 2. Directional (back-face) weight — discard probes behind the surface.
+        float wDir = max(0.0001, dot(dir, N) * 0.5 + 0.5);
+        wDir *= wDir;
+
+        // 3. Chebyshev visibility — probability that wp is visible from the probe.
+        vec2  vis  = texture(giVisibility, giProbeUV(idx, -dir, visT, visAtlas)).rg;
+        float mean = vis.x;
+        float wVis = 1.0;
+        if (dist > mean) {
+            float variance = max(0.0, vis.y - mean * mean);
+            wVis = variance / (variance + (dist - mean) * (dist - mean));
+            wVis = max(0.0, wVis);
+            wVis = wVis * wVis;   // soften vs the paper's cube to limit dark over-occlusion on a noisy 16x16 visibility map
+        }
+
+        float w   = wTri * wDir * wVis + 1e-4;   // epsilon avoids all-zero weights
+        vec3  irr = texture(giIrradiance, giProbeUV(idx, N, irrT, irrAtlas)).rgb;
+        sumIrr += irr * w;
+        sumW   += w;
+    }
+    return sumIrr / max(sumW, 1e-4);
+}
+
+// Indirect diffuse contribution for a surface. Falls back to the flat ambient
+// constant when the volume is disabled (giOrigin.w == 0), so the engine still
+// renders without GI.
+vec3 giIndirectDiffuse(vec3 wp, vec3 N, vec3 V, vec3 albedo) {
+    if (lights.giOrigin.w < 0.5)
+        return lights.ambient.rgb * albedo;
+    // Probes store the cosine-weighted MEAN incident radiance, so the Lambertian
+    // diffuse response is albedo * meanRadiance (the pi cancels). giSpacing.w is a
+    // user intensity multiplier to make the indirect more visible. See the
+    // accumulation convention in ddgi_blend.comp.
+    return sampleIrradianceVolume(wp, N, V) * albedo * lights.giSpacing.w;
+}
 
 // ---------------------------------------------------------------------------
 // Shadow
@@ -171,7 +291,7 @@ LightTerms lightContribution(int i, vec3 N, vec3 V, vec3 wp,
 // For the bake path a dummy V is fine since diffuse is view-independent (F is
 // approximated with F0 at normal incidence, which is close enough for Lambertian).
 vec3 diffuseIrradiance(vec3 N, vec3 wp, vec3 albedo, float metallic, float roughness) {
-    vec3 sum = lights.ambient.rgb * albedo;
+    vec3 sum = giIndirectDiffuse(wp, N, N, albedo);
     // Use the surface normal as a stand-in view dir for the diffuse-only path.
     // The Fresnel term evaluated at NdotH≈1 yields ~F0, which is acceptable for
     // baking since specular highlights (which depend on the true V) are excluded.
@@ -188,10 +308,26 @@ vec3 specularRadiance(vec3 N, vec3 V, vec3 wp, vec3 albedo, float metallic, floa
     return sum;
 }
 
+// Direct lighting only (no indirect/ambient term) — diffuse + specular with
+// shadows. Used by baked surfaces, which take their indirect from the frozen
+// lightmap but keep direct lighting and shadows live (so dynamic objects still
+// cast moving shadows onto baked receivers).
+LightTerms directLighting(vec3 N, vec3 V, vec3 wp, vec3 albedo, float metallic, float roughness) {
+    LightTerms total;
+    total.diffuse = vec3(0.0);
+    total.specular = vec3(0.0);
+    for (int i = 0; i < lights.counts.x; ++i) {
+        LightTerms t = lightContribution(i, N, V, wp, albedo, metallic, roughness);
+        total.diffuse += t.diffuse;
+        total.specular += t.specular;
+    }
+    return total;
+}
+
 // Full realtime lighting in a single loop (diffuse incl. ambient, + specular).
 LightTerms accumulate(vec3 N, vec3 V, vec3 wp, vec3 albedo, float metallic, float roughness) {
     LightTerms total;
-    total.diffuse = lights.ambient.rgb * albedo;
+    total.diffuse = giIndirectDiffuse(wp, N, V, albedo);
     total.specular = vec3(0.0);
     for (int i = 0; i < lights.counts.x; ++i) {
         LightTerms t = lightContribution(i, N, V, wp, albedo, metallic, roughness);

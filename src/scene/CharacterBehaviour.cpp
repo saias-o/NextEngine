@@ -1,17 +1,16 @@
 #include "scene/CharacterBehaviour.hpp"
 #include "scene/Node.hpp"
+#include "physics/CharacterBodyNode.hpp"
 #include "core/Input.hpp"
+#include "core/Log.hpp"
 
 #include <imgui.h>
 #include <nlohmann/json.hpp>
-#include <iostream>
 
 namespace ne {
 
 void CharacterBehaviour::onReady() {
-    std::cout << "[Character] onReady called! Binding keys..." << std::endl;
-    // Note: GLFW KeyCodes are based on physical QWERTY positions.
-    // W, A, S, D on QWERTY match the physical positions of Z, Q, S, D on AZERTY.
+    // Default WASD/ZQSD bindings (GLFW key codes are physical QWERTY positions).
     Input::bindKey("MoveForward", KeyCode::W);
     Input::bindKey("MoveLeft", KeyCode::A);
     Input::bindKey("MoveBackward", KeyCode::S);
@@ -20,47 +19,40 @@ void CharacterBehaviour::onReady() {
 }
 
 void CharacterBehaviour::onUpdate(float dt) {
-    if (!node()) return;
-
-    // Read input vector
-    glm::vec2 move = Input::getVector("MoveLeft", "MoveRight", "MoveBackward", "MoveForward");
-    
-    if (glm::length(move) > 0.0f) {
-        std::cout << "[Character] move: " << move.x << ", " << move.y << std::endl;
-    }
-    
-    // Apply movement
-    glm::vec3 direction = glm::vec3(move.x, 0.0f, move.y);
-    if (glm::length(direction) > 0.01f) {
-        direction = glm::normalize(direction);
-    }
-    
-    node()->transform().position += direction * moveSpeed * dt;
-
-    // Fake physics (Jump)
-    if (isGrounded && Input::isActionJustPressed("Jump")) {
-        std::cout << "[Character] Jumped!" << std::endl;
-        velocityY = jumpForce;
-        isGrounded = false;
-    }
-
-    if (!isGrounded) {
-        velocityY -= gravity * dt;
-        node()->transform().position.y += velocityY * dt;
-
-        // Ground collision fake
-        if (node()->transform().position.y <= 0.0f) {
-            node()->transform().position.y = 0.0f;
-            velocityY = 0.0f;
-            isGrounded = true;
+    CharacterBodyNode* body = node() ? node()->asCharacterBody() : nullptr;
+    if (!body) {
+        if (!warned_) {
+            Log::warn("CharacterBehaviour must be on a CharacterBody node — ignored");
+            warned_ = true;
         }
+        return;
     }
+
+    // Logic only: read input → write velocity. The engine performs the slide in
+    // the physics step (no moveAndSlide to call or forget).
+    glm::vec2 in = Input::getVector("MoveLeft", "MoveRight", "MoveBackward", "MoveForward");
+    glm::vec3 v = body->velocity;
+    v.x = in.x * moveSpeed;
+    v.z = -in.y * moveSpeed;  // forward = -Z
+
+    if (body->isOnFloor()) {
+        v.y = 0.0f;
+        if (Input::isActionJustPressed("Jump")) v.y = jumpForce;
+    } else {
+        v.y -= gravity * dt;  // gravity while airborne
+    }
+
+    body->velocity = v;
 }
 
 void CharacterBehaviour::onDrawInspector() {
     ImGui::DragFloat("Move Speed", &moveSpeed, 0.1f, 0.1f, 50.0f);
     ImGui::DragFloat("Jump Force", &jumpForce, 0.1f, 0.1f, 50.0f);
     ImGui::DragFloat("Gravity", &gravity, 0.1f, 0.1f, 50.0f);
+    if (CharacterBodyNode* body = node() ? node()->asCharacterBody() : nullptr)
+        ImGui::TextDisabled("On floor: %s", body->isOnFloor() ? "yes" : "no");
+    else
+        ImGui::TextDisabled("(attach to a CharacterBody node)");
 }
 
 void CharacterBehaviour::save(nlohmann::json& j) const {

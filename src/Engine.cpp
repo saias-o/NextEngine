@@ -11,10 +11,17 @@
 #include "project/Project.hpp"
 #include "render/Renderer.hpp"
 #include "scene/Scene.hpp"
+#include "scene/SceneTree.hpp"
+#include "scene/SceneSerializer.hpp"
 #include "scene/BehaviourRegistry.hpp"
 #include "scene/NodeRegistry.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/LightNode.hpp"
+#include "physics/CollisionShapeNode.hpp"
+#include "physics/StaticBodyNode.hpp"
+#include "physics/RigidBodyNode.hpp"
+#include "physics/AreaNode.hpp"
+#include "physics/CharacterBodyNode.hpp"
 #include "scene/WebCanvasNode.hpp"
 #include "scene/UINode.hpp"
 #include "scene/UICanvasNode.hpp"
@@ -27,10 +34,12 @@
 #include "audio/AudioManager.hpp"
 #include "audio/AudioSourceBehaviour.hpp"
 #include "scene/CharacterBehaviour.hpp"
+#include "scene/SpawnerBehaviour.hpp"
 #include "ui/WebEngine.hpp"
 
 #include <thread>
 #include <chrono>
+#include <filesystem>
 
 namespace ne {
 
@@ -48,6 +57,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
 
     scene_ = std::make_unique<Scene>();
     project_ = std::make_unique<Project>();
+    sceneTree_ = std::make_unique<SceneTree>(*resources_);
 
     resources_->setRegistry(&project_->assetRegistry());
 
@@ -63,6 +73,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     // Register built-in behaviours
     BehaviourRegistry::instance().registerType<AudioSourceBehaviour>("AudioSource");
     BehaviourRegistry::instance().registerType<CharacterBehaviour>("Character");
+    BehaviourRegistry::instance().registerType<SpawnerBehaviour>("Spawner");
 
     // Register built-in nodes
     NodeRegistry::instance().registerType<Node>("Node");
@@ -78,6 +89,11 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     NodeRegistry::instance().registerType<UIInteractableNode>("UIInteractableNode");
     NodeRegistry::instance().registerType<UIButtonNode>("UIButtonNode");
     NodeRegistry::instance().registerType<UIToggleNode>("UIToggleNode");
+    NodeRegistry::instance().registerType<CollisionShapeNode>("CollisionShape");
+    NodeRegistry::instance().registerType<StaticBodyNode>("StaticBody");
+    NodeRegistry::instance().registerType<RigidBodyNode>("RigidBody");
+    NodeRegistry::instance().registerType<AreaNode>("Area");
+    NodeRegistry::instance().registerType<CharacterBodyNode>("CharacterBody");
     if (project_->isLoaded()) {
         AudioManager::get().setProjectRoot(project_->rootPath());
         AudioManager::get().setDefaultSettings(project_->defaultAudioSettings());
@@ -96,11 +112,52 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
 }
 
 Engine::~Engine() {
+    unmountWorld();  // tear down the World (and its physics) before subsystems
     AudioManager::get().shutdown();
     vkDeviceWaitIdle(device_->device());
     // Subsystems are torn down by their unique_ptr destructors, in reverse
     // declaration order, while device_ is still alive (renderer_ before imgui_,
     // swapchain_ and device_).
+}
+
+void Engine::mountWorld() {
+    sceneTree_->setProjectRoot(project_->rootPath());  // resolve relative .scene paths
+
+    // Register the project's data-driven autoloads (idempotent: dedup by name).
+    // A value ending in ".scene" is a prefab path; otherwise a behaviour type.
+    for (const auto& [name, value] : project_->autoloads()) {
+        bool isScene = value.size() > 6 && value.compare(value.size() - 6, 6, ".scene") == 0;
+        if (isScene) {
+            std::filesystem::path p(value);
+            std::string path = p.is_absolute() ? value : (project_->rootPath() + "/" + value);
+            sceneTree_->registerAutoloadScene(name, path);
+        } else {
+            sceneTree_->registerAutoloadType(name, value);
+        }
+    }
+
+    // Keep a snapshot to restore the edit doc on Stop, then MOVE the live scene
+    // into the World as the current sub-scene — moving (not copying) means a
+    // single set of live resources (no duplicate Ultralight views, audio, etc.).
+    playSnapshot_ = SceneSerializer::nodeToJson(*scene_, *resources_);
+    std::unique_ptr<Scene> live = std::move(scene_);
+    scene_ = std::make_unique<Scene>();  // placeholder while the doc is "in play"
+
+    Scene* world = sceneTree_->mountWorld(std::move(live));
+    setSceneOverride(world);
+}
+
+void Engine::unmountWorld() {
+    if (!sceneTree_->mounted()) return;
+    setSceneOverride(nullptr);
+    sceneTree_->unmountWorld();  // destroys the World (and the moved/loaded sub-scene)
+
+    // Rebuild the edit document from the snapshot taken at play start.
+    if (!playSnapshot_.empty()) {
+        if (auto restored = SceneSerializer::nodeFromJson(playSnapshot_, *resources_))
+            scene_.reset(static_cast<Scene*>(restored.release()));
+        playSnapshot_.clear();
+    }
 }
 
 void Engine::run() {
@@ -138,7 +195,9 @@ void Engine::run() {
         bool isLeftReleased = !isLeftDown && wasLeftDown;
         wasLeftDown = isLeftDown;
 
-        if (uiInteraction_.update(*scene_, Input::mousePosition(), isLeftDown, isLeftPressed, isLeftReleased)) {
+        Scene* activeScene = sceneOverride_ ? sceneOverride_ : scene_.get();
+
+        if (uiInteraction_.update(*activeScene, Input::mousePosition(), isLeftDown, isLeftPressed, isLeftReleased)) {
             Input::consumeMouse();
         }
 
@@ -146,11 +205,21 @@ void Engine::run() {
         if (onFrame_)
             onFrame_(realDt);              // application: its input + UI
         WebEngine::get().update();         // met à jour Ultralight et ses bitmaps CPU
-        scene_->update(Time::delta());     // behaviours: scaled time (pausable)
+        activeScene->update(Time::delta());     // behaviours: scaled time (pausable)
+
+        // Apply deferred gameplay ops (queueFree, changeScene) once behaviours are
+        // done — never mutate the tree mid-update. The World object identity is
+        // stable across scene swaps, so sceneOverride_ stays valid.
+        if (sceneTree_->mounted()) {
+            sceneTree_->applyDeferred();
+            sceneTree_->tickTimers(Time::delta());  // scaled dt → frozen on pause
+            if (sceneTree_->quitRequested()) window_->close();
+        }
+
         AudioManager::get().update();      // update audio spatialization
         imgui_->endFrame();  // finalize draw data even if the frame is skipped (resize)
 
-        renderer_->drawFrame(*scene_, camera_, project_.get());
+        renderer_->drawFrame(*activeScene, camera_, project_.get());
     }
     vkDeviceWaitIdle(device_->device());
 }

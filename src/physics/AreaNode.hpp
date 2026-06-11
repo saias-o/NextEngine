@@ -1,0 +1,41 @@
+#pragma once
+
+#include "physics/CollisionObjectNode.hpp"
+#include "core/Signal.hpp"
+
+#include <vector>
+
+namespace ne {
+
+// A trigger volume (Godot Area3D): a sensor body that detects overlaps without
+// generating collision response. Static by default (a fixed trigger zone).
+class AreaNode : public CollisionObjectNode {
+public:
+    AreaNode() : CollisionObjectNode("Area") {}
+
+    const char* typeName() const override { return "Area"; }
+    BodyMotion motion() const override { return moving ? BodyMotion::Kinematic : BodyMotion::Static; }
+    bool isSensor() const override { return true; }
+
+    void serialize(nlohmann::json& j, ResourceManager& resources) const override;
+    void deserialize(const nlohmann::json& j, ResourceManager& resources) override;
+
+    // Set true for a trigger that is moved around by code (e.g. attached to a character).
+    bool moving = false;
+
+    // Bodies currently inside the trigger (updated by the Scene after each step).
+    const std::vector<CollisionObjectNode*>& overlapping() const { return overlapping_; }
+
+    // Fired on the main thread when a body enters/leaves the trigger. Listen with
+    // `behaviour->listen(area->bodyEntered, [](CollisionObjectNode* who){ ... })`.
+    Signal<CollisionObjectNode*> bodyEntered;
+    Signal<CollisionObjectNode*> bodyExited;
+
+    // Called by the Scene's trigger dispatch; keeps `overlapping_` in sync.
+    void handleOverlap(CollisionObjectNode* other, bool entered);
+
+private:
+    std::vector<CollisionObjectNode*> overlapping_;
+};
+
+} // namespace ne

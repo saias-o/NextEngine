@@ -3,174 +3,6 @@
     "behaviours": [],
     "children": [
       {
-        "baseColor": [
-          0.800000011920929,
-          0.800000011920929,
-          0.8500000238418579,
-          1.0
-        ],
-        "behaviours": [],
-        "castShadows": false,
-        "children": [],
-        "enabled": true,
-        "includeInLightBaking": true,
-        "mesh": 1,
-        "meshEnabled": true,
-        "name": "ground",
-        "texture": 11906147407999800251,
-        "transform": {
-          "position": [
-            0.0,
-            -2.5,
-            0.0
-          ],
-          "rotation": [
-            0.0,
-            0.0,
-            0.0,
-            1.0
-          ],
-          "scale": [
-            20.0,
-            0.20000000298023224,
-            20.0
-          ]
-        },
-        "type": "MeshNode"
-      },
-      {
-        "baseColor": [
-          1.0,
-          1.0,
-          1.0,
-          1.0
-        ],
-        "behaviours": [
-          {
-            "axis": [
-              0.0,
-              1.0,
-              0.0
-            ],
-            "enabled": true,
-            "speed": 40.0,
-            "type": "Rotator"
-          }
-        ],
-        "castShadows": true,
-        "children": [
-          {
-            "baseColor": [
-              1.0,
-              0.550000011920929,
-              0.4000000059604645,
-              1.0
-            ],
-            "behaviours": [
-              {
-                "axis": [
-                  0.0,
-                  1.0,
-                  0.0
-                ],
-                "enabled": true,
-                "speed": 90.0,
-                "type": "Rotator"
-              }
-            ],
-            "castShadows": true,
-            "children": [
-              {
-                "baseColor": [
-                  0.44999998807907104,
-                  0.699999988079071,
-                  1.0,
-                  1.0
-                ],
-                "behaviours": [],
-                "castShadows": true,
-                "children": [],
-                "enabled": true,
-                "includeInLightBaking": false,
-                "mesh": 1,
-                "meshEnabled": true,
-                "name": "sub-moon",
-                "texture": 11906147407999800251,
-                "transform": {
-                  "position": [
-                    2.0,
-                    0.0,
-                    0.0
-                  ],
-                  "rotation": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0
-                  ],
-                  "scale": [
-                    0.5,
-                    0.5,
-                    0.5
-                  ]
-                },
-                "type": "MeshNode"
-              }
-            ],
-            "enabled": true,
-            "includeInLightBaking": false,
-            "mesh": 1,
-            "meshEnabled": true,
-            "name": "moon",
-            "texture": 11906147407999800251,
-            "transform": {
-              "position": [
-                2.0,
-                0.0,
-                0.0
-              ],
-              "rotation": [
-                -0.0,
-                -0.5986999273300171,
-                -0.0,
-                0.8009734153747559
-              ],
-              "scale": [
-                0.44999998807907104,
-                0.44999998807907104,
-                0.44999998807907104
-              ]
-            },
-            "type": "MeshNode"
-          }
-        ],
-        "enabled": true,
-        "includeInLightBaking": false,
-        "mesh": 1,
-        "meshEnabled": true,
-        "name": "planet",
-        "texture": 11906147407999800251,
-        "transform": {
-          "position": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "rotation": [
-            0.0,
-            0.5926513671875,
-            0.0,
-            -0.8054590821266174
-          ],
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        },
-        "type": "MeshNode"
-      },
-      {
         "behaviours": [
           {
             "enabled": true,
@@ -349,8 +181,8 @@
         "name": "light-pivot",
         "transform": {
           "position": [
-            0.0,
-            0.0,
+            2.8192155361175537,
+            2.02602219581604,
             0.0
           ],
           "rotation": [
@@ -368,31 +200,31 @@
         "type": "Node"
       },
       {
+        "bakeMode": 0,
         "behaviours": [],
+        "castShadows": true,
+        "children": [],
+        "color": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "direction": [
+          0.0,
+          -1.0,
+          0.0
+        ],
         "enabled": true,
-        "name": "port (Scene)",
-        "prefabAssetId": 17529559623320602914,
-        "settings": {
-          "ambient": [
-            0.10000000149011612,
-            0.10000000149011612,
-            0.10000000149011612
-          ],
-          "clearColor": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "lightingMode": 0,
-          "postProcessing": true,
-          "skyboxExposure": 1.0,
-          "skyboxRotation": 0.0,
-          "skyboxTexture": 0
-        },
+        "intensity": 1.0,
+        "lightType": 2,
+        "name": "Spot Light",
+        "range": 10.0,
+        "spotInnerAngle": 25.0,
+        "spotOuterAngle": 35.0,
         "transform": {
           "position": [
-            0.0,
-            0.0,
+            -1.2507539987564087,
+            2.8508729934692383,
             0.0
           ],
           "rotation": [
@@ -407,7 +239,254 @@
             1.0
           ]
         },
-        "type": "Scene"
+        "type": "LightNode"
+      },
+      {
+        "baseColor": [
+          0.05327868461608887,
+          0.05327868461608887,
+          0.05327868461608887,
+          1.0
+        ],
+        "behaviours": [],
+        "castShadows": false,
+        "children": [],
+        "enabled": true,
+        "includeInLightBaking": true,
+        "mesh": 1,
+        "meshEnabled": true,
+        "name": "ground",
+        "texture": 11906147407999800251,
+        "transform": {
+          "position": [
+            -8.42434024810791,
+            -2.5,
+            -5.988160610198975
+          ],
+          "rotation": [
+            0.03610243648290634,
+            -0.01792777329683304,
+            -0.7332112193107605,
+            0.6788053512573242
+          ],
+          "scale": [
+            20.0,
+            0.20000000298023224,
+            20.0
+          ]
+        },
+        "type": "MeshNode"
+      },
+      {
+        "behaviours": [],
+        "children": [
+          {
+            "axis": 1,
+            "behaviours": [],
+            "children": [],
+            "enabled": true,
+            "halfExtents": [
+              0.5,
+              0.5,
+              0.5
+            ],
+            "height": 1.0,
+            "name": "CollisionShape",
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "radius": 0.5,
+            "shapeType": 1,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "type": "CollisionShape"
+          },
+          {
+            "baseColor": [
+              0.05327868461608887,
+              0.05327868461608887,
+              0.05327868461608887,
+              1.0
+            ],
+            "behaviours": [],
+            "castShadows": false,
+            "children": [],
+            "enabled": true,
+            "includeInLightBaking": true,
+            "mesh": 1,
+            "meshEnabled": true,
+            "name": "ground",
+            "texture": 11906147407999800251,
+            "transform": {
+              "position": [
+                0.4469156265258789,
+                -5.112173080444336,
+                -5.988160610198975
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                20.0,
+                0.20000000298023224,
+                20.0
+              ]
+            },
+            "type": "MeshNode"
+          }
+        ],
+        "enabled": true,
+        "friction": 0.5,
+        "name": "StaticBody",
+        "restitution": 0.0,
+        "transform": {
+          "position": [
+            -0.32194843888282776,
+            2.562580108642578,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "type": "StaticBody"
+      },
+      {
+        "angularDamping": 0.05000000074505806,
+        "behaviours": [],
+        "children": [
+          {
+            "baseColor": [
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "behaviours": [],
+            "castShadows": true,
+            "children": [],
+            "enabled": true,
+            "includeInLightBaking": false,
+            "mesh": 4611686018427387904,
+            "meshEnabled": true,
+            "name": "Mesh",
+            "texture": 9223372036854775808,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "type": "MeshNode"
+          },
+          {
+            "axis": 1,
+            "behaviours": [],
+            "children": [],
+            "enabled": true,
+            "halfExtents": [
+              0.5,
+              0.5,
+              0.5
+            ],
+            "height": 1.0,
+            "name": "CollisionShape",
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "radius": 0.5,
+            "shapeType": 0,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "type": "CollisionShape"
+          }
+        ],
+        "enabled": true,
+        "friction": 0.5,
+        "gravityFactor": 1.0,
+        "kinematic": false,
+        "linearDamping": 0.05000000074505806,
+        "mass": 1.0,
+        "name": "RigidBody",
+        "restitution": 0.0,
+        "transform": {
+          "position": [
+            0.0,
+            2.865119457244873,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "type": "RigidBody"
       }
     ],
     "enabled": true,
@@ -423,6 +502,8 @@
         0.0,
         0.0
       ],
+      "giEnabled": true,
+      "giIntensity": 1.0,
       "lightingMode": 0,
       "postProcessing": true,
       "skyboxExposure": 1.0,

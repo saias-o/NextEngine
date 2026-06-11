@@ -21,6 +21,7 @@ class SceneHierarchyPanel;
 class InspectorPanel;
 class FileBrowserPanel;
 class ViewportPanel;
+class ModelImporterPanel;
 
 // The full editor interface (Godot/Unity-style). Draws a dockable layout:
 // main menu bar, scene tree (left), inspector (right), file browser (bottom),
@@ -35,9 +36,10 @@ class EditorUI {
     friend class InspectorPanel;
     friend class FileBrowserPanel;
     friend class ViewportPanel;
+    friend class ModelImporterPanel;
 public:
     EditorUI();
-    ~EditorUI() = default;
+    ~EditorUI();  // defined in .cpp where Scene is complete (previewScene_ unique_ptr)
 
     // Draw the full editor UI. Call between ImGui::NewFrame() and
     // ImGui::Render(), before endFrame().
@@ -57,6 +59,12 @@ public:
                my >= viewportPos_.y && my <= viewportPos_.y + viewportSize_.y;
     }
 
+    void openModelImporter(const std::string& path, ResourceManager* resources);
+    void closeModelImporter();
+
+    bool isPreviewMode() const { return isPreviewMode_; }
+    Scene* previewScene() const { return previewScene_.get(); }
+
 private:
     // Scene update: serialization, clipboard and undo/redo.
     void saveScene(Scene* scene, ResourceManager* resources, const std::string& path);
@@ -72,6 +80,10 @@ private:
     void performRaycastSelection(Scene* scene, const glm::vec3& rayOrigin, const glm::vec3& rayDir);
     void renderGizmoRotationRings(ImDrawList* drawList, Camera* camera, const glm::mat4& viewProj, int hoveredAxis);
     void renderGizmoTranslateScale(ImDrawList* drawList, int hoveredAxis);
+
+    // Draws collision-shape wireframes (box/sphere/capsule) over the viewport.
+    void drawColliderGizmos(Camera* camera, Scene* scene);
+    bool showColliders_ = true;
     
     void drawAboutWindow();
     void drawBuildWindow(Project* project);
@@ -86,6 +98,7 @@ private:
     bool showInspector_   = true;
     bool showFileBrowser_ = true;
     bool showViewportOverlay_ = true;
+    bool showModelImporter_ = false;
 
     // Selection
     Node* selectedNode_ = nullptr;
@@ -128,6 +141,7 @@ private:
     Node* nodeToCreateChildUnder_ = nullptr;
     Node* nodeToCreateParentFor_ = nullptr;
     CreateNodeType createType_ = CreateNodeType::None;
+    CreateNodeType createParentType_ = CreateNodeType::None;
     std::string draggedScenePath_;
 
     Node* nodeToReparent_ = nullptr;
@@ -175,6 +189,11 @@ private:
     ResourceManager* ctxResources_ = nullptr;  // set each frame in draw()
     Project* ctxProject_ = nullptr;            // set each frame in draw()
     ImGuiTextureCache texCache_;     // cache for ImGui texture IDs
+
+    // Importer State
+    bool isPreviewMode_ = false;
+    std::string previewModelPath_;
+    std::unique_ptr<Scene> previewScene_;
 };
 
 } // namespace ne

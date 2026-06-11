@@ -1,6 +1,7 @@
 #include "scene/Node.hpp"
 #include "scene/Behaviour.hpp"
 #include "scene/BehaviourRegistry.hpp"
+#include "scene/SceneTree.hpp"
 #include "scene/SerializationHelpers.hpp"
 #include "audio/AudioManager.hpp"
 #include "core/Log.hpp"
@@ -9,6 +10,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>  // GLM_FORCE_* set globally by CMake
 
+#include <algorithm>
 #include <utility>
 
 namespace ne {
@@ -25,6 +27,11 @@ glm::mat4 Transform::matrix() const {
 Node::Node(std::string name) : name_(std::move(name)) {}
 
 Node::~Node() {
+    // Notify behaviours that ran, then cancel this node's timers — while the node
+    // (and its parent chain, so tree()) is still valid.
+    for (auto& b : behaviours_)
+        if (b->ready_) b->onDestroy();
+    if (SceneTree* t = tree()) t->cancelTimersOwnedBy(this);
     AudioManager::get().stopAllOnNode(this);
 }
 
@@ -104,6 +111,29 @@ bool Node::isActiveInHierarchy() const {
     if (!enabled_) return false;
     if (parent_) return parent_->isActiveInHierarchy();
     return true;
+}
+
+SceneTree* Node::tree() const {
+    const Node* root = this;
+    while (root->parent_) root = root->parent_;
+    return root->ownTree();
+}
+
+void Node::queueFree() {
+    if (SceneTree* t = tree()) t->requestFree(this);
+}
+
+void Node::addToGroup(const std::string& group) {
+    if (std::find(groups_.begin(), groups_.end(), group) == groups_.end())
+        groups_.push_back(group);
+}
+
+void Node::removeFromGroup(const std::string& group) {
+    groups_.erase(std::remove(groups_.begin(), groups_.end(), group), groups_.end());
+}
+
+bool Node::isInGroup(const std::string& group) const {
+    return std::find(groups_.begin(), groups_.end(), group) != groups_.end();
 }
 
 void Node::updateTree(float dt) {

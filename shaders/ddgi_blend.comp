@@ -1,0 +1,80 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+// DDGI probe blending (P2). One thread per interior octahedral texel. Accumulates
+// the traced rays into the texel's direction and temporally blends with the
+// previous frame (hysteresis). mode 0 = irradiance, mode 1 = visibility.
+//
+// Conventions match RTXGI ProbeBlendingCS: irradiance weight = max(0, dot);
+// distance weight = pow(max(0,dot), exponent). Irradiance is normalized to the
+// cosine-weighted MEAN radiance (diffuse = albedo * value; see giIndirectDiffuse).
+
+#include "lighting.glsl"   // octDecode + lights.giAtlas/giCounts
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+struct Ray { vec4 dirDist; vec4 radiance; };
+layout(std430, set = 1, binding = 0) readonly buffer RaysBuffer { Ray rays[]; };
+layout(set = 1, binding = 1, rgba16f) uniform image2D writeIrr;
+layout(set = 1, binding = 2, rg16f)   uniform image2D writeVis;
+layout(set = 1, binding = 3, rgba16f) uniform readonly image2D prevIrr;
+layout(set = 1, binding = 4, rg16f)   uniform readonly image2D prevVis;
+
+layout(push_constant) uniform Push {
+    int mode;          // 0 = irradiance, 1 = visibility
+    int raysPerProbe;
+    int probeCount;
+    float hysteresis;
+    float distExponent;
+} pc;
+
+void main() {
+    ivec2 px = ivec2(gl_GlobalInvocationID.xy);
+    int texels = (pc.mode == 0) ? lights.giAtlas.x : lights.giAtlas.y;
+    int T   = texels + 2;
+    int ppr = lights.giCounts.w;
+
+    ivec2 tile  = px / T;
+    ivec2 local = px - tile * T;
+    if (local.x == 0 || local.y == 0 || local.x == T - 1 || local.y == T - 1)
+        return;  // border texels handled by ddgi_borders.comp
+
+    int probe = tile.y * ppr + tile.x;
+    if (probe >= pc.probeCount) return;
+
+    ivec2 interior = local - 1;                              // [0, texels-1]
+    vec2  oct = (vec2(interior) + 0.5) / float(texels) * 2.0 - 1.0;
+    vec3  texelDir = octDecode(oct);
+
+    int base = probe * pc.raysPerProbe;
+
+    if (pc.mode == 0) {
+        vec3  sum = vec3(0.0);
+        float sumW = 0.0;
+        for (int r = 0; r < pc.raysPerProbe; ++r) {
+            Ray ray = rays[base + r];
+            float w = max(0.0, dot(texelDir, ray.dirDist.xyz));
+            sum  += ray.radiance.rgb * w;
+            sumW += w;
+        }
+        vec3 result  = sum / max(sumW, 1e-4);
+        vec3 prev    = imageLoad(prevIrr, px).rgb;
+        vec3 blended = mix(result, prev, pc.hysteresis);     // old + (1-h)(new-old)
+        imageStore(writeIrr, px, vec4(blended, 1.0));
+    } else {
+        float sumD = 0.0, sumD2 = 0.0, sumW = 0.0;
+        for (int r = 0; r < pc.raysPerProbe; ++r) {
+            Ray ray = rays[base + r];
+            float w = pow(max(0.0, dot(texelDir, ray.dirDist.xyz)), pc.distExponent);
+            float d = ray.dirDist.w;
+            sumD  += d * w;
+            sumD2 += d * d * w;
+            sumW  += w;
+        }
+        float invW   = 1.0 / max(sumW, 1e-4);
+        vec2  result = vec2(sumD * invW, sumD2 * invW);
+        vec2  prev   = imageLoad(prevVis, px).rg;
+        vec2  blended = mix(result, prev, pc.hysteresis);
+        imageStore(writeVis, px, vec4(blended, 0.0, 0.0));
+    }
+}

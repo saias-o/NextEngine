@@ -17,7 +17,12 @@ enum class CreateNodeType {
     UIButtonNode,
     UIToggleNode,
     UIExample,
-    WebCanvas
+    WebCanvas,
+    StaticBody,
+    RigidBody,
+    CharacterBody,
+    Area,
+    CollisionShape
 };
 
 enum class GizmoMode {

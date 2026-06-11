@@ -18,7 +18,10 @@ namespace ne {
 class Mesh;
 class Material;
 class LightNode;
+class CollisionObjectNode;
+class CharacterBodyNode;
 class ResourceManager;
+class SceneTree;
 
 // Local transform: translation, rotation (quaternion) and scale.
 struct Transform {
@@ -87,6 +90,17 @@ public:
 
     const glm::mat4& worldTransform() const { return worldTransform_; }
 
+    // The runtime SceneTree (set only on the persistent World root). Walks to the
+    // root and reads it; returns nullptr when the node isn't under a live tree
+    // (e.g. in the editor at rest). Behaviours use it for changeScene/autoloads/groups.
+    SceneTree* tree() const;
+
+    // Request safe removal of this node at end of frame (never destroy mid-update).
+    void queueFree();
+
+    // Overridden by the World Scene to expose its tree; default none.
+    virtual SceneTree* ownTree() const { return nullptr; }
+
     Transform& transform() { return transform_; }
     const Transform& transform() const { return transform_; }
     glm::mat4 localMatrix() const { return transform_.matrix(); }
@@ -116,6 +130,8 @@ public:
     virtual Material* material() const { return nullptr; }
     virtual LightNode* asLight() { return nullptr; }
     virtual const LightNode* asLightConst() const { return nullptr; }
+    virtual CollisionObjectNode* asCollisionObject() { return nullptr; }
+    virtual CharacterBodyNode* asCharacterBody() { return nullptr; }
 
     virtual const char* typeName() const { return "Node"; }
     virtual void serialize(nlohmann::json& j, ResourceManager& resources) const;
@@ -136,13 +152,51 @@ public:
         return nullptr;
     }
 
+    // Return a behaviour of type T, adding one if absent (cf. Unity RequireComponent).
+    // Declares a behaviour's dependency on a sibling explicitly. Call in onReady().
+    template<typename T>
+    T* requireBehaviour() {
+        if (T* b = getBehaviour<T>()) return b;
+        return addBehaviour<T>();
+    }
+
+    // Scoped queries — DESCENDANTS only ("call down"). The clean alternative to a
+    // global find-by-name (which intentionally does not exist).
+    template<typename T>
+    T* findBehaviourInChildren() const {
+        for (const auto& c : children_) {
+            if (T* b = c->getBehaviour<T>()) return b;
+            if (T* b = c->findBehaviourInChildren<T>()) return b;
+        }
+        return nullptr;
+    }
+    template<typename T>
+    T* getChildNode() const {
+        for (const auto& c : children_)
+            if (T* n = dynamic_cast<T*>(c.get())) return n;
+        return nullptr;
+    }
+
+    // Groups (tags) — opt-in membership used by SceneTree::group()/firstInGroup()
+    // to locate nodes (e.g. the player) without coupling by name.
+    void addToGroup(const std::string& group);
+    void removeFromGroup(const std::string& group);
+    bool isInGroup(const std::string& group) const;
+    const std::vector<std::string>& groups() const { return groups_; }
+
+    // Optional metadata: path to the file this node was imported from (e.g. .glb)
+    const std::string& importedFromPath() const { return importedFromPath_; }
+    void setImportedFromPath(const std::string& path) { importedFromPath_ = path; }
+
 protected:
     std::string name_;
+    std::string importedFromPath_;
     bool enabled_ = true;
     Transform transform_;
     Node* parent_ = nullptr;
     std::vector<std::unique_ptr<Node>> children_;
     std::vector<std::unique_ptr<Behaviour>> behaviours_;
+    std::vector<std::string> groups_;
 
     glm::mat4 worldTransform_{1.0f};
     glm::mat4 lastLocalMatrix_{0.0f};

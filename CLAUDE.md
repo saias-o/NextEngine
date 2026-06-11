@@ -188,6 +188,48 @@ assets/textures/             Textures (checker.png généré, LFS).
   (sampler + params UBO, possédé par `Material`). La matrice `model` par objet
   passe en **push constant**. Bind set 0 une fois/frame, set 1 par nœud.
 
+## Comment coder un jeu (contrat — règles dures)
+
+> Ce contrat s'applique à **tout** code de gameplay (humain ou IA). Il existe pour
+> qu'un jeu ambitieux ne dégénère pas en god-classes + events ingérables. Spec
+> d'API détaillée + exemple complet menu→niveau→game-over dans
+> [ARCHITECTURE_JEU.md](ARCHITECTURE_JEU.md). **Un seul paradigme : nœuds +
+> behaviours + signaux.**
+
+**Les 5 règles :**
+1. **Toute logique = un `Behaviour`.** Un nœud, c'est de la composition + des
+   données. Jamais de classe « Manager ».
+2. **Composer, pas grossir.** Une fonctionnalité = une petite scène/prefab +
+   des behaviours focalisés (un `Player` = `Movement` + `Health` + `Inventory`,
+   pas un `PlayerController` géant).
+3. **Call down, signal up.** On pilote son nœud + ses descendants par appel
+   direct ; pour communiquer vers le haut/à distance, on **émet un signal**
+   (`Signal<…>` + `behaviour->listen(...)`, cf. `core/Signal.hpp`).
+4. **Pas de global sauf services + autoloads.** Seuls `Input`, `Time`, `Audio`,
+   `node()->tree()` (le `SceneTree`) sont globaux. L'état persistant du jeu va
+   dans un **autoload** (`tree()->autoload<T>()`), jamais un singleton codé à la
+   main.
+5. **Trouver un nœud = groupe ou requête scopée, jamais par son nom.**
+   `tree()->firstInGroup("player")` ou `findBehaviourInChildren<T>()` —
+   il n'existe **pas** de `findByName` global, volontairement.
+
+**Contraint par construction** (l'API ne fournit pas les outils du code sale) :
+- pas de recherche globale de nœud par nom → seulement groupes + requêtes
+  descendantes ;
+- pas de `T::instance()` à écrire → on **déclare** un autoload (UI projet ou
+  `tree.registerAutoload<T>(name)`), le moteur gère instance/persistance ;
+- pas de type « EventBus » → les events transverses sont des **signaux typés
+  portés par un autoload** ;
+- `listen()` gère la durée de vie des connexions (zéro fuite, zéro dangling) ;
+- changement de scène = `tree()->changeScene(path)` (différé) ; suppression =
+  `node->queueFree()` (différé). Jamais de mutation de l'arbre en plein update.
+
+**Modèle d'exécution** : au Play, le moteur monte un **World persistant** (cf.
+`scene/SceneTree`) qui porte les autoloads + la sous-scène de jeu courante ;
+`changeScene` ne permute que la sous-scène (World + autoloads survivent). Une
+sous-scène avec `SceneSettings::changeRenderingAtLoad` impose son ambiance au
+World au chargement.
+
 ## Avancement (feuille de route)
 
 Le moteur est construit par étapes numérotées :
@@ -246,9 +288,37 @@ Le moteur est construit par étapes numérotées :
       - [x] **Undo/redo** éditeur (`editor/Command*` : command pattern +
             `CommandHistory`) et branchement UI (menus File/Edit, copier/coller/
             dupliquer, raccourcis Ctrl+Z/Y/C/V/D/S, ops scene-tree → commandes).
-      - [ ] Boucle de jeu plus complète, point d'entrée utilisateur encore plus
-            simple. (L'éditeur ImGui dans `editor/`, à déplacer dans un target
-            dédié plus tard.)
+      - [x] **Contrat d'autoring + 4 briques gameplay** (cf.
+            « Comment coder un jeu » ci-dessus et `ARCHITECTURE_JEU.md`). Un seul
+            paradigme nœuds+behaviours, *propre par construction* :
+            - **Signaux typés** (`core/Signal.hpp` : `Signal<…>`/`Connection`
+              lifetime-safe ; `Behaviour::listen`). `AreaNode` migré dessus.
+            - **SceneTree + World persistant** (`scene/SceneTree`) : au Play, le
+              moteur monte un World qui porte autoloads + sous-scène courante. La
+              scène d'édition vivante est **déplacée** (pas copiée — sinon les
+              ressources live type WebCanvas/Ultralight se dupliquent et crashent)
+              dans le World ; à l'arrêt elle est reconstruite depuis un snapshot.
+              `changeScene`/`queueFree` **différés** (après l'update, `Engine::run`).
+              `Node::tree()`, flag `SceneSettings::changeRenderingAtLoad`.
+            - **Autoloads** (singletons persistants, enfants du World, rendus) :
+              code (`registerAutoload<T>`) **et** data-driven (`autoload_*` du
+              `.neproj` + onglet éditeur). `tree()->autoload<T>()`.
+            - **Groupes + requêtes scopées** : `addToGroup`/`tree()->firstInGroup`,
+              `findBehaviourInChildren<T>`, `requireBehaviour<T>`. Pas de
+              find-by-name global (volontaire).
+      - [x] **Primitives gameplay** (« tout est scène ») :
+            - **Instanciation runtime** : `tree()->instantiate("scenes/x.scene", parent)`
+              (cache JSON + chemins relatifs au projet via `setProjectRoot`).
+            - **Timers/tweens** possédés par nœud, frozen en pause :
+              `Behaviour::wait/every/tween` → `SceneTree` (tické dans `Engine::run`) ;
+              courbes dans `core/Easing.hpp`. Annulés à la mort du nœud.
+            - **Callbacks de collision** : `CollisionObjectNode::collisionEntered/Exited`
+              (corps solides) en plus de l'Area ; le contact listener tague `sensor`.
+            - **Cycle de vie** : `Behaviour::onDestroy/onEnable/onDisable`.
+            - **`SpawnerBehaviour`** (démo réutilisable, enregistrée) : spawn une
+              scène sur timer + lifetime/`queueFree`.
+      - [ ] *À faire (couche jeu)* : `CharacterBodyNode` (Jolt `CharacterVirtual`),
+            scripting Lua (Étape 8b), runtime standalone sans éditeur (Étape 15).
 - [ ] **Étape 8b — Scripting (Lua).** Voir « Décision scripting » ci-dessous.
       Différé : à faire une fois l'API moteur stable (après `Material`/
       `ResourceManager`), pour exposer une API propre aux scripts.
@@ -264,11 +334,41 @@ Le moteur est construit par étapes numérotées :
       - [x] Timeline universelle.
       - [ ] Skinning GPU (Vertex Shader skinning via SSBO Global).
       - *Note technique* : Le parsing de `cgltf_skin` dans le GLTF est repoussé à une étape ultérieure. Le pipeline GPU gère les weights/indices, mais la construction dynamique du `Rig` via le loader reste à coder.
-- [ ] **Étape 11 — Simulation Physique.** Intégration d'un moteur physique robuste :
-      - Utilisation de Jolt Physics (ou solution légère/maison).
-      - Gestion des Colliders (box, sphere, capsule, convex/concave mesh).
-      - Rigid bodies statiques et dynamiques, forces, gravité.
-      - Détection de collisions, Triggers, et Raycasting.
+- [x] **Étape 11 — Simulation Physique.** Intégration d'un moteur physique robuste :
+      - [x] **Jolt Physics vendu** (`third_party/jolt`, lib statique via
+            `add_subdirectory`, SIMD/ABI propagés en PUBLIC). Wrapper moteur dans
+            `src/physics/` : `PhysicsWorld` (Jolt `PhysicsSystem` + pas-fixe 1/60
+            avec accumulateur, refcount global), `JoltGlue` (conversions glm↔Jolt,
+            couches NON_MOVING/MOVING).
+      - [x] **Logique par nœud, style Godot** (≠ Unity) : `CollisionObjectNode`
+            (base) → `StaticBodyNode` / `RigidBodyNode` (mass, damping,
+            gravityFactor, kinematic) / `AreaNode` (sensor/trigger) /
+            `CharacterBodyNode`. Le collider est un **nœud enfant** :
+            `CollisionShapeNode`. Collectés par `Scene::flattenHierarchy`, simulés
+            dans `Scene::update` (sync→prePhysicsStep→step→sync) uniquement quand
+            `dt>0` (Play). `Node::asCollisionObject()`/`asCharacterBody()`.
+      - [x] **CharacterBodyNode** (Jolt `CharacterVirtual`) : capsule kinématique
+            qui slide/monte les marches/colle au sol/pousse les RigidBody. Brique
+            séparée minimale — le behaviour écrit `velocity` + lit `isOnFloor()` ;
+            **pas de `moveAndSlide`** à appeler, le moteur fait le déplacement dans
+            le pas physique (`prePhysicsStep`). `CharacterBehaviour` réécrit dessus.
+      - [x] **Colliders complets** : box/sphere/capsule + **auto-détection**
+            depuis l'AABB (`Mesh::bounds()`) : near-cubique→sphere, élancé→capsule,
+            sinon→box ; **convex hull** (dynamique) et **triangle mesh** (statique)
+            depuis la géométrie CPU retenue (`Mesh::collisionVertices/Indices`),
+            bakée dans le repère du corps.
+      - [x] **Triggers** (Area, contact listener thread-safe enter/exit),
+            **Raycasting** (`PhysicsWorld::raycast`) et **callbacks de collision**
+            (`CollisionObjectNode::collisionEntered/Exited`, le listener tague
+            `sensor` pour router Area vs collision).
+      - [x] **CharacterBody** : teleport par transform (divergence détectée dans
+            `syncToPhysics` → `SetPosition`) en plus du pilotage en velocity.
+      - [x] **Éditeur** : menu « Physics » (StaticBody/RigidBody/CharacterBody/
+            Area, crée corps + cube + CollisionShape Auto en un geste), inspecteurs
+            corps/shape (tous les types), sérialisation JSON, `NodeRegistry`.
+      - **Étape 11 terminée.** *Restes hors-périmètre/futurs* : vérification
+            visuelle en éditeur (test manuel) ; *Note perf* : build sans
+            `CMAKE_BUILD_TYPE` → Jolt non optimisé ; passer en Release pour la perf.
 - [x] **Étape 12 — UI 2D (Screen & World Space).** Système d'interface utilisateur complet :
       - Canvas 2D en Screen space (overlay classique) et en World space (panneaux interactifs dans l'espace 3D, essentiels pour la VR/XR).
       - Intégration et compatibilité HTML/CSS/JS (via Ultralight, Webview ou équivalent) pour le design d'UI avec des technos web standard.

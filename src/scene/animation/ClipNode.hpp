@@ -22,6 +22,7 @@ public:
     // Forcibly sets the internal playhead time.
     void setTime(float t) { time_ = t; }
     float time() const { return time_; }
+    float duration() const { return clip_ ? clip_->duration() : 0.0f; }
 
 private:
     const AnimationClip* clip_ = nullptr;

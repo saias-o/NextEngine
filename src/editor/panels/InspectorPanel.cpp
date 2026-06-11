@@ -4,6 +4,11 @@
 #include "scene/Node.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/LightNode.hpp"
+#include "physics/CollisionObjectNode.hpp"
+#include "physics/CollisionShapeNode.hpp"
+#include "physics/RigidBodyNode.hpp"
+#include "physics/AreaNode.hpp"
+#include "physics/CharacterBodyNode.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "project/Project.hpp"
 #include "project/AssetRegistry.hpp"
@@ -50,7 +55,7 @@ void InspectorPanel::draw(EditorUI* editor) {
 
     Node* node = editor->selectedNode_;
 
-    drawNodeHeader(node);
+    drawNodeHeader(node, editor);
 
     if (auto* uiNode = dynamic_cast<UINode*>(node)) {
         drawUINode(uiNode);
@@ -198,6 +203,10 @@ void InspectorPanel::draw(EditorUI* editor) {
         ImGui::ColorEdit3("Ambient Light", &s.ambientLight.x);
         ImGui::ColorEdit3("Clear Color", &s.clearColor.x);
         ImGui::Checkbox("Post Processing", &s.enablePostProcessing);
+        ImGui::Checkbox("Change Rendering At Load", &s.changeRenderingAtLoad);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("When loaded as a sub-scene at play time, override the\n"
+                              "World's rendering settings (skybox/GI/ambient) with this scene's.");
 
         ImGui::SeparatorText("Lighting");
         int mode = static_cast<int>(s.lightingMode);
@@ -215,6 +224,11 @@ void InspectorPanel::draw(EditorUI* editor) {
             ImGui::SameLine();
             ImGui::TextDisabled(s.baked ? "Bake: ready" : "Bake: none");
         }
+
+        ImGui::SeparatorText("Global Illumination");
+        ImGui::Checkbox("Enable GI (indirect diffuse)", &s.giEnabled);
+        ImGui::SliderFloat("GI Intensity", &s.giIntensity, 0.0f, 8.0f);
+        ImGui::Checkbox("Debug: show voxel grid", &s.giDebugVoxels);
 
         ImGui::SeparatorText("Skybox");
         std::string skyboxName = "Skybox Texture [" + getAssetName(s.skyboxTexture, editor) + "]";
@@ -263,12 +277,87 @@ void InspectorPanel::draw(EditorUI* editor) {
             ImGui::Checkbox("Cast Shadows", &light->castShadows);
     }
 
+    if (auto* body = node->asCollisionObject())
+        drawPhysicsBody(body);
+    if (auto* shape = dynamic_cast<CollisionShapeNode*>(node))
+        drawCollisionShape(shape);
+
     drawBehaviours(node);
 
     ImGui::End();
 }
 
-void InspectorPanel::drawNodeHeader(Node* node) {
+// Walk up to the body that owns this shape and force a rebuild so edits apply.
+static void markOwningBodyDirty(Node* node) {
+    for (Node* p = node->parent(); p; p = p->parent()) {
+        if (auto* body = p->asCollisionObject()) { body->markDirty(); return; }
+    }
+}
+
+void InspectorPanel::drawPhysicsBody(CollisionObjectNode* body) {
+    ImGui::SeparatorText("Physics Body");
+    bool dirty = false;
+    dirty |= ImGui::DragFloat("Friction", &body->friction, 0.01f, 0.0f, 2.0f);
+    dirty |= ImGui::DragFloat("Restitution", &body->restitution, 0.01f, 0.0f, 1.0f);
+
+    if (auto* rb = dynamic_cast<RigidBodyNode*>(body)) {
+        dirty |= ImGui::Checkbox("Kinematic", &rb->kinematic);
+        dirty |= ImGui::DragFloat("Mass", &rb->mass, 0.05f, 0.0f, 1000.0f);
+        dirty |= ImGui::DragFloat("Gravity Factor", &rb->gravityFactor, 0.05f, 0.0f, 4.0f);
+        dirty |= ImGui::DragFloat("Linear Damping", &rb->linearDamping, 0.005f, 0.0f, 1.0f);
+        dirty |= ImGui::DragFloat("Angular Damping", &rb->angularDamping, 0.005f, 0.0f, 1.0f);
+    } else if (auto* area = dynamic_cast<AreaNode*>(body)) {
+        dirty |= ImGui::Checkbox("Moving (kinematic trigger)", &area->moving);
+    } else if (auto* ch = dynamic_cast<CharacterBodyNode*>(body)) {
+        dirty |= ImGui::DragFloat("Mass", &ch->mass, 0.5f, 1.0f, 500.0f);
+        dirty |= ImGui::DragFloat("Max Slope Angle", &ch->maxSlopeAngle, 0.5f, 0.0f, 89.0f);
+        ImGui::TextDisabled("On floor: %s", ch->isOnFloor() ? "yes" : "no");
+    }
+
+    if (dirty) body->markDirty();  // rebuild so creation-time params take effect
+}
+
+void InspectorPanel::drawCollisionShape(CollisionShapeNode* shape) {
+    ImGui::SeparatorText("Collision Shape");
+
+    const char* kinds[] = {"Auto", "Box", "Sphere", "Capsule", "ConvexHull", "Mesh"};
+    int current = static_cast<int>(shape->shapeType);
+    if (ImGui::Combo("Shape", &current, kinds, IM_ARRAYSIZE(kinds))) {
+        shape->shapeType = static_cast<CollisionShapeType>(current);
+        if (shape->shapeType == CollisionShapeType::Auto)
+            shape->resetAuto();  // detect once, now, then freeze
+        markOwningBodyDirty(shape);
+    }
+
+    bool dirty = false;
+    if (shape->shapeType == CollisionShapeType::Auto) {
+        ImGui::TextDisabled("Detected: %s (frozen)", toString(shape->resolvedType()));
+        if (ImGui::Button("Recompute from mesh")) {
+            shape->resetAuto();
+            markOwningBodyDirty(shape);
+        }
+    } else if (shape->shapeType == CollisionShapeType::Box) {
+        dirty |= ImGui::DragFloat3("Half Extents", &shape->halfExtents.x, 0.02f, 0.02f, 100.0f);
+    } else if (shape->shapeType == CollisionShapeType::Sphere) {
+        dirty |= ImGui::DragFloat("Radius", &shape->radius, 0.02f, 0.02f, 100.0f);
+    } else if (shape->shapeType == CollisionShapeType::Capsule) {
+        dirty |= ImGui::DragFloat("Radius", &shape->radius, 0.02f, 0.02f, 100.0f);
+        dirty |= ImGui::DragFloat("Height", &shape->height, 0.02f, 0.04f, 100.0f);
+        const char* axes[] = {"X", "Y", "Z"};
+        dirty |= ImGui::Combo("Axis", &shape->axis, axes, IM_ARRAYSIZE(axes));
+    } else if (shape->shapeType == CollisionShapeType::ConvexHull) {
+        ImGui::TextDisabled("Convex hull of the body's mesh (dynamic-capable).");
+    } else if (shape->shapeType == CollisionShapeType::Mesh) {
+        ImGui::TextDisabled("Exact triangle mesh — static bodies only.");
+    }
+    if (shape->shapeType != CollisionShapeType::ConvexHull &&
+        shape->shapeType != CollisionShapeType::Mesh)
+        dirty |= ImGui::DragFloat3("Offset", &shape->offset.x, 0.02f);
+
+    if (dirty) markOwningBodyDirty(shape);
+}
+
+void InspectorPanel::drawNodeHeader(Node* node, EditorUI* editor) {
     ImGui::SeparatorText("Node");
     
     bool enabled = node->enabled();
@@ -283,6 +372,17 @@ void InspectorPanel::drawNodeHeader(Node* node) {
     else if (node->mesh()) typeLabel = "MeshNode";
     
     ImGui::Text("Type: %s", typeLabel);
+
+    if (!node->importedFromPath().empty()) {
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextDisabled("Source: %s", node->importedFromPath().c_str());
+        if (ImGui::Button("Open in 3D Importer", ImVec2(-FLT_MIN, 30))) {
+            if (editor->ctxResources_) {
+                editor->openModelImporter(node->importedFromPath(), editor->ctxResources_);
+            }
+        }
+    }
 }
 
 void InspectorPanel::drawTransform(Node* node) {

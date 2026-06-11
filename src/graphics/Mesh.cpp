@@ -62,6 +62,25 @@ std::array<VkVertexInputAttributeDescription, 8> Vertex::attributeDescriptions()
 Mesh::Mesh(GeometryRegistry& registry, const std::vector<Vertex>& vertices,
            const std::vector<uint32_t>& indices)
     : registry_(registry) {
+    // Cache the local-space AABB while the vertices are still on the CPU (they
+    // are GPU-only after allocate). Used by the physics layer for auto-shape.
+    if (!vertices.empty()) {
+        glm::vec3 mn(std::numeric_limits<float>::max());
+        glm::vec3 mx(std::numeric_limits<float>::lowest());
+        for (const Vertex& v : vertices) {
+            mn = glm::min(mn, v.pos);
+            mx = glm::max(mx, v.pos);
+        }
+        bounds_.min = mn;
+        bounds_.max = mx;
+    }
+
+    // Retain positions + indices on the CPU for collider generation (the GPU
+    // buffers are write-only from here on).
+    collisionVertices_.reserve(vertices.size());
+    for (const Vertex& v : vertices) collisionVertices_.push_back(v.pos);
+    collisionIndices_ = indices;
+
     allocation_ = registry_.allocate(vertices, indices);
 }
 

@@ -86,7 +86,19 @@ void main() {
 #endif
 
     vec3 albedo = albedoSample.rgb * fragColor * baseColor.rgb;
-    
+
+    // GI debug: visualize the voxelized scene albedo (giAtlas.z == 1). Snap the
+    // sample to the voxel center so neighbouring fragments in the same voxel get
+    // the same color — making the grid visible as discrete blocks (and exposing
+    // any grid misalignment / missing coverage).
+    if (lights.giAtlas.z == 1) {
+        float res = float(lights.giAtlas.w);
+        vec3 uvw = giVolumeUVW(fragWorldPos);
+        vec3 snapped = (floor(uvw * res) + 0.5) / res;
+        outColor = vec4(texture(giVoxels, snapped).rgb, 1.0);
+        return;
+    }
+
     vec3 N = normalize(fragNormal);
     vec3 T = normalize(fragTangent);
     vec3 B = normalize(fragBitangent);
@@ -112,15 +124,13 @@ void main() {
 
     vec3 V = normalize(lights.cameraPos.xyz - fragWorldPos);
 
-    vec3 lit;
-    if (push.params.x > 0.5) {
-        vec3 bakedDiffuse = texture(lightmap, fragLightmapUV).rgb * albedo;
-        lit = bakedDiffuse + specularRadiance(N, V, fragWorldPos, albedo, metallic, roughness);
-    } else {
-        LightTerms t = accumulate(N, V, fragWorldPos, albedo, metallic, roughness);
-        lit = t.diffuse + t.specular;
-    }
-    
+    // Single unified path: indirect diffuse from the DDGI volume (live in realtime,
+    // frozen in baked mode) + live direct lighting + live shadows. No per-mesh
+    // lightmaps — every surface (static or dynamic) samples the same volume, so
+    // baked == realtime visually and there are no lightmap-UV issues.
+    LightTerms t = accumulate(N, V, fragWorldPos, albedo, metallic, roughness);
+    vec3 lit = t.diffuse + t.specular;
+
     lit *= matAO;
     
 #ifdef BINDLESS

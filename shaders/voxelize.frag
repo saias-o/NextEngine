@@ -1,0 +1,39 @@
+#version 450
+
+// Writes surface albedo into the 3D voxel grid. Empty voxels stay 0 (cleared each
+// frame before this pass). Overlapping writes race harmlessly (last write wins) —
+// acceptable for a coverage/albedo grid used only as a GI bounce source.
+
+layout(set = 0, binding = 0, rgba16f) uniform writeonly image3D voxelAlbedo;
+
+layout(set = 0, binding = 1) uniform VoxelUBO {
+    vec4 origin;
+    vec4 extent;
+    ivec4 res;
+    mat4 axisVP[3];
+} vox;
+
+// Set 1 = material (same layout as the main pass; we only read albedo + baseColor).
+layout(set = 1, binding = 0) uniform sampler2D texAlbedo;
+layout(set = 1, binding = 3) uniform MaterialUBO {
+    vec4 baseColor;
+    float metallic;
+    float roughness;
+    float ao;
+    float _pad;
+    vec4 emissive;
+} material;
+
+layout(location = 0) in vec3 vWorldPos;
+layout(location = 1) in vec3 vColor;
+layout(location = 2) in vec2 vUV;
+
+void main() {
+    vec3 g = (vWorldPos - vox.origin.xyz) / vox.extent.xyz;   // [0,1] inside volume
+    if (any(lessThan(g, vec3(0.0))) || any(greaterThan(g, vec3(1.0))))
+        return;
+    ivec3 c = clamp(ivec3(g * vec3(vox.res.xyz)), ivec3(0), vox.res.xyz - 1);
+
+    vec3 albedo = texture(texAlbedo, vUV).rgb * vColor * material.baseColor.rgb;
+    imageStore(voxelAlbedo, c, vec4(albedo, 1.0));
+}

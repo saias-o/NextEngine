@@ -27,6 +27,11 @@ set(SHADERS
     ${SHADER_DIR}/skybox.frag
     ${SHADER_DIR}/ui.vert
     ${SHADER_DIR}/ui.frag
+    ${SHADER_DIR}/voxelize.vert
+    ${SHADER_DIR}/voxelize.frag
+    ${SHADER_DIR}/ddgi_trace.comp
+    ${SHADER_DIR}/ddgi_blend.comp
+    ${SHADER_DIR}/ddgi_borders.comp
 )
 
 # GLSL headers #included by the shaders above. Listed as a dependency so editing
@@ -59,6 +64,20 @@ endforeach()
 
 add_custom_target(Shaders DEPENDS ${SHADER_SPIRV})
 
+# ── Jolt Physics (vendored) ─────────────────────────────────────────────────
+# Only the static `Jolt` lib is built — the samples/tests/unit-test targets are
+# auto-skipped because Jolt's Build/CMakeLists gates them on being the top-level
+# project. The SIMD/define flags Jolt picks are PUBLIC on the target, so anything
+# linking it gets a matching ABI automatically.
+set(INTERPROCEDURAL_OPTIMIZATION OFF)          # consumer isn't LTO; mixing breaks the MinGW link
+set(ENABLE_ALL_WARNINGS OFF)                    # don't -Werror Jolt on this toolchain's warning set
+set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF)      # MSVC-only feature; off avoids surprises elsewhere
+set(ENABLE_OBJECT_STREAM OFF)                   # we don't use Jolt's RTTI ObjectStream serialization
+set(ENABLE_INSTALL OFF)                         # no install/export targets needed
+set(CROSS_PLATFORM_DETERMINISTIC OFF)
+set(DOUBLE_PRECISION OFF)                        # 32-bit positions: smaller/faster, fine for our worlds
+add_subdirectory(third_party/jolt/Build ${CMAKE_BINARY_DIR}/jolt)
+
 # ── Engine library ──────────────────────────────────────────────────────────
 # Everything reusable lives here and compiles once. Game/editor executables
 # link it, so changing game code doesn't recompile the engine. The editor still
@@ -69,9 +88,11 @@ add_library(ne_engine STATIC
     src/core/Camera.cpp
     src/core/Input.cpp
     src/scene/Node.cpp
+    src/scene/Behaviour.cpp
     src/scene/MeshNode.cpp
     src/scene/LightNode.cpp
     src/scene/Scene.cpp
+    src/scene/SceneTree.cpp
     src/scene/SceneSerializer.cpp
     src/scene/BehaviourRegistry.cpp
     src/scene/NodeRegistry.cpp
@@ -116,6 +137,7 @@ add_library(ne_engine STATIC
     src/graphics/ImGuiLayer.cpp
     src/render/Renderer.cpp
     src/render/LightBaker.cpp
+    src/render/GIVolume.cpp
     src/project/Project.cpp
     src/project/AssetRegistry.cpp
     src/graphics/VmaUsage.cpp
@@ -127,6 +149,12 @@ add_library(ne_engine STATIC
     src/audio/AudioUsage.cpp
     src/audio/AudioSourceBehaviour.cpp
     src/scene/CharacterBehaviour.cpp
+    src/scene/SpawnerBehaviour.cpp
+    src/physics/PhysicsWorld.cpp
+    src/physics/CollisionShapeNode.cpp
+    src/physics/CollisionObjectNode.cpp
+    src/physics/CharacterBodyNode.cpp
+    src/physics/PhysicsNodes.cpp
     src/ui/WebEngine.cpp
     # Dear ImGui (vendored) + GLFW/Vulkan backends
     third_party/imgui/imgui.cpp
@@ -150,7 +178,7 @@ target_include_directories(ne_engine PUBLIC
     third_party/miniaudio
     third_party/ultralight/include
 )
-target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm
+target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt
     ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/Ultralight.dll
     ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/UltralightCore.dll
     ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/WebCore.dll
@@ -202,6 +230,7 @@ add_library(ne_editor STATIC
     src/editor/panels/InspectorPanel.cpp
     src/editor/panels/FileBrowserPanel.cpp
     src/editor/panels/ViewportPanel.cpp
+    src/editor/panels/ModelImporterPanel.cpp
 )
 target_link_libraries(ne_editor PUBLIC ne_engine)
 target_compile_options(ne_editor PRIVATE -Wall -Wextra)

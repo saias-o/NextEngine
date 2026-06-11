@@ -12,6 +12,7 @@
 #include "audio/AudioManager.hpp"
 #include "project/Project.hpp"
 #include "scene/SceneSerializer.hpp"
+#include "scene/SceneTree.hpp"
 
 namespace ne {
 
@@ -21,30 +22,39 @@ EditorApp::EditorApp(Engine& engine) : engine_(engine) {
 
 void EditorApp::setPlayMode(bool play) {
     if (playMode_ == play) return;
-    
+
+    ui_.clearSelection();  // selection refers to a tree that's about to swap
+
     if (play) {
-        if (engine_.project().isLoaded()) {
-            playModeBackup_ = engine_.project().rootPath() + "/.play_mode_backup.scene";
-            ne::SceneSerializer::saveToFile(engine_.scene(), engine_.resources(), playModeBackup_);
-        }
+        // Mount the persistent World from a snapshot of the edit scene (which is
+        // left untouched — so Stop needs no restore). Autoloads spawn here.
+        engine_.mountWorld();
         playMode_ = true;
         Time::setScale(1.0f);
     } else {
         playMode_ = false;
         Time::setScale(0.0f);
-        if (!playModeBackup_.empty()) {
-            engine_.scene().clearChildren();
-            ui_.clearSelection();
-            ne::SceneSerializer::loadIntoScene(engine_.scene(), engine_.resources(), playModeBackup_);
-            playModeBackup_.clear();
-        }
+        engine_.unmountWorld();  // edit scene is pristine; just drop the World
         AudioManager::get().stopAllGlobal();
     }
 }
 
 void EditorApp::update(float dt) {
     processInput(dt);
-    ui_.draw(this, &engine_.scene(), &engine_.camera(), &engine_.project(), &engine_.resources(), dt);
+
+    // In Play, edit/inspect the live World sub-scene; otherwise the edit document.
+    Scene* shown = (isPlayMode() && engine_.sceneTree().mounted())
+                       ? &engine_.sceneTree().currentScene()
+                       : &engine_.scene();
+    ui_.draw(this, shown, &engine_.camera(), &engine_.project(), &engine_.resources(), dt);
+
+    // The render target during Play is the World (set by mountWorld); leave it.
+    if (!isPlayMode()) {
+        if (ui_.isPreviewMode())
+            engine_.setSceneOverride(ui_.previewScene());
+        else
+            engine_.setSceneOverride(nullptr);
+    }
 }
 
 void EditorApp::updateCursorCapture(bool isPlayMode) {

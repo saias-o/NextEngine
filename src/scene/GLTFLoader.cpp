@@ -247,6 +247,7 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
     if (data->scene) {
         std::filesystem::path p(path);
         Node* containerNode = rootNode.createChild<Node>(p.stem().string());
+        containerNode->setImportedFromPath(path);
         for (size_t i = 0; i < data->scene->nodes_count; ++i) {
             processNode(data->scene->nodes[i], containerNode, resources, meshesPrimitives, materials, data, skinnedMeshes);
         }

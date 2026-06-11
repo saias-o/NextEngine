@@ -22,6 +22,7 @@ public:
 
     const GlobalPose& globalPose() const { return globalPose_; }
     const Rig* rig() const { return rig_; }
+    AnimNode* rootNode() const { return rootNode_.get(); }
 
     const char* typeName() const override { return "Animator"; }
 

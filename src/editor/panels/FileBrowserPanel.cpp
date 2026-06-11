@@ -244,6 +244,9 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                     ImGui::Button("[WEB]", ImVec2(iconSize, iconSize));
                 } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".glb") {
                     ImGui::Button("[3D]", ImVec2(iconSize, iconSize));
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        editor->openModelImporter(pathStr, resources);
+                    }
                 } else {
                     ImGui::Button("[FILE]", ImVec2(iconSize, iconSize));
                 }
@@ -298,8 +301,12 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                 if (!handleInlineRename(pathStr, -1.0f)) {
                     std::snprintf(buffer, sizeof(buffer), "%s %s", fileIcon(f), filename.c_str());
                     if (ImGui::Selectable(buffer, false, ImGuiSelectableFlags_AllowDoubleClick)) {
-                        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && ext == ".scene") {
-                            editor->loadScene(scene, resources, pathStr);
+                        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                            if (ext == ".scene") {
+                                editor->loadScene(scene, resources, pathStr);
+                            } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".glb") {
+                                editor->openModelImporter(pathStr, resources);
+                            }
                         }
                     }
                     drawItemContextMenu(pathStr, filename);

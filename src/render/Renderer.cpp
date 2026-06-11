@@ -15,6 +15,7 @@
 #include "graphics/VulkanDevice.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "render/LightBaker.hpp"
+#include "render/GIVolume.hpp"
 #include "graphics/UIRenderer.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/Node.hpp"
@@ -62,6 +63,32 @@ glm::mat4 directionalMatrix(const glm::vec3& dir, float distance) {
     return proj * view;
 }
 
+// DDGI volume configuration scaled by the GPU's quality tier. Denser probes +
+// more rays = finer, cleaner GI; lower tiers (mobile/Quest) stay cheap. Same
+// world coverage, centered on the origin.
+GIVolumeDesc giDescForTier(QualityTier tier) {
+    GIVolumeDesc d;
+    switch (tier) {
+        case QualityTier::Ultra:
+        case QualityTier::High:
+            d.counts = {20, 10, 20}; d.spacing = glm::vec3(1.2f);
+            d.raysPerProbe = 96; d.voxelResolution = 96;
+            break;
+        case QualityTier::Medium:
+            d.counts = {16, 8, 16}; d.spacing = glm::vec3(1.5f);
+            d.raysPerProbe = 64; d.voxelResolution = 80;
+            break;
+        case QualityTier::Low:
+        default:
+            d.counts = {10, 5, 10}; d.spacing = glm::vec3(2.4f);
+            d.raysPerProbe = 48; d.voxelResolution = 64;
+            break;
+    }
+    // Center the lattice on the world origin.
+    d.origin = -0.5f * glm::vec3(d.counts - 1) * d.spacing;
+    return d;
+}
+
 // Light-space view-proj for a spot light (perspective from its cone), Vulkan-flipped.
 glm::mat4 spotMatrix(const glm::vec3& pos, const glm::vec3& dir, float outerAngleDeg, float range) {
     float fovy = glm::clamp(glm::radians(outerAngleDeg) * 2.0f, glm::radians(10.0f), glm::radians(170.0f));
@@ -84,6 +111,8 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
     createSkyboxPipeline();
     createUniformBuffers();
     shadowMap_ = std::make_unique<ShadowMap>(device_);
+    gi_ = std::make_unique<GIVolume>(device_, giDescForTier(device_.capabilities().tier),
+                                     resources_.materialSetLayout(), globalSetLayout_);
     createGlobalDescriptorPool();
     createGlobalDescriptorSets();
     createCommandBuffers();
@@ -128,14 +157,14 @@ void Renderer::createGlobalSetLayout() {
     lightingBinding.binding = 1;
     lightingBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     lightingBinding.descriptorCount = 1;
-    lightingBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    lightingBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
-    // Binding 2: shadow map array (sampled in the fragment shader).
+    // Binding 2: shadow map array (sampled in the fragment shader and DDGI trace).
     VkDescriptorSetLayoutBinding shadowBinding{};
     shadowBinding.binding = 2;
     shadowBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     shadowBinding.descriptorCount = 1;
-    shadowBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    shadowBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
     // Binding 3: Global SSBO for bone matrices
     VkDescriptorSetLayoutBinding boneBinding{};
@@ -144,7 +173,30 @@ void Renderer::createGlobalSetLayout() {
     boneBinding.descriptorCount = 1;
     boneBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 4> bindings = {cameraBinding, lightingBinding, shadowBinding, boneBinding};
+    // Bindings 4/5: DDGI irradiance + visibility atlases (sampled in the fragment
+    // shader for indirect diffuse — the single GI primitive).
+    VkDescriptorSetLayoutBinding giIrradianceBinding{};
+    giIrradianceBinding.binding = 4;
+    giIrradianceBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    giIrradianceBinding.descriptorCount = 1;
+    giIrradianceBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutBinding giVisibilityBinding{};
+    giVisibilityBinding.binding = 5;
+    giVisibilityBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    giVisibilityBinding.descriptorCount = 1;
+    giVisibilityBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 6: voxelized scene albedo (debug view + DDGI trace).
+    VkDescriptorSetLayoutBinding giVoxelBinding{};
+    giVoxelBinding.binding = 6;
+    giVoxelBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    giVoxelBinding.descriptorCount = 1;
+    giVoxelBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 7> bindings = {
+        cameraBinding, lightingBinding, shadowBinding, boneBinding,
+        giIrradianceBinding, giVisibilityBinding, giVoxelBinding};
 
     VkDescriptorSetLayoutCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -348,7 +400,7 @@ void Renderer::createGlobalDescriptorPool() {
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight) * 2;  // camera + lighting
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight);  // shadow map
+    poolSizes[1].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight) * 4;  // shadow + GI irradiance + visibility + voxels
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[2].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight);  // bone matrices SSBO
 
@@ -394,7 +446,23 @@ void Renderer::createGlobalDescriptorSets() {
         boneInfo.offset = 0;
         boneInfo.range = 4 * 1024 * 1024; // 4MB
 
-        std::array<VkWriteDescriptorSet, 4> writes{};
+        // Atlases live in GENERAL (compute-written, fragment-sampled).
+        VkDescriptorImageInfo giIrradianceInfo{};
+        giIrradianceInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        giIrradianceInfo.imageView = gi_->irradianceView();
+        giIrradianceInfo.sampler = gi_->sampler();
+
+        VkDescriptorImageInfo giVisibilityInfo{};
+        giVisibilityInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        giVisibilityInfo.imageView = gi_->visibilityView();
+        giVisibilityInfo.sampler = gi_->sampler();
+
+        VkDescriptorImageInfo giVoxelInfo{};
+        giVoxelInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        giVoxelInfo.imageView = gi_->voxelView();
+        giVoxelInfo.sampler = gi_->sampler();
+
+        std::array<VkWriteDescriptorSet, 7> writes{};
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[0].dstSet = globalSets_[i];
         writes[0].dstBinding = 0;
@@ -423,6 +491,27 @@ void Renderer::createGlobalDescriptorSets() {
         writes[3].descriptorCount = 1;
         writes[3].pBufferInfo = &boneInfo;
 
+        writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[4].dstSet = globalSets_[i];
+        writes[4].dstBinding = 4;
+        writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[4].descriptorCount = 1;
+        writes[4].pImageInfo = &giIrradianceInfo;
+
+        writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[5].dstSet = globalSets_[i];
+        writes[5].dstBinding = 5;
+        writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[5].descriptorCount = 1;
+        writes[5].pImageInfo = &giVisibilityInfo;
+
+        writes[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[6].dstSet = globalSets_[i];
+        writes[6].dstBinding = 6;
+        writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[6].descriptorCount = 1;
+        writes[6].pImageInfo = &giVoxelInfo;
+
         vkUpdateDescriptorSets(device_.device(),
             static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }
@@ -445,6 +534,35 @@ void Renderer::updateGlobalShadowDescriptor() {
 
         vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
     }
+}
+
+void Renderer::updateGIDescriptors() {
+    // After GIVolume::beginFrame() the "current" atlas (sampled by the lighting
+    // pass) has changed; re-point set 0 bindings 4/5 for this frame's set. Safe:
+    // drawFrame already waited on this frame's fence.
+    VkDescriptorImageInfo irr{};
+    irr.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    irr.imageView = gi_->irradianceView();
+    irr.sampler = gi_->sampler();
+    VkDescriptorImageInfo vis{};
+    vis.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    vis.imageView = gi_->visibilityView();
+    vis.sampler = gi_->sampler();
+
+    std::array<VkWriteDescriptorSet, 2> writes{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = globalSets_[currentFrame_];
+    writes[0].dstBinding = 4;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].descriptorCount = 1;
+    writes[0].pImageInfo = &irr;
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = globalSets_[currentFrame_];
+    writes[1].dstBinding = 5;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = &vis;
+    vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
 void Renderer::createCommandBuffers() {
@@ -526,6 +644,14 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera,
 
     int mode = settings.lightingMode == LightingMode::Baked ? 1 : 0;
     ubo.counts = glm::ivec4(lightCount, mode, 0, 0);
+
+    // DDGI volume params — sampled identically in realtime and baked modes.
+    const GIVolumeDesc& gd = gi_->desc();
+    ubo.giOrigin  = glm::vec4(gd.origin, settings.giEnabled ? 1.0f : 0.0f);
+    ubo.giSpacing = glm::vec4(gd.spacing, settings.giIntensity);  // w = indirect multiplier
+    ubo.giCounts  = glm::ivec4(gd.counts, gi_->probesPerRow());
+    ubo.giAtlas   = glm::ivec4(gd.irradianceTexels, gd.visibilityTexels,
+                               settings.giDebugVoxels ? 1 : 0, gd.voxelResolution);
 
     auto getAnimatorInParent = [](Node* n) -> Animator* {
         while (n) {
@@ -961,6 +1087,14 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
 
     uiRenderer_->updateAsyncTextures(cmd);
 
+    // GI update (skipped when the volume is frozen in baked mode): re-voxelize the
+    // scene albedo, then trace/blend/border the DDGI probes. The lighting pass
+    // samples the result. When frozen, the previously-baked atlas is kept.
+    if (giUpdateThisFrame_) {
+        gi_->voxelize(cmd, scene);
+        gi_->update(cmd, globalSets_[currentFrame_]);
+    }
+
     bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
 
     if (useGpuDriven && currentInstanceCount_ > 0) {
@@ -1197,16 +1331,17 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
                 lastMaterial = cmdDraw.material;
             }
 
-            // Set 2: Lightmap. Use node's baked lightmap if valid, otherwise fallback.
-            VkDescriptorSet lmSet = lightBaker_->lightmapSet(nullptr);
+            // Set 2: this node's baked lightmap (or the default when not baked).
+            VkDescriptorSet lmSet = cmdDraw.lightmapSet;
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout(),
                                     2, 1, &lmSet, 0, nullptr);
 
             PushConstants pc{};
             pc.model = cmdDraw.world;
-            // param.x > 0.5 tells shader to use baked lightmap. Since it's a stub, use 0.0.
-            // param.y contains boneOffset
-            pc.params = glm::vec4(scene.settings().lightingMode == LightingMode::Baked ? 1.0f : 0.0f,
+            // params.x > 0.5: this is a baked static mesh → use its frozen lightmap
+            // diffuse + live specular. Otherwise: full live lighting + DDGI indirect.
+            // params.y = boneOffset.
+            pc.params = glm::vec4(cmdDraw.useLightmap ? 1.0f : 0.0f,
                                   static_cast<float>(cmdDraw.boneOffset), 0.0f, 0.0f);
             vkCmdPushConstants(cmd, pipeline_->layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                0, sizeof(PushConstants), &pc);
@@ -1259,25 +1394,40 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
 
     vkResetFences(device_.device(), 1, &inFlightFences_[currentFrame_]);
 
-    // Honour a one-shot bake request: allocate lightmaps before gathering the
-    // scene so this frame's draws already sample the (about-to-be-baked) maps.
     auto& settings = scene.settings();
-    if (settings.bakeRequested) {
-        lightBaker_->prepare(scene);
-        doBake_ = true;
+
+    // Decide whether the DDGI volume updates this frame. Realtime: every frame.
+    // Baked: a bake request runs the update for kGIBakeFrames frames to converge
+    // the volume, then freezes it (direct lighting + shadows stay live in both
+    // modes; only the indirect volume is frozen).
+    if (settings.lightingMode == LightingMode::Realtime) {
+        settings.bakeRequested = false;  // bake only applies in baked mode
+        giUpdateThisFrame_ = settings.giEnabled;
+    } else {  // Baked
+        if (settings.bakeRequested) {
+            settings.bakeRequested = false;
+            giBakeFramesRemaining_ = kGIBakeFrames;
+            settings.baked = false;
+        }
+        giUpdateThisFrame_ = giBakeFramesRemaining_ > 0;
+        if (giUpdateThisFrame_ && --giBakeFramesRemaining_ == 0) {
+            // DDGI volume converged → freeze it. All surfaces sample the frozen
+            // volume for indirect; direct lighting + shadows stay live.
+            settings.baked = true;
+        }
     }
+
+    // Swap the DDGI ping-pong (only when updating, so the frozen atlas is kept)
+    // and re-point this frame's set 0 at the current atlas (safe: fence waited).
+    if (giUpdateThisFrame_) gi_->beginFrame();
+    updateGIDescriptors();
 
     updateUniformBuffer(currentFrame_, scene, camera, project);
     uiRenderer_->gatherUI(scene);
 
     vkResetCommandBuffer(commandBuffers_[currentFrame_], 0);
     recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex, scene, camera);
-
-    if (doBake_) {
-        settings.bakeRequested = false;
-        settings.baked = true;
-        doBake_ = false;
-    }
+    doBake_ = false;  // one-shot lightmap bake consumed this frame
 
     VkSemaphore waitSemaphores[] = {imageAvailableSemaphores_[currentFrame_]};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};

@@ -23,8 +23,7 @@ public:
     float gravity = 9.81f;
 
 private:
-    float velocityY = 0.0f;
-    bool isGrounded = true;
+    bool warned_ = false;  // warn once if attached to a non-CharacterBody node
 };
 
 } // namespace ne

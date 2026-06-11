@@ -13,12 +13,16 @@
 #include "scene/Scene.hpp"
 #include "scene/SceneSerializer.hpp"
 #include "audio/AudioManager.hpp"
+#include "physics/CollisionShapeNode.hpp"
+#include "physics/CollisionObjectNode.hpp"
 
 #include "editor/panels/MenuBarPanel.hpp"
 #include "editor/panels/SceneHierarchyPanel.hpp"
 #include "editor/panels/InspectorPanel.hpp"
 #include "editor/panels/FileBrowserPanel.hpp"
 #include "editor/panels/ViewportPanel.hpp"
+#include "editor/panels/ModelImporterPanel.hpp"
+#include "scene/GLTFLoader.hpp"
 
 #include <memory>
 
@@ -26,10 +30,12 @@
 #include "imgui_internal.h"
 
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "editor/EditorApp.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <string>
@@ -59,6 +65,8 @@ EditorUI::EditorUI() {
     newProjectPath_[sizeof(newProjectPath_) - 1] = '\0';
     openBrowsePath_ = std::string(NE_PROJECT_ROOT);
 }
+
+EditorUI::~EditorUI() = default;  // Scene is complete here (previewScene_ unique_ptr)
 
 void EditorUI::applyEditorStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
@@ -170,6 +178,12 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
         }
     }
 
+    // Delete / Backspace removes the selected node (mirrors the context Delete).
+    if (!io.WantTextInput && selectedNode_ && selectedNode_->parent()
+        && (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace))) {
+        nodeToDelete_ = selectedNode_;
+    }
+
     // Full-viewport dockspace with passthrough so the 3D render shows behind.
     // We use a fixed ID so the DockBuilder setup below targets the right node.
     ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -247,10 +261,16 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
         fileBrowserPanel.draw(this, project, scene, resources);
     }
 
+    if (showModelImporter_) {
+        ModelImporterPanel modelImporterPanel;
+        modelImporterPanel.draw(this, previewScene_.get(), previewModelPath_, resources);
+    }
+
     ViewportPanel viewportPanel;
     viewportPanel.draw(this, camera, dt);
     
     drawGizmo(camera, scene);
+    drawColliderGizmos(camera, scene);
 
     // Modal dialogs.
     drawAboutWindow();
@@ -304,6 +324,29 @@ void EditorUI::duplicateSelected(ResourceManager* resources) {
         history_.execute(std::make_unique<AddNodeCommand>(selectedNode_->parent(), std::move(node)));
         selectedNode_ = added;
     }
+}
+
+void EditorUI::openModelImporter(const std::string& path, ResourceManager* resources) {
+    isPreviewMode_ = true;
+    showModelImporter_ = true;
+    previewModelPath_ = path;
+    previewScene_ = std::make_unique<Scene>();
+    
+    // Add a light aimed from (2,2,2) toward the origin so the preview is lit.
+    auto light = previewScene_->createChild<LightNode>("PreviewLight");
+    light->transform().position = glm::vec3(2.0f, 2.0f, 2.0f);
+    light->direction = glm::normalize(glm::vec3(0.0f) - light->transform().position);
+    
+    // Load the model
+    if (resources) {
+        GLTFLoader::load(path, *previewScene_, *resources);
+    }
+}
+
+void EditorUI::closeModelImporter() {
+    isPreviewMode_ = false;
+    showModelImporter_ = false;
+    previewScene_.reset();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1274,6 +1317,67 @@ void EditorUI::drawSettingsWindow(Project* project) {
                 ImGui::EndTabItem();
             }
 
+            if (ImGui::BeginTabItem("Autoloads")) {
+                ImGui::TextDisabled("Persistent singletons spawned into the World at play time.");
+                ImGui::TextDisabled("They survive scene changes (game state, save, persistent UI...).");
+                ImGui::TextDisabled("Value: a 'scenes/X.scene' prefab path, or a behaviour type name.");
+                ImGui::Spacing();
+
+                std::string toRemove;
+                if (ImGui::BeginTable("AutoloadsTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("Scene / Type", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("##Action", ImGuiTableColumnFlags_WidthFixed, 30.0f);
+                    ImGui::TableHeadersRow();
+
+                    for (const auto& [name, value] : project->autoloads()) {
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%s", name.c_str());
+                        ImGui::TableNextColumn();
+                        ImGui::TextDisabled("%s", value.c_str());
+                        ImGui::TableNextColumn();
+                        ImGui::PushID(name.c_str());
+                        if (ImGui::Button("X", ImVec2(24, 0))) toRemove = name;
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTable();
+                }
+                if (!toRemove.empty()) project->removeAutoload(toRemove);
+
+                ImGui::Spacing();
+                ImGui::SeparatorText("Register New Autoload");
+                static char newAutoName[64] = "";
+                static char newAutoVal[256] = "";
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputTextWithHint("##AutoName", "Name (e.g. 'GameState')", newAutoName, sizeof(newAutoName));
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputTextWithHint("##AutoVal", "scenes/X.scene  or  BehaviourType", newAutoVal, sizeof(newAutoVal));
+
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_SCENE")) {
+                        std::filesystem::path fp((const char*)payload->Data);
+                        std::filesystem::path root(project->rootPath());
+                        std::string relPath = std::filesystem::relative(fp, root).string();
+                        std::replace(relPath.begin(), relPath.end(), '\\', '/');
+                        std::strncpy(newAutoVal, relPath.c_str(), sizeof(newAutoVal) - 1);
+                        if (strlen(newAutoName) == 0)
+                            std::strncpy(newAutoName, fp.stem().string().c_str(), sizeof(newAutoName) - 1);
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+
+                if (ImGui::Button("Add / Update Autoload", ImVec2(-1, 0))) {
+                    if (strlen(newAutoName) > 0 && strlen(newAutoVal) > 0) {
+                        project->setAutoload(newAutoName, newAutoVal);
+                        newAutoName[0] = '\0';
+                        newAutoVal[0] = '\0';
+                    }
+                }
+
+                ImGui::EndTabItem();
+            }
+
             ImGui::EndTabBar();
         }
     }
@@ -1284,6 +1388,111 @@ std::string EditorUI::resolveScenePath(Project* project) const {
     if (!currentScenePath_.empty()) return currentScenePath_;
     if (project && project->isLoaded()) return project->scenesDir() + "/main.scene";
     return "scene.scene";
+}
+
+namespace {
+
+constexpr float kPi = 3.14159265358979f;
+
+// Project a world-space point to viewport screen coordinates; false if behind.
+bool projectPoint(const glm::mat4& viewProj, const glm::vec2& vpPos, const glm::vec2& vpSize,
+                  const glm::vec3& world, ImVec2& out) {
+    glm::vec4 clip = viewProj * glm::vec4(world, 1.0f);
+    if (clip.w <= 1e-4f) return false;
+    glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    out = ImVec2(vpPos.x + (ndc.x + 1.0f) * 0.5f * vpSize.x,
+                 vpPos.y + (ndc.y + 1.0f) * 0.5f * vpSize.y);
+    return true;
+}
+
+} // namespace
+
+void EditorUI::drawColliderGizmos(Camera* camera, Scene* scene) {
+    if (!showColliders_ || !camera || !scene) return;
+
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    glm::vec2 vpPos(vp->WorkPos.x, vp->WorkPos.y);
+    glm::vec2 vpSize(vp->WorkSize.x, vp->WorkSize.y);
+    glm::mat4 viewProj = camera->projection() * camera->view();
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+
+    const ImU32 color = IM_COL32(96, 224, 140, 200);  // green wireframe
+    const float thickness = 1.5f;
+
+    auto line3D = [&](const glm::vec3& a, const glm::vec3& b) {
+        ImVec2 sa, sb;
+        if (projectPoint(viewProj, vpPos, vpSize, a, sa) &&
+            projectPoint(viewProj, vpPos, vpSize, b, sb))
+            dl->AddLine(sa, sb, color, thickness);
+    };
+
+    scene->traverse([&](Node& n, const glm::mat4&) {
+        auto* shape = dynamic_cast<CollisionShapeNode*>(&n);
+        if (!shape) return;
+
+        // Find the owning body (nearest CollisionObject ancestor).
+        Node* bodyNode = nullptr;
+        for (Node* p = n.parent(); p; p = p->parent())
+            if (p->asCollisionObject()) { bodyNode = p; break; }
+        if (!bodyNode) return;
+
+        // Body translation + rotation (scale is baked into the shape dimensions).
+        glm::mat4 w = bodyNode->worldTransform();
+        glm::vec3 T(w[3]);
+        glm::vec3 c0(w[0]), c1(w[1]), c2(w[2]);
+        glm::vec3 s(glm::length(c0), glm::length(c1), glm::length(c2));
+        if (s.x < 1e-6f) s.x = 1.0f;
+        if (s.y < 1e-6f) s.y = 1.0f;
+        if (s.z < 1e-6f) s.z = 1.0f;
+        glm::quat rot = glm::normalize(glm::quat_cast(glm::mat3(c0 / s.x, c1 / s.y, c2 / s.z)));
+        glm::mat4 bodyTR = glm::translate(glm::mat4(1.0f), T) * glm::mat4_cast(rot);
+
+        CollisionShapeViz v = shape->resolveViz(glm::inverse(bodyTR), *bodyNode);
+
+        // World matrix for the shape primitive (body frame + local offset).
+        glm::mat4 m = bodyTR * glm::translate(glm::mat4(1.0f), v.offset);
+        auto tp = [&](const glm::vec3& p) { return glm::vec3(m * glm::vec4(p, 1.0f)); };
+        auto arc = [&](const glm::vec3& c, const glm::vec3& u, const glm::vec3& vv,
+                       float r, float a0, float a1, int seg) {
+            glm::vec3 prev = tp(c + (u * std::cos(a0) + vv * std::sin(a0)) * r);
+            for (int i = 1; i <= seg; ++i) {
+                float a = a0 + (a1 - a0) * (static_cast<float>(i) / seg);
+                glm::vec3 cur = tp(c + (u * std::cos(a) + vv * std::sin(a)) * r);
+                line3D(prev, cur);
+                prev = cur;
+            }
+        };
+
+        if (v.type == CollisionShapeType::Sphere) {
+            glm::vec3 X(1, 0, 0), Y(0, 1, 0), Z(0, 0, 1), O(0);
+            arc(O, X, Y, v.radius, 0, 2 * kPi, 28);
+            arc(O, X, Z, v.radius, 0, 2 * kPi, 28);
+            arc(O, Y, Z, v.radius, 0, 2 * kPi, 28);
+        } else if (v.type == CollisionShapeType::Capsule) {
+            glm::vec3 axes[3] = {glm::vec3(1, 0, 0), glm::vec3(0, 1, 0), glm::vec3(0, 0, 1)};
+            glm::vec3 ax = axes[v.axis % 3];
+            glm::vec3 p1 = axes[(v.axis + 1) % 3];
+            glm::vec3 p2 = axes[(v.axis + 2) % 3];
+            float r = v.radius;
+            float hc = std::max(0.0f, v.height * 0.5f - r);  // half cylinder length
+            glm::vec3 top = ax * hc, bot = -ax * hc;
+            arc(top, p1, p2, r, 0, 2 * kPi, 24);  // cross rings
+            arc(bot, p1, p2, r, 0, 2 * kPi, 24);
+            for (glm::vec3 d : {p1, -p1, p2, -p2})  // connecting lines
+                line3D(tp(top + d * r), tp(bot + d * r));
+            arc(top, p1, ax, r, 0, kPi, 12);  // hemispherical caps
+            arc(top, p2, ax, r, 0, kPi, 12);
+            arc(bot, p1, -ax, r, 0, kPi, 12);
+            arc(bot, p2, -ax, r, 0, kPi, 12);
+        } else {  // Box (and convex/mesh fallback)
+            glm::vec3 e = v.halfExtents;
+            glm::vec3 c[8];
+            for (int i = 0; i < 8; ++i)
+                c[i] = tp(glm::vec3((i & 1) ? e.x : -e.x, (i & 2) ? e.y : -e.y, (i & 4) ? e.z : -e.z));
+            const int edges[12][2] = {{0,1},{1,3},{3,2},{2,0},{4,5},{5,7},{7,6},{6,4},{0,4},{1,5},{2,6},{3,7}};
+            for (auto& ed : edges) line3D(c[ed[0]], c[ed[1]]);
+        }
+    });
 }
 
 } // namespace ne

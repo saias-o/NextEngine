@@ -74,6 +74,13 @@ public:
     void setAudioAlias(const std::string& name, const std::string& path);
     void removeAudioAlias(const std::string& name);
 
+    // Persistent singleton scenes/behaviours spawned into the World at play time
+    // (Godot Autoload). Value = a ".scene" prefab path, or a registered behaviour
+    // type name. Survive scene changes.
+    const std::unordered_map<std::string, std::string>& autoloads() const { return autoloads_; }
+    void setAutoload(const std::string& name, const std::string& pathOrType);
+    void removeAutoload(const std::string& name);
+
 private:
     bool loaded_ = false;
     std::string name_;
@@ -88,7 +95,8 @@ private:
     float masterVolume_ = 1.0f;
     AudioSettings defaultAudioSettings_;
     std::unordered_map<std::string, std::string> audioAliases_;
-    
+    std::unordered_map<std::string, std::string> autoloads_;
+
     AssetRegistry assetRegistry_;
 };
 

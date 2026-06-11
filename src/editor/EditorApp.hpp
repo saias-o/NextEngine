@@ -27,7 +27,6 @@ private:
     EditorUI ui_;
     bool playMode_ = false;
     bool wasPlayMode_ = false;
-    std::string playModeBackup_;
 };
 
 } // namespace ne

@@ -30,6 +30,7 @@ class ResourceManager;
 class ShadowMap;
 class LightBaker;
 class UIRenderer;
+class GIVolume;
 
 struct UniformBufferObject {
     alignas(16) glm::mat4 view;
@@ -64,6 +65,11 @@ struct LightingUBO {
     glm::ivec4 counts{0};  // x = light count, y = mode (0 realtime, 1 baked)
     GpuLight lights[kMaxLights]{};
     glm::mat4 shadowMatrices[kMaxShadowCasters]{};  // light-space view-proj per shadow caster
+    // DDGI irradiance volume params (mirror lighting.glsl). The single GI primitive.
+    glm::vec4 giOrigin{0.0f};   // xyz = volume min corner (world), w = enabled (0/1)
+    glm::vec4 giSpacing{1.0f};  // xyz = probe spacing
+    glm::ivec4 giCounts{0};     // xyz = probe counts, w = probesPerRow in atlas
+    glm::ivec4 giAtlas{0};      // x = irradiance texels/probe, y = visibility texels/probe
 };
 
 struct DrawCmd {
@@ -106,6 +112,7 @@ public:
 
 private:
     void updateGlobalShadowDescriptor();
+    void updateGIDescriptors();  // re-point set 0 bindings 4/5 at the current GI atlas
     void createGlobalSetLayout();
     void createPipeline(VkDescriptorSetLayout materialSetLayout);
     void createHdrResources();
@@ -134,6 +141,7 @@ private:
     std::unique_ptr<ShadowMap> shadowMap_;
     std::unique_ptr<LightBaker> lightBaker_;
     std::unique_ptr<UIRenderer> uiRenderer_;
+    std::unique_ptr<GIVolume> gi_;  // DDGI irradiance volume (the single GI primitive)
 
     // HDR offscreen target — scene renders here, then tonemapped to swapchain.
     VkImage hdrImage_ = VK_NULL_HANDLE;
@@ -201,6 +209,13 @@ private:
     int shadowCount_ = 0;
 
     bool doBake_ = false;  // run the bake passes this frame (set from bakeRequested)
+
+    // DDGI update control. Realtime: updated every frame. Baked: the update runs
+    // for kGIBakeFrames frames to converge the volume, then freezes (dynamic
+    // objects still sample the frozen volume).
+    static constexpr int kGIBakeFrames = 256;
+    int giBakeFramesRemaining_ = 0;
+    bool giUpdateThisFrame_ = true;
 };
 
 } // namespace ne
