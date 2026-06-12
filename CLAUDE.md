@@ -317,8 +317,8 @@ Le moteur est construit par étapes numérotées :
             - **Cycle de vie** : `Behaviour::onDestroy/onEnable/onDisable`.
             - **`SpawnerBehaviour`** (démo réutilisable, enregistrée) : spawn une
               scène sur timer + lifetime/`queueFree`.
-      - [ ] *À faire (couche jeu)* : `CharacterBodyNode` (Jolt `CharacterVirtual`),
-            scripting Lua (Étape 8b), runtime standalone sans éditeur (Étape 15).
+      - [ ] *À faire (couche jeu)* : scripting Lua (Étape 8b), runtime standalone
+            sans éditeur (Étape 15).
 - [ ] **Étape 8b — Scripting (Lua).** Voir « Décision scripting » ci-dessous.
       Différé : à faire une fois l'API moteur stable (après `Material`/
       `ResourceManager`), pour exposer une API propre aux scripts.
@@ -328,12 +328,28 @@ Le moteur est construit par étapes numérotées :
       - Phase 2 : World Radiance Cache + Spatial Hashing (ombrage découplé de l'écran, idéal pour les deux yeux en VR).
       - Phase 3 : Volumétrie froxel (brouillard / lumière volumétrique / SSS).
       - Voir détails et matrice de scalabilité (Low/Medium/High/Ultra) dans [RENDU_AVANCE.md](file:///c:/Users/evand/Documents/NextEngine/RENDU_AVANCE.md).
-- [ ] **Étape 10 — Animation System.** Importation et lecture des animations glTF et BVH liés à des skeletal meshes :
-      - [x] Architecture Data-Oriented (Rig, Pose, AnimationClip).
-      - [x] Graphe d'animation (FSM, BlendTree, ClipNode).
-      - [x] Timeline universelle.
-      - [ ] Skinning GPU (Vertex Shader skinning via SSBO Global).
-      - *Note technique* : Le parsing de `cgltf_skin` dans le GLTF est repoussé à une étape ultérieure. Le pipeline GPU gère les weights/indices, mais la construction dynamique du `Rig` via le loader reste à coder.
+- [~] **Étape 10 — Animation System.** Animations squelettiques glTF/BVH :
+      - [x] **Data-oriented** : `Rig` (bones plats, parents, inverse-bind), `Pose`
+            (Local/Global + skinning matrices), `AnimationClip` (tracks T/R/S,
+            interp linéaire + slerp). Graphe : `ClipNode`, `BlendNode`,
+            `AnimStateMachine` (crossfade), `AnimBlackboard` (params hashés FNV).
+      - [x] **Skinning GPU** : `shader.vert` (LBS via SSBO `boneMatrices`, set 0
+            binding 3) ; le `Renderer` collecte l'`Animator` du parent, upload les
+            `skinningMatrices` et passe `boneOffset` par instance.
+      - [x] **Chargement glTF/GLB** : `GLTFLoader` parse `cgltf_skin` → `Rig`
+            (joints, parents, inverse-bind), attache un `Animator`, et parse
+            `cgltf_animation` → `AnimationClip` (gère CUBICSPLINE en lisant la
+            valeur). Les clips sont enregistrés sur l'`Animator` (`addClip`).
+      - [x] **API runtime propre** : `Animator::play("Idle"/"Walk"/...)` (FSM
+            interne + crossfade auto), `blackboard()`/`setFloat/Bool`,
+            `setStateMachine`. `Animator` enregistré (`BehaviourRegistry`).
+            `CharacterBehaviour` pilote idle/walk/jump selon l'état du
+            `CharacterBody` (noms de clips configurables).
+      - [x] **Chargement BVH** : `BVHLoader::load` → `AnimationClip` (tracks par
+            nom de joint → jouable sur un squelette aux noms compatibles, sans
+            retargeting). `AnimGraphParser` corrigé (clips réels, plus de fake/leak).
+      - [ ] *À faire* : **retargeting** réel (squelettes/conventions différents),
+            vrai cubic-spline, viewer de squelette debug, drag-drop `.bvh` éditeur.
 - [x] **Étape 11 — Simulation Physique.** Intégration d'un moteur physique robuste :
       - [x] **Jolt Physics vendu** (`third_party/jolt`, lib statique via
             `add_subdirectory`, SIMD/ABI propagés en PUBLIC). Wrapper moteur dans

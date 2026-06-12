@@ -106,13 +106,14 @@ private:
 };
 
 // Parser
-std::unique_ptr<AnimStateMachine> AnimGraphParser::parse(std::string_view source, ResourceManager& /*resources*/, const Rig& rig) {
+std::unique_ptr<AnimStateMachine> AnimGraphParser::parse(
+    std::string_view source,
+    const std::unordered_map<std::string, const AnimationClip*>& clips,
+    const Rig& rig) {
     AnimLexer lexer(source);
     auto sm = std::make_unique<AnimStateMachine>();
 
-    // Fake clips for now as requested
-    static std::vector<std::unique_ptr<AnimationClip>> g_fakeClips;
-    std::unordered_map<std::string, const AnimationClip*> clips;
+    std::unordered_map<std::string, const AnimationClip*> aliases;  // local name -> loaded clip
     std::unordered_map<std::string, AnimState*> states;
 
     Token token = lexer.next();
@@ -122,13 +123,13 @@ std::unique_ptr<AnimStateMachine> AnimGraphParser::parse(std::string_view source
                 lexer.next(); // skip name
             } else if (token.text == "clip") {
                 Token name = lexer.next();
-                lexer.next(); // '='
-                Token path = lexer.next(); // String
-                
-                std::string pathStr(path.text);
-                auto clip = std::make_unique<AnimationClip>(std::string(name.text), 1.0f);
-                clips[std::string(name.text)] = clip.get();
-                g_fakeClips.push_back(std::move(clip));
+                lexer.next();             // '='
+                Token ref = lexer.next(); // String: name of an already-loaded clip
+                auto it = clips.find(std::string(ref.text));
+                if (it != clips.end())
+                    aliases[std::string(name.text)] = it->second;
+                else
+                    Log::error("AnimGraph: unknown clip '", ref.text, "'");
             } else if (token.text == "state") {
                 Token stateName = lexer.next();
                 lexer.next(); // ':'
@@ -136,8 +137,8 @@ std::unique_ptr<AnimStateMachine> AnimGraphParser::parse(std::string_view source
                 Token nextIdent = lexer.next();
                 if (nextIdent.type == TokenType::Identifier && nextIdent.text == "play") {
                     Token nodeName = lexer.next();
-                    auto it = clips.find(std::string(nodeName.text));
-                    if (it != clips.end()) {
+                    auto it = aliases.find(std::string(nodeName.text));
+                    if (it != aliases.end()) {
                         auto clipNode = std::make_unique<ClipNode>(it->second, rig);
                         auto state = std::make_unique<AnimState>(std::string(stateName.text), std::move(clipNode));
                         states[std::string(stateName.text)] = state.get();

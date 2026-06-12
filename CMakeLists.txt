@@ -94,6 +94,7 @@ add_library(ne_engine STATIC
     src/scene/Scene.cpp
     src/scene/SceneTree.cpp
     src/scene/SceneSerializer.cpp
+    src/scene/BVHLoader.cpp
     src/scene/BehaviourRegistry.cpp
     src/scene/NodeRegistry.cpp
     src/scene/WebCanvasNode.cpp

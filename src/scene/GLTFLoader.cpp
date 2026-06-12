@@ -299,6 +299,7 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
 
     // 6. Process Animations
     std::vector<AssetID> loadedClips;
+    std::vector<std::string> clipNames;
     for (size_t i = 0; i < data->animations_count; ++i) {
         cgltf_animation& anim = data->animations[i];
         std::string animName = anim.name ? anim.name : "Anim_" + std::to_string(i);
@@ -326,20 +327,26 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
             cgltf_animation_sampler* sampler = channel.sampler;
             cgltf_accessor* input = sampler->input;
             cgltf_accessor* output = sampler->output;
-            
+
+            // glTF CUBICSPLINE packs (in-tangent, value, out-tangent) per key; read
+            // just the value (treated as linear — no true cubic interpolation yet).
+            const bool cubic = sampler->interpolation == cgltf_interpolation_type_cubic_spline;
+            const size_t stride = cubic ? 3 : 1;
+            const size_t valueOffset = cubic ? 1 : 0;
+
             size_t count = input->count;
             std::vector<float> timestamps(count);
             for (size_t v = 0; v < count; ++v) {
                 cgltf_accessor_read_float(input, v, &timestamps[v], 1);
             }
-            
+
             if (channel.target_path == cgltf_animation_path_type_translation || channel.target_path == cgltf_animation_path_type_scale) {
                 auto track = std::make_unique<TypedAnimTrack<glm::vec3>>();
                 track->target = (channel.target_path == cgltf_animation_path_type_translation) ? TrackTarget::Translation : TrackTarget::Scale;
                 track->timestamps = std::move(timestamps);
                 track->values.resize(count);
                 for (size_t v = 0; v < count; ++v) {
-                    cgltf_accessor_read_float(output, v, glm::value_ptr(track->values[v]), 3);
+                    cgltf_accessor_read_float(output, v * stride + valueOffset, glm::value_ptr(track->values[v]), 3);
                 }
                 clip->addTrack(targetName, std::move(track));
             } else if (channel.target_path == cgltf_animation_path_type_rotation) {
@@ -349,7 +356,7 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
                 track->values.resize(count);
                 for (size_t v = 0; v < count; ++v) {
                     float q[4];
-                    cgltf_accessor_read_float(output, v, q, 4);
+                    cgltf_accessor_read_float(output, v * stride + valueOffset, q, 4);
                     track->values[v] = glm::quat(q[3], q[0], q[1], q[2]); // wxyz
                 }
                 clip->addTrack(targetName, std::move(track));
@@ -359,22 +366,22 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
         std::string clipPath = path + "#" + animName;
         AssetID clipId = resources.registerMemoryAnimation(clipPath, std::move(clip));
         loadedClips.push_back(clipId);
+        clipNames.push_back(animName);
         Log::info("Loaded GLTF Animation: ", animName, " duration=", duration, " id=", clipId);
     }
 
-    // 7. Auto-play the first animation on all skinned meshes (for demo purposes)
+    // 7. Register every clip on each skinned mesh's Animator and start the first
+    //    one looping, so a character glb animates immediately. Switch at runtime
+    //    from a behaviour with animator->play("Idle"/"Walk"/...).
     if (!loadedClips.empty() && !skinnedMeshes.empty()) {
-        const AnimationClip* clip = resources.getAnimation(loadedClips[0]);
-        if (clip) {
-            for (const auto& pair : skinnedMeshes) {
-                MeshNode* mNode = pair.first;
-                if (Animator* anim = mNode->getBehaviour<Animator>()) {
-                    if (const Rig* rig = anim->rig()) {
-                        anim->setRootNode(std::make_unique<ClipNode>(clip, *rig));
-                        Log::info("Auto-playing animation on ", mNode->name());
-                    }
-                }
+        for (const auto& pair : skinnedMeshes) {
+            Animator* anim = pair.first->getBehaviour<Animator>();
+            if (!anim || !anim->rig()) continue;
+            for (size_t k = 0; k < loadedClips.size(); ++k) {
+                if (const AnimationClip* c = resources.getAnimation(loadedClips[k]))
+                    anim->addClip(clipNames[k], c);
             }
+            anim->play(clipNames[0]);
         }
     }
 

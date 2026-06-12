@@ -1,11 +1,16 @@
 #include "scene/CharacterBehaviour.hpp"
 #include "scene/Node.hpp"
 #include "physics/CharacterBodyNode.hpp"
+#include "scene/animation/Animator.hpp"
 #include "core/Input.hpp"
 #include "core/Log.hpp"
 
 #include <imgui.h>
 #include <nlohmann/json.hpp>
+
+#include <glm/glm.hpp>
+
+#include <cstring>
 
 namespace ne {
 
@@ -43,6 +48,18 @@ void CharacterBehaviour::onUpdate(float dt) {
     }
 
     body->velocity = v;
+
+    bool moving = glm::length(glm::vec2(v.x, v.z)) > 0.1f;
+    updateAnimation(body->isOnFloor(), moving);
+}
+
+void CharacterBehaviour::updateAnimation(bool onFloor, bool moving) {
+    if (!animator_) animator_ = node()->findBehaviourInChildren<Animator>();
+    if (!animator_) return;  // no skinned character → nothing to drive
+
+    const std::string& want = !onFloor ? jumpClip : (moving ? walkClip : idleClip);
+    if (!want.empty() && animator_->clips().count(want))
+        animator_->play(want);  // play() no-ops if it's already the current clip
 }
 
 void CharacterBehaviour::onDrawInspector() {
@@ -53,18 +70,35 @@ void CharacterBehaviour::onDrawInspector() {
         ImGui::TextDisabled("On floor: %s", body->isOnFloor() ? "yes" : "no");
     else
         ImGui::TextDisabled("(attach to a CharacterBody node)");
+
+    ImGui::SeparatorText("Animation clips (child Animator)");
+    auto clipField = [](const char* label, std::string& s) {
+        char buf[64];
+        std::strncpy(buf, s.c_str(), sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        if (ImGui::InputText(label, buf, sizeof(buf))) s = buf;
+    };
+    clipField("Idle", idleClip);
+    clipField("Walk", walkClip);
+    clipField("Jump", jumpClip);
 }
 
 void CharacterBehaviour::save(nlohmann::json& j) const {
     j["moveSpeed"] = moveSpeed;
     j["jumpForce"] = jumpForce;
     j["gravity"] = gravity;
+    j["idleClip"] = idleClip;
+    j["walkClip"] = walkClip;
+    j["jumpClip"] = jumpClip;
 }
 
 void CharacterBehaviour::load(const nlohmann::json& j) {
     if (j.contains("moveSpeed")) moveSpeed = j["moveSpeed"].get<float>();
     if (j.contains("jumpForce")) jumpForce = j["jumpForce"].get<float>();
     if (j.contains("gravity")) gravity = j["gravity"].get<float>();
+    if (j.contains("idleClip")) idleClip = j["idleClip"].get<std::string>();
+    if (j.contains("walkClip")) walkClip = j["walkClip"].get<std::string>();
+    if (j.contains("jumpClip")) jumpClip = j["jumpClip"].get<std::string>();
 }
 
 } // namespace ne

@@ -35,6 +35,7 @@
 #include "audio/AudioSourceBehaviour.hpp"
 #include "scene/CharacterBehaviour.hpp"
 #include "scene/SpawnerBehaviour.hpp"
+#include "scene/animation/Animator.hpp"
 #include "ui/WebEngine.hpp"
 
 #include <thread>
@@ -74,6 +75,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     BehaviourRegistry::instance().registerType<AudioSourceBehaviour>("AudioSource");
     BehaviourRegistry::instance().registerType<CharacterBehaviour>("Character");
     BehaviourRegistry::instance().registerType<SpawnerBehaviour>("Spawner");
+    BehaviourRegistry::instance().registerType<Animator>("Animator");
 
     // Register built-in nodes
     NodeRegistry::instance().registerType<Node>("Node");

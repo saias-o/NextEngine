@@ -1,15 +1,17 @@
 #include "scene/animation/Animator.hpp"
+#include "scene/animation/ClipNode.hpp"
+#include "scene/animation/AnimationClip.hpp"
 #include "scene/Node.hpp"
+#include "core/Log.hpp"
 
 namespace ne {
 
 void Animator::setRig(Rig* rig) {
     rig_ = rig;
     if (rig_) {
-        // Initialize bind pose with identity transforms if not already set
-        if (bindPose_.localTransforms.empty()) {
+        // Initialize bind pose with identity transforms if not already set.
+        if (bindPose_.localTransforms.empty())
             bindPose_.localTransforms.resize(rig_->bones().size());
-        }
         currentLocalPose_.localTransforms.resize(rig_->bones().size());
         globalPose_.resize(rig_->bones().size());
     }
@@ -17,25 +19,58 @@ void Animator::setRig(Rig* rig) {
 
 void Animator::setRootNode(std::unique_ptr<AnimNode> rootNode) {
     rootNode_ = std::move(rootNode);
+    playbackFsm_ = nullptr;  // a custom root replaces the by-name playback FSM
+    playStates_.clear();
+    currentClip_.clear();
+}
+
+void Animator::setStateMachine(std::unique_ptr<AnimStateMachine> sm) {
+    if (sm) sm->setBlackboard(&blackboard_);
+    rootNode_ = std::move(sm);
+    playbackFsm_ = nullptr;
+    playStates_.clear();
+    currentClip_.clear();
+}
+
+void Animator::play(const std::string& name, bool loop, float crossfade) {
+    if (name == currentClip_) return;
+    auto it = clips_.find(name);
+    if (it == clips_.end() || !it->second) {
+        Log::warn("Animator::play: unknown clip '", name, "'");
+        return;
+    }
+    if (!rig_) return;
+
+    // Back play()-by-name with an internal state machine so we reuse its crossfade.
+    if (!playbackFsm_) {
+        auto sm = std::make_unique<AnimStateMachine>();
+        sm->setBlackboard(&blackboard_);
+        playbackFsm_ = sm.get();
+        rootNode_ = std::move(sm);
+        playStates_.clear();
+    }
+
+    if (playStates_.insert(name).second) {
+        auto clip = std::make_unique<ClipNode>(it->second, *rig_);
+        clip->setLooping(loop);
+        playbackFsm_->addState(std::make_unique<AnimState>(name, std::move(clip)));
+    }
+    playbackFsm_->transitionTo(name, crossfade);
+    currentClip_ = name;
 }
 
 void Animator::onUpdate(float dt) {
     if (!rig_) return;
 
     if (rootNode_) {
-        // 1. Advance logic/time
         rootNode_->update(dt);
-        
-        // 2. Evaluate the pose
         rootNode_->evaluate(bindPose_, currentLocalPose_);
     } else {
-        // Fallback to bind pose if no animation graph is present
-        currentLocalPose_ = bindPose_;
+        currentLocalPose_ = bindPose_;  // no graph → rest pose
     }
 
-    // 3. Compute GlobalPose and SkinningMatrices
-    // We use identity as the base transform because the renderer applies the entity's model matrix 
-    // to the whole mesh *after* skinning is applied in local space.
+    // GlobalPose in object space (identity base): the renderer applies the entity
+    // model matrix to the whole mesh after skinning.
     globalPose_.computeFrom(currentLocalPose_, *rig_, glm::mat4(1.0f));
 }
 
