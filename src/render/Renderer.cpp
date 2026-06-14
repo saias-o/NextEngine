@@ -25,6 +25,7 @@
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/animation/Animator.hpp"
+#include "xr/XrSession.hpp"   // xr::EyeView
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -101,10 +102,10 @@ glm::mat4 spotMatrix(const glm::vec3& pos, const glm::vec3& dir, float outerAngl
 
 Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
                    ResourceManager& resources, ImGuiLayer& imgui)
-    : device_(device), swapchain_(swapchain), window_(window), resources_(resources), imgui_(imgui) {
+    : device_(device), swapchain_(&swapchain), window_(window), resources_(resources), imgui_(&imgui) {
     createGlobalSetLayout();
     lightBaker_ = std::make_unique<LightBaker>(device_, globalSetLayout_);
-    uiRenderer_ = std::make_unique<UIRenderer>(device_, resources_, swapchain_.colorFormat());
+    uiRenderer_ = std::make_unique<UIRenderer>(device_, resources_, swapchain_->colorFormat());
     createHdrResources();
     createPipeline(resources_.materialSetLayout());
     createTonemapPipeline();
@@ -117,18 +118,42 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
     createGlobalDescriptorSets();
     createCommandBuffers();
     createSyncObjects();
-    
+
     if (device_.capabilities().descriptorIndexing && device_.capabilities().multiDrawIndirect) {
         createGpuDrivenBuffers();
         createCullingPipeline();
     }
 }
 
+Renderer::Renderer(VulkanDevice& device, Window& window, ResourceManager& resources,
+                   VkExtent2D xrEyeExtent, VkFormat xrColorFormat, uint32_t xrViewCount)
+    : device_(device), window_(window), resources_(resources),
+      xrMode_(true), xrExtent_(xrEyeExtent), xrColorFormat_(xrColorFormat),
+      xrViewCount_(xrViewCount) {
+    // Shared rendering machinery (identical to desktop) ...
+    createGlobalSetLayout();
+    lightBaker_ = std::make_unique<LightBaker>(device_, globalSetLayout_);
+    createUniformBuffers();
+    shadowMap_ = std::make_unique<ShadowMap>(device_);
+    gi_ = std::make_unique<GIVolume>(device_, giDescForTier(device_.capabilities().tier),
+                                     resources_.materialSetLayout(), globalSetLayout_);
+    createGlobalDescriptorPool();
+    createGlobalDescriptorSets();
+    // ... plus the XR-specific stereo targets + multiview pipelines.
+    createXrTargets();
+    createXrPipelines();
+}
+
 Renderer::~Renderer() {
     vkDeviceWaitIdle(device_.device());
-    for (int i = 0; i < kMaxFramesInFlight; i++) {
+    // Desktop-only present sync (not created in XR mode).
+    for (size_t i = 0; i < inFlightFences_.size(); i++) {
         vkDestroySemaphore(device_.device(), imageAvailableSemaphores_[i], nullptr);
         vkDestroyFence(device_.device(), inFlightFences_[i], nullptr);
+    }
+    if (xrMode_) {
+        cleanupXrTargets();
+        if (xrTonemapPool_) vkDestroyDescriptorPool(device_.device(), xrTonemapPool_, nullptr);
     }
     vkDestroyDescriptorPool(device_.device(), globalPool_, nullptr);
     vkDestroyDescriptorSetLayout(device_.device(), globalSetLayout_, nullptr);
@@ -222,8 +247,8 @@ void Renderer::createPipeline(VkDescriptorSetLayout materialSetLayout) {
         
     std::vector<VkFormat> colorFormats = {VK_FORMAT_R16G16B16A16_SFLOAT};
     pipeline_ = std::make_unique<Pipeline>(device_, shaderPath(vertShader),
-        shaderPath(fragShader), colorFormats, swapchain_.depthFormat(), setLayouts,
-        swapchain_.samples());
+        shaderPath(fragShader), colorFormats, swapchain_->depthFormat(), setLayouts,
+        swapchain_->samples());
 }
 
 void Renderer::createUniformBuffers() {
@@ -595,10 +620,11 @@ void Renderer::createSyncObjects() {
     }
 }
 
-void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera, Project* project) {
+void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& cameraPos,
+                           const Frustum* cullFrustum, Project* project) {
     auto& settings = scene.settings();
     ubo.ambient = settings.ambientLight;
-    ubo.cameraPos = glm::vec4(camera.position, 1.0f);
+    ubo.cameraPos = glm::vec4(cameraPos, 1.0f);
     ubo.shadowParams = glm::vec4(project ? project->shadowSoftness() : 1.0f, 0.0f, 0.0f, 0.0f);
 
     int lightCount = 0;
@@ -730,29 +756,31 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera,
         // We must use vkCmdFillBuffer or similar in the command buffer!)
     } else {
         currentDraws_.clear();
-        Frustum frustum = camera.getFrustum();
 
         for (MeshNode* node : scene.meshes()) {
             if (Mesh* m = node->mesh()) {
                 if (Material* mat = node->material()) {
                     const glm::mat4& world = node->worldTransform();
-                    // Frustum Culling
-                    float maxScale = std::max({
-                        glm::length(glm::vec3(world[0])),
-                        glm::length(glm::vec3(world[1])),
-                        glm::length(glm::vec3(world[2]))
-                    });
-                    float radius = 0.866f * maxScale;
-                    glm::vec3 center = glm::vec3(world[3]);
-
+                    // Frustum culling against the camera (desktop). XR passes a
+                    // null frustum (stereo) → render everything, no per-eye cull.
                     bool inside = true;
-                    for (int i = 0; i < 6; ++i) {
-                        if (glm::dot(glm::vec3(frustum.planes[i]), center) + frustum.planes[i].w < -radius) {
-                            inside = false;
-                            break;
+                    if (cullFrustum) {
+                        float maxScale = std::max({
+                            glm::length(glm::vec3(world[0])),
+                            glm::length(glm::vec3(world[1])),
+                            glm::length(glm::vec3(world[2]))
+                        });
+                        float radius = 0.866f * maxScale;
+                        glm::vec3 center = glm::vec3(world[3]);
+                        for (int i = 0; i < 6; ++i) {
+                            if (glm::dot(glm::vec3(cullFrustum->planes[i]), center) +
+                                    cullFrustum->planes[i].w < -radius) {
+                                inside = false;
+                                break;
+                            }
                         }
                     }
-                    
+
                     if (inside) {
                         bool baked = settings.lightingMode == LightingMode::Baked
                                      && lightBaker_->has(node);
@@ -794,7 +822,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const Camera& camera,
 }
 
 void Renderer::createHdrResources() {
-    VkExtent2D extent = swapchain_.extent();
+    VkExtent2D extent = swapchain_->extent();
     VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
     VkImageCreateInfo imageInfo{};
@@ -821,9 +849,9 @@ void Renderer::createHdrResources() {
 
     hdrView_ = device_.createImageView(hdrImage_, format, VK_IMAGE_ASPECT_COLOR_BIT);
 
-    const bool msaa = swapchain_.samples() != VK_SAMPLE_COUNT_1_BIT;
+    const bool msaa = swapchain_->samples() != VK_SAMPLE_COUNT_1_BIT;
     if (msaa) {
-        imageInfo.samples = swapchain_.samples();
+        imageInfo.samples = swapchain_->samples();
         imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
         if (vmaCreateImage(device_.allocator(), &imageInfo, &allocInfo,
                            &hdrMsaaImage_, &hdrMsaaAllocation_, nullptr) != VK_SUCCESS)
@@ -895,7 +923,7 @@ void Renderer::createTonemapPipeline() {
         throw std::runtime_error("failed to create tonemap sampler");
 
     std::vector<VkDescriptorSetLayout> setLayouts = {tonemapSetLayout_};
-    std::vector<VkFormat> colorFormats = {swapchain_.colorFormat()};
+    std::vector<VkFormat> colorFormats = {swapchain_->colorFormat()};
     
     tonemapPipeline_ = std::make_unique<Pipeline>(device_, shaderPath("tonemap.vert.spv"),
         shaderPath("tonemap.frag.spv"), colorFormats, VK_FORMAT_UNDEFINED, setLayouts,
@@ -908,7 +936,7 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex) {
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
         VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
     
-    VkImage swapImage = swapchain_.image(imageIndex);
+    VkImage swapImage = swapchain_->image(imageIndex);
     VkImageMemoryBarrier2 toColorAttach = imageBarrier2(swapImage,
         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
@@ -934,7 +962,7 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex) {
 
     VkRenderingAttachmentInfo colorAttach{};
     colorAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    colorAttach.imageView = swapchain_.imageView(imageIndex);
+    colorAttach.imageView = swapchain_->imageView(imageIndex);
     colorAttach.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -942,7 +970,7 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex) {
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     renderingInfo.renderArea.offset = {0, 0};
-    renderingInfo.renderArea.extent = swapchain_.extent();
+    renderingInfo.renderArea.extent = swapchain_->extent();
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 1;
     renderingInfo.pColorAttachments = &colorAttach;
@@ -951,14 +979,14 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex) {
     tonemapPipeline_->bind(cmd);
 
     VkViewport viewport{};
-    viewport.width = static_cast<float>(swapchain_.extent().width);
-    viewport.height = static_cast<float>(swapchain_.extent().height);
+    viewport.width = static_cast<float>(swapchain_->extent().width);
+    viewport.height = static_cast<float>(swapchain_->extent().height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor{};
-    scissor.extent = swapchain_.extent();
+    scissor.extent = swapchain_->extent();
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, tonemapPipeline_->layout(),
@@ -967,8 +995,8 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex) {
     vkCmdPushConstants(cmd, tonemapPipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float), &exposure_);
 
     vkCmdDraw(cmd, 3, 1, 0, 0);
-    uiRenderer_->recordCommands(cmd, swapchain_.extent().width, swapchain_.extent().height);
-    imgui_.renderDrawData(cmd);  // UI on top, in the LDR swapchain pass
+    uiRenderer_->recordCommands(cmd, swapchain_->extent().width, swapchain_->extent().height);
+    imgui_->renderDrawData(cmd);  // UI on top, in the LDR swapchain pass
     vkCmdEndRendering(cmd);
 }
 
@@ -1014,8 +1042,8 @@ void Renderer::createSkyboxPipeline() {
     
     // Disable depth write, but keep depth test (LESS_OR_EQUAL since Z=1.0)
     skyboxPipeline_ = std::make_unique<Pipeline>(device_, shaderPath("skybox.vert.spv"),
-        shaderPath("skybox.frag.spv"), colorFormats, swapchain_.depthFormat(), setLayouts,
-        swapchain_.samples(), false, true, sizeof(SkyboxPushConstants),
+        shaderPath("skybox.frag.spv"), colorFormats, swapchain_->depthFormat(), setLayouts,
+        swapchain_->samples(), false, true, sizeof(SkyboxPushConstants),
         false, VK_COMPARE_OP_LESS_OR_EQUAL, VK_CULL_MODE_NONE);
 }
 
@@ -1064,18 +1092,19 @@ void Renderer::recordSkyboxPass(VkCommandBuffer cmd, Scene& scene, const Camera&
 }
 
 void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera, Project* project) {
-    camera.setPerspective(glm::radians(45.0f), swapchain_.aspectRatio(), 0.1f, 100.0f);
+    camera.setPerspective(glm::radians(45.0f), swapchain_->aspectRatio(), 0.1f, 100.0f);
     
     // Store camera frustum for culling compute shader
     cameraFrustum_ = camera.getFrustum();
 
     UniformBufferObject ubo{};
-    ubo.view = camera.view();
-    ubo.proj = camera.projection();
+    // Mono: both eye slots hold the same matrix (the desktop shader uses index 0).
+    ubo.view[0] = ubo.view[1] = camera.view();
+    ubo.proj[0] = ubo.proj[1] = camera.projection();
     uniformBuffers_[frame]->write(&ubo, sizeof(ubo));
 
     LightingUBO lighting{};
-    gatherScene(lighting, scene, camera, project);
+    gatherScene(lighting, scene, camera.position, &cameraFrustum_, project);
     lightingBuffers_[frame]->write(&lighting, sizeof(lighting));
 }
 
@@ -1186,9 +1215,9 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
 
     auto& settings = scene.settings();
     glm::vec4 clearColor = settings.clearColor;
-    VkExtent2D extent = swapchain_.extent();
+    VkExtent2D extent = swapchain_->extent();
 
-    const bool msaa = swapchain_.samples() != VK_SAMPLE_COUNT_1_BIT;
+    const bool msaa = swapchain_->samples() != VK_SAMPLE_COUNT_1_BIT;
     // Color is rendered into the MSAA target and resolved to the HDR image; with
     // no MSAA we render straight to the HDR image.
     VkImage colorImage = msaa ? hdrMsaaImage_ : hdrImage_;
@@ -1206,7 +1235,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-    preBarriers[preCount++] = imageBarrier2(swapchain_.depthImage(),
+    preBarriers[preCount++] = imageBarrier2(swapchain_->depthImage(),
         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, 0,
         VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
@@ -1228,7 +1257,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
 
     VkRenderingAttachmentInfo depthAttach{};
     depthAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    depthAttach.imageView = swapchain_.depthView();
+    depthAttach.imageView = swapchain_->depthView();
     depthAttach.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -1358,7 +1387,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
 
     recordTonemapPass(cmd, imageIndex);
 
-    VkImage swapImage = swapchain_.image(imageIndex);
+    VkImage swapImage = swapchain_->image(imageIndex);
     // Transition the swap-chain image from color attachment to present.
     VkImageMemoryBarrier2 toPresent = imageBarrier2(swapImage,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
@@ -1380,11 +1409,11 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     }
 
     uint32_t imageIndex;
-    VkResult result = vkAcquireNextImageKHR(device_.device(), swapchain_.handle(), UINT64_MAX,
+    VkResult result = vkAcquireNextImageKHR(device_.device(), swapchain_->handle(), UINT64_MAX,
         imageAvailableSemaphores_[currentFrame_], VK_NULL_HANDLE, &imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        swapchain_.recreate();
+        swapchain_->recreate();
         cleanupHdrResources();
         createHdrResources();
         return;
@@ -1431,7 +1460,7 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
 
     VkSemaphore waitSemaphores[] = {imageAvailableSemaphores_[currentFrame_]};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    VkSemaphore signalSemaphores[] = {swapchain_.renderFinishedSemaphore(imageIndex)};
+    VkSemaphore signalSemaphores[] = {swapchain_->renderFinishedSemaphore(imageIndex)};
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1450,7 +1479,7 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = signalSemaphores;
-    VkSwapchainKHR swapChains[] = {swapchain_.handle()};
+    VkSwapchainKHR swapChains[] = {swapchain_->handle()};
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapChains;
     presentInfo.pImageIndices = &imageIndex;
@@ -1458,12 +1487,450 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     result = vkQueuePresentKHR(device_.presentQueue(), &presentInfo);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window_.wasResized()) {
         window_.resetResizedFlag();
-        swapchain_.recreate();
+        swapchain_->recreate();
         cleanupHdrResources();
         createHdrResources();
     } else if (result != VK_SUCCESS) {
         throw std::runtime_error("failed to present swap chain image");
     }
+
+    currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
+}
+
+// ────────────────────────────────────────────────────────────── XR (multiview)
+
+namespace {
+// All eyes render in one pass into a 2-layer image; the view mask has one bit
+// per eye (0b11 for stereo). gl_ViewIndex selects the per-eye matrices.
+uint32_t xrViewMask(uint32_t viewCount) { return (1u << viewCount) - 1u; }
+}
+
+void Renderer::createXrTargets() {
+    const VkFormat hdrFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+
+    auto makeView = [&](VkImage img, VkFormat fmt, VkImageAspectFlags aspect,
+                        VkImageViewType type, uint32_t baseLayer, uint32_t layers) {
+        VkImageViewCreateInfo v{};
+        v.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        v.image = img;
+        v.viewType = type;
+        v.format = fmt;
+        v.subresourceRange = {aspect, 0, 1, baseLayer, layers};
+        VkImageView view;
+        if (vkCreateImageView(device_.device(), &v, nullptr, &view) != VK_SUCCESS)
+            throw std::runtime_error("XR: failed to create image view");
+        return view;
+    };
+
+    VkImageCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    ci.imageType = VK_IMAGE_TYPE_2D;
+    ci.extent = {xrExtent_.width, xrExtent_.height, 1};
+    ci.mipLevels = 1;
+    ci.arrayLayers = xrViewCount_;            // one layer per eye
+    ci.format = hdrFormat;
+    ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    ci.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    ci.samples = VK_SAMPLE_COUNT_1_BIT;       // MSAA is a follow-up for XR
+    ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo ai{};
+    ai.usage = VMA_MEMORY_USAGE_AUTO;
+
+    // 2-layer HDR color: one array view to render into (multiview), plus a
+    // single-layer view per eye that the tonemap pass samples.
+    if (vmaCreateImage(device_.allocator(), &ci, &ai, &xrHdrImage_, &xrHdrAllocation_, nullptr) != VK_SUCCESS)
+        throw std::runtime_error("XR: failed to create HDR image");
+    xrHdrArrayView_ = makeView(xrHdrImage_, hdrFormat, VK_IMAGE_ASPECT_COLOR_BIT,
+                               VK_IMAGE_VIEW_TYPE_2D_ARRAY, 0, xrViewCount_);
+    for (uint32_t i = 0; i < xrViewCount_; ++i)
+        xrHdrLayerViews_[i] = makeView(xrHdrImage_, hdrFormat, VK_IMAGE_ASPECT_COLOR_BIT,
+                                       VK_IMAGE_VIEW_TYPE_2D, i, 1);
+
+    // 2-layer depth.
+    const VkFormat depthFormat = device_.findDepthFormat();
+    ci.format = depthFormat;
+    ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    if (vmaCreateImage(device_.allocator(), &ci, &ai, &xrDepthImage_, &xrDepthAllocation_, nullptr) != VK_SUCCESS)
+        throw std::runtime_error("XR: failed to create depth image");
+    xrDepthArrayView_ = makeView(xrDepthImage_, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT,
+                                 VK_IMAGE_VIEW_TYPE_2D_ARRAY, 0, xrViewCount_);
+}
+
+void Renderer::cleanupXrTargets() {
+    VkDevice d = device_.device();
+    if (xrDepthArrayView_) vkDestroyImageView(d, xrDepthArrayView_, nullptr);
+    if (xrDepthImage_) vmaDestroyImage(device_.allocator(), xrDepthImage_, xrDepthAllocation_);
+    for (auto& v : xrHdrLayerViews_) { if (v) vkDestroyImageView(d, v, nullptr); v = VK_NULL_HANDLE; }
+    if (xrHdrArrayView_) vkDestroyImageView(d, xrHdrArrayView_, nullptr);
+    if (xrHdrImage_) vmaDestroyImage(device_.allocator(), xrHdrImage_, xrHdrAllocation_);
+    xrDepthArrayView_ = VK_NULL_HANDLE; xrDepthImage_ = VK_NULL_HANDLE;
+    xrHdrArrayView_ = VK_NULL_HANDLE; xrHdrImage_ = VK_NULL_HANDLE;
+}
+
+void Renderer::createXrPipelines() {
+    const VkFormat hdrFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    const VkFormat depthFormat = device_.findDepthFormat();
+    const uint32_t viewMask = xrViewMask(xrViewCount_);
+    const std::vector<VkFormat> hdrColor = {hdrFormat};
+
+    // ── Scene (multiview): per-eye camera matrices via gl_ViewIndex ──
+    std::vector<VkDescriptorSetLayout> sceneLayouts = {
+        globalSetLayout_, resources_.materialSetLayout(), lightBaker_->setLayout()};
+    xrScenePipeline_ = std::make_unique<Pipeline>(device_,
+        shaderPath("multiview.shader.vert.spv"), shaderPath("shader.frag.spv"),
+        hdrColor, depthFormat, sceneLayouts, VK_SAMPLE_COUNT_1_BIT,
+        true, true, 0, true, VK_COMPARE_OP_LESS, VK_CULL_MODE_BACK_BIT, false,
+        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, viewMask);
+
+    // ── Skybox descriptor set (texture) + multiview pipeline ──
+    {
+        VkDescriptorSetLayoutBinding b{};
+        b.binding = 0;
+        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b.descriptorCount = 1;
+        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutCreateInfo lci{};
+        lci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        lci.bindingCount = 1;
+        lci.pBindings = &b;
+        if (vkCreateDescriptorSetLayout(device_.device(), &lci, nullptr, &skyboxSetLayout_) != VK_SUCCESS)
+            throw std::runtime_error("XR: failed to create skybox set layout");
+
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+        VkDescriptorPoolCreateInfo pci{};
+        pci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pci.poolSizeCount = 1;
+        pci.pPoolSizes = &ps;
+        pci.maxSets = 1;
+        if (vkCreateDescriptorPool(device_.device(), &pci, nullptr, &skyboxPool_) != VK_SUCCESS)
+            throw std::runtime_error("XR: failed to create skybox pool");
+
+        VkDescriptorSetAllocateInfo asi{};
+        asi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        asi.descriptorPool = skyboxPool_;
+        asi.descriptorSetCount = 1;
+        asi.pSetLayouts = &skyboxSetLayout_;
+        if (vkAllocateDescriptorSets(device_.device(), &asi, &skyboxSet_) != VK_SUCCESS)
+            throw std::runtime_error("XR: failed to allocate skybox set");
+
+        std::vector<VkDescriptorSetLayout> skyLayouts = {skyboxSetLayout_};
+        xrSkyboxPipeline_ = std::make_unique<Pipeline>(device_,
+            shaderPath("skybox.vert.spv"), shaderPath("multiview.skybox.frag.spv"),
+            hdrColor, depthFormat, skyLayouts, VK_SAMPLE_COUNT_1_BIT,
+            false, true, sizeof(XrSkyboxPush), false, VK_COMPARE_OP_LESS_OR_EQUAL,
+            VK_CULL_MODE_NONE, false, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, viewMask);
+    }
+
+    // ── Tonemap set layout + sampler + per-eye sets + (mono) pipeline ──
+    {
+        VkDescriptorSetLayoutBinding b{};
+        b.binding = 0;
+        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b.descriptorCount = 1;
+        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutCreateInfo lci{};
+        lci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        lci.bindingCount = 1;
+        lci.pBindings = &b;
+        if (vkCreateDescriptorSetLayout(device_.device(), &lci, nullptr, &tonemapSetLayout_) != VK_SUCCESS)
+            throw std::runtime_error("XR: failed to create tonemap set layout");
+
+        VkSamplerCreateInfo sci{};
+        sci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        sci.magFilter = VK_FILTER_LINEAR;
+        sci.minFilter = VK_FILTER_LINEAR;
+        sci.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sci.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        if (vkCreateSampler(device_.device(), &sci, nullptr, &tonemapSampler_) != VK_SUCCESS)
+            throw std::runtime_error("XR: failed to create tonemap sampler");
+
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, xrViewCount_};
+        VkDescriptorPoolCreateInfo pci{};
+        pci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pci.poolSizeCount = 1;
+        pci.pPoolSizes = &ps;
+        pci.maxSets = xrViewCount_;
+        if (vkCreateDescriptorPool(device_.device(), &pci, nullptr, &xrTonemapPool_) != VK_SUCCESS)
+            throw std::runtime_error("XR: failed to create tonemap pool");
+
+        // One descriptor set per eye, each pinned to that eye's HDR layer view.
+        for (uint32_t i = 0; i < xrViewCount_; ++i) {
+            VkDescriptorSetAllocateInfo asi{};
+            asi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            asi.descriptorPool = xrTonemapPool_;
+            asi.descriptorSetCount = 1;
+            asi.pSetLayouts = &tonemapSetLayout_;
+            if (vkAllocateDescriptorSets(device_.device(), &asi, &xrTonemapSets_[i]) != VK_SUCCESS)
+                throw std::runtime_error("XR: failed to allocate tonemap set");
+
+            VkDescriptorImageInfo ii{};
+            ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            ii.imageView = xrHdrLayerViews_[i];
+            ii.sampler = tonemapSampler_;
+            VkWriteDescriptorSet w{};
+            w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w.dstSet = xrTonemapSets_[i];
+            w.dstBinding = 0;
+            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w.descriptorCount = 1;
+            w.pImageInfo = &ii;
+            vkUpdateDescriptorSets(device_.device(), 1, &w, 0, nullptr);
+        }
+
+        std::vector<VkDescriptorSetLayout> setLayouts = {tonemapSetLayout_};
+        std::vector<VkFormat> colorFormats = {xrColorFormat_};
+        xrTonemapPipeline_ = std::make_unique<Pipeline>(device_,
+            shaderPath("tonemap.vert.spv"), shaderPath("tonemap.frag.spv"),
+            colorFormats, VK_FORMAT_UNDEFINED, setLayouts, VK_SAMPLE_COUNT_1_BIT,
+            false, false);
+    }
+}
+
+void Renderer::updateUniformBufferXr(uint32_t frame, const std::vector<xr::EyeView>& eyes,
+                                     Scene& scene, Project* project) {
+    UniformBufferObject ubo{};
+    const uint32_t n = std::min<uint32_t>(static_cast<uint32_t>(eyes.size()), 2);
+    for (uint32_t i = 0; i < n; ++i) {
+        ubo.view[i] = eyes[i].view;
+        ubo.proj[i] = eyes[i].projection;
+    }
+    if (n == 1) { ubo.view[1] = ubo.view[0]; ubo.proj[1] = ubo.proj[0]; }
+    uniformBuffers_[frame]->write(&ubo, sizeof(ubo));
+
+    // Specular/view-dependent terms use the eye centroid (head). No frustum cull:
+    // a single combined-stereo frustum isn't worth the complexity here.
+    glm::vec3 head(0.0f);
+    for (uint32_t i = 0; i < n; ++i) head += eyes[i].eyePosition;
+    head /= static_cast<float>(std::max(1u, n));
+
+    LightingUBO lighting{};
+    gatherScene(lighting, scene, head, nullptr, project);
+    lightingBuffers_[frame]->write(&lighting, sizeof(lighting));
+}
+
+void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
+                                 const std::vector<xr::EyeView>& eyes) {
+    auto& settings = scene.settings();
+    const glm::vec4 clearColor = settings.clearColor;
+
+    std::array<VkImageMemoryBarrier2, 2> pre{};
+    pre[0] = imageBarrier2(xrHdrImage_,
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_IMAGE_ASPECT_COLOR_BIT, 0, xrViewCount_);
+    pre[1] = imageBarrier2(xrDepthImage_,
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, 0,
+        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, 0, xrViewCount_);
+    cmdImageBarriers(cmd, pre.data(), pre.size());
+
+    VkRenderingAttachmentInfo color{};
+    color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    color.imageView = xrHdrArrayView_;
+    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    color.clearValue.color = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
+
+    VkRenderingAttachmentInfo depth{};
+    depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depth.imageView = xrDepthArrayView_;
+    depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth.clearValue.depthStencil = {1.0f, 0};
+
+    VkRenderingInfo ri{};
+    ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    ri.renderArea.offset = {0, 0};
+    ri.renderArea.extent = xrExtent_;
+    ri.layerCount = 1;                       // ignored when viewMask != 0
+    ri.viewMask = xrViewMask(xrViewCount_);  // multiview: both eyes in one pass
+    ri.colorAttachmentCount = 1;
+    ri.pColorAttachments = &color;
+    ri.pDepthAttachment = &depth;
+
+    vkCmdBeginRendering(cmd, &ri);
+
+    VkViewport vp{};
+    vp.width = static_cast<float>(xrExtent_.width);
+    vp.height = static_cast<float>(xrExtent_.height);
+    vp.minDepth = 0.0f;
+    vp.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    VkRect2D sc{};
+    sc.extent = xrExtent_;
+    vkCmdSetScissor(cmd, 0, 1, &sc);
+
+    // Opaque scene (same draw list / material binding model as the desktop path).
+    xrScenePipeline_->bind(cmd);
+    VkPipelineLayout layout = xrScenePipeline_->layout();
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
+        0, 1, &globalSets_[currentFrame_], 0, nullptr);
+
+    Material* lastMaterial = nullptr;
+    for (const auto& d : currentDraws_) {
+        if (d.material != lastMaterial) {
+            VkDescriptorSet matSet = d.material->descriptorSet();
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &matSet, 0, nullptr);
+            lastMaterial = d.material;
+        }
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 2, 1, &d.lightmapSet, 0, nullptr);
+        PushConstants pc{};
+        pc.model = d.world;
+        pc.params = glm::vec4(d.useLightmap ? 1.0f : 0.0f, static_cast<float>(d.boneOffset), 0.0f, 0.0f);
+        vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(PushConstants), &pc);
+        d.mesh->bind(cmd);
+        d.mesh->draw(cmd);
+    }
+
+    // Skybox (multiview): per-eye inverse view-proj picked by gl_ViewIndex.
+    if (settings.skyboxTexture != kAssetInvalid) {
+        if (Texture* tex = resources_.getTexture(settings.skyboxTexture)) {
+            if (settings.skyboxTexture != currentSkyboxTexture_) {
+                VkDescriptorImageInfo ii{};
+                ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                ii.imageView = tex->imageView();
+                ii.sampler = tex->sampler();
+                VkWriteDescriptorSet w{};
+                w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                w.dstSet = skyboxSet_;
+                w.dstBinding = 0;
+                w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                w.descriptorCount = 1;
+                w.pImageInfo = &ii;
+                vkUpdateDescriptorSets(device_.device(), 1, &w, 0, nullptr);
+                currentSkyboxTexture_ = settings.skyboxTexture;
+            }
+            xrSkyboxPipeline_->bind(cmd);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                xrSkyboxPipeline_->layout(), 0, 1, &skyboxSet_, 0, nullptr);
+            XrSkyboxPush push{};
+            const uint32_t n = std::min<uint32_t>(static_cast<uint32_t>(eyes.size()), 2);
+            for (uint32_t i = 0; i < n; ++i) {
+                glm::mat4 view = eyes[i].view;
+                view[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);  // strip translation
+                push.invViewProj[i] = glm::inverse(eyes[i].projection * view);
+            }
+            if (n == 1) push.invViewProj[1] = push.invViewProj[0];
+            push.exposure = settings.skyboxExposure;
+            push.rotation = settings.skyboxRotation;
+            vkCmdPushConstants(cmd, xrSkyboxPipeline_->layout(),
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                0, sizeof(XrSkyboxPush), &push);
+            vkCmdDraw(cmd, 3, 1, 0, 0);
+        }
+    }
+
+    vkCmdEndRendering(cmd);
+}
+
+void Renderer::recordXrTonemap(VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes) {
+    // HDR (all layers) → shader read for sampling.
+    VkImageMemoryBarrier2 hdrToRead = imageBarrier2(xrHdrImage_,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+        VK_IMAGE_ASPECT_COLOR_BIT, 0, xrViewCount_);
+    cmdImageBarrier(cmd, hdrToRead);
+
+    const uint32_t n = std::min<uint32_t>(static_cast<uint32_t>(eyes.size()), xrViewCount_);
+    for (uint32_t i = 0; i < n; ++i) {
+        const xr::EyeView& eye = eyes[i];
+        // The XR image starts UNDEFINED; the compositor wants it left in
+        // COLOR_ATTACHMENT_OPTIMAL, which is exactly where rendering leaves it.
+        VkImageMemoryBarrier2 toColor = imageBarrier2(eye.image,
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        cmdImageBarrier(cmd, toColor);
+
+        VkRenderingAttachmentInfo color{};
+        color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        color.imageView = eye.imageView;
+        color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        color.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+        VkRenderingInfo ri{};
+        ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        ri.renderArea.offset = {0, 0};
+        ri.renderArea.extent = eye.extent;
+        ri.layerCount = 1;
+        ri.colorAttachmentCount = 1;
+        ri.pColorAttachments = &color;
+
+        vkCmdBeginRendering(cmd, &ri);
+        xrTonemapPipeline_->bind(cmd);
+        VkViewport vp{};
+        vp.width = static_cast<float>(eye.extent.width);
+        vp.height = static_cast<float>(eye.extent.height);
+        vp.minDepth = 0.0f;
+        vp.maxDepth = 1.0f;
+        vkCmdSetViewport(cmd, 0, 1, &vp);
+        VkRect2D sc{};
+        sc.extent = eye.extent;
+        vkCmdSetScissor(cmd, 0, 1, &sc);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            xrTonemapPipeline_->layout(), 0, 1, &xrTonemapSets_[i], 0, nullptr);
+        vkCmdPushConstants(cmd, xrTonemapPipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
+            0, sizeof(float), &exposure_);
+        vkCmdDraw(cmd, 3, 1, 0, 0);
+        vkCmdEndRendering(cmd);
+    }
+}
+
+void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes,
+                      Scene& scene, Project* project) {
+    if (eyes.empty()) return;
+    auto& settings = scene.settings();
+
+    // GI update cadence (mirrors drawFrame; no editor bake UI in XR yet).
+    if (settings.lightingMode == LightingMode::Realtime) {
+        giUpdateThisFrame_ = settings.giEnabled;
+    } else {
+        if (settings.bakeRequested) {
+            settings.bakeRequested = false;
+            giBakeFramesRemaining_ = kGIBakeFrames;
+            settings.baked = false;
+        }
+        giUpdateThisFrame_ = giBakeFramesRemaining_ > 0;
+        if (giUpdateThisFrame_ && --giBakeFramesRemaining_ == 0)
+            settings.baked = true;
+    }
+
+    if (giUpdateThisFrame_) gi_->beginFrame();
+    updateGIDescriptors();
+
+    // CPU prep (per-eye matrices, lighting, draw list, bones).
+    updateUniformBufferXr(currentFrame_, eyes, scene, project);
+
+    // View-independent passes recorded once, then the stereo scene + tonemap.
+    if (giUpdateThisFrame_) {
+        gi_->voxelize(cmd, scene);
+        gi_->update(cmd, globalSets_[currentFrame_]);
+    }
+    shadowMap_->record(cmd, shadowCount_,
+        [this, &scene](VkCommandBuffer c, VkPipelineLayout layout, int layer) {
+            for (MeshNode* node : scene.meshes()) {
+                Mesh* mesh = node->mesh();
+                if (!mesh || !node->castShadows()) continue;
+                glm::mat4 mvp = shadowMatrices_[layer] * node->worldTransform();
+                vkCmdPushConstants(c, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
+                mesh->bind(c);
+                mesh->draw(c);
+            }
+        });
+
+    recordXrScenePass(cmd, scene, eyes);
+    recordXrTonemap(cmd, eyes);
 
     currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
 }

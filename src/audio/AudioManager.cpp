@@ -161,19 +161,29 @@ AudioID AudioManager::play(const std::string& audioName, const AudioSettings& se
 
 void AudioManager::stop(const std::string& audioName, Node* node) {
     std::lock_guard<std::mutex> lock(mutex_);
-    for (auto it = activeSounds_.begin(); it != activeSounds_.end(); ++it) {
+    for (auto it = activeSounds_.begin(); it != activeSounds_.end(); ) {
         if (it->second->name == audioName && it->second->attachedNode == node) {
             ma_sound_stop(&it->second->sound);
+            ma_sound_uninit(&it->second->sound);
+            delete it->second;
+            it = activeSounds_.erase(it);
             break; // Stop only the first one found
+        } else {
+            ++it;
         }
     }
 }
 
 void AudioManager::stopAll(const std::string& audioName) {
     std::lock_guard<std::mutex> lock(mutex_);
-    for (auto& pair : activeSounds_) {
-        if (pair.second->name == audioName) {
-            ma_sound_stop(&pair.second->sound);
+    for (auto it = activeSounds_.begin(); it != activeSounds_.end(); ) {
+        if (it->second->name == audioName) {
+            ma_sound_stop(&it->second->sound);
+            ma_sound_uninit(&it->second->sound);
+            delete it->second;
+            it = activeSounds_.erase(it);
+        } else {
+            ++it;
         }
     }
 }
@@ -183,17 +193,23 @@ void AudioManager::stop(AudioID id) {
     auto it = activeSounds_.find(id);
     if (it != activeSounds_.end()) {
         ma_sound_stop(&it->second->sound);
+        ma_sound_uninit(&it->second->sound);
+        delete it->second;
+        activeSounds_.erase(it);
     }
 }
 
 void AudioManager::stopAllOnNode(Node* node) {
     if (!node) return;
     std::lock_guard<std::mutex> lock(mutex_);
-    for (auto& pair : activeSounds_) {
-        if (pair.second->attachedNode == node) {
-            ma_sound_stop(&pair.second->sound);
-            // We detach to prevent further access until update() cleans it up
-            pair.second->attachedNode = nullptr; 
+    for (auto it = activeSounds_.begin(); it != activeSounds_.end(); ) {
+        if (it->second->attachedNode == node) {
+            ma_sound_stop(&it->second->sound);
+            ma_sound_uninit(&it->second->sound);
+            delete it->second;
+            it = activeSounds_.erase(it);
+        } else {
+            ++it;
         }
     }
 }

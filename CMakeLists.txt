@@ -60,6 +60,20 @@ foreach(SHADER ${SHADERS})
         )
         list(APPEND SHADER_SPIRV ${BINDLESS_OUTPUT})
     endif()
+
+    # Multiview (XR stereo, 1 pass / 2 layers): shaders that read per-eye data via
+    # gl_ViewIndex get a -DMULTIVIEW variant. The scene vertex picks per-eye
+    # camera matrices; the skybox fragment picks per-eye inverse view-proj.
+    if(SHADER_NAME STREQUAL "shader.vert" OR SHADER_NAME STREQUAL "skybox.frag")
+        set(MULTIVIEW_OUTPUT ${SHADER_OUT_DIR}/multiview.${SHADER_NAME}.spv)
+        add_custom_command(
+            OUTPUT ${MULTIVIEW_OUTPUT}
+            COMMAND ${GLSLC} -I ${SHADER_DIR} -DMULTIVIEW ${SHADER} -o ${MULTIVIEW_OUTPUT}
+            DEPENDS ${SHADER} ${SHADER_INCLUDES}
+            COMMENT "Compiling multiview.${SHADER_NAME} -> multiview.${SHADER_NAME}.spv"
+        )
+        list(APPEND SHADER_SPIRV ${MULTIVIEW_OUTPUT})
+    endif()
 endforeach()
 
 add_custom_target(Shaders DEPENDS ${SHADER_SPIRV})
@@ -151,6 +165,11 @@ add_library(ne_engine STATIC
     src/render/Renderer.cpp
     src/render/LightBaker.cpp
     src/render/GIVolume.cpp
+    # XR / OpenXR (Étape 14) — module découpé, présentation via session OpenXR.
+    src/xr/XrInstance.cpp
+    src/xr/XrVulkanBinding.cpp
+    src/xr/XrSwapchain.cpp
+    src/xr/XrSession.cpp
     src/project/Project.cpp
     src/project/AssetRegistry.cpp
     src/graphics/VmaUsage.cpp

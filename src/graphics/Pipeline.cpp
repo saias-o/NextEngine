@@ -29,7 +29,7 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
                    const std::vector<VkDescriptorSetLayout>& setLayouts,
                    VkSampleCountFlagBits samples, bool useVertexInput, bool useDepth, uint32_t pushConstantSize,
                    bool depthWrite, VkCompareOp depthCompare, VkCullModeFlags cullMode,
-                   bool useBlending, VkPrimitiveTopology topology)
+                   bool useBlending, VkPrimitiveTopology topology, uint32_t viewMask)
     : device_(device) {
     auto vertCode = readFile(vertPath);
     auto fragCode = readFile(fragPath);
@@ -145,6 +145,9 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
     renderingInfo.colorAttachmentCount = static_cast<uint32_t>(colorFormats.size());
     renderingInfo.pColorAttachmentFormats = colorFormats.empty() ? nullptr : colorFormats.data();
     renderingInfo.depthAttachmentFormat = depthFormat;
+    // Multiview (XR stereo): viewMask != 0 makes one draw render to all set views
+    // (gl_ViewIndex selects per-eye matrices). 0 = ordinary single-view rendering.
+    renderingInfo.viewMask = viewMask;
 
     VkGraphicsPipelineCreateInfo pipelineCI{};
     pipelineCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;

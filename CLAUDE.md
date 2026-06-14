@@ -397,15 +397,44 @@ Le moteur est construit par étapes numérotées :
       route casque = itérative (le rendu/tracking ne se valide que dans le casque).*
       - [x] **Fondation** : OpenXR-SDK vendu (`third_party/openxr`, release-1.1.60),
             `openxr_loader` statique buildé + linké à `ne_engine`.
-      - [ ] `XrSystem` : instance (`XR_KHR_vulkan_enable2`), system HMD, création
-            VkInstance/PhysicalDevice/Device pilotée par OpenXR, session, espace de
-            référence (LOCAL/STAGE), vues PRIMARY_STEREO, swapchains, boucle
-            waitFrame/locateViews/endFrame, poses tête → view/proj par œil.
-      - [ ] `VulkanDevice` : init pilotée par OpenXR en mode XR (chemin desktop intact).
-      - [ ] `Renderer` multiview (cibles 2-layers + viewMask, UBO caméra en tableau +
-            `gl_ViewIndex`), présentation dans les swapchains XR.
-      - [ ] `Engine` : auto-détection, pacing de frame XR, pose tête → caméra (regarder
-            autour). Puis contrôleurs, hand tracking, passthrough.
+      - [x] **Module `src/xr/` (découpé, RAII, namespace `ne::xr` pour ne pas
+            collisionner avec les handles OpenXR)** : `XrMath.hpp` (proj/view/pose →
+            GLM, conventions Vulkan Y-down + depth 0..1), `xr::Instance` (instance
+            `XR_KHR_vulkan_enable2` + system HMD + `headsetPresent()` + PFN
+            d'extension chargées via `xrGetInstanceProcAddr`), `XrVulkanBinding`
+            (fonctions libres `createVulkanInstance`/`pickPhysicalDevice`/
+            `createVulkanDevice`), `xr::Swapchain` (un par œil), `xr::Session`
+            (session + espace LOCAL + vues PRIMARY_STEREO + boucle
+            waitFrame/locateViews/endFrame, poses tête → view/proj par œil, callback
+            `RenderEyeFn` par œil). `XrPlatform.hpp` confine `<windows.h>` aux TUs xr.
+      - [x] `VulkanDevice` : init pilotée par OpenXR en mode XR (ctor prenant un
+            `xr::Instance*` ; pas de surface GLFW, present family = graphics).
+            **Chemin desktop strictement intact** (ctor sans XR délègue avec `nullptr`).
+      - [x] `Engine` : **auto-détection** du casque au démarrage (fallback desktop
+            propre si l'init XR échoue), boucle XR séparée (`runXr`) cadencée par
+            `xrWaitFrame`, **pose tête → caméra** (loggée). Sanity A (compile, à
+            valider casque) : chaque œil est **clear-color composité** dans le casque
+            → valide tout le handshake device→session→swapchain→frame-loop→
+            projection-layer + tracking, avant de brancher le rendu de scène.
+      - [x] **Seam de rendu scène + multiview (Étapes A-rendu & B fusionnées)** :
+            la scène est rendue **en stéréo, 1 passe multiview** (viewMask=0b11)
+            dans une cible HDR **2-layers** (1 layer/œil) sizée à l'extent par œil,
+            puis chaque layer est **tonemappé** dans l'image XR de l'œil. *Pipeline
+            unique réutilisé* (shadows, GI/DDGI, HDR, tonemap) — seule la
+            présentation diffère du desktop. Détails :
+            - UBO caméra **unifié** `view[2]/proj[2]` (mono = index 0 ; XR = via
+              `gl_ViewIndex`). Variantes shader `-DMULTIVIEW` (scene vert + skybox
+              frag) ; `Pipeline` prend un `viewMask`. Chemin desktop **inchangé**.
+            - `Renderer` **découplé du `Swapchain`** (2ᵉ ctor XR : pas de surface/
+              ImGui). `xr::Session::renderFrame` passe désormais **tous les yeux**
+              en un seul callback (acquire-all → 1 passe → release-all), pas par-œil.
+            - Pas de culling par-œil (stéréo) : on dessine tout. Tête = centroïde
+              des yeux pour le spéculaire. *Compile ; à valider au casque.*
+            - *Limites v1 (suites)* : **pas de MSAA** en XR (cible 1 sample),
+              **ImGui désactivé** en XR, skybox push-constant 136 o (OK PCVR ≥256 o).
+      - [ ] Contrôleurs (action sets), hand tracking, passthrough — Étape C.
+      - [ ] *Suites perf/qualité XR* : MSAA multiview (+resolve par layer),
+            overlay ImGui (quad/layer), culling stéréo combiné.
 - [ ] **Étape 15 — Build & Release Windows.** Gestion de la release finale du jeu :
       - Pipeline de build autonome d'un projet (packaging des assets et shaders sans dépendances de développement).
       - Gestion des versions, métadonnées de l'exécutable, et icône du jeu.

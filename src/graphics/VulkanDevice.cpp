@@ -2,6 +2,8 @@
 
 #include "core/Log.hpp"
 #include "core/Window.hpp"
+#include "xr/XrInstance.hpp"
+#include "xr/XrVulkanBinding.hpp"
 #include "vk_mem_alloc.h"
 
 #include <cstring>
@@ -79,10 +81,12 @@ void populateDebugMessengerCI(VkDebugUtilsMessengerCreateInfoEXT& ci) {
 
 } // namespace
 
-VulkanDevice::VulkanDevice(Window& window) {
+VulkanDevice::VulkanDevice(Window& window) : VulkanDevice(window, nullptr) {}
+
+VulkanDevice::VulkanDevice(Window& window, xr::Instance* xrInstance) : xr_(xrInstance) {
     createInstance();
     setupDebugMessenger();
-    createSurface(window);
+    createSurface(window);     // no-op in XR mode (no GLFW surface)
     pickPhysicalDevice();
     queryCapabilities();
     createLogicalDevice();
@@ -101,7 +105,8 @@ VulkanDevice::~VulkanDevice() {
     vkDestroyDevice(device_, nullptr);
     if (validationEnabled_)
         destroyDebugUtilsMessengerEXT(instance_, debugMessenger_, nullptr);
-    vkDestroySurfaceKHR(instance_, surface_, nullptr);
+    if (surface_ != VK_NULL_HANDLE)
+        vkDestroySurfaceKHR(instance_, surface_, nullptr);
     vkDestroyInstance(instance_, nullptr);
 }
 
@@ -122,9 +127,14 @@ bool VulkanDevice::checkValidationLayerSupport() const {
 }
 
 std::vector<const char*> VulkanDevice::requiredInstanceExtensions() const {
-    uint32_t glfwExtCount = 0;
-    const char** glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
-    std::vector<const char*> extensions(glfwExts, glfwExts + glfwExtCount);
+    std::vector<const char*> extensions;
+    // XR mode presents through OpenXR swapchains, not a GLFW VkSurfaceKHR, so the
+    // GLFW surface extensions are not needed (the runtime adds what it requires).
+    if (!xr_) {
+        uint32_t glfwExtCount = 0;
+        const char** glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
+        extensions.assign(glfwExts, glfwExts + glfwExtCount);
+    }
     if (validationEnabled_)
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     return extensions;
@@ -167,8 +177,12 @@ void VulkanDevice::createInstance() {
         createInfo.pNext = &debugCI;
     }
 
-    if (vkCreateInstance(&createInfo, nullptr, &instance_) != VK_SUCCESS)
+    if (xr_) {
+        // OpenXR creates the instance (merging the runtime's required extensions).
+        instance_ = xr::createVulkanInstance(*xr_, createInfo);
+    } else if (vkCreateInstance(&createInfo, nullptr, &instance_) != VK_SUCCESS) {
         throw std::runtime_error("failed to create Vulkan instance");
+    }
 }
 
 void VulkanDevice::setupDebugMessenger() {
@@ -180,6 +194,7 @@ void VulkanDevice::setupDebugMessenger() {
 }
 
 void VulkanDevice::createSurface(Window& window) {
+    if (xr_) return;  // XR presents through OpenXR swapchains, not a window surface
     surface_ = window.createSurface(instance_);
 }
 
@@ -196,9 +211,15 @@ QueueFamilyIndices VulkanDevice::findQueueFamilies(VkPhysicalDevice dev) const {
         const VkQueueFlags flags = families[i].queueFlags;
         if (flags & VK_QUEUE_GRAPHICS_BIT && !idx.graphicsFamily.has_value())
             idx.graphicsFamily = i;
-        VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(dev, i, surface_, &presentSupport);
-        if (presentSupport && !idx.presentFamily.has_value()) idx.presentFamily = i;
+        // XR mode has no surface: present goes through OpenXR, so the "present"
+        // family is just the graphics family (kept consistent for queue creation).
+        if (surface_ != VK_NULL_HANDLE) {
+            VkBool32 presentSupport = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(dev, i, surface_, &presentSupport);
+            if (presentSupport && !idx.presentFamily.has_value()) idx.presentFamily = i;
+        } else if ((flags & VK_QUEUE_GRAPHICS_BIT) && !idx.presentFamily.has_value()) {
+            idx.presentFamily = i;
+        }
 
         // Prefer a dedicated compute family (compute but NOT graphics) for true
         // async compute; otherwise remember any compute-capable family.
@@ -254,6 +275,15 @@ bool VulkanDevice::isDeviceSuitable(VkPhysicalDevice dev) const {
 }
 
 void VulkanDevice::pickPhysicalDevice() {
+    if (xr_) {
+        // OpenXR mandates the GPU the headset is attached to — no choice to make.
+        physicalDevice_ = xr::pickPhysicalDevice(*xr_, instance_);
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(physicalDevice_, &props);
+        Log::info("GPU (XR): ", props.deviceName);
+        return;
+    }
+
     uint32_t count = 0;
     vkEnumeratePhysicalDevices(instance_, &count, nullptr);
     if (count == 0) throw std::runtime_error("no GPU with Vulkan support");
@@ -422,8 +452,13 @@ void VulkanDevice::createLogicalDevice() {
         ci.pEnabledFeatures = &features;
     }
 
-    if (vkCreateDevice(physicalDevice_, &ci, nullptr, &device_) != VK_SUCCESS)
+    if (xr_) {
+        // OpenXR creates the device (merging the runtime's required extensions),
+        // sharing it with the XR session for composition.
+        device_ = xr::createVulkanDevice(*xr_, physicalDevice_, ci);
+    } else if (vkCreateDevice(physicalDevice_, &ci, nullptr, &device_) != VK_SUCCESS) {
         throw std::runtime_error("failed to create logical device");
+    }
 
     vkGetDeviceQueue(device_, idx.graphicsFamily.value(), 0, &graphicsQueue_);
     vkGetDeviceQueue(device_, idx.presentFamily.value(), 0, &presentQueue_);

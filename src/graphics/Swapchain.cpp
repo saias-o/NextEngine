@@ -45,14 +45,24 @@ void Swapchain::recreate() {
 
 void Swapchain::cleanup() {
     for (auto sem : renderFinishedSemaphores_) vkDestroySemaphore(device_.device(), sem, nullptr);
+    renderFinishedSemaphores_.clear();
+
     if (colorImageView_) vkDestroyImageView(device_.device(), colorImageView_, nullptr);
     if (colorImage_) vmaDestroyImage(device_.allocator(), colorImage_, colorAllocation_);
     colorImageView_ = VK_NULL_HANDLE;
     colorImage_ = VK_NULL_HANDLE;
-    vkDestroyImageView(device_.device(), depthImageView_, nullptr);
-    vmaDestroyImage(device_.allocator(), depthImage_, depthAllocation_);
+
+    if (depthImageView_) vkDestroyImageView(device_.device(), depthImageView_, nullptr);
+    if (depthImage_) vmaDestroyImage(device_.allocator(), depthImage_, depthAllocation_);
+    depthImageView_ = VK_NULL_HANDLE;
+    depthImage_ = VK_NULL_HANDLE;
+    depthAllocation_ = VK_NULL_HANDLE;
+
     for (auto iv : imageViews_) vkDestroyImageView(device_.device(), iv, nullptr);
-    vkDestroySwapchainKHR(device_.device(), swapchain_, nullptr);
+    imageViews_.clear();
+
+    if (swapchain_) vkDestroySwapchainKHR(device_.device(), swapchain_, nullptr);
+    swapchain_ = VK_NULL_HANDLE;
 }
 
 void Swapchain::createRenderFinishedSemaphores() {

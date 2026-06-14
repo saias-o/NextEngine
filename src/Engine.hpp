@@ -19,6 +19,7 @@ class ImGuiLayer;
 class Renderer;
 class Project;
 class WebEngine;
+namespace xr { class Instance; class Session; }
 
 // How a game populates the scene at startup. Provided by the executable (game
 // code), so the engine library has no built-in content.
@@ -43,6 +44,10 @@ public:
 
     void run();
 
+    // True when an HMD was detected at startup and the engine drives an OpenXR
+    // session (head-tracked stereo) instead of the desktop window.
+    bool xrMode() const { return xrMode_; }
+
     void setSceneOverride(Scene* scene) { sceneOverride_ = scene; }
 
     // Runtime/Play: wrap the current edit scene in the persistent World (hosting
@@ -59,7 +64,14 @@ public:
     Window& window() { return *window_; }
 
 private:
+    // Desktop frame loop (window present path) and XR frame loop (OpenXR session).
+    void runDesktop();
+    void runXr();
+
     std::unique_ptr<Window> window_;
+    // Declared before device_ so the OpenXR instance outlives the Vulkan device it
+    // created (destruction is reverse declaration order).
+    std::unique_ptr<xr::Instance> xrInstance_;
     std::unique_ptr<VulkanDevice> device_;
     std::unique_ptr<Swapchain> swapchain_;
     std::unique_ptr<ResourceManager> resources_;
@@ -77,6 +89,11 @@ private:
     Camera camera_;
 
     std::string playSnapshot_;  // edit doc serialized at play start, to restore on stop
+
+    // OpenXR session — declared last so it is destroyed first (before device_ and
+    // xrInstance_), since it owns Vulkan command buffers / image views.
+    std::unique_ptr<xr::Session> xrSession_;
+    bool xrMode_ = false;
 };
 
 } // namespace ne

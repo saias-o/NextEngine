@@ -37,7 +37,10 @@
 #include "scene/SpawnerBehaviour.hpp"
 #include "scene/animation/Animator.hpp"
 #include "ui/WebEngine.hpp"
+#include "xr/XrInstance.hpp"
+#include "xr/XrSession.hpp"
 
+#include <exception>
 #include <thread>
 #include <chrono>
 #include <filesystem>
@@ -52,8 +55,27 @@ constexpr uint32_t kHeight = 900;
 Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     window_ = std::make_unique<Window>(kWidth, kHeight, "NextEngine");
     Input::bind(window_.get());
-    device_ = std::make_unique<VulkanDevice>(*window_);
-    swapchain_ = std::make_unique<Swapchain>(*device_, *window_);
+
+    // Auto-detect a headset. If one is present, OpenXR drives Vulkan device
+    // creation (binds the headset's GPU) and owns the present path via its own
+    // session. Any failure falls back cleanly to the desktop window path.
+    if (xr::Instance::headsetPresent()) {
+        try {
+            xrInstance_ = std::make_unique<xr::Instance>();
+            device_ = std::make_unique<VulkanDevice>(*window_, xrInstance_.get());
+            xrSession_ = std::make_unique<xr::Session>(*xrInstance_, *device_);
+            xrMode_ = true;
+            Log::info("XR mode active (OpenXR session)");
+        } catch (const std::exception& e) {
+            Log::warn("XR init failed, falling back to desktop: ", e.what());
+            xrSession_.reset();
+            device_.reset();
+            xrInstance_.reset();
+            xrMode_ = false;
+        }
+    }
+    if (!device_) device_ = std::make_unique<VulkanDevice>(*window_);
+    if (!xrMode_) swapchain_ = std::make_unique<Swapchain>(*device_, *window_);
     resources_ = std::make_unique<ResourceManager>(*device_);
 
     scene_ = std::make_unique<Scene>();
@@ -102,10 +124,19 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
         AudioManager::get().setMasterVolume(project_->masterVolume());
     }
 
-    imgui_ = std::make_unique<ImGuiLayer>(*device_, *window_, swapchain_->colorFormat(),
-        swapchain_->imageCount(), VK_SAMPLE_COUNT_1_BIT);
-    renderer_ = std::make_unique<Renderer>(*device_, *swapchain_, *window_,
-        *resources_, *imgui_);
+    // Desktop present path: ImGui overlay + Renderer driving the window swapchain.
+    // In XR mode the OpenXR session owns presentation, and the Renderer is built
+    // for stereo multiview (2-layer targets sized to one eye, no ImGui/swapchain).
+    if (!xrMode_) {
+        imgui_ = std::make_unique<ImGuiLayer>(*device_, *window_, swapchain_->colorFormat(),
+            swapchain_->imageCount(), VK_SAMPLE_COUNT_1_BIT);
+        renderer_ = std::make_unique<Renderer>(*device_, *swapchain_, *window_,
+            *resources_, *imgui_);
+    } else {
+        renderer_ = std::make_unique<Renderer>(*device_, *window_, *resources_,
+            xrSession_->eyeExtent(), static_cast<VkFormat>(xrSession_->colorFormat()),
+            xrSession_->viewCount());
+    }
 
     // Default editor/viewport camera placement (the app may move it).
     camera_.position = {0.0f, 2.5f, 8.0f};
@@ -163,6 +194,11 @@ void Engine::unmountWorld() {
 }
 
 void Engine::run() {
+    if (xrMode_) runXr();
+    else runDesktop();
+}
+
+void Engine::runDesktop() {
     double last = glfwGetTime();
     while (!window_->shouldClose()) {
         window_->pollEvents();
@@ -222,6 +258,51 @@ void Engine::run() {
         imgui_->endFrame();  // finalize draw data even if the frame is skipped (resize)
 
         renderer_->drawFrame(*activeScene, camera_, project_.get());
+    }
+    vkDeviceWaitIdle(device_->device());
+}
+
+void Engine::runXr() {
+    // XR loop: paced by xrWaitFrame (inside renderFrame), not GLFW. The window
+    // still exists (mirror/host) so we keep pumping it to stay responsive.
+    double last = glfwGetTime();
+    double lastPoseLog = last;
+    while (!window_->shouldClose()) {
+        window_->pollEvents();
+        if (!xrSession_->pollEvents()) break;   // EXITING / loss pending
+
+        double now = glfwGetTime();
+        float realDt = static_cast<float>(now - last);
+        last = now;
+        Time::update(realDt);
+        Input::newFrame();
+
+        Scene* activeScene = sceneOverride_ ? sceneOverride_ : scene_.get();
+        activeScene->update(Time::delta());
+
+        if (sceneTree_->mounted()) {
+            sceneTree_->applyDeferred();
+            sceneTree_->tickTimers(Time::delta());
+            if (sceneTree_->quitRequested()) break;
+        }
+        AudioManager::get().update();
+
+        // Head pose drives the engine camera (audio listener + the future scene
+        // render). Log it once a second so head tracking is observable from logs.
+        camera_.position = xrSession_->headPosition();
+        if (now - lastPoseLog > 1.0) {
+            lastPoseLog = now;
+            glm::vec3 p = xrSession_->headPosition();
+            Log::info("XR head pos: ", p.x, ", ", p.y, ", ", p.z);
+        }
+
+        // Render the scene in stereo (one multiview pass for both eyes) into the
+        // acquired XR images. The whole engine pipeline (shadows, GI, HDR, tonemap)
+        // is reused — only presentation differs from the desktop path.
+        xrSession_->renderFrame(
+            [&](VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes) {
+                renderer_->drawXr(cmd, eyes, *activeScene, project_.get());
+            });
     }
     vkDeviceWaitIdle(device_->device());
 }

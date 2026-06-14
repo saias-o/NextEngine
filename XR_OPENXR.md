@@ -1,7 +1,26 @@
 # XR / OpenXR — PCVR Quest Link (multiview, auto-détection)
 
-> Plan d'implémentation **validé**. Repris à l'Étape A. Découpage `src/xr/` en
-> petits types RAII (pas de god class), style `VulkanDevice`/`Swapchain`/`Pipeline`.
+> Plan d'implémentation **validé**. Découpage `src/xr/` en petits types RAII (pas
+> de god class), style `VulkanDevice`/`Swapchain`/`Pipeline`.
+
+## État (mis à jour)
+
+**Étape A — fondation/handshake : implémentée et compilée** (à valider au casque).
+Module `src/xr/` créé dans le namespace `ne::xr` (évite la collision avec les
+handles OpenXR globaux `XrInstance`/`XrSession`/`XrSwapchain`) :
+`XrMath.hpp`, `xr::Instance` (+`headsetPresent()`), `XrVulkanBinding` (fonctions
+libres), `xr::Swapchain`, `xr::Session`. `VulkanDevice` a un chemin XR
+(`VulkanDevice(Window&, xr::Instance*)`) ; le chemin desktop est inchangé.
+`Engine` auto-détecte le casque, ouvre une session et tourne une boucle XR
+(`runXr`) cadencée par `xrWaitFrame`, avec pose tête → caméra.
+
+**Sanity actuelle** : chaque œil est rempli en *clear-color* puis composité
+(`XrCompositionLayerProjection`). Cela valide d'abord la partie la plus risquée
+(création device pilotée OpenXR, session, swapchains, frame loop, composition,
+tracking) **avant** de brancher le rendu de scène. **Prochain pas** : remplacer
+le clear par le rendu de la scène via le callback `RenderEyeFn` (réutilise le
+pipeline existant ; cibles HDR/depth dimensionnées à l'extent par œil), puis
+Étape B (multiview).
 
 ## Context
 

@@ -9,6 +9,7 @@
 namespace ne {
 
 class Window;
+namespace xr { class Instance; }
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -30,6 +31,10 @@ struct SwapChainSupportDetails {
 class VulkanDevice {
 public:
     explicit VulkanDevice(Window& window);
+    // XR mode: OpenXR drives Vulkan instance/physical-device/device creation so
+    // it binds the GPU the headset is on (XR_KHR_vulkan_enable2). No GLFW surface
+    // is created. Passing a null Instance is identical to the desktop ctor.
+    VulkanDevice(Window& window, xr::Instance* xrInstance);
     ~VulkanDevice();
     VulkanDevice(const VulkanDevice&) = delete;
     VulkanDevice& operator=(const VulkanDevice&) = delete;
@@ -103,6 +108,7 @@ private:
     VkPipelineCache pipelineCache_ = VK_NULL_HANDLE;
     RenderCapabilities capabilities_;
     bool validationEnabled_ = false;
+    xr::Instance* xr_ = nullptr;  // non-null → OpenXR-driven init (no surface)
 };
 
 } // namespace ne

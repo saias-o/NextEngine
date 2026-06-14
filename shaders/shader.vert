@@ -1,8 +1,14 @@
 #version 450
 
+#ifdef MULTIVIEW
+#extension GL_EXT_multiview : require
+#endif
+
+// Camera is an array of 2 (left/right eye). Mono/desktop uses index 0; the XR
+// multiview variant selects per-eye via gl_ViewIndex. One layout for both paths.
 layout(set = 0, binding = 0) uniform CameraUBO {
-    mat4 view;
-    mat4 proj;
+    mat4 view[2];
+    mat4 proj[2];
 } cam;
 
 layout(push_constant) uniform PushConstants {
@@ -92,5 +98,10 @@ void main() {
     fragColor = inColor;
     fragTexCoord = inTexCoord;
     fragLightmapUV = inLightmapUV;
-    gl_Position = cam.proj * cam.view * worldPos;
+#ifdef MULTIVIEW
+    int viewIndex = gl_ViewIndex;
+#else
+    int viewIndex = 0;
+#endif
+    gl_Position = cam.proj[viewIndex] * cam.view[viewIndex] * worldPos;
 }

@@ -18,7 +18,8 @@ public:
              const std::vector<VkDescriptorSetLayout>& setLayouts,
              VkSampleCountFlagBits samples, bool useVertexInput = true, bool useDepth = true, uint32_t pushConstantSize = 0,
              bool depthWrite = true, VkCompareOp depthCompare = VK_COMPARE_OP_LESS, VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT,
-             bool useBlending = false, VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+             bool useBlending = false, VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+             uint32_t viewMask = 0);
     ~Pipeline();
     Pipeline(const Pipeline&) = delete;
     Pipeline& operator=(const Pipeline&) = delete;
