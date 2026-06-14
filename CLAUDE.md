@@ -392,11 +392,20 @@ Le moteur est construit par étapes numérotées :
       - World model (compréhension et représentation de l'état du monde par l'IA).
       - Protocole MCP (Model Context Protocol) pour connecter des outils.
       - Concept de "skills" (compétences exécutables par l'IA) et d'agents autonomes interagissant directement avec la scène.
-- [ ] **Étape 14 — XR / OpenXR.** Rendu et interactions XR via OpenXR (Objectif final du moteur) :
-      - Intégration d'OpenXR : instance, session, swapchains XR, rendu stéréo multiview.
-      - Poses de la tête (HMD) et des contrôleurs.
-      - Package d'interaction XR maison (téléportation, saisie d'objets, boutons physiques, etc.).
-      - Hand tracking natif et support du Passthrough (AR/MR).
+- [~] **Étape 14 — XR / OpenXR.** Rendu et interactions XR via OpenXR (Objectif final du moteur).
+      Cible : PCVR Quest Link, multiview (1 passe), auto-détection du casque. *Mise en
+      route casque = itérative (le rendu/tracking ne se valide que dans le casque).*
+      - [x] **Fondation** : OpenXR-SDK vendu (`third_party/openxr`, release-1.1.60),
+            `openxr_loader` statique buildé + linké à `ne_engine`.
+      - [ ] `XrSystem` : instance (`XR_KHR_vulkan_enable2`), system HMD, création
+            VkInstance/PhysicalDevice/Device pilotée par OpenXR, session, espace de
+            référence (LOCAL/STAGE), vues PRIMARY_STEREO, swapchains, boucle
+            waitFrame/locateViews/endFrame, poses tête → view/proj par œil.
+      - [ ] `VulkanDevice` : init pilotée par OpenXR en mode XR (chemin desktop intact).
+      - [ ] `Renderer` multiview (cibles 2-layers + viewMask, UBO caméra en tableau +
+            `gl_ViewIndex`), présentation dans les swapchains XR.
+      - [ ] `Engine` : auto-détection, pacing de frame XR, pose tête → caméra (regarder
+            autour). Puis contrôleurs, hand tracking, passthrough.
 - [ ] **Étape 15 — Build & Release Windows.** Gestion de la release finale du jeu :
       - Pipeline de build autonome d'un projet (packaging des assets et shaders sans dépendances de développement).
       - Gestion des versions, métadonnées de l'exécutable, et icône du jeu.
