@@ -78,6 +78,18 @@ set(CROSS_PLATFORM_DETERMINISTIC OFF)
 set(DOUBLE_PRECISION OFF)                        # 32-bit positions: smaller/faster, fine for our worlds
 add_subdirectory(third_party/jolt/Build ${CMAKE_BINARY_DIR}/jolt)
 
+# ── OpenXR (vendored, loader only) ──────────────────────────────────────────
+# Build just the static openxr_loader from the pre-generated SDK repo (no Python
+# generation, no API layers/tests). The loader finds the active runtime (Quest
+# Link / Oculus) via the registry at runtime. Headers are propagated by the target.
+set(DYNAMIC_LOADER OFF)        # static loader, consistent with the project's -static link
+set(BUILD_API_LAYERS OFF)
+set(BUILD_TESTS OFF)
+set(BUILD_CONFORMANCE_TESTS OFF)
+set(BUILD_SDK_TESTS OFF)
+set(BUILD_ALL_EXTENSIONS OFF)
+add_subdirectory(third_party/openxr ${CMAKE_BINARY_DIR}/openxr)
+
 # ── Engine library ──────────────────────────────────────────────────────────
 # Everything reusable lives here and compiles once. Game/editor executables
 # link it, so changing game code doesn't recompile the engine. The editor still
@@ -179,7 +191,7 @@ target_include_directories(ne_engine PUBLIC
     third_party/miniaudio
     third_party/ultralight/include
 )
-target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt
+target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt openxr_loader
     ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/Ultralight.dll
     ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/UltralightCore.dll
     ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/WebCore.dll
