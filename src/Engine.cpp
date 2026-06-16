@@ -298,6 +298,9 @@ void Engine::runXr() {
         // will submitHand() here; until then hands read inactive and the toolkit
         // behaviours stay inert.
         XRInput::beginFrame();
+        // Poll OpenXR action sets → hand poses + buttons into XRInput (this is what
+        // makes grab/touch/teleport live). Before the scene update so edges are fresh.
+        xrSession_->syncActions();
         // Feed the head pose (world space, from last frame's locate) so toolkit
         // behaviours — teleport placement, head-facing UI — can read it.
         {

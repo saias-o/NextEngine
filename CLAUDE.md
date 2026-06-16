@@ -432,7 +432,13 @@ Le moteur est construit par étapes numérotées :
               des yeux pour le spéculaire. *Compile ; à valider au casque.*
             - *Limites v1 (suites)* : **pas de MSAA** en XR (cible 1 sample),
               **ImGui désactivé** en XR, skybox push-constant 136 o (OK PCVR ≥256 o).
-      - [ ] Contrôleurs (action sets), hand tracking, passthrough — Étape C.
+      - [x] **Contrôleurs (action sets)** — `xr::Actions` (`src/xr/XrActions`) :
+            action set + actions (grip/aim pose, trigger, squeeze, thumbstick, A/B),
+            suggested bindings (Oculus Touch + Khronos simple), spaces grip/aim par
+            main, attaché à la session ; `Session::syncActions()` (appelé par l'Engine
+            avant l'update) `xrSyncActions` + locate + **alimente `ne::XRInput`** →
+            grab/touch/teleport pilotés par les manettes. *À valider au casque.*
+      - [ ] Hand tracking (skeletal, `XR_EXT_hand_tracking`) — optionnel, plus tard.
       - [ ] *Suites perf/qualité XR* : MSAA multiview (+resolve par layer),
             overlay ImGui (quad/layer), culling stéréo combiné.
       - [~] **NEXRTK — NextEngine XR Toolkit** (`src/xr/toolkit/`, namespace `ne`).
@@ -466,8 +472,10 @@ Le moteur est construit par étapes numérotées :
               l'applique à `xrEndFrame` ; le renderer XR clear transparent + skip
               skybox, `tonemap.frag` préserve l'alpha. *Compositing AR à valider au
               casque.*
-            - **Étape C (restante)** : alimenter `XRInput` (poses + boutons) via de
-              vrais action sets OpenXR ; backend d'anchors réel.
+            - **Branchement (fait)** : `XRInput` est alimenté par `xr::Actions`
+              (action sets OpenXR, ci-dessus) → tout le toolkit est « vivant ».
+              *Restant (optionnel, casque)* : backend d'anchors réel
+              (`XRAnchors::setBackend` sur une extension), hand tracking skeletal.
 - [ ] **Étape 15 — Build & Release Windows.** Gestion de la release finale du jeu :
       - Pipeline de build autonome d'un projet (packaging des assets et shaders sans dépendances de développement).
       - Gestion des versions, métadonnées de l'exécutable, et icône du jeu.

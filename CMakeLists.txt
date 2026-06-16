@@ -170,6 +170,7 @@ add_library(ne_engine STATIC
     src/xr/XrVulkanBinding.cpp
     src/xr/XrSwapchain.cpp
     src/xr/XrSession.cpp
+    src/xr/XrActions.cpp
     src/xr/toolkit/XRInput.cpp
     src/xr/toolkit/XRController.cpp
     src/xr/toolkit/XRGrabbable.cpp

@@ -2,6 +2,7 @@
 #include "xr/XrSession.hpp"
 #include "xr/XrInstance.hpp"
 #include "xr/XrSwapchain.hpp"
+#include "xr/XrActions.hpp"
 #include "xr/XrMath.hpp"
 
 #include "graphics/VulkanDevice.hpp"
@@ -23,12 +24,14 @@ Session::Session(Instance& instance, VulkanDevice& device)
     colorFormat_ = chooseColorFormat();
     createSwapchains();
     createCommandResources();
+    actions_ = std::make_unique<Actions>(instance_, session_);  // feeds ne::XRInput
     Log::info("XR session ready: ", viewCount(), " views, ",
               swapchains_[0]->width(), "x", swapchains_[0]->height(), " per eye");
 }
 
 Session::~Session() {
     if (session_ != XR_NULL_HANDLE) vkDeviceWaitIdle(device_.device());
+    actions_.reset();  // destroy action spaces/set before the session
     for (VkFence f : fences_)
         if (f) vkDestroyFence(device_.device(), f, nullptr);
     if (!cmdBuffers_.empty())
@@ -82,6 +85,10 @@ void Session::setReferenceOffset(const glm::vec3& position, float yawRadians) {
     originPos_ = position;
     originYaw_ = yawRadians;
     if (session_ != XR_NULL_HANDLE) createReferenceSpace();
+}
+
+void Session::syncActions() {
+    if (running_ && actions_) actions_->sync(session_, appSpace_, lastDisplayTime_);
 }
 
 void Session::enumerateViewConfig() {
@@ -231,6 +238,7 @@ void Session::renderFrame(const RenderFrameFn& render) {
     XrFrameState frameState{};
     frameState.type = XR_TYPE_FRAME_STATE;
     check(xrWaitFrame(session_, &waitInfo, &frameState), "xrWaitFrame");
+    lastDisplayTime_ = frameState.predictedDisplayTime;  // for next frame's action poses
 
     XrFrameBeginInfo beginInfo{};
     beginInfo.type = XR_TYPE_FRAME_BEGIN_INFO;

@@ -13,3 +13,7 @@
 # Local runtime files
 *.local.json
 pipeline_cache.bin
+
+# Editor play-mode backup (regenerated each Play; never source)
+.play_mode_backup.scene
+*.play_mode_backup.scene

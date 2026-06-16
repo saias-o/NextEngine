@@ -15,6 +15,7 @@ namespace ne::xr {
 
 class Instance;
 class Swapchain;
+class Actions;
 
 // Everything one eye needs to be rendered this frame: the acquired XR image to
 // draw into, and the per-eye camera matrices (already in the engine's Vulkan
@@ -68,6 +69,12 @@ public:
     // consistent. No-op if unchanged. Cheap (only recreates the XrSpace on change).
     void setReferenceOffset(const glm::vec3& position, float yawRadians);
 
+    // Poll the OpenXR action sets and feed the toolkit XRInput service (hand poses
+    // + buttons). Call once per frame, after XRInput::beginFrame() and before the
+    // scene update, so interactors see fresh edges. Uses the previous frame's
+    // predicted display time to locate poses (negligible latency).
+    void syncActions();
+
     // Latest head pose (updated each rendered frame), for driving the engine
     // camera / audio listener.
     glm::mat4 headView() const { return headView_; }
@@ -97,6 +104,8 @@ private:
 
     std::vector<XrViewConfigurationView> viewConfigs_;
     std::vector<std::unique_ptr<Swapchain>> swapchains_;
+    std::unique_ptr<Actions> actions_;   // OpenXR action-set input → ne::XRInput
+    XrTime lastDisplayTime_ = 0;         // for locating action poses next frame
     int64_t colorFormat_ = 0;
 
     // Environment blend: OPAQUE (VR) by default; an alpha-blend/additive mode is
