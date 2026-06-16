@@ -38,6 +38,15 @@ public:
 
     JPH::BodyID bodyId() const { return bodyId_; }
 
+    // Set this body's velocity (no-op until it has a live Jolt body). Used by grab
+    // release to throw a freed object with the hand's motion.
+    void setLinearVelocity(const glm::vec3& v) {
+        if (world_ && !bodyId_.IsInvalid()) world_->setLinearVelocity(bodyId_, v);
+    }
+    void setAngularVelocity(const glm::vec3& v) {
+        if (world_ && !bodyId_.IsInvalid()) world_->setAngularVelocity(bodyId_, v);
+    }
+
     // Fired (main thread) when this body starts/stops touching another solid body.
     // Sensors (Area) use bodyEntered/bodyExited instead. Listen with
     // `behaviour->listen(body->collisionEntered, [](CollisionObjectNode* other){...})`.

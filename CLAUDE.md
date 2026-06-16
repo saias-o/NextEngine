@@ -435,6 +435,39 @@ Le moteur est construit par étapes numérotées :
       - [ ] Contrôleurs (action sets), hand tracking, passthrough — Étape C.
       - [ ] *Suites perf/qualité XR* : MSAA multiview (+resolve par layer),
             overlay ImGui (quad/layer), culling stéréo combiné.
+      - [~] **NEXRTK — NextEngine XR Toolkit** (`src/xr/toolkit/`, namespace `ne`).
+            Package d'interaction VR/AR dans le style moteur (behaviours + nodes +
+            signaux + groupes, zéro singleton de gameplay). Lit l'état des mains via
+            le **service `XRInput`** (couture : alimenté plus tard par les action
+            sets OpenXR, ou un émulateur/test — inerte tant que rien ne soumet).
+            - **Phase 1 (faite, compile)** : `XRInput` (service, edges des mains),
+              `XRController` (node main, suit la pose grip via tracker interne),
+              `XRGrabbable` (behaviour, grab **physics-aware** : kinématique pendant
+              la prise + throw au lâcher), `XRTouchable` (behaviour poke, 2 mains),
+              `XRDirectInteractor` (behaviour sur le controller, relie mains↔
+              interactables via groupes `xr_grabbable`/`xr_touchable`, zéro pointeur
+              stocké → zéro dangling). + `PhysicsWorld::set{Linear,Angular}Velocity`
+              et `CollisionObjectNode::set{Linear,Angular}Velocity` (génériques).
+            - **Phase 2 (faite, compile) — Locomotion** : `XROrigin` (node rig
+              joueur ; `teleportTo`/`snapTurn` ; groupe `xr_origin`), `TeleportArea`
+              (node surface valide + raycast analytique sur sa face, signal
+              `teleported`), `XRRayInteractor` (behaviour sur controller : vise au
+              thumbstick, téléporte au relâché). Le rig **recentre l'espace de
+              référence OpenXR** (`xr::Session::setReferenceOffset` recrée l'`XrSpace`)
+              → tête/mains/yeux reviennent world-space, compositeur cohérent, pas de
+              hack de matrices. `XRInput::head()` (pose tête world) alimenté par
+              l'Engine. *Convention de signe du recenter à confirmer au casque.*
+            - **Phase 3 (faite, compile) — Anchors & passthrough** : `XRAnchor`
+              (node ancré au réel ; tracker interne crée/locate via le **service
+              `XRAnchors`** + `XRAnchorBackend` — seam pour `XR_MSFT_spatial_anchor`/
+              `XR_FB_spatial_entity` ; sans backend → garde sa pose). Passthrough via
+              le **service `XRPassthrough`** (toggle gameplay) : `xr::Session`
+              énumère les blend modes, choisit ALPHA_BLEND/ADDITIVE si dispo et
+              l'applique à `xrEndFrame` ; le renderer XR clear transparent + skip
+              skybox, `tonemap.frag` préserve l'alpha. *Compositing AR à valider au
+              casque.*
+            - **Étape C (restante)** : alimenter `XRInput` (poses + boutons) via de
+              vrais action sets OpenXR ; backend d'anchors réel.
 - [ ] **Étape 15 — Build & Release Windows.** Gestion de la release finale du jeu :
       - Pipeline de build autonome d'un projet (packaging des assets et shaders sans dépendances de développement).
       - Gestion des versions, métadonnées de l'exécutable, et icône du jeu.

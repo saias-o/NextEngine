@@ -5,8 +5,10 @@
 #include "xr/XrMath.hpp"
 
 #include "graphics/VulkanDevice.hpp"
+#include "xr/toolkit/XRPassthrough.hpp"
 #include "core/Log.hpp"
 
+#include <cmath>
 #include <stdexcept>
 #include <vector>
 
@@ -17,6 +19,7 @@ Session::Session(Instance& instance, VulkanDevice& device)
     createSession();
     createReferenceSpace();
     enumerateViewConfig();
+    enumerateBlendModes();
     colorFormat_ = chooseColorFormat();
     createSwapchains();
     createCommandResources();
@@ -55,13 +58,30 @@ void Session::createSession() {
 }
 
 void Session::createReferenceSpace() {
-    // LOCAL: seated/standing origin at the recenter point — fine for "look
-    // around". STAGE (room-scale floor) can be added later.
+    // LOCAL: seated/standing origin at the recenter point — fine for "look around".
+    // STAGE (room-scale floor) can be added later. The rig offset (originPos_/Yaw_)
+    // is baked into poseInReferenceSpace so teleport recentres for free.
+    if (appSpace_ != XR_NULL_HANDLE) {
+        xrDestroySpace(appSpace_);
+        appSpace_ = XR_NULL_HANDLE;
+    }
+    const float half = originYaw_ * 0.5f;
     XrReferenceSpaceCreateInfo ci{};
     ci.type = XR_TYPE_REFERENCE_SPACE_CREATE_INFO;
     ci.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
-    ci.poseInReferenceSpace.orientation.w = 1.0f;  // identity pose
+    ci.poseInReferenceSpace.orientation.x = 0.0f;
+    ci.poseInReferenceSpace.orientation.y = std::sin(half);
+    ci.poseInReferenceSpace.orientation.z = 0.0f;
+    ci.poseInReferenceSpace.orientation.w = std::cos(half);
+    ci.poseInReferenceSpace.position = {originPos_.x, originPos_.y, originPos_.z};
     check(xrCreateReferenceSpace(session_, &ci, &appSpace_), "xrCreateReferenceSpace");
+}
+
+void Session::setReferenceOffset(const glm::vec3& position, float yawRadians) {
+    if (position == originPos_ && yawRadians == originYaw_) return;
+    originPos_ = position;
+    originYaw_ = yawRadians;
+    if (session_ != XR_NULL_HANDLE) createReferenceSpace();
 }
 
 void Session::enumerateViewConfig() {
@@ -75,6 +95,33 @@ void Session::enumerateViewConfig() {
     check(xrEnumerateViewConfigurationViews(instance_.handle(), instance_.systemId(),
               kViewConfig, count, &count, viewConfigs_.data()),
           "xrEnumerateViewConfigurationViews");
+}
+
+void Session::enumerateBlendModes() {
+    uint32_t count = 0;
+    check(xrEnumerateEnvironmentBlendModes(instance_.handle(), instance_.systemId(),
+              kViewConfig, 0, &count, nullptr),
+          "xrEnumerateEnvironmentBlendModes(count)");
+    std::vector<XrEnvironmentBlendMode> modes(count);
+    check(xrEnumerateEnvironmentBlendModes(instance_.handle(), instance_.systemId(),
+              kViewConfig, count, &count, modes.data()),
+          "xrEnumerateEnvironmentBlendModes");
+
+    // Prefer ALPHA_BLEND for passthrough (additive as a fallback). OPAQUE stays
+    // the default for VR. The toolkit's XRPassthrough service reads support back.
+    for (XrEnvironmentBlendMode m : modes) {
+        if (m == XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND) {
+            passthroughMode_ = m;
+            passthroughSupported_ = true;
+            break;
+        }
+        if (m == XR_ENVIRONMENT_BLEND_MODE_ADDITIVE && !passthroughSupported_) {
+            passthroughMode_ = m;
+            passthroughSupported_ = true;
+        }
+    }
+    XRPassthrough::setSupported(passthroughSupported_);
+    Log::info("XR passthrough ", passthroughSupported_ ? "supported" : "unsupported");
 }
 
 int64_t Session::chooseColorFormat() const {
@@ -289,7 +336,10 @@ void Session::renderFrame(const RenderFrameFn& render) {
     XrFrameEndInfo endInfo{};
     endInfo.type = XR_TYPE_FRAME_END_INFO;
     endInfo.displayTime = frameState.predictedDisplayTime;
-    endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+    // Passthrough (AR) when gameplay enabled it and the runtime supports it,
+    // otherwise opaque (VR). The renderer clears transparent for passthrough.
+    endInfo.environmentBlendMode =
+        XRPassthrough::enabled() ? passthroughMode_ : opaqueMode_;
     const XrCompositionLayerBaseHeader* layers[] = {
         reinterpret_cast<XrCompositionLayerBaseHeader*>(&layer)};
     endInfo.layerCount = submittedLayer ? 1 : 0;

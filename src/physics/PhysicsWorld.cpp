@@ -260,6 +260,20 @@ void PhysicsWorld::moveKinematic(JPH::BodyID id, const glm::vec3& position,
         id, RVec3(position.x, position.y, position.z), toJolt(rotation), dt);
 }
 
+void PhysicsWorld::setLinearVelocity(JPH::BodyID id, const glm::vec3& v) {
+    if (id.IsInvalid()) return;
+    BodyInterface& bi = system_->GetBodyInterface();
+    bi.ActivateBody(id);
+    bi.SetLinearVelocity(id, Vec3(v.x, v.y, v.z));
+}
+
+void PhysicsWorld::setAngularVelocity(JPH::BodyID id, const glm::vec3& v) {
+    if (id.IsInvalid()) return;
+    BodyInterface& bi = system_->GetBodyInterface();
+    bi.ActivateBody(id);
+    bi.SetAngularVelocity(id, Vec3(v.x, v.y, v.z));
+}
+
 void PhysicsWorld::getBodyTransform(JPH::BodyID id, glm::vec3& position,
                                     glm::quat& rotation) const {
     if (id.IsInvalid()) return;

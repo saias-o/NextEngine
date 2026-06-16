@@ -26,6 +26,7 @@
 #include "scene/MeshNode.hpp"
 #include "scene/animation/Animator.hpp"
 #include "xr/XrSession.hpp"   // xr::EyeView
+#include "xr/toolkit/XRPassthrough.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -1715,7 +1716,11 @@ void Renderer::updateUniformBufferXr(uint32_t frame, const std::vector<xr::EyeVi
 void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
                                  const std::vector<xr::EyeView>& eyes) {
     auto& settings = scene.settings();
-    const glm::vec4 clearColor = settings.clearColor;
+    // Passthrough (AR): clear fully transparent so the compositor blends the real
+    // world through the background; opaque geometry (alpha 1) stays visible.
+    const bool passthrough = XRPassthrough::enabled();
+    glm::vec4 clearColor = settings.clearColor;
+    if (passthrough) clearColor.a = 0.0f;
 
     std::array<VkImageMemoryBarrier2, 2> pre{};
     pre[0] = imageBarrier2(xrHdrImage_,
@@ -1792,7 +1797,8 @@ void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
     }
 
     // Skybox (multiview): per-eye inverse view-proj picked by gl_ViewIndex.
-    if (settings.skyboxTexture != kAssetInvalid) {
+    // Skipped in passthrough — an opaque sky would hide the real world.
+    if (!passthrough && settings.skyboxTexture != kAssetInvalid) {
         if (Texture* tex = resources_.getTexture(settings.skyboxTexture)) {
             if (settings.skyboxTexture != currentSkyboxTexture_) {
                 VkDescriptorImageInfo ii{};

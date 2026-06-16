@@ -39,6 +39,15 @@
 #include "ui/WebEngine.hpp"
 #include "xr/XrInstance.hpp"
 #include "xr/XrSession.hpp"
+#include "xr/toolkit/XRInput.hpp"
+#include "xr/toolkit/XRController.hpp"
+#include "xr/toolkit/XRGrabbable.hpp"
+#include "xr/toolkit/XRTouchable.hpp"
+#include "xr/toolkit/XRDirectInteractor.hpp"
+#include "xr/toolkit/XROrigin.hpp"
+#include "xr/toolkit/TeleportArea.hpp"
+#include "xr/toolkit/XRRayInteractor.hpp"
+#include "xr/toolkit/XRAnchor.hpp"
 
 #include <exception>
 #include <thread>
@@ -98,6 +107,11 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     BehaviourRegistry::instance().registerType<CharacterBehaviour>("Character");
     BehaviourRegistry::instance().registerType<SpawnerBehaviour>("Spawner");
     BehaviourRegistry::instance().registerType<Animator>("Animator");
+    // NEXRTK (XR Toolkit) interactables / interactors.
+    BehaviourRegistry::instance().registerType<XRGrabbable>("XRGrabbable");
+    BehaviourRegistry::instance().registerType<XRTouchable>("XRTouchable");
+    BehaviourRegistry::instance().registerType<XRDirectInteractor>("XRDirectInteractor");
+    BehaviourRegistry::instance().registerType<XRRayInteractor>("XRRayInteractor");
 
     // Register built-in nodes
     NodeRegistry::instance().registerType<Node>("Node");
@@ -118,6 +132,10 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     NodeRegistry::instance().registerType<RigidBodyNode>("RigidBody");
     NodeRegistry::instance().registerType<AreaNode>("Area");
     NodeRegistry::instance().registerType<CharacterBodyNode>("CharacterBody");
+    NodeRegistry::instance().registerType<XRController>("XRController");
+    NodeRegistry::instance().registerType<XROrigin>("XROrigin");
+    NodeRegistry::instance().registerType<TeleportArea>("TeleportArea");
+    NodeRegistry::instance().registerType<XRAnchor>("XRAnchor");
     if (project_->isLoaded()) {
         AudioManager::get().setProjectRoot(project_->rootPath());
         AudioManager::get().setDefaultSettings(project_->defaultAudioSettings());
@@ -276,6 +294,19 @@ void Engine::runXr() {
         last = now;
         Time::update(realDt);
         Input::newFrame();
+        // Advance the XR input service (edges). The OpenXR action layer (Étape C)
+        // will submitHand() here; until then hands read inactive and the toolkit
+        // behaviours stay inert.
+        XRInput::beginFrame();
+        // Feed the head pose (world space, from last frame's locate) so toolkit
+        // behaviours — teleport placement, head-facing UI — can read it.
+        {
+            XRPose head;
+            head.tracked = true;
+            head.position = xrSession_->headPosition();
+            head.orientation = xrSession_->headOrientation();
+            XRInput::submitHead(head);
+        }
 
         Scene* activeScene = sceneOverride_ ? sceneOverride_ : scene_.get();
         activeScene->update(Time::delta());
@@ -286,6 +317,19 @@ void Engine::runXr() {
             if (sceneTree_->quitRequested()) break;
         }
         AudioManager::get().update();
+
+        // Push the player rig (if any) to the session: it recentres the reference
+        // space so head/hands/eyes come back world-space this frame (locomotion).
+        {
+            XROrigin* origin = nullptr;
+            activeScene->traverse([&](Node& n, const glm::mat4&) {
+                if (!origin)
+                    if (auto* o = dynamic_cast<XROrigin*>(&n)) origin = o;
+            });
+            if (origin)
+                xrSession_->setReferenceOffset(origin->transform().position,
+                                               glm::radians(origin->yawDegrees));
+        }
 
         // Head pose drives the engine camera (audio listener + the future scene
         // render). Log it once a second so head tracking is observable from logs.

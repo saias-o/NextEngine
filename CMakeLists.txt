@@ -170,6 +170,17 @@ add_library(ne_engine STATIC
     src/xr/XrVulkanBinding.cpp
     src/xr/XrSwapchain.cpp
     src/xr/XrSession.cpp
+    src/xr/toolkit/XRInput.cpp
+    src/xr/toolkit/XRController.cpp
+    src/xr/toolkit/XRGrabbable.cpp
+    src/xr/toolkit/XRTouchable.cpp
+    src/xr/toolkit/XRDirectInteractor.cpp
+    src/xr/toolkit/XROrigin.cpp
+    src/xr/toolkit/TeleportArea.cpp
+    src/xr/toolkit/XRRayInteractor.cpp
+    src/xr/toolkit/XRPassthrough.cpp
+    src/xr/toolkit/XRAnchors.cpp
+    src/xr/toolkit/XRAnchor.cpp
     src/project/Project.cpp
     src/project/AssetRegistry.cpp
     src/graphics/VmaUsage.cpp

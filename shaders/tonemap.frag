@@ -27,7 +27,8 @@ vec3 acesFilmic(vec3 x) {
 }
 
 void main() {
-    vec3 hdr = texture(hdrInput, fragUV).rgb;
+    vec4 hdr4 = texture(hdrInput, fragUV);
+    vec3 hdr = hdr4.rgb;
 
     // Exposure: a simple linear scale before the curve.
     hdr *= push.exposure;
@@ -40,5 +41,7 @@ void main() {
     // piecewise sRGB transfer adds negligible quality at higher cost).
     vec3 srgb = pow(mapped, vec3(1.0 / 2.2));
 
-    outColor = vec4(srgb, 1.0);
+    // Preserve scene coverage in alpha so XR passthrough composites correctly
+    // (transparent where nothing was drawn). Ignored by the desktop swapchain.
+    outColor = vec4(srgb, hdr4.a);
 }

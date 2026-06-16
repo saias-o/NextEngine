@@ -80,6 +80,11 @@ public:
     // Read a body's world transform back (used to drive dynamic nodes).
     void getBodyTransform(JPH::BodyID id, glm::vec3& position, glm::quat& rotation) const;
 
+    // Set a body's velocity (and activate it). Used e.g. to throw a released
+    // grabbed object with the hand's motion.
+    void setLinearVelocity(JPH::BodyID id, const glm::vec3& velocity);
+    void setAngularVelocity(JPH::BodyID id, const glm::vec3& velocity);
+
     RaycastHit raycast(const glm::vec3& origin, const glm::vec3& direction,
                        float maxDistance) const;
 

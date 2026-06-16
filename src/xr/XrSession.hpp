@@ -62,6 +62,12 @@ public:
     VkExtent2D eyeExtent() const;
     int64_t colorFormat() const { return colorFormat_; }
 
+    // Recenter the reference space (locomotion/teleport). `position` + `yawRadians`
+    // (about +Y) place the player rig; the runtime then reports head/controllers in
+    // this frame, so all poses come back world-space and the compositor stays
+    // consistent. No-op if unchanged. Cheap (only recreates the XrSpace on change).
+    void setReferenceOffset(const glm::vec3& position, float yawRadians);
+
     // Latest head pose (updated each rendered frame), for driving the engine
     // camera / audio listener.
     glm::mat4 headView() const { return headView_; }
@@ -74,6 +80,7 @@ private:
     void createSession();
     void createReferenceSpace();
     void enumerateViewConfig();
+    void enumerateBlendModes();
     int64_t chooseColorFormat() const;
     void createSwapchains();
     void createCommandResources();
@@ -92,6 +99,12 @@ private:
     std::vector<std::unique_ptr<Swapchain>> swapchains_;
     int64_t colorFormat_ = 0;
 
+    // Environment blend: OPAQUE (VR) by default; an alpha-blend/additive mode is
+    // selected for passthrough (AR) when the runtime + view config offer one.
+    XrEnvironmentBlendMode opaqueMode_ = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+    XrEnvironmentBlendMode passthroughMode_ = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+    bool passthroughSupported_ = false;
+
     // Per-frame-slot command buffer + fence (double-buffered) for eye submits.
     static constexpr uint32_t kFrameSlots = 2;
     std::vector<VkCommandBuffer> cmdBuffers_;
@@ -107,6 +120,10 @@ private:
 
     float nearZ_ = 0.05f;
     float farZ_ = 1000.0f;
+
+    // Player rig offset applied to the reference space (set via setReferenceOffset).
+    glm::vec3 originPos_{0.0f};
+    float originYaw_ = 0.0f;
 };
 
 } // namespace ne::xr
