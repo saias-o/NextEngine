@@ -32,6 +32,8 @@ set(SHADERS
     ${SHADER_DIR}/ddgi_trace.comp
     ${SHADER_DIR}/ddgi_blend.comp
     ${SHADER_DIR}/ddgi_borders.comp
+    ${SHADER_DIR}/debug_line.vert
+    ${SHADER_DIR}/debug_line.frag
 )
 
 # GLSL headers #included by the shaders above. Listed as a dependency so editing
@@ -104,6 +106,9 @@ set(BUILD_SDK_TESTS OFF)
 set(BUILD_ALL_EXTENSIONS OFF)
 add_subdirectory(third_party/openxr ${CMAKE_BINARY_DIR}/openxr)
 
+# AutoLOD is built separately: `cmake -S autolod -B build/autolod -G Ninja && cmake --build build/autolod`
+# AutoLODBridge resolves build/autolod/autolod.exe at runtime.
+
 # ── Engine library ──────────────────────────────────────────────────────────
 # Everything reusable lives here and compiles once. Game/editor executables
 # link it, so changing game code doesn't recompile the engine. The editor still
@@ -116,6 +121,7 @@ add_library(ne_engine STATIC
     src/scene/Node.cpp
     src/scene/Behaviour.cpp
     src/scene/MeshNode.cpp
+    src/scene/MeshLod.cpp
     src/scene/LightNode.cpp
     src/scene/Scene.cpp
     src/scene/SceneTree.cpp
@@ -142,6 +148,7 @@ add_library(ne_engine STATIC
     src/scene/animation/AnimBlackboard.cpp
     src/scene/animation/AnimGraphParser.cpp
     src/scene/animation/PlayableDirector.cpp
+    src/scene/animation/Retarget.cpp
     src/ui/UIInteractionSystem.cpp
     src/audio/AudioManager.cpp
     src/graphics/VulkanDevice.cpp
@@ -189,6 +196,7 @@ add_library(ne_engine STATIC
     src/graphics/StbImageUsage.cpp
     src/graphics/cgltf_impl.cpp
     src/scene/GLTFLoader.cpp
+    src/tools/AutoLODBridge.cpp
     src/audio/AudioManager.cpp
     src/audio/AudioUsage.cpp
     src/audio/AudioSourceBehaviour.cpp
@@ -228,6 +236,7 @@ target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt openxr_
     ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/WebCore.dll
     ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/AppCore.dll
 )
+add_dependencies(ne_engine Shaders)
 
 # Absolute paths baked at configure time so the exe runs from any cwd; and GLM
 # conventions (radians, Vulkan 0..1 depth) — PUBLIC so game code sees them too.

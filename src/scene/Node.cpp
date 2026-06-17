@@ -175,6 +175,8 @@ void Node::serialize(nlohmann::json& j, ResourceManager& resources) const {
     j["type"] = typeName();
     j["name"] = name();
     j["enabled"] = enabled();
+    if (!importedFromPath_.empty())
+        j["importedFrom"] = importedFromPath_;
 
     const Transform& t = transform();
     j["transform"] = {
@@ -207,6 +209,7 @@ void Node::serialize(nlohmann::json& j, ResourceManager& resources) const {
 void Node::deserialize(const nlohmann::json& j, ResourceManager& resources) {
     if (j.contains("name")) setName(j["name"].get<std::string>());
     if (j.contains("enabled")) setEnabled(j["enabled"].get<bool>());
+    if (j.contains("importedFrom")) importedFromPath_ = j["importedFrom"].get<std::string>();
 
     if (j.contains("transform")) {
         auto jt = j["transform"];

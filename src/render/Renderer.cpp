@@ -24,6 +24,7 @@
 
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
+#include "scene/MeshLod.hpp"
 #include "scene/animation/Animator.hpp"
 #include "xr/XrSession.hpp"   // xr::EyeView
 #include "xr/toolkit/XRPassthrough.hpp"
@@ -111,6 +112,7 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
     createPipeline(resources_.materialSetLayout());
     createTonemapPipeline();
     createSkyboxPipeline();
+    createDebugLinePipeline();
     createUniformBuffers();
     shadowMap_ = std::make_unique<ShadowMap>(device_);
     gi_ = std::make_unique<GIVolume>(device_, giDescForTier(device_.capabilities().tier),
@@ -622,7 +624,13 @@ void Renderer::createSyncObjects() {
 }
 
 void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& cameraPos,
-                           const Frustum* cullFrustum, Project* project) {
+                           const Frustum* cullFrustum, Project* project,
+                           const glm::mat4* view, const glm::mat4* proj) {
+    lodMatricesValid_ = view && proj;
+    if (lodMatricesValid_) {
+        lodView_ = *view;
+        lodProj_ = *proj;
+    }
     auto& settings = scene.settings();
     ubo.ambient = settings.ambientLight;
     ubo.cameraPos = glm::vec4(cameraPos, 1.0f);
@@ -762,6 +770,17 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
             if (Mesh* m = node->mesh()) {
                 if (Material* mat = node->material()) {
                     const glm::mat4& world = node->worldTransform();
+                    Mesh* drawMesh = m;
+                    Material* drawMat = mat;
+                    if (node->hasLods() && lodMatricesValid_) {
+                        const float coverage = computeScreenCoverage(world, m->bounds(), lodView_, lodProj_);
+                        const int lod = node->selectLodIndex(coverage);
+                        node->setActiveLodIndex(lod);
+                        drawMesh = node->meshForLod(lod);
+                        drawMat = node->materialForLod(lod);
+                    }
+                    if (!drawMesh || !drawMat) continue;
+
                     // Frustum culling against the camera (desktop). XR passes a
                     // null frustum (stereo) → render everything, no per-eye cull.
                     bool inside = true;
@@ -771,8 +790,9 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
                             glm::length(glm::vec3(world[1])),
                             glm::length(glm::vec3(world[2]))
                         });
-                        float radius = 0.866f * maxScale;
-                        glm::vec3 center = glm::vec3(world[3]);
+                        const float localRadius = glm::length(m->bounds().extent()) * 0.5f;
+                        float radius = (localRadius > 0.001f ? localRadius : 0.866f) * maxScale;
+                        glm::vec3 center = glm::vec3(world * glm::vec4(m->bounds().center(), 1.0f));
                         for (int i = 0; i < 6; ++i) {
                             if (glm::dot(glm::vec3(cullFrustum->planes[i]), center) +
                                     cullFrustum->planes[i].w < -radius) {
@@ -796,7 +816,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
                             }
                         }
 
-                        currentDraws_.push_back(DrawCmd{m, mat, world, node->castShadows(),
+                        currentDraws_.push_back(DrawCmd{drawMesh, drawMat, world, node->castShadows(),
                                                         baked, lightBaker_->lightmapSet(node), boneOffset});
                     }
                 }
@@ -1092,6 +1112,59 @@ void Renderer::recordSkyboxPass(VkCommandBuffer cmd, Scene& scene, const Camera&
     vkCmdDraw(cmd, 3, 1, 0, 0);
 }
 
+void Renderer::createDebugLinePipeline() {
+    std::vector<VkDescriptorSetLayout> setLayouts = {globalSetLayout_};
+    std::vector<VkFormat> colorFormats = {VK_FORMAT_R16G16B16A16_SFLOAT};
+    // Lines drawn into the HDR scene target; depth test off so the skeleton shows
+    // through the mesh (debug aid). Reuses set 0 (camera) + the standard Vertex.
+    debugLinePipeline_ = std::make_unique<Pipeline>(device_,
+        shaderPath("debug_line.vert.spv"), shaderPath("debug_line.frag.spv"),
+        colorFormats, swapchain_->depthFormat(), setLayouts, swapchain_->samples(),
+        true, false, 0, false, VK_COMPARE_OP_LESS, VK_CULL_MODE_NONE, false,
+        VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
+
+    debugLineBuffers_.reserve(kMaxFramesInFlight);
+    for (int i = 0; i < kMaxFramesInFlight; ++i)
+        debugLineBuffers_.push_back(std::make_unique<Buffer>(device_,
+            kMaxDebugLineVerts * sizeof(Vertex),
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, MemoryUsage::HostVisible));
+}
+
+void Renderer::recordDebugLines(VkCommandBuffer cmd, Scene& scene) {
+    if (!scene.settings().showSkeletons || !debugLinePipeline_) return;
+
+    // Build bone segments (parent→child) in world space from every Animator.
+    std::vector<Vertex> verts;
+    const glm::vec3 boneColor(0.1f, 1.0f, 0.2f);
+    scene.traverse([&](Node& node, const glm::mat4& world) {
+        Animator* anim = node.getBehaviour<Animator>();
+        if (!anim || !anim->rig()) return;
+        const GlobalPose& gp = anim->globalPose();
+        const auto& bones = anim->rig()->bones();
+        const size_t n = std::min(bones.size(), gp.globalMatrices.size());
+        for (size_t i = 0; i < n && verts.size() < kMaxDebugLineVerts; ++i) {
+            int parent = bones[i].parentIndex;
+            if (parent < 0 || static_cast<size_t>(parent) >= n) continue;
+            Vertex a{}; a.pos = glm::vec3(world * gp.globalMatrices[parent][3]); a.color = boneColor;
+            Vertex b{}; b.pos = glm::vec3(world * gp.globalMatrices[i][3]);      b.color = boneColor;
+            verts.push_back(a);
+            verts.push_back(b);
+        }
+    });
+    if (verts.empty()) return;
+
+    const uint32_t count = std::min<uint32_t>(static_cast<uint32_t>(verts.size()), kMaxDebugLineVerts);
+    debugLineBuffers_[currentFrame_]->write(verts.data(), count * sizeof(Vertex));
+
+    debugLinePipeline_->bind(cmd);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, debugLinePipeline_->layout(),
+        0, 1, &globalSets_[currentFrame_], 0, nullptr);
+    VkBuffer vb = debugLineBuffers_[currentFrame_]->handle();
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &vb, &offset);
+    vkCmdDraw(cmd, count, 1, 0, 0);
+}
+
 void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera, Project* project) {
     camera.setPerspective(glm::radians(45.0f), swapchain_->aspectRatio(), 0.1f, 100.0f);
     
@@ -1105,7 +1178,8 @@ void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera,
     uniformBuffers_[frame]->write(&ubo, sizeof(ubo));
 
     LightingUBO lighting{};
-    gatherScene(lighting, scene, camera.position, &cameraFrustum_, project);
+    gatherScene(lighting, scene, camera.position, &cameraFrustum_, project,
+                &ubo.view[0], &ubo.proj[0]);
     lightingBuffers_[frame]->write(&lighting, sizeof(lighting));
 }
 
@@ -1202,6 +1276,12 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
             for (MeshNode* node : scene.meshes()) {
                 Mesh* mesh = node->mesh();
                 if (!mesh || !node->castShadows()) continue;
+                if (node->hasLods() && lodMatricesValid_) {
+                    const glm::mat4& world = node->worldTransform();
+                    const float coverage = computeScreenCoverage(world, mesh->bounds(), lodView_, lodProj_);
+                    mesh = node->meshForLod(node->selectLodIndex(coverage));
+                }
+                if (!mesh) continue;
                 glm::mat4 mvp = shadowMatrices_[layer] * node->worldTransform();
                 vkCmdPushConstants(c, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
                 mesh->bind(c);
@@ -1383,6 +1463,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     }
 
     recordSkyboxPass(cmd, scene, camera);
+    recordDebugLines(cmd, scene);  // skeleton bones (no-op unless showSkeletons)
 
     vkCmdEndRendering(cmd);
 
@@ -1709,7 +1790,9 @@ void Renderer::updateUniformBufferXr(uint32_t frame, const std::vector<xr::EyeVi
     head /= static_cast<float>(std::max(1u, n));
 
     LightingUBO lighting{};
-    gatherScene(lighting, scene, head, nullptr, project);
+    const glm::mat4* view = n > 0 ? &eyes[0].view : nullptr;
+    const glm::mat4* proj = n > 0 ? &eyes[0].projection : nullptr;
+    gatherScene(lighting, scene, head, nullptr, project, view, proj);
     lightingBuffers_[frame]->write(&lighting, sizeof(lighting));
 }
 
@@ -1928,6 +2011,12 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes,
             for (MeshNode* node : scene.meshes()) {
                 Mesh* mesh = node->mesh();
                 if (!mesh || !node->castShadows()) continue;
+                if (node->hasLods() && lodMatricesValid_) {
+                    const glm::mat4& world = node->worldTransform();
+                    const float coverage = computeScreenCoverage(world, mesh->bounds(), lodView_, lodProj_);
+                    mesh = node->meshForLod(node->selectLodIndex(coverage));
+                }
+                if (!mesh) continue;
                 glm::mat4 mvp = shadowMatrices_[layer] * node->worldTransform();
                 vkCmdPushConstants(c, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
                 mesh->bind(c);

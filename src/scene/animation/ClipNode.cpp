@@ -3,13 +3,17 @@
 
 namespace ne {
 
-ClipNode::ClipNode(const AnimationClip* clip, const Rig& rig) : clip_(clip) {
+ClipNode::ClipNode(const AnimationClip* clip, const Rig& rig, const RetargetMap* retarget)
+    : clip_(clip) {
     if (!clip_) return;
-    
-    // Bind tracks to rig bones (O(1) mapping setup)
+
+    // Bind tracks to rig bones (O(1) mapping setup). With a retarget map, the rig
+    // bone name is translated to the clip's track name first.
     boundTracks_.resize(rig.boneCount(), nullptr);
     for (size_t i = 0; i < rig.boneCount(); ++i) {
-        boundTracks_[i] = clip_->getTracks(rig.bones()[i].name);
+        const std::string& rigName = rig.bones()[i].name;
+        const std::string& clipName = retarget ? retarget->resolve(rigName) : rigName;
+        boundTracks_[i] = clip_->getTracks(clipName);
     }
 }
 

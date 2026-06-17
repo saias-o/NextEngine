@@ -37,6 +37,9 @@ struct SceneSettings {
     float skyboxExposure = 1.0f;
     float skyboxRotation = 0.0f;
 
+    // Debug: draw animated skeletons as bone lines (editor tool; desktop only).
+    bool showSkeletons = false;
+
     // When a sub-scene with this flag is loaded into the persistent World, its
     // rendering settings (above) override the World's. If false, the World keeps
     // the settings it already has (those of the "super-scene" / a previous level).

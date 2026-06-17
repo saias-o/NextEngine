@@ -1,9 +1,11 @@
 #pragma once
 
 #include "scene/Node.hpp"
+#include "scene/MeshLod.hpp"
 
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace ne {
 
@@ -29,6 +31,20 @@ public:
     void setMesh(Mesh* mesh) { mesh_ = mesh; }
     void setMaterial(Material* material) { material_ = material; }
 
+    // LOD chain (LOD0 = base mesh/material). Empty → single-LOD behaviour.
+    const std::vector<MeshLodLevel>& lods() const { return lods_; }
+    std::vector<MeshLodLevel>& lods() { return lods_; }
+    void setLods(std::vector<MeshLodLevel> levels) { lods_ = std::move(levels); }
+    bool hasLods() const { return lods_.size() > 1; }
+
+    // Runtime: last LOD picked by the renderer (for inspector debug).
+    int activeLodIndex() const { return activeLodIndex_; }
+    void setActiveLodIndex(int idx) const { activeLodIndex_ = idx; }
+
+    Mesh* meshForLod(int lodIndex) const;
+    Material* materialForLod(int lodIndex) const;
+    int selectLodIndex(float screenCoverage) const;
+
     bool& castShadows() { return castShadows_; }
     bool castShadows() const { return castShadows_; }
 
@@ -46,6 +62,8 @@ public:
 private:
     Mesh* mesh_;
     Material* material_;
+    std::vector<MeshLodLevel> lods_;
+    mutable int activeLodIndex_ = 0;
     bool castShadows_ = true;
     bool includeInLightBaking_ = false;
     bool meshEnabled_ = true;

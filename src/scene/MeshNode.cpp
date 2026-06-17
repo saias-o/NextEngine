@@ -5,6 +5,42 @@
 
 namespace ne {
 
+Mesh* MeshNode::meshForLod(int lodIndex) const {
+    if (lodIndex <= 0 || lods_.empty()) return mesh_;
+    if (lodIndex >= static_cast<int>(lods_.size())) return lods_.back().mesh ? lods_.back().mesh : mesh_;
+    return lods_[static_cast<size_t>(lodIndex)].mesh ? lods_[static_cast<size_t>(lodIndex)].mesh : mesh_;
+}
+
+Material* MeshNode::materialForLod(int lodIndex) const {
+    if (lodIndex <= 0 || lods_.empty()) return material_;
+    if (lodIndex >= static_cast<int>(lods_.size())) {
+        Material* m = lods_.back().material;
+        return m ? m : material_;
+    }
+    Material* m = lods_[static_cast<size_t>(lodIndex)].material;
+    return m ? m : material_;
+}
+
+int MeshNode::selectLodIndex(float screenCoverage) const {
+    if (lods_.empty()) return 0;
+    const int picked = ne::selectLodIndex(screenCoverage, lods_);
+    if (picked == activeLodIndex_) return picked;
+    if (activeLodIndex_ < 0 || activeLodIndex_ >= static_cast<int>(lods_.size()))
+        return picked;
+
+    constexpr float kHysteresis = 0.10f;
+    if (picked > activeLodIndex_) {
+        const float currentMin = lods_[static_cast<size_t>(activeLodIndex_)].minScreenCoverage;
+        if (screenCoverage > currentMin * (1.0f - kHysteresis))
+            return activeLodIndex_;
+    } else {
+        const float pickedMin = lods_[static_cast<size_t>(picked)].minScreenCoverage;
+        if (screenCoverage < pickedMin * (1.0f + kHysteresis))
+            return activeLodIndex_;
+    }
+    return picked;
+}
+
 void MeshNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
     Node::serialize(j, resources);
     j["mesh"] = resources.meshId(mesh_);
@@ -16,6 +52,18 @@ void MeshNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
     j["castShadows"] = castShadows_;
     j["includeInLightBaking"] = includeInLightBaking_;
     j["meshEnabled"] = meshEnabled_;
+    if (lods_.size() > 1) {
+        nlohmann::json arr = nlohmann::json::array();
+        for (const MeshLodLevel& lvl : lods_) {
+            nlohmann::json entry;
+            entry["mesh"] = resources.meshId(lvl.mesh ? lvl.mesh : mesh_);
+            if (lvl.material)
+                entry["materialAlbedo"] = lvl.material->desc().albedoId;
+            entry["minCoverage"] = lvl.minScreenCoverage;
+            arr.push_back(std::move(entry));
+        }
+        j["lods"] = std::move(arr);
+    }
 }
 
 void MeshNode::deserialize(const nlohmann::json& j, ResourceManager& resources) {
@@ -54,6 +102,32 @@ void MeshNode::deserialize(const nlohmann::json& j, ResourceManager& resources) 
     if (j.contains("castShadows")) castShadows_ = j["castShadows"].get<bool>();
     if (j.contains("includeInLightBaking")) includeInLightBaking_ = j["includeInLightBaking"].get<bool>();
     if (j.contains("meshEnabled")) meshEnabled_ = j["meshEnabled"].get<bool>();
+    if (j.contains("lods") && j["lods"].is_array()) {
+        lods_.clear();
+        for (const auto& entry : j["lods"]) {
+            MeshLodLevel lvl;
+            if (entry.contains("mesh")) {
+                AssetID meshId = kAssetInvalid;
+                if (entry["mesh"].is_number_integer())
+                    meshId = entry["mesh"].get<AssetID>();
+                else if (entry["mesh"].is_string())
+                    meshId = resources.getOrRegister(entry["mesh"].get<std::string>(), AssetType::Mesh);
+                if (meshId != kAssetInvalid)
+                    lvl.mesh = resources.getMesh(meshId);
+            }
+            if (entry.contains("materialAlbedo")) {
+                MaterialDesc desc{};
+                if (entry["materialAlbedo"].is_number_integer())
+                    desc.albedoId = entry["materialAlbedo"].get<AssetID>();
+                else if (entry["materialAlbedo"].is_string())
+                    desc.albedoId = resources.getOrRegister(entry["materialAlbedo"].get<std::string>(), AssetType::Texture);
+                lvl.material = resources.getMaterial(desc);
+            }
+            if (entry.contains("minCoverage"))
+                lvl.minScreenCoverage = entry["minCoverage"].get<float>();
+            lods_.push_back(lvl);
+        }
+    }
 }
 
 } // namespace ne

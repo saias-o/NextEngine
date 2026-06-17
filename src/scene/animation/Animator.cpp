@@ -51,7 +51,8 @@ void Animator::play(const std::string& name, bool loop, float crossfade) {
     }
 
     if (playStates_.insert(name).second) {
-        auto clip = std::make_unique<ClipNode>(it->second, *rig_);
+        auto clip = std::make_unique<ClipNode>(it->second, *rig_,
+                                               retarget_.empty() ? nullptr : &retarget_);
         clip->setLooping(loop);
         playbackFsm_->addState(std::make_unique<AnimState>(name, std::move(clip)));
     }

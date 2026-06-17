@@ -5,6 +5,7 @@
 #include "scene/animation/Pose.hpp"
 #include "scene/animation/AnimStateMachine.hpp"
 #include "scene/animation/AnimBlackboard.hpp"
+#include "scene/animation/Retarget.hpp"
 
 #include <memory>
 #include <string>
@@ -38,6 +39,11 @@ public:
     void addClip(const std::string& name, const AnimationClip* clip) { clips_[name] = clip; }
     const std::unordered_map<std::string, const AnimationClip*>& clips() const { return clips_; }
 
+    // ── Retargeting: play clips authored on a differently-named skeleton ──────
+    // Name-based (see RetargetMap). Affects clips started via play() afterwards.
+    void setRetarget(RetargetMap map) { retarget_ = std::move(map); }
+    const RetargetMap& retarget() const { return retarget_; }
+
     // ── Simple playback by name (crossfades from the current clip) ───────────
     void play(const std::string& name, bool loop = true, float crossfade = 0.2f);
     const std::string& currentClip() const { return currentClip_; }
@@ -66,6 +72,7 @@ private:
     std::string currentClip_;
 
     AnimBlackboard blackboard_;
+    RetargetMap retarget_;
     LocalPose bindPose_;
     LocalPose currentLocalPose_;
     GlobalPose globalPose_;

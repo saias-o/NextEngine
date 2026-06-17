@@ -14,6 +14,9 @@
 #include "project/AssetRegistry.hpp"
 
 #include "scene/BehaviourRegistry.hpp"
+#include "scene/BVHLoader.hpp"
+#include "scene/animation/Animator.hpp"
+#include "scene/animation/AnimationClip.hpp"
 
 #include "scene/UICanvasNode.hpp"
 #include "scene/UIColorNode.hpp"
@@ -230,6 +233,9 @@ void InspectorPanel::draw(EditorUI* editor) {
         ImGui::SliderFloat("GI Intensity", &s.giIntensity, 0.0f, 8.0f);
         ImGui::Checkbox("Debug: show voxel grid", &s.giDebugVoxels);
 
+        ImGui::SeparatorText("Debug");
+        ImGui::Checkbox("Show skeletons (bone lines)", &s.showSkeletons);
+
         ImGui::SeparatorText("Skybox");
         std::string skyboxName = "Skybox Texture [" + getAssetName(s.skyboxTexture, editor) + "]";
         if (s.skyboxTexture == kAssetInvalid) skyboxName = "Drop Skybox Texture Here";
@@ -282,7 +288,7 @@ void InspectorPanel::draw(EditorUI* editor) {
     if (auto* shape = dynamic_cast<CollisionShapeNode*>(node))
         drawCollisionShape(shape);
 
-    drawBehaviours(node);
+    drawBehaviours(node, editor);
 
     ImGui::End();
 }
@@ -450,6 +456,39 @@ void InspectorPanel::drawMeshRenderer(MeshNode* meshNode, EditorUI* editor) {
     ImGui::Spacing();
     ImGui::Checkbox("Cast Shadows", &meshNode->castShadows());
     ImGui::Checkbox("Include to light baking", &meshNode->includeInLightBaking());
+
+    if (meshNode->hasLods()) {
+        ImGui::SeparatorText("LOD Group");
+        ImGui::Text("Levels: %zu", meshNode->lods().size());
+        ImGui::Text("Active LOD: %d", meshNode->activeLodIndex());
+        if (ImGui::BeginTable("MeshLods", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("LOD");
+            ImGui::TableSetupColumn("Triangles");
+            ImGui::TableSetupColumn("Min Coverage");
+            ImGui::TableSetupColumn("Status");
+            ImGui::TableHeadersRow();
+            for (int i = 0; i < static_cast<int>(meshNode->lods().size()); ++i) {
+                const MeshLodLevel& lvl = meshNode->lods()[static_cast<size_t>(i)];
+                Mesh* lodMesh = meshNode->meshForLod(i);
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("LOD %d", i);
+                ImGui::TableSetColumnIndex(1);
+                if (lodMesh)
+                    ImGui::Text("%u", lodMesh->allocation().indexCount / 3);
+                else
+                    ImGui::TextDisabled("-");
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%.2f", lvl.minScreenCoverage);
+                ImGui::TableSetColumnIndex(3);
+                if (i == meshNode->activeLodIndex())
+                    ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "active");
+                else
+                    ImGui::TextDisabled("-");
+            }
+            ImGui::EndTable();
+        }
+    }
 }
 
 void InspectorPanel::drawMaterial(Material* material, MeshNode* meshNode, EditorUI* editor) {
@@ -485,30 +524,46 @@ void InspectorPanel::drawMaterial(Material* material, MeshNode* meshNode, Editor
     }
 }
 
-void InspectorPanel::drawBehaviours(Node* node) {
+void InspectorPanel::drawBehaviours(Node* node, EditorUI* editor) {
     ImGui::SeparatorText("Behaviours");
-    
+
     Behaviour* toRemove = nullptr;
-    
+
     for (const auto& b : node->behaviours()) {
         ImGui::PushID(b.get());
-        
+
         bool enabled = b->enabled();
         if (ImGui::Checkbox("##enabled", &enabled)) {
             b->setEnabled(enabled);
         }
         ImGui::SameLine();
-        
+
         const char* typeName = b->typeName() ? b->typeName() : "Unknown Behaviour";
         bool expanded = ImGui::CollapsingHeader(typeName, ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
-        
+
         ImGui::SameLine(ImGui::GetWindowWidth() - 30.0f);
         if (ImGui::Button("X")) {
             toRemove = b.get();
         }
-        
+
         if (expanded) {
             b->onDrawInspector();
+
+            // Animator: drop a .bvh from the file browser to add it as a clip.
+            if (auto* anim = dynamic_cast<Animator*>(b.get())) {
+                ImGui::Button("Drop .bvh to add clip", ImVec2(-FLT_MIN, 24));
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_BVH")) {
+                        if (ResourceManager* res = editor->ctxResources_) {
+                            AssetID id = BVHLoader::load((const char*)payload->Data, *res);
+                            if (id != kAssetInvalid)
+                                if (AnimationClip* clip = res->getAnimation(id))
+                                    anim->addClip(clip->name(), clip);
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+            }
         }
         ImGui::PopID();
     }

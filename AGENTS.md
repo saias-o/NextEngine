@@ -1,6 +1,6 @@
 # NextEngine
 
-> Fichier de contexte pour assistants IA (Claude Code & co). Lis-le en premier.
+> Fichier de contexte pour assistants IA (Codex & co). Lis-le en premier.
 
 ## But du projet
 
@@ -328,7 +328,7 @@ Le moteur est construit par étapes numérotées :
       - Phase 2 : World Radiance Cache + Spatial Hashing (ombrage découplé de l'écran, idéal pour les deux yeux en VR).
       - Phase 3 : Volumétrie froxel (brouillard / lumière volumétrique / SSS).
       - Voir détails et matrice de scalabilité (Low/Medium/High/Ultra) dans [RENDU_AVANCE.md](file:///c:/Users/evand/Documents/NextEngine/RENDU_AVANCE.md).
-- [x] **Étape 10 — Animation System.** Animations squelettiques glTF/BVH :
+- [~] **Étape 10 — Animation System.** Animations squelettiques glTF/BVH :
       - [x] **Data-oriented** : `Rig` (bones plats, parents, inverse-bind), `Pose`
             (Local/Global + skinning matrices), `AnimationClip` (tracks T/R/S,
             interp linéaire + slerp). Graphe : `ClipNode`, `BlendNode`,
@@ -338,9 +338,8 @@ Le moteur est construit par étapes numérotées :
             `skinningMatrices` et passe `boneOffset` par instance.
       - [x] **Chargement glTF/GLB** : `GLTFLoader` parse `cgltf_skin` → `Rig`
             (joints, parents, inverse-bind), attache un `Animator`, et parse
-            `cgltf_animation` → `AnimationClip` (CUBICSPLINE → **vrai Hermite** via
-            tangentes in/out stockées par track). Les clips sont enregistrés sur
-            l'`Animator` (`addClip`).
+            `cgltf_animation` → `AnimationClip` (gère CUBICSPLINE en lisant la
+            valeur). Les clips sont enregistrés sur l'`Animator` (`addClip`).
       - [x] **API runtime propre** : `Animator::play("Idle"/"Walk"/...)` (FSM
             interne + crossfade auto), `blackboard()`/`setFloat/Bool`,
             `setStateMachine`. `Animator` enregistré (`BehaviourRegistry`).
@@ -349,14 +348,8 @@ Le moteur est construit par étapes numérotées :
       - [x] **Chargement BVH** : `BVHLoader::load` → `AnimationClip` (tracks par
             nom de joint → jouable sur un squelette aux noms compatibles, sans
             retargeting). `AnimGraphParser` corrigé (clips réels, plus de fake/leak).
-      - [x] **Finition (Lot A)** : **vrai cubic-spline** (Hermite glTF, tangentes) ;
-            **retargeting par noms** (`RetargetMap` + `autoMap` normalisé
-            mixamorig:/casse/synonymes ; `ClipNode`/`Animator::setRetarget`) ;
-            **viewer de squelette** (pipeline `LINE_LIST` `debug_line.*`, toggle
-            `SceneSettings::showSkeletons`, desktop) ; **drag-drop `.bvh`** (payload
-            `FILE_BVH` → drop sur un `Animator` dans l'inspecteur → `addClip`).
-            *Restes hors-périmètre* : retargeting proportionnel/rest-pose (notre
-            `AnimationClip` ne stocke pas la bind pose source) — pass futur.
+      - [ ] *À faire* : **retargeting** réel (squelettes/conventions différents),
+            vrai cubic-spline, viewer de squelette debug, drag-drop `.bvh` éditeur.
 - [x] **Étape 11 — Simulation Physique.** Intégration d'un moteur physique robuste :
       - [x] **Jolt Physics vendu** (`third_party/jolt`, lib statique via
             `add_subdirectory`, SIMD/ABI propagés en PUBLIC). Wrapper moteur dans

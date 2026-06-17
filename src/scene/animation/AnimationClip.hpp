@@ -36,6 +36,12 @@ public:
     std::vector<float> timestamps;
     std::vector<T> values;
 
+    // glTF CUBICSPLINE: Hermite interpolation using per-key tangents. When false
+    // (the default), values are interpolated linearly (lerp / slerp).
+    bool cubic = false;
+    std::vector<T> inTangents;   // one per key (cubic only)
+    std::vector<T> outTangents;  // one per key (cubic only)
+
     void evaluate(float time, Transform& outTransform) const override;
 };
 
@@ -54,6 +60,10 @@ public:
     const std::string& name() const { return name_; }
 
     const std::vector<std::unique_ptr<AnimTrack>>* getTracks(const std::string& boneName) const;
+
+    // Names of all bones/joints this clip animates — used to auto-build a
+    // RetargetMap between a clip and a differently-named rig.
+    std::vector<std::string> boneNames() const;
 
 private:
     std::string name_;

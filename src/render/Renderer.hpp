@@ -150,7 +150,8 @@ private:
     // Fills the lighting UBO + the per-frame draw list (and bone matrices). Culls
     // against `cullFrustum` when non-null; XR (stereo) passes null to render all.
     void gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& cameraPos,
-                     const Frustum* cullFrustum, Project* project);
+                     const Frustum* cullFrustum, Project* project,
+                     const glm::mat4* view = nullptr, const glm::mat4* proj = nullptr);
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Scene& scene, const Camera& camera);
 
     VulkanDevice& device_;
@@ -196,6 +197,14 @@ private:
     
     void createSkyboxPipeline();
     void recordSkyboxPass(VkCommandBuffer cmd, Scene& scene, const Camera& camera);
+
+    // Debug skeleton lines (editor tool, desktop only): a LINE_LIST pipeline + a
+    // per-frame dynamic vertex buffer of bone segments built from scene Animators.
+    void createDebugLinePipeline();
+    void recordDebugLines(VkCommandBuffer cmd, Scene& scene);
+    std::unique_ptr<Pipeline> debugLinePipeline_;
+    std::vector<std::unique_ptr<Buffer>> debugLineBuffers_;
+    static constexpr uint32_t kMaxDebugLineVerts = 16384;
 
     VkDescriptorSetLayout globalSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool globalPool_ = VK_NULL_HANDLE;
@@ -279,6 +288,10 @@ private:
         float exposure;
         float rotation;
     };
+
+    glm::mat4 lodView_{1.0f};
+    glm::mat4 lodProj_{1.0f};
+    bool lodMatricesValid_ = false;
 };
 
 } // namespace ne

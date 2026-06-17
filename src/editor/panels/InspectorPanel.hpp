@@ -21,7 +21,7 @@ private:
     void drawMaterial(Material* material, MeshNode* meshNode, EditorUI* editor);
     void drawPhysicsBody(CollisionObjectNode* body);
     void drawCollisionShape(CollisionShapeNode* shape);
-    void drawBehaviours(Node* node);
+    void drawBehaviours(Node* node, EditorUI* editor);
 };
 
 } // namespace ne

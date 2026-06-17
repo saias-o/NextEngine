@@ -1,6 +1,7 @@
 #include "scene/GLTFLoader.hpp"
 #include "scene/Scene.hpp"
 #include "scene/MeshNode.hpp"
+#include "scene/MeshLod.hpp"
 #include "scene/Node.hpp"
 #include "graphics/Mesh.hpp"
 #include "graphics/ResourceManager.hpp"
@@ -8,16 +9,21 @@
 #include "scene/animation/AnimationClip.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/ClipNode.hpp"
+#include "tools/AutoLODBridge.hpp"
 #include "core/Log.hpp"
 
 #include <cgltf.h>
+#include <nlohmann/json.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 
+#include <cstring>
 #include <filesystem>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <string>
 
@@ -41,10 +47,111 @@ static AssetID loadGLTFTexture(cgltf_texture* tex, ResourceManager& resources, c
     return kAssetInvalid;
 }
 
+struct NodeLodInfo {
+    std::vector<size_t> lowerDetailNodeIndices;
+    std::vector<float> msftCoverage;
+};
+
+static const cgltf_extension* findExtension(const cgltf_node* node, const char* name) {
+    for (size_t i = 0; i < node->extensions_count; ++i) {
+        if (std::strcmp(node->extensions[i].name, name) == 0)
+            return &node->extensions[i];
+    }
+    return nullptr;
+}
+
+static std::vector<size_t> parseMsftLodIds(const cgltf_node* node) {
+    const cgltf_extension* ext = findExtension(node, "MSFT_lod");
+    if (!ext || !ext->data) return {};
+    try {
+        auto j = nlohmann::json::parse(ext->data);
+        if (!j.contains("ids") || !j["ids"].is_array()) return {};
+        std::vector<size_t> ids;
+        for (const auto& v : j["ids"]) ids.push_back(v.get<size_t>());
+        return ids;
+    } catch (const nlohmann::json::exception&) {
+        return {};
+    }
+}
+
+static std::vector<float> parseMsftScreenCoverage(const cgltf_node* node) {
+    if (!node->extras.data) return {};
+    try {
+        auto j = nlohmann::json::parse(node->extras.data);
+        if (!j.contains("MSFT_screencoverage") || !j["MSFT_screencoverage"].is_array()) return {};
+        std::vector<float> cov;
+        for (const auto& v : j["MSFT_screencoverage"]) cov.push_back(v.get<float>());
+        return cov;
+    } catch (const nlohmann::json::exception&) {
+        return {};
+    }
+}
+
+static Material* resolvePrimitiveMaterial(cgltf_primitive* prim, cgltf_data* data,
+                                          ResourceManager& resources,
+                                          const std::vector<MaterialDesc>& materials) {
+    if (prim->material) {
+        size_t matIdx = prim->material - data->materials;
+        return resources.getMaterial(materials[matIdx]);
+    }
+    return resources.getMaterial(MaterialDesc{});
+}
+
+static void buildLodChain(MeshNode* mNode, size_t nodeIndex, size_t primIndex,
+                          cgltf_node* node, cgltf_data* data,
+                          const std::vector<std::vector<AssetID>>& meshesPrimitives,
+                          const std::vector<MaterialDesc>& materials,
+                          ResourceManager& resources,
+                          const std::unordered_map<size_t, NodeLodInfo>& lodByNodeIndex) {
+    auto it = lodByNodeIndex.find(nodeIndex);
+    if (it == lodByNodeIndex.end()) return;
+
+    const NodeLodInfo& info = it->second;
+    const size_t lodCount = 1 + info.lowerDetailNodeIndices.size();
+    const std::vector<float> thresholds = coverageThresholdsFromMsft(info.msftCoverage, lodCount);
+
+    std::vector<MeshLodLevel> levels;
+    levels.reserve(lodCount);
+
+    MeshLodLevel lod0;
+    lod0.mesh = mNode->mesh();
+    lod0.material = mNode->material();
+    lod0.minScreenCoverage = thresholds.empty() ? 0.0f : thresholds[0];
+    levels.push_back(lod0);
+
+    for (size_t j = 0; j < info.lowerDetailNodeIndices.size(); ++j) {
+        const size_t proxyIdx = info.lowerDetailNodeIndices[j];
+        if (proxyIdx >= data->nodes_count) continue;
+        cgltf_node* proxy = &data->nodes[proxyIdx];
+        if (!proxy->mesh || proxy->mesh->primitives_count == 0) continue;
+
+        const size_t proxyMeshIdx = proxy->mesh - data->meshes;
+        const size_t proxyPrim = std::min(primIndex, proxy->mesh->primitives_count - 1);
+        if (proxyMeshIdx >= meshesPrimitives.size() || proxyPrim >= meshesPrimitives[proxyMeshIdx].size())
+            continue;
+
+        MeshLodLevel lvl;
+        lvl.mesh = resources.getMesh(meshesPrimitives[proxyMeshIdx][proxyPrim]);
+        lvl.material = resolvePrimitiveMaterial(&proxy->mesh->primitives[proxyPrim], data, resources, materials);
+        lvl.minScreenCoverage = (j + 1 < thresholds.size()) ? thresholds[j + 1] : 0.0f;
+        levels.push_back(lvl);
+    }
+
+    if (levels.size() > 1) {
+        mNode->setLods(std::move(levels));
+        Log::info("GLTFLoader: ", levels.size(), " LOD levels on node ", node->name ? node->name : "?");
+    }
+}
+
 static void processNode(cgltf_node* node, Node* parent, ResourceManager& resources,
-                        const std::vector<std::vector<AssetID>>& meshesPrimitives, 
+                        const std::vector<std::vector<AssetID>>& meshesPrimitives,
                         const std::vector<MaterialDesc>& materials, cgltf_data* data,
+                        const std::unordered_set<size_t>& lodProxyNodes,
+                        const std::unordered_map<size_t, NodeLodInfo>& lodByNodeIndex,
                         std::vector<std::pair<MeshNode*, cgltf_skin*>>& skinnedMeshes) {
+    const size_t nodeIndex = static_cast<size_t>(node - data->nodes);
+    if (lodProxyNodes.count(nodeIndex)) return;
+
     Node* neNode = parent->createChild<Node>(node->name ? node->name : "Node");
 
     if (node->has_translation) neNode->transform().position = toVec3(node->translation);
@@ -64,17 +171,11 @@ static void processNode(cgltf_node* node, Node* parent, ResourceManager& resourc
         
         for (size_t i = 0; i < primitives.size(); ++i) {
             cgltf_primitive* prim = &node->mesh->primitives[i];
-            Material* mat = nullptr;
-            if (prim->material) {
-                size_t matIdx = prim->material - data->materials;
-                mat = resources.getMaterial(materials[matIdx]);
-            } else {
-                MaterialDesc defaultDesc;
-                mat = resources.getMaterial(defaultDesc);
-            }
+            Material* mat = resolvePrimitiveMaterial(prim, data, resources, materials);
             
             std::string primName = (node->name ? std::string(node->name) : "Mesh") + "_prim" + std::to_string(i);
             MeshNode* mNode = neNode->createChild<MeshNode>(primName, resources.getMesh(primitives[i]), mat);
+            buildLodChain(mNode, nodeIndex, i, node, data, meshesPrimitives, materials, resources, lodByNodeIndex);
             if (node->skin) {
                 skinnedMeshes.push_back({mNode, node->skin});
             }
@@ -82,30 +183,33 @@ static void processNode(cgltf_node* node, Node* parent, ResourceManager& resourc
     }
 
     for (size_t i = 0; i < node->children_count; ++i) {
-        processNode(node->children[i], neNode, resources, meshesPrimitives, materials, data, skinnedMeshes);
+        processNode(node->children[i], neNode, resources, meshesPrimitives, materials, data,
+                    lodProxyNodes, lodByNodeIndex, skinnedMeshes);
     }
 }
 
-bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& resources) {
-    Log::info("GLTFLoader: loading ", path);
+bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& resources,
+                      const GLTFLoadOptions& options) {
+    const std::string loadPath = AutoLODBridge::resolveLoadPath(path, options.autoMeshLods);
+    Log::info("GLTFLoader: loading ", loadPath);
     
-    cgltf_options options = {};
+    cgltf_options cgltfOptions = {};
     cgltf_data* data = nullptr;
-    cgltf_result result = cgltf_parse_file(&options, path.c_str(), &data);
+    cgltf_result result = cgltf_parse_file(&cgltfOptions, loadPath.c_str(), &data);
     
     if (result != cgltf_result_success) {
-        Log::error("GLTFLoader: Failed to parse ", path, " (error ", result, ")");
+        Log::error("GLTFLoader: Failed to parse ", loadPath, " (error ", result, ")");
         return false;
     }
     
-    result = cgltf_load_buffers(&options, data, path.c_str());
+    result = cgltf_load_buffers(&cgltfOptions, data, loadPath.c_str());
     if (result != cgltf_result_success) {
-        Log::error("GLTFLoader: Failed to load buffers for ", path);
+        Log::error("GLTFLoader: Failed to load buffers for ", loadPath);
         cgltf_free(data);
         return false;
     }
     
-    std::filesystem::path basePath = std::filesystem::path(path).parent_path();
+    std::filesystem::path basePath = std::filesystem::path(loadPath).parent_path();
 
     // 1. Load Materials
     std::vector<MaterialDesc> materials(data->materials_count);
@@ -242,14 +346,30 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
         }
     }
 
+    // 2b. Scan MSFT_lod metadata before building the scene graph.
+    std::unordered_map<size_t, NodeLodInfo> lodByNodeIndex;
+    std::unordered_set<size_t> lodProxyNodes;
+    for (size_t i = 0; i < data->nodes_count; ++i) {
+        cgltf_node* gnode = &data->nodes[i];
+        std::vector<size_t> ids = parseMsftLodIds(gnode);
+        if (ids.empty()) continue;
+        NodeLodInfo info;
+        info.lowerDetailNodeIndices = std::move(ids);
+        info.msftCoverage = parseMsftScreenCoverage(gnode);
+        lodByNodeIndex[i] = std::move(info);
+        for (size_t proxy : lodByNodeIndex[i].lowerDetailNodeIndices)
+            lodProxyNodes.insert(proxy);
+    }
+
     // 3. Process Scene Graph
     std::vector<std::pair<MeshNode*, cgltf_skin*>> skinnedMeshes;
     if (data->scene) {
-        std::filesystem::path p(path);
+        std::filesystem::path p(loadPath);
         Node* containerNode = rootNode.createChild<Node>(p.stem().string());
-        containerNode->setImportedFromPath(path);
+        containerNode->setImportedFromPath(loadPath);
         for (size_t i = 0; i < data->scene->nodes_count; ++i) {
-            processNode(data->scene->nodes[i], containerNode, resources, meshesPrimitives, materials, data, skinnedMeshes);
+            processNode(data->scene->nodes[i], containerNode, resources, meshesPrimitives, materials, data,
+                        lodProxyNodes, lodByNodeIndex, skinnedMeshes);
         }
     }
 
@@ -281,7 +401,7 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
             rig->addBone(name, parentIndex, invBind);
         }
         
-        std::string rigName = path + "#rig" + std::to_string(i);
+        std::string rigName = loadPath + "#rig" + std::to_string(i);
         skinRigs[i] = resources.registerMemoryRig(rigName, std::move(rig));
         Log::info("Loaded GLTF Skin: ", skin.joints_count, " joints, rigId=", skinRigs[i]);
     }
@@ -328,8 +448,8 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
             cgltf_accessor* input = sampler->input;
             cgltf_accessor* output = sampler->output;
 
-            // glTF CUBICSPLINE packs (in-tangent, value, out-tangent) per key; read
-            // just the value (treated as linear — no true cubic interpolation yet).
+            // glTF CUBICSPLINE packs (in-tangent, value, out-tangent) per key; the
+            // tangents feed real Hermite interpolation (see TypedAnimTrack::cubic).
             const bool cubic = sampler->interpolation == cgltf_interpolation_type_cubic_spline;
             const size_t stride = cubic ? 3 : 1;
             const size_t valueOffset = cubic ? 1 : 0;
@@ -348,6 +468,15 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
                 for (size_t v = 0; v < count; ++v) {
                     cgltf_accessor_read_float(output, v * stride + valueOffset, glm::value_ptr(track->values[v]), 3);
                 }
+                if (cubic) {
+                    track->cubic = true;
+                    track->inTangents.resize(count);
+                    track->outTangents.resize(count);
+                    for (size_t v = 0; v < count; ++v) {
+                        cgltf_accessor_read_float(output, v * 3 + 0, glm::value_ptr(track->inTangents[v]), 3);
+                        cgltf_accessor_read_float(output, v * 3 + 2, glm::value_ptr(track->outTangents[v]), 3);
+                    }
+                }
                 clip->addTrack(targetName, std::move(track));
             } else if (channel.target_path == cgltf_animation_path_type_rotation) {
                 auto track = std::make_unique<TypedAnimTrack<glm::quat>>();
@@ -359,11 +488,23 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
                     cgltf_accessor_read_float(output, v * stride + valueOffset, q, 4);
                     track->values[v] = glm::quat(q[3], q[0], q[1], q[2]); // wxyz
                 }
+                if (cubic) {
+                    track->cubic = true;
+                    track->inTangents.resize(count);
+                    track->outTangents.resize(count);
+                    for (size_t v = 0; v < count; ++v) {
+                        float qi[4], qo[4];
+                        cgltf_accessor_read_float(output, v * 3 + 0, qi, 4);
+                        cgltf_accessor_read_float(output, v * 3 + 2, qo, 4);
+                        track->inTangents[v]  = glm::quat(qi[3], qi[0], qi[1], qi[2]);
+                        track->outTangents[v] = glm::quat(qo[3], qo[0], qo[1], qo[2]);
+                    }
+                }
                 clip->addTrack(targetName, std::move(track));
             }
         }
         
-        std::string clipPath = path + "#" + animName;
+        std::string clipPath = loadPath + "#" + animName;
         AssetID clipId = resources.registerMemoryAnimation(clipPath, std::move(clip));
         loadedClips.push_back(clipId);
         clipNames.push_back(animName);

@@ -18,6 +18,20 @@ glm::quat interpolate<glm::quat>(const glm::quat& a, const glm::quat& b, float t
     return glm::slerp(a, b, t);
 }
 
+// glTF cubic-spline (Hermite) between two keys. v0/v1 are the key values, m0 the
+// out-tangent of the previous key, m1 the in-tangent of the next key, dt = t1-t0,
+// s the normalized [0,1] factor. GLM defines +, scalar* for vec3 and quat, so the
+// same expression serves both; quaternions are renormalized by the caller.
+template <typename T>
+static T hermite(const T& v0, const T& m0, const T& v1, const T& m1, float dt, float s) {
+    const float s2 = s * s, s3 = s2 * s;
+    const float h00 = 2.0f * s3 - 3.0f * s2 + 1.0f;
+    const float h10 = s3 - 2.0f * s2 + s;
+    const float h01 = -2.0f * s3 + 3.0f * s2;
+    const float h11 = s3 - s2;
+    return h00 * v0 + (h10 * dt) * m0 + h01 * v1 + (h11 * dt) * m1;
+}
+
 template <typename T>
 void TypedAnimTrack<T>::evaluate(float time, Transform& outTransform) const {
     if (timestamps.empty()) return;
@@ -50,7 +64,14 @@ void TypedAnimTrack<T>::evaluate(float time, Transform& outTransform) const {
     float t1 = timestamps[nextIdx];
     float factor = (t1 > t0) ? (time - t0) / (t1 - t0) : 0.0f;
 
-    T val = interpolate(values[prevIdx], values[nextIdx], factor);
+    T val;
+    if (cubic && prevIdx < outTangents.size() && nextIdx < inTangents.size()) {
+        val = hermite(values[prevIdx], outTangents[prevIdx],
+                      values[nextIdx], inTangents[nextIdx], t1 - t0, factor);
+        if constexpr (std::is_same_v<T, glm::quat>) val = glm::normalize(val);
+    } else {
+        val = interpolate(values[prevIdx], values[nextIdx], factor);
+    }
 
     if constexpr (std::is_same_v<T, glm::vec3>) {
         if (target == TrackTarget::Translation) outTransform.position = val;
@@ -73,6 +94,13 @@ const std::vector<std::unique_ptr<AnimTrack>>* AnimationClip::getTracks(const st
         return &it->second;
     }
     return nullptr;
+}
+
+std::vector<std::string> AnimationClip::boneNames() const {
+    std::vector<std::string> names;
+    names.reserve(boneTracks_.size());
+    for (const auto& [name, tracks] : boneTracks_) names.push_back(name);
+    return names;
 }
 
 } // namespace ne

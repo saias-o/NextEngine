@@ -29,6 +29,7 @@ const char* fileIcon(const std::filesystem::directory_entry& entry) {
     if (ext == ".vert" || ext == ".frag" || ext == ".glsl" || ext == ".spv") return "[Sh]";
     if (ext == ".html" || ext == ".htm" || ext == ".css" || ext == ".js") return "[Web]";
     if (ext == ".lua")   return "[Lua]";
+    if (ext == ".bvh")   return "[Anim]";
     if (ext == ".neproj") return "[Proj]";
     if (ext == ".scene") return "[Sc]";
     return "[F]";
@@ -288,6 +289,12 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                         ImGui::Text("Assign Web %s", filename.c_str());
                         ImGui::EndDragDropSource();
                     }
+                } else if (ext == ".bvh") {
+                    if (ImGui::BeginDragDropSource()) {
+                        ImGui::SetDragDropPayload("FILE_BVH", pathStr.c_str(), pathStr.size() + 1);
+                        ImGui::Text("Add Animation %s", filename.c_str());
+                        ImGui::EndDragDropSource();
+                    }
                 }
 
                 drawItemContextMenu(pathStr, filename);
@@ -347,6 +354,12 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                     if (ImGui::BeginDragDropSource()) {
                         ImGui::SetDragDropPayload("FILE_HTML", pathStr.c_str(), pathStr.size() + 1);
                         ImGui::Text("Assign Web %s", filename.c_str());
+                        ImGui::EndDragDropSource();
+                    }
+                } else if (ext == ".bvh") {
+                    if (ImGui::BeginDragDropSource()) {
+                        ImGui::SetDragDropPayload("FILE_BVH", pathStr.c_str(), pathStr.size() + 1);
+                        ImGui::Text("Add Animation %s", filename.c_str());
                         ImGui::EndDragDropSource();
                     }
                 }

@@ -358,7 +358,9 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_MODEL")) {
             std::string path = (const char*)payload->Data;
             if (scene && editor->ctxResources_) {
-                GLTFLoader::load(path, *scene, *editor->ctxResources_);
+                GLTFLoadOptions opts;
+                if (editor->ctxProject()) opts.autoMeshLods = editor->ctxProject()->autoMeshLods();
+                GLTFLoader::load(path, *scene, *editor->ctxResources_, opts);
             }
         }
         ImGui::EndDragDropTarget();
@@ -461,7 +463,9 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_MODEL")) {
             std::string path = (const char*)payload->Data;
             if (editor->ctxResources_) {
-                GLTFLoader::load(path, *node, *editor->ctxResources_);
+                GLTFLoadOptions opts;
+                if (editor->ctxProject()) opts.autoMeshLods = editor->ctxProject()->autoMeshLods();
+                GLTFLoader::load(path, *node, *editor->ctxResources_, opts);
             }
         }
         ImGui::EndDragDropTarget();

@@ -339,7 +339,9 @@ void EditorUI::openModelImporter(const std::string& path, ResourceManager* resou
     
     // Load the model
     if (resources) {
-        GLTFLoader::load(path, *previewScene_, *resources);
+        GLTFLoadOptions opts;
+        if (ctxProject_) opts.autoMeshLods = ctxProject_->autoMeshLods();
+        GLTFLoader::load(path, *previewScene_, *resources, opts);
     }
 }
 
@@ -1146,6 +1148,13 @@ void EditorUI::drawSettingsWindow(Project* project) {
                     if (maxFps < 0) maxFps = 0;
                     project->setMaxFps(maxFps);
                 }
+
+                bool autoLods = project->autoMeshLods();
+                if (ImGui::Checkbox("Auto Mesh LODs", &autoLods)) {
+                    project->setAutoMeshLods(autoLods);
+                    project->save();
+                }
+                ImGui::TextDisabled("When enabled, importing .glb files runs AutoLOD to generate LOD chains.");
                 
                 ImGui::SeparatorText("Metadata");
                 ImGui::TextDisabled("Version: 1.0.0");

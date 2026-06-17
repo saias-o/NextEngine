@@ -3,15 +3,19 @@
 #include "scene/animation/AnimNode.hpp"
 #include "scene/animation/AnimationClip.hpp"
 #include "scene/animation/Rig.hpp"
+#include "scene/animation/Retarget.hpp"
 
 #include <vector>
 
 namespace ne {
 
-// ClipNode plays back a single immutable AnimationClip.
+// ClipNode plays back a single immutable AnimationClip. Pass a RetargetMap to play
+// a clip whose joint names differ from the rig's (name-based retargeting); null =
+// names must match.
 class ClipNode : public AnimNode {
 public:
-    explicit ClipNode(const AnimationClip* clip, const Rig& rig);
+    explicit ClipNode(const AnimationClip* clip, const Rig& rig,
+                      const RetargetMap* retarget = nullptr);
 
     void update(float deltaTime) override;
     void evaluate(const LocalPose& bindPose, LocalPose& outPose) const override;

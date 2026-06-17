@@ -5,6 +5,7 @@
 #include "graphics/ResourceManager.hpp"
 #include "scene/Behaviour.hpp"
 #include "scene/BehaviourRegistry.hpp"
+#include "scene/GLTFLoader.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/Node.hpp"
@@ -14,6 +15,9 @@
 
 #include "nlohmann/json.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
 #include <fstream>
 
 namespace ne {
@@ -22,6 +26,32 @@ namespace {
 using json = nlohmann::json;
 
 constexpr int kSceneVersion = 1;
+
+bool isModelPath(const std::string& path) {
+    std::string ext = std::filesystem::path(path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return ext == ".gltf" || ext == ".glb";
+}
+
+bool reloadImportedModel(Node& target, const std::string& path, ResourceManager& resources) {
+    if (!isModelPath(path)) return false;
+
+    Node temp("ImportRoot");
+    GLTFLoadOptions opts;
+    if (!GLTFLoader::load(path, temp, resources, opts))
+        return false;
+
+    if (temp.children().empty())
+        return false;
+
+    Node* loadedContainer = temp.children().front().get();
+    while (!loadedContainer->children().empty()) {
+        target.addChild(loadedContainer->detachChild(loadedContainer->children().front().get()));
+    }
+    return true;
+}
 
 // ── Node -> JSON ─────────────────────────────────────────────────────────────
 json serializeNode(Node& node, ResourceManager& resources) {
@@ -57,13 +87,23 @@ std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources)
     }
 
     node->deserialize(j, resources);
+    bool childrenLoadedFromImport = false;
+    if (!node->importedFromPath().empty()) {
+        childrenLoadedFromImport = reloadImportedModel(*node, node->importedFromPath(), resources);
+        if (!childrenLoadedFromImport) {
+            Log::warn("SceneSerializer: failed to reload imported model ",
+                      node->importedFromPath(), ", falling back to serialized children.");
+        }
+    }
     
     // We handle children deserialization here because the parent node
     // shouldn't manually instantiate children, the SceneSerializer does that using NodeRegistry.
-    if (auto it = j.find("children"); it != j.end() && it->is_array()) {
-        for (const json& cj : *it) {
-            if (auto child = deserializeNode(cj, resources)) {
-                node->addChild(std::move(child));
+    if (!childrenLoadedFromImport) {
+        if (auto it = j.find("children"); it != j.end() && it->is_array()) {
+            for (const json& cj : *it) {
+                if (auto child = deserializeNode(cj, resources)) {
+                    node->addChild(std::move(child));
+                }
             }
         }
     }

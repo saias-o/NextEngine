@@ -3,6 +3,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <random>
 
@@ -341,7 +343,10 @@ void AssetRegistry::saveLocalCache(const std::string& projectRoot) const {
 
 AssetType AssetRegistry::determineType(const std::filesystem::path& path) const {
     std::string ext = path.extension().string();
-    if (ext == ".obj" || ext == ".fbx" || ext == ".gltf") return AssetType::Mesh;
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".glb") return AssetType::Mesh;
     if (ext == ".png" || ext == ".jpg" || ext == ".bmp") return AssetType::Texture;
     if (ext == ".mat") return AssetType::Material;
     if (ext == ".scene") return AssetType::Scene;
