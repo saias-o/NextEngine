@@ -4,6 +4,7 @@
 #include "graphics/Buffer.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "tiny_obj_loader.h"
+#include "xatlas.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -13,6 +14,52 @@
 #include <unordered_map>
 
 namespace ne {
+
+namespace {
+// Generate a non-overlapping lightmap UV set with xatlas, rebuilding the vertex /
+// index arrays (xatlas splits vertices at chart seams). Original attributes are
+// copied by xref; only lightmapUV changes. No-op on failure (keeps the input).
+void unwrapLightmapUVs(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
+    xatlas::Atlas* atlas = xatlas::Create();
+
+    xatlas::MeshDecl decl;
+    decl.vertexCount = static_cast<uint32_t>(vertices.size());
+    decl.vertexPositionData = &vertices[0].pos;
+    decl.vertexPositionStride = sizeof(Vertex);
+    decl.vertexNormalData = &vertices[0].normal;
+    decl.vertexNormalStride = sizeof(Vertex);
+    decl.indexCount = static_cast<uint32_t>(indices.size());
+    decl.indexData = indices.data();
+    decl.indexFormat = xatlas::IndexFormat::UInt32;
+
+    if (xatlas::AddMesh(atlas, decl) != xatlas::AddMeshError::Success) {
+        Log::warn("xatlas: AddMesh failed; lightmap UVs fall back to texture UVs");
+        xatlas::Destroy(atlas);
+        return;
+    }
+    xatlas::Generate(atlas);  // segment into charts + pack into an atlas
+    if (atlas->meshCount == 0 || atlas->width == 0 || atlas->height == 0) {
+        xatlas::Destroy(atlas);
+        return;
+    }
+
+    const xatlas::Mesh& m = atlas->meshes[0];
+    const float invW = 1.0f / static_cast<float>(atlas->width);
+    const float invH = 1.0f / static_cast<float>(atlas->height);
+
+    std::vector<Vertex> outVerts(m.vertexCount);
+    for (uint32_t i = 0; i < m.vertexCount; ++i) {
+        const xatlas::Vertex& xv = m.vertexArray[i];
+        outVerts[i] = vertices[xv.xref];                       // original attributes
+        outVerts[i].lightmapUV = glm::vec2(xv.uv[0] * invW, xv.uv[1] * invH);
+    }
+    std::vector<uint32_t> outIndices(m.indexArray, m.indexArray + m.indexCount);
+
+    vertices = std::move(outVerts);
+    indices = std::move(outIndices);
+    xatlas::Destroy(atlas);
+}
+} // namespace
 
 VkVertexInputBindingDescription Vertex::bindingDescription() {
     VkVertexInputBindingDescription desc{};
@@ -88,7 +135,8 @@ Mesh::~Mesh() {
     registry_.free(allocation_);
 }
 
-std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::string& path) {
+std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::string& path,
+                                        bool generateLightmapUVs) {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
@@ -158,6 +206,13 @@ std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::s
             indices.push_back(newIndex);
         }
     }
+
+    // Optional automatic lightmap unwrap (xatlas). Done before tangents since it
+    // rebuilds the vertex/index arrays. Skipped for very large meshes (unwrapping
+    // is costly) — those keep the texture-UV fallback.
+    constexpr size_t kMaxUnwrapTris = 200000;
+    if (generateLightmapUVs && indices.size() / 3 <= kMaxUnwrapTris)
+        unwrapLightmapUVs(vertices, indices);
 
     // Compute tangents
     for (size_t i = 0; i < indices.size(); i += 3) {

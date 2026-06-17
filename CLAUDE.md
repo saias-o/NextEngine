@@ -252,7 +252,7 @@ Le moteur est construit par étapes numérotées :
       Une `Scene` **est** un `Node` (racine). Des `Behaviour` (onReady/onUpdate)
       s'attachent aux nœuds — l'orbite de la démo est pilotée par un
       `RotatorBehaviour`, pas par du code en dur dans l'Engine.
-- [~] **Étape 6 — Éclairage.**
+- [x] **Étape 6 — Éclairage.**
       - [x] Temps réel : normales dans `Vertex`, Blinn-Phong en espace monde,
             lumières **Directional / Point / Spot** (`LightNode`) collectées par
             traversée dans un UBO d'éclairage unifié (`GpuLight[16]`, set 0
@@ -264,10 +264,14 @@ Le moteur est construit par étapes numérotées :
             mesh « Include in light baking » dans une lightmap via `bake.frag`
             (même `lighting.glsl` → résultat **identique** au temps réel), stockant
             l'irradiance diffuse ; le spéculaire reste live. Toggle Realtime/Baked
-            + bouton « Generate Bake » (`SceneSettings`). Canal `lightmapUV`
-            (unwrap propre du cube ; fallback `.obj`). *Limites v1* : lightmaps non
-            sérialisées (re-bake au chargement), pas de dilation de seams, pas
-            d'unwrap auto pour `.obj` arbitraires.
+            + bouton « Generate Bake » (`SceneSettings`). Canal `lightmapUV` :
+            **unwrap auto via xatlas** (vendu MIT, `third_party/xatlas` ; tout `.obj`
+            sous le seuil de triangles devient bakeable, split aux seams de charts)
+            + **dilation de seams** (passe plein-écran `lightmap_dilate.frag` :
+            couverture en alpha, croissance des texels dans le gutter → plus de
+            seams noirs en bilinéaire). *Limite restante* : lightmaps non
+            sérialisées (re-bake au chargement) ; gros meshes (> seuil) gardent le
+            fallback UV texture.
       - [x] PBR (metallic-roughness) + normal mapping, tonemapping HDR.
       - [x] **Vulkan 1.3 Dynamic Rendering** : implémenté (suppression des RenderPass et Framebuffers).
 - [x] **Étape 7 — Outillage.**

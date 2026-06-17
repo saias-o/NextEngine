@@ -50,7 +50,11 @@ public:
     Mesh(const Mesh&) = delete;
     Mesh& operator=(const Mesh&) = delete;
 
-    static std::unique_ptr<Mesh> fromObjFile(GeometryRegistry& registry, const std::string& path);
+    // Loads an .obj. With generateLightmapUVs, a non-overlapping second UV set is
+    // produced via xatlas (splitting vertices at chart seams) so the mesh can be
+    // lightmap-baked; otherwise lightmapUV falls back to the texture UV.
+    static std::unique_ptr<Mesh> fromObjFile(GeometryRegistry& registry, const std::string& path,
+                                             bool generateLightmapUVs = false);
 
     void bind(VkCommandBuffer cmd) const;
     void draw(VkCommandBuffer cmd) const;

@@ -307,7 +307,9 @@ Mesh* ResourceManager::loadMesh(AssetID id) {
     std::string path = registry_->getPath(id);
     if (path.empty()) return nullptr;
 
-    auto mesh = Mesh::fromObjFile(*geometryRegistry_, path);
+    // Generate lightmap UVs (xatlas) so any .obj can be baked; fromObjFile skips
+    // the unwrap for very large meshes (cost) and falls back to the texture UV.
+    auto mesh = Mesh::fromObjFile(*geometryRegistry_, path, /*generateLightmapUVs=*/true);
     Mesh* ptr = mesh.get();
     meshes_.emplace(id, std::move(mesh));
     reverseMeshMap_[ptr] = id;

@@ -34,6 +34,7 @@ set(SHADERS
     ${SHADER_DIR}/ddgi_borders.comp
     ${SHADER_DIR}/debug_line.vert
     ${SHADER_DIR}/debug_line.frag
+    ${SHADER_DIR}/lightmap_dilate.frag
 )
 
 # GLSL headers #included by the shaders above. Listed as a dependency so editing
@@ -216,6 +217,8 @@ add_library(ne_engine STATIC
     third_party/imgui/imgui_demo.cpp
     third_party/imgui/backends/imgui_impl_glfw.cpp
     third_party/imgui/backends/imgui_impl_vulkan.cpp
+    # xatlas (vendored, MIT): automatic lightmap UV unwrapping
+    third_party/xatlas/xatlas.cpp
 )
 
 # PUBLIC: propagated to anything linking the engine (the game/editor exe).
@@ -228,6 +231,7 @@ target_include_directories(ne_engine PUBLIC
     third_party/imgui
     third_party/json
     third_party/miniaudio
+    third_party/xatlas
     third_party/ultralight/include
 )
 target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt openxr_loader

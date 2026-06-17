@@ -61,6 +61,8 @@ private:
     void createPipeline(VkDescriptorSetLayout globalSetLayout);
     void createSampler();
     void createDefaultLightmap();
+    void createDilation();   // seam-dilation pass (fills the UV gutter)
+    void recordDilate(VkCommandBuffer cmd, const Lightmap& lm);
     Lightmap createLightmap();
     VkDescriptorSet allocateSet(VkImageView view);
     void destroyLightmap(Lightmap& lm);
@@ -79,6 +81,14 @@ private:
     VmaAllocation defaultAllocation_ = VK_NULL_HANDLE;
     VkImageView defaultView_ = VK_NULL_HANDLE;
     VkDescriptorSet defaultSet_ = VK_NULL_HANDLE;
+
+    // Seam dilation: a fullscreen pass samples the baked lightmap (coverage in
+    // alpha) and grows covered texels into the UV gutter, then copies back.
+    VkImage dilateTemp_ = VK_NULL_HANDLE;
+    VmaAllocation dilateTempAlloc_ = VK_NULL_HANDLE;
+    VkImageView dilateTempView_ = VK_NULL_HANDLE;
+    VkPipelineLayout dilateLayout_ = VK_NULL_HANDLE;
+    VkPipeline dilatePipeline_ = VK_NULL_HANDLE;
 
     std::unordered_map<MeshNode*, Lightmap> lightmaps_;
 };

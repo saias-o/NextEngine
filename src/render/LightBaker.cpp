@@ -57,11 +57,16 @@ LightBaker::LightBaker(VulkanDevice& device, VkDescriptorSetLayout globalSetLayo
     createSampler();
     createPipeline(globalSetLayout);
     createDefaultLightmap();
+    createDilation();
 }
 
 LightBaker::~LightBaker() {
     for (auto& [node, lm] : lightmaps_)
         destroyLightmap(lm);
+    if (dilatePipeline_) vkDestroyPipeline(device_.device(), dilatePipeline_, nullptr);
+    if (dilateLayout_) vkDestroyPipelineLayout(device_.device(), dilateLayout_, nullptr);
+    if (dilateTempView_) vkDestroyImageView(device_.device(), dilateTempView_, nullptr);
+    if (dilateTemp_) vmaDestroyImage(device_.allocator(), dilateTemp_, dilateTempAlloc_);
     vkDestroyImageView(device_.device(), defaultView_, nullptr);
     vmaDestroyImage(device_.allocator(), defaultImage_, defaultAllocation_);
     vkDestroySampler(device_.device(), sampler_, nullptr);
@@ -257,7 +262,9 @@ LightBaker::Lightmap LightBaker::createLightmap() {
     imageInfo.format = format_;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    // TRANSFER_DST: the seam-dilation result is copied back into this image.
+    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                    | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -367,7 +374,7 @@ void LightBaker::record(VkCommandBuffer cmd, VkDescriptorSet globalSet, Scene& s
         colorAttach.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAttach.clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+        colorAttach.clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};  // alpha=0 → uncovered
 
         VkRenderingInfo rp{};
         rp.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -395,7 +402,162 @@ void LightBaker::record(VkCommandBuffer cmd, VkDescriptorSet globalSet, Scene& s
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
         cmdImageBarrier(cmd, toRead);
+
+        // Grow covered texels into the UV gutter so bilinear sampling at chart
+        // edges doesn't bleed black seams. Leaves lm.image in SHADER_READ.
+        recordDilate(cmd, lm);
     }
+}
+
+namespace { struct DilatePush { float texelX, texelY; int32_t radius; }; }
+
+void LightBaker::createDilation() {
+    // Shared temp target (the dilation writes here, then we copy back to the map).
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent = {kLightmapSize, kLightmapSize, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = format_;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VmaAllocationCreateInfo alloc{};
+    alloc.usage = VMA_MEMORY_USAGE_AUTO;
+    if (vmaCreateImage(device_.allocator(), &imageInfo, &alloc, &dilateTemp_, &dilateTempAlloc_, nullptr) != VK_SUCCESS)
+        throw std::runtime_error("failed to create dilation temp image");
+    dilateTempView_ = device_.createImageView(dilateTemp_, format_, VK_IMAGE_ASPECT_COLOR_BIT);
+
+    // Layout: set 0 = the lightmap sampler (reuses setLayout_, so the per-map
+    // lm.set is the source) + a push constant for texel size + search radius.
+    VkPushConstantRange push{};
+    push.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    push.offset = 0;
+    push.size = sizeof(DilatePush);
+    VkPipelineLayoutCreateInfo layoutCI{};
+    layoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutCI.setLayoutCount = 1;
+    layoutCI.pSetLayouts = &setLayout_;
+    layoutCI.pushConstantRangeCount = 1;
+    layoutCI.pPushConstantRanges = &push;
+    if (vkCreatePipelineLayout(device_.device(), &layoutCI, nullptr, &dilateLayout_) != VK_SUCCESS)
+        throw std::runtime_error("failed to create dilation pipeline layout");
+
+    auto vertCode = readFile(shaderPath("tonemap.vert.spv"));  // fullscreen triangle
+    auto fragCode = readFile(shaderPath("lightmap_dilate.frag.spv"));
+    VkShaderModule vert = createShaderModule(device_.device(), vertCode);
+    VkShaderModule frag = createShaderModule(device_.device(), fragCode);
+
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vert; stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = frag; stages[1].pName = "main";
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    VkPipelineInputAssemblyStateCreateInfo ia{};
+    ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo vp{};
+    vp.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    vp.viewportCount = 1; vp.scissorCount = 1;
+    VkPipelineRasterizationStateCreateInfo rast{};
+    rast.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rast.polygonMode = VK_POLYGON_MODE_FILL; rast.lineWidth = 1.0f;
+    rast.cullMode = VK_CULL_MODE_NONE; rast.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    VkPipelineMultisampleStateCreateInfo ms{};
+    ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineColorBlendAttachmentState ba{};
+    ba.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+                      | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    VkPipelineColorBlendStateCreateInfo cb{};
+    cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    cb.attachmentCount = 1; cb.pAttachments = &ba;
+    std::array<VkDynamicState, 2> dyn = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo ds{};
+    ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    ds.dynamicStateCount = 2; ds.pDynamicStates = dyn.data();
+
+    VkPipelineRenderingCreateInfo ri{};
+    ri.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    ri.colorAttachmentCount = 1; ri.pColorAttachmentFormats = &format_;
+
+    VkGraphicsPipelineCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    ci.pNext = &ri; ci.stageCount = 2; ci.pStages = stages;
+    ci.pVertexInputState = &vertexInput; ci.pInputAssemblyState = &ia;
+    ci.pViewportState = &vp; ci.pRasterizationState = &rast;
+    ci.pMultisampleState = &ms; ci.pColorBlendState = &cb; ci.pDynamicState = &ds;
+    ci.layout = dilateLayout_;
+    if (vkCreateGraphicsPipelines(device_.device(), device_.pipelineCache(), 1, &ci, nullptr, &dilatePipeline_) != VK_SUCCESS)
+        throw std::runtime_error("failed to create dilation pipeline");
+
+    vkDestroyShaderModule(device_.device(), frag, nullptr);
+    vkDestroyShaderModule(device_.device(), vert, nullptr);
+}
+
+void LightBaker::recordDilate(VkCommandBuffer cmd, const Lightmap& lm) {
+    // temp → color attachment; render the dilated map sampling lm (set 0 = lm.set).
+    VkImageMemoryBarrier2 tmpToAttach = imageBarrier2(dilateTemp_,
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT, 0,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    cmdImageBarrier(cmd, tmpToAttach);
+
+    VkRenderingAttachmentInfo att{};
+    att.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    att.imageView = dilateTempView_;
+    att.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    att.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    att.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    VkRenderingInfo rp{};
+    rp.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    rp.renderArea.extent = {kLightmapSize, kLightmapSize};
+    rp.layerCount = 1; rp.colorAttachmentCount = 1; rp.pColorAttachments = &att;
+
+    vkCmdBeginRendering(cmd, &rp);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, dilatePipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, dilateLayout_, 0, 1, &lm.set, 0, nullptr);
+    VkViewport viewport{0.0f, 0.0f, float(kLightmapSize), float(kLightmapSize), 0.0f, 1.0f};
+    VkRect2D scissor{{0, 0}, {kLightmapSize, kLightmapSize}};
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+    DilatePush pc{1.0f / kLightmapSize, 1.0f / kLightmapSize, 4};
+    vkCmdPushConstants(cmd, dilateLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+    vkCmdEndRendering(cmd);
+
+    // Copy temp back into the lightmap, then restore its sampled layout.
+    std::array<VkImageMemoryBarrier2, 2> toCopy{};
+    toCopy[0] = imageBarrier2(dilateTemp_,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+    toCopy[1] = imageBarrier2(lm.image,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    cmdImageBarriers(cmd, toCopy.data(), toCopy.size());
+
+    VkImageCopy region{};
+    region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.extent = {kLightmapSize, kLightmapSize, 1};
+    vkCmdCopyImage(cmd, dilateTemp_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   lm.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    VkImageMemoryBarrier2 backToRead = imageBarrier2(lm.image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+    cmdImageBarrier(cmd, backToRead);
 }
 
 VkDescriptorSet LightBaker::lightmapSet(MeshNode* node) const {
