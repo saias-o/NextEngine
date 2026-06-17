@@ -191,10 +191,8 @@ assets/textures/             Textures (checker.png généré, LFS).
 ## Comment coder un jeu (contrat — règles dures)
 
 > Ce contrat s'applique à **tout** code de gameplay (humain ou IA). Il existe pour
-> qu'un jeu ambitieux ne dégénère pas en god-classes + events ingérables. Spec
-> d'API détaillée + exemple complet menu→niveau→game-over dans
-> [ARCHITECTURE_JEU.md](ARCHITECTURE_JEU.md). **Un seul paradigme : nœuds +
-> behaviours + signaux.**
+> qu'un jeu ambitieux ne dégénère pas en god-classes + events ingérables.
+> **Un seul paradigme : nœuds + behaviours + signaux.**
 
 **Les 5 règles :**
 1. **Toute logique = un `Behaviour`.** Un nœud, c'est de la composition + des
@@ -306,7 +304,7 @@ Le moteur est construit par étapes numérotées :
             `CommandHistory`) et branchement UI (menus File/Edit, copier/coller/
             dupliquer, raccourcis Ctrl+Z/Y/C/V/D/S, ops scene-tree → commandes).
       - [x] **Contrat d'autoring + 4 briques gameplay** (cf.
-            « Comment coder un jeu » ci-dessus et `ARCHITECTURE_JEU.md`). Un seul
+            « Comment coder un jeu » ci-dessus). Un seul
             paradigme nœuds+behaviours, *propre par construction* :
             - **Signaux typés** (`core/Signal.hpp` : `Signal<…>`/`Connection`
               lifetime-safe ; `Behaviour::listen`). `AreaNode` migré dessus.

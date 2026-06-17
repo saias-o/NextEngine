@@ -14,6 +14,15 @@
 *.local.json
 pipeline_cache.bin
 
+# Build logs and scratch files
+build_*.txt
+*.log
+*.ii
+
+# Downloaded SDKs and large archives (never source)
+*.7z
+*.zip
+
 # Editor play-mode backup (regenerated each Play; never source)
 .play_mode_backup.scene
 *.play_mode_backup.scene
