@@ -24,6 +24,9 @@ namespace ne {
 
 namespace {
 
+constexpr float kDemoIblDiffuseIntensity = 0.5f;
+constexpr float kDemoIblSpecularIntensity = 1.5f;
+
 // Sample behaviour: continuously spins its node around an axis. Children inherit
 // the rotation through the transform hierarchy. Serializable (registered below).
 class RotatorBehaviour : public Behaviour {
@@ -67,6 +70,10 @@ void buildDemoScene(Scene& scene, ResourceManager& resources) {
     Mesh* cube = resources.getMesh(kAssetBuiltinCube);
     const std::string checker = assetPath("assets/textures/checker.png");
     AssetID checkerId = resources.getOrRegister(checker, AssetType::Texture);
+    const std::string sky = assetPath("MyGame/assets/textures/hdri_sky_809.jpg");
+    scene.settings().skyboxTexture = resources.getOrRegister(sky, AssetType::Texture);
+    scene.settings().iblDiffuseIntensity = kDemoIblDiffuseIntensity;
+    scene.settings().iblSpecularIntensity = kDemoIblSpecularIntensity;
 
     MaterialDesc descWhite; descWhite.albedoId = checkerId; descWhite.baseColor = glm::vec4(1.0f);
     Material* matWhite = resources.getMaterial(descWhite);

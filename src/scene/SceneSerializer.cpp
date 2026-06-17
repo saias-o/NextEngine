@@ -196,6 +196,29 @@ bool SceneSerializer::loadIntoScene(Scene& scene, ResourceManager& resources,
             scene.settings().ambientLight = glm::vec4(jsonToVec3(it->value("ambient", json())), 0.0f);
             scene.settings().clearColor = glm::vec4(jsonToVec3(it->value("clearColor", json())), 1.0f);
             scene.settings().enablePostProcessing = it->value("postProcessing", true);
+            scene.settings().lightingMode = static_cast<LightingMode>(it->value("lightingMode", 0));
+            scene.settings().giEnabled = it->value("giEnabled", true);
+            scene.settings().giIntensity = it->value("giIntensity", 1.0f);
+            scene.settings().skyboxTexture = it->value("skyboxTexture", kAssetInvalid);
+            scene.settings().skyboxExposure = it->value("skyboxExposure", 1.0f);
+            scene.settings().skyboxRotation = it->value("skyboxRotation", 0.0f);
+            scene.settings().iblEnabled = it->value("iblEnabled", true);
+            scene.settings().iblDiffuseIntensity = it->value("iblDiffuseIntensity", 0.35f);
+            scene.settings().iblSpecularIntensity = it->value("iblSpecularIntensity", 1.0f);
+            scene.settings().aoEnabled = it->value("aoEnabled", true);
+            scene.settings().aoRadius = it->value("aoRadius", 0.75f);
+            scene.settings().aoIntensity = it->value("aoIntensity", 1.0f);
+            scene.settings().aoPower = it->value("aoPower", 1.35f);
+            scene.settings().fogEnabled = it->value("fogEnabled", false);
+            if (it->contains("fogColor"))
+                scene.settings().fogColor = glm::vec4(jsonToVec3(it->value("fogColor", json())), 1.0f);
+            scene.settings().fogStart = it->value("fogStart", 8.0f);
+            scene.settings().fogDensity = it->value("fogDensity", 0.035f);
+            scene.settings().bloomEnabled = it->value("bloomEnabled", true);
+            scene.settings().bloomThreshold = it->value("bloomThreshold", 1.0f);
+            scene.settings().bloomIntensity = it->value("bloomIntensity", 0.25f);
+            scene.settings().bloomRadius = it->value("bloomRadius", 3.0f);
+            scene.settings().changeRenderingAtLoad = it->value("changeRenderingAtLoad", true);
         } else {
             scene.settings() = SceneSettings{}; // Reset to defaults if missing
         }
@@ -210,6 +233,22 @@ bool SceneSerializer::loadIntoScene(Scene& scene, ResourceManager& resources,
                                 scene.settings().ambientLight = glm::vec4(jsonToVec3(bj.value("ambient", json())), 0.0f);
                                 scene.settings().clearColor = glm::vec4(jsonToVec3(bj.value("clearColor", json())), 1.0f);
                                 scene.settings().enablePostProcessing = bj.value("postProcessing", true);
+                                scene.settings().iblEnabled = bj.value("iblEnabled", true);
+                                scene.settings().iblDiffuseIntensity = bj.value("iblDiffuseIntensity", 0.35f);
+                                scene.settings().iblSpecularIntensity = bj.value("iblSpecularIntensity", 1.0f);
+                                scene.settings().aoEnabled = bj.value("aoEnabled", true);
+                                scene.settings().aoRadius = bj.value("aoRadius", 0.75f);
+                                scene.settings().aoIntensity = bj.value("aoIntensity", 1.0f);
+                                scene.settings().aoPower = bj.value("aoPower", 1.35f);
+                                scene.settings().fogEnabled = bj.value("fogEnabled", false);
+                                if (bj.contains("fogColor"))
+                                    scene.settings().fogColor = glm::vec4(jsonToVec3(bj.value("fogColor", json())), 1.0f);
+                                scene.settings().fogStart = bj.value("fogStart", 8.0f);
+                                scene.settings().fogDensity = bj.value("fogDensity", 0.035f);
+                                scene.settings().bloomEnabled = bj.value("bloomEnabled", true);
+                                scene.settings().bloomThreshold = bj.value("bloomThreshold", 1.0f);
+                                scene.settings().bloomIntensity = bj.value("bloomIntensity", 0.25f);
+                                scene.settings().bloomRadius = bj.value("bloomRadius", 3.0f);
                             }
                         }
                     }

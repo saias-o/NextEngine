@@ -100,7 +100,7 @@ void main() {
                                              hitAlbedo, 0.0, 1.0).diffuse;
         radiance = outRadiance;
     } else {
-        radiance = lights.ambient.rgb;   // sky / ambient on miss
+        radiance = environmentMissRadiance(dir);   // sky / ambient on miss
         hitDist  = far;
     }
 

@@ -249,6 +249,29 @@ void InspectorPanel::draw(EditorUI* editor) {
         }
         ImGui::DragFloat("Exposure", &s.skyboxExposure, 0.05f, 0.0f, 20.0f);
         ImGui::SliderAngle("Rotation", &s.skyboxRotation);
+
+        ImGui::SeparatorText("Image-Based Lighting");
+        ImGui::Checkbox("Enable IBL", &s.iblEnabled);
+        ImGui::SliderFloat("IBL Diffuse", &s.iblDiffuseIntensity, 0.0f, 4.0f);
+        ImGui::SliderFloat("IBL Specular", &s.iblSpecularIntensity, 0.0f, 4.0f);
+
+        ImGui::SeparatorText("Ambient Occlusion");
+        ImGui::Checkbox("Enable AO", &s.aoEnabled);
+        ImGui::SliderFloat("AO Radius", &s.aoRadius, 0.05f, 3.0f);
+        ImGui::SliderFloat("AO Intensity", &s.aoIntensity, 0.0f, 3.0f);
+        ImGui::SliderFloat("AO Power", &s.aoPower, 0.25f, 4.0f);
+
+        ImGui::SeparatorText("Fog");
+        ImGui::Checkbox("Enable Fog", &s.fogEnabled);
+        ImGui::ColorEdit3("Fog Color", &s.fogColor.x);
+        ImGui::SliderFloat("Fog Start", &s.fogStart, 0.0f, 100.0f);
+        ImGui::SliderFloat("Fog Density", &s.fogDensity, 0.0f, 0.25f);
+
+        ImGui::SeparatorText("Bloom");
+        ImGui::Checkbox("Enable Bloom", &s.bloomEnabled);
+        ImGui::SliderFloat("Bloom Threshold", &s.bloomThreshold, 0.0f, 10.0f);
+        ImGui::SliderFloat("Bloom Intensity", &s.bloomIntensity, 0.0f, 3.0f);
+        ImGui::SliderFloat("Bloom Radius", &s.bloomRadius, 0.5f, 8.0f);
     }
 
     if (auto* meshNode = dynamic_cast<MeshNode*>(node)) {

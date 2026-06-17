@@ -273,6 +273,19 @@ Le moteur est construit par étapes numérotées :
             sérialisées (re-bake au chargement) ; gros meshes (> seuil) gardent le
             fallback UV texture.
       - [x] PBR (metallic-roughness) + normal mapping, tonemapping HDR.
+      - [x] **Rendu canonique validé jusqu'à nouvel ordre** : pipeline unique
+            Desktop/XR/mobile, même équation visuelle partout ; seules les
+            résolutions internes (render scale, shadows, lightmaps, AO/bloom)
+            peuvent varier par plateforme.
+      - [x] **IBL léger PBR** : l'environnement équirectangulaire de skybox est
+            aussi la source d'image-based lighting (diffuse + spéculaire
+            roughness-aware, BRDF d'environnement approximée, exposition skybox
+            partagée). Objectif : matériaux moins plats, reflets cohérents, même
+            rendu entre Realtime/Baked.
+      - [x] **Post-processing canonique** : AO écran depth-based (un seul type
+            d'AO, appliqué pareil en Realtime et Baked), fog distance simple,
+            bloom HDR léger, tous pilotés par `SceneSettings`, sérialisés, et
+            appliqués dans `tonemap.frag` pour Desktop et XR.
       - [x] **Vulkan 1.3 Dynamic Rendering** : implémenté (suppression des RenderPass et Framebuffers).
 - [x] **Étape 7 — Outillage.**
       - [x] Pipeline cache (`VkPipelineCache` sérialisé sur disque, dans
@@ -326,12 +339,20 @@ Le moteur est construit par étapes numérotées :
 - [ ] **Étape 8b — Scripting (Lua).** Voir « Décision scripting » ci-dessous.
       Différé : à faire une fois l'API moteur stable (après `Material`/
       `ResourceManager`), pour exposer une API propre aux scripts.
-- [ ] **Étape 9 — Global Illumination (GI).** Implémentation d'un pipeline de GI adapté au mobile/VR :
-      - Intégration des pré-requis (Phase 0) : Deferred/Visibility Buffer, Multiview (stéréo), et GPU-driven/Bindless.
-      - Phase 1 : Radiance Cascades 2D (GI diffuse sans bruit, 100% compute).
-      - Phase 2 : World Radiance Cache + Spatial Hashing (ombrage découplé de l'écran, idéal pour les deux yeux en VR).
-      - Phase 3 : Volumétrie froxel (brouillard / lumière volumétrique / SSS).
-      - Voir détails et matrice de scalabilité (Low/Medium/High/Ultra) dans [RENDU_AVANCE.md](file:///c:/Users/evand/Documents/NextEngine/RENDU_AVANCE.md).
+- [x] **Étape 9 — Rendu global / GI pragmatique.** Validé jusqu'à nouvel ordre :
+      l'objectif actif n'est plus d'empiler Radiance Cascades / World Cache /
+      froxels, mais de garder un rendu moderne, léger, optimisé VR/mobile et
+      **identique sur toutes les plateformes**.
+      - [x] DDGI / irradiance volume existant conservé comme primitive GI unique
+            pour l'indirect diffus dynamique/frozen.
+      - [x] Realtime/Baked : même rendu final ; le choix ne change que la manière
+            de produire/fixer la lumière indirecte, pas les post-process.
+      - [x] IBL + AO + fog + bloom complètent le rendu perçu sans rendre le moteur
+            lourd ni multiplier les chemins de shading.
+      - [ ] Recherche différée, hors roadmap active : Radiance Cascades 2D,
+            World Radiance Cache / spatial hashing, froxels volumétriques. À
+            réévaluer seulement si un jeu concret prouve que le pipeline actuel
+            ne suffit pas.
 - [x] **Étape 10 — Animation System.** Animations squelettiques glTF/BVH :
       - [x] **Data-oriented** : `Rig` (bones plats, parents, inverse-bind), `Pose`
             (Local/Global + skinning matrices), `AnimationClip` (tracks T/R/S,

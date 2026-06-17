@@ -34,6 +34,7 @@ layout(set = 0, binding = 1) uniform LightingUBO {
     vec4 giSpacing;     // xyz = probe spacing (world units)
     ivec4 giCounts;     // xyz = probe counts per axis, w = probesPerRow in atlas
     ivec4 giAtlas;      // x = irradiance texels/probe, y = visibility texels/probe
+    vec4 environmentParams; // x enabled, y diffuse intensity, z specular intensity, w rotation
 } lights;
 
 layout(set = 0, binding = 2) uniform sampler2DArrayShadow shadowMap;
@@ -47,6 +48,14 @@ layout(set = 0, binding = 5) uniform sampler2D giVisibility;
 // Voxelized scene albedo (the GI ray-march source). Sampled here only for the
 // debug visualization; the DDGI update compute pass reads it directly.
 layout(set = 0, binding = 6) uniform sampler3D giVoxels;
+
+// Canonical equirectangular environment. Reused by skybox, IBL and DDGI misses.
+layout(set = 0, binding = 7) uniform sampler2D iblEnvironment;
+
+const float INV_TWO_PI = 0.15915494309;
+const float INV_PI = 0.31830988618;
+const float IBL_DIFFUSE_LOD_BIAS = 2.0;
+const float IBL_SPECULAR_MIP_CURVE = 1.5;
 
 // World position -> [0,1] coordinate inside the voxel/probe volume box.
 vec3 giVolumeUVW(vec3 wp) {
@@ -211,6 +220,81 @@ vec3 fresnelSchlick(float HdotV, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - HdotV, 0.0, 1.0), 5.0);
 }
 
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+    vec3 grazing = max(vec3(1.0 - roughness), F0);
+    return F0 + (grazing - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// ---------------------------------------------------------------------------
+// Image-based lighting
+// ---------------------------------------------------------------------------
+
+vec3 rotateEnvironmentDir(vec3 dir) {
+    float s = sin(lights.environmentParams.w);
+    float c = cos(lights.environmentParams.w);
+    dir.xz = mat2(c, -s, s, c) * dir.xz;
+    return dir;
+}
+
+vec2 environmentUV(vec3 dir) {
+    dir = rotateEnvironmentDir(normalize(dir));
+    vec2 uv = vec2(atan(dir.z, dir.x), asin(-dir.y));
+    uv *= vec2(INV_TWO_PI, INV_PI);
+    return uv + 0.5;
+}
+
+float environmentMaxLod() {
+    return max(float(textureQueryLevels(iblEnvironment) - 1), 0.0);
+}
+
+vec3 sampleEnvironmentLod(vec3 dir, float lod) {
+    return textureLod(iblEnvironment, environmentUV(dir), lod).rgb;
+}
+
+vec3 environmentMissRadiance(vec3 dir) {
+    if (lights.environmentParams.x < 0.5)
+        return lights.ambient.rgb;
+    return sampleEnvironmentLod(dir, 0.0) * lights.environmentParams.y;
+}
+
+// Mobile-friendly split-sum BRDF approximation used by several realtime PBR
+// implementations. It restores the grazing/roughness response that makes
+// environment reflections read as glossy instead of flat.
+vec3 environmentBRDF(vec3 F0, float roughness, float NdotV) {
+    const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+    const vec4 c1 = vec4( 1.0,  0.0425,  1.04, -0.04);
+    vec4 r = roughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;
+    vec2 ab = vec2(-1.04, 1.04) * a004 + r.zw;
+    return F0 * ab.x + ab.y;
+}
+
+LightTerms environmentLighting(vec3 N, vec3 V, vec3 albedo, float metallic, float roughness) {
+    LightTerms env;
+    env.diffuse = vec3(0.0);
+    env.specular = vec3(0.0);
+    if (lights.environmentParams.x < 0.5)
+        return env;
+
+    roughness = clamp(roughness, 0.04, 1.0);
+    float maxLod = environmentMaxLod();
+
+    float NdotV = max(dot(N, V), 0.001);
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    vec3 F = fresnelSchlickRoughness(NdotV, F0, roughness);
+    vec3 kd = (vec3(1.0) - F) * (1.0 - metallic);
+
+    float diffuseLod = max(maxLod - IBL_DIFFUSE_LOD_BIAS, 0.0);
+    vec3 irradiance = sampleEnvironmentLod(N, diffuseLod) * lights.environmentParams.y;
+    env.diffuse = kd * albedo * irradiance;
+
+    vec3 R = reflect(-V, N);
+    float specularLod = pow(roughness, IBL_SPECULAR_MIP_CURVE) * maxLod;
+    vec3 prefiltered = sampleEnvironmentLod(R, specularLod);
+    env.specular = prefiltered * environmentBRDF(F0, roughness, NdotV) * lights.environmentParams.z;
+    return env;
+}
+
 // ---------------------------------------------------------------------------
 // Per-light contribution (Cook-Torrance GGX)
 // ---------------------------------------------------------------------------
@@ -292,6 +376,7 @@ LightTerms lightContribution(int i, vec3 N, vec3 V, vec3 wp,
 // approximated with F0 at normal incidence, which is close enough for Lambertian).
 vec3 diffuseIrradiance(vec3 N, vec3 wp, vec3 albedo, float metallic, float roughness) {
     vec3 sum = giIndirectDiffuse(wp, N, N, albedo);
+    sum += environmentLighting(N, N, albedo, metallic, roughness).diffuse;
     // Use the surface normal as a stand-in view dir for the diffuse-only path.
     // The Fresnel term evaluated at NdotH≈1 yields ~F0, which is acceptable for
     // baking since specular highlights (which depend on the true V) are excluded.
@@ -302,7 +387,7 @@ vec3 diffuseIrradiance(vec3 N, vec3 wp, vec3 albedo, float metallic, float rough
 
 // View-dependent specular only → always evaluated live (never baked).
 vec3 specularRadiance(vec3 N, vec3 V, vec3 wp, vec3 albedo, float metallic, float roughness) {
-    vec3 sum = vec3(0.0);
+    vec3 sum = environmentLighting(N, V, albedo, metallic, roughness).specular;
     for (int i = 0; i < lights.counts.x; ++i)
         sum += lightContribution(i, N, V, wp, albedo, metallic, roughness).specular;
     return sum;
@@ -327,8 +412,9 @@ LightTerms directLighting(vec3 N, vec3 V, vec3 wp, vec3 albedo, float metallic, 
 // Full realtime lighting in a single loop (diffuse incl. ambient, + specular).
 LightTerms accumulate(vec3 N, vec3 V, vec3 wp, vec3 albedo, float metallic, float roughness) {
     LightTerms total;
-    total.diffuse = giIndirectDiffuse(wp, N, V, albedo);
-    total.specular = vec3(0.0);
+    LightTerms env = environmentLighting(N, V, albedo, metallic, roughness);
+    total.diffuse = giIndirectDiffuse(wp, N, V, albedo) + env.diffuse;
+    total.specular = env.specular;
     for (int i = 0; i < lights.counts.x; ++i) {
         LightTerms t = lightContribution(i, N, V, wp, albedo, metallic, roughness);
         total.diffuse  += t.diffuse;

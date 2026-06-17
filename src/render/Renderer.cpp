@@ -222,9 +222,18 @@ void Renderer::createGlobalSetLayout() {
     giVoxelBinding.descriptorCount = 1;
     giVoxelBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 7> bindings = {
+    // Binding 7: canonical environment map for image-based lighting. The same
+    // equirectangular texture is sampled by desktop, XR and mobile shaders.
+    VkDescriptorSetLayoutBinding environmentBinding{};
+    environmentBinding.binding = 7;
+    environmentBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    environmentBinding.descriptorCount = 1;
+    environmentBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 8> bindings = {
         cameraBinding, lightingBinding, shadowBinding, boneBinding,
-        giIrradianceBinding, giVisibilityBinding, giVoxelBinding};
+        giIrradianceBinding, giVisibilityBinding, giVoxelBinding,
+        environmentBinding};
 
     VkDescriptorSetLayoutCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -428,7 +437,7 @@ void Renderer::createGlobalDescriptorPool() {
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight) * 2;  // camera + lighting
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight) * 4;  // shadow + GI irradiance + visibility + voxels
+    poolSizes[1].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight) * 5;  // shadow + GI + environment
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[2].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight);  // bone matrices SSBO
 
@@ -490,7 +499,13 @@ void Renderer::createGlobalDescriptorSets() {
         giVoxelInfo.imageView = gi_->voxelView();
         giVoxelInfo.sampler = gi_->sampler();
 
-        std::array<VkWriteDescriptorSet, 7> writes{};
+        Texture* fallbackEnvironment = resources_.defaultWhiteTexture();
+        VkDescriptorImageInfo environmentInfo{};
+        environmentInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        environmentInfo.imageView = fallbackEnvironment->imageView();
+        environmentInfo.sampler = fallbackEnvironment->sampler();
+
+        std::array<VkWriteDescriptorSet, 8> writes{};
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[0].dstSet = globalSets_[i];
         writes[0].dstBinding = 0;
@@ -539,6 +554,13 @@ void Renderer::createGlobalDescriptorSets() {
         writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[6].descriptorCount = 1;
         writes[6].pImageInfo = &giVoxelInfo;
+
+        writes[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[7].dstSet = globalSets_[i];
+        writes[7].dstBinding = 7;
+        writes[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[7].descriptorCount = 1;
+        writes[7].pImageInfo = &environmentInfo;
 
         vkUpdateDescriptorSets(device_.device(),
             static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
@@ -591,6 +613,48 @@ void Renderer::updateGIDescriptors() {
     writes[1].descriptorCount = 1;
     writes[1].pImageInfo = &vis;
     vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+}
+
+void Renderer::updateEnvironmentDescriptor(Scene& scene) {
+    Texture* environment = resources_.defaultWhiteTexture();
+    if (scene.settings().skyboxTexture != kAssetInvalid) {
+        if (Texture* skybox = resources_.getTexture(scene.settings().skyboxTexture)) {
+            environment = skybox;
+        }
+    }
+
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = environment->imageView();
+    imageInfo.sampler = environment->sampler();
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = globalSets_[currentFrame_];
+    write.dstBinding = 7;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.descriptorCount = 1;
+    write.pImageInfo = &imageInfo;
+    vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
+}
+
+Renderer::TonemapPushConstants Renderer::tonemapPushConstants(
+    const SceneSettings& settings, const glm::mat4& projection) const {
+    TonemapPushConstants push{};
+    push.invProjection = glm::inverse(projection);
+    push.aoParams = glm::vec4(settings.aoEnabled ? 1.0f : 0.0f,
+                              std::max(settings.aoRadius, 0.0f),
+                              std::max(settings.aoIntensity, 0.0f),
+                              std::max(settings.aoPower, 0.001f));
+    push.fogColor = settings.fogColor;
+    push.fogParams = glm::vec4(settings.fogEnabled ? 1.0f : 0.0f,
+                               std::max(settings.fogStart, 0.0f),
+                               std::max(settings.fogDensity, 0.0f), exposure_);
+    push.bloomParams = glm::vec4(settings.bloomEnabled ? 1.0f : 0.0f,
+                                 std::max(settings.bloomThreshold, 0.0f),
+                                 std::max(settings.bloomIntensity, 0.0f),
+                                 std::max(settings.bloomRadius, 0.0f));
+    return push;
 }
 
 void Renderer::createCommandBuffers() {
@@ -687,6 +751,13 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
     ubo.giCounts  = glm::ivec4(gd.counts, gi_->probesPerRow());
     ubo.giAtlas   = glm::ivec4(gd.irradianceTexels, gd.visibilityTexels,
                                settings.giDebugVoxels ? 1 : 0, gd.voxelResolution);
+    const bool iblActive = settings.iblEnabled && settings.skyboxTexture != kAssetInvalid;
+    const float environmentExposure = std::max(settings.skyboxExposure, 0.0f);
+    ubo.environmentParams = glm::vec4(
+        iblActive ? 1.0f : 0.0f,
+        std::max(settings.iblDiffuseIntensity, 0.0f) * environmentExposure,
+        std::max(settings.iblSpecularIntensity, 0.0f) * environmentExposure,
+        settings.skyboxRotation);
 
     auto getAnimatorInParent = [](Node* n) -> Animator* {
         while (n) {
@@ -716,7 +787,8 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
                         glm::length(glm::vec3(world[1])),
                         glm::length(glm::vec3(world[2]))
                     });
-                    float radius = 0.866f; // DamagedHelmet doesn't report bounds, so we use a standard local radius for the unit cube.
+                    const float localRadius = glm::length(m->bounds().extent()) * 0.5f;
+                    float radius = (localRadius > 0.001f ? localRadius : 0.866f) * maxScale;
                     
                     int32_t boneOffset = -1;
                     if (Animator* anim = getAnimatorInParent(node)) {
@@ -878,10 +950,36 @@ void Renderer::createHdrResources() {
                            &hdrMsaaImage_, &hdrMsaaAllocation_, nullptr) != VK_SUCCESS)
             throw std::runtime_error("failed to create MSAA HDR image");
         hdrMsaaView_ = device_.createImageView(hdrMsaaImage_, format, VK_IMAGE_ASPECT_COLOR_BIT);
+
+        VkImageCreateInfo depthInfo{};
+        depthInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        depthInfo.imageType = VK_IMAGE_TYPE_2D;
+        depthInfo.extent.width = extent.width;
+        depthInfo.extent.height = extent.height;
+        depthInfo.extent.depth = 1;
+        depthInfo.mipLevels = 1;
+        depthInfo.arrayLayers = 1;
+        depthInfo.format = swapchain_->depthFormat();
+        depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        depthInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        depthInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        if (vmaCreateImage(device_.allocator(), &depthInfo, &allocInfo,
+                           &depthResolveImage_, &depthResolveAllocation_, nullptr) != VK_SUCCESS)
+            throw std::runtime_error("failed to create AO depth resolve image");
+        depthResolveView_ = device_.createImageView(depthResolveImage_, swapchain_->depthFormat(), VK_IMAGE_ASPECT_DEPTH_BIT);
     }
 }
 
 void Renderer::cleanupHdrResources() {
+    if (depthResolveView_) {
+        vkDestroyImageView(device_.device(), depthResolveView_, nullptr);
+        vmaDestroyImage(device_.allocator(), depthResolveImage_, depthResolveAllocation_);
+        depthResolveView_ = VK_NULL_HANDLE;
+        depthResolveImage_ = VK_NULL_HANDLE;
+        depthResolveAllocation_ = VK_NULL_HANDLE;
+    }
     if (hdrMsaaView_) {
         vkDestroyImageView(device_.device(), hdrMsaaView_, nullptr);
         vmaDestroyImage(device_.allocator(), hdrMsaaImage_, hdrMsaaAllocation_);
@@ -895,23 +993,31 @@ void Renderer::cleanupHdrResources() {
 }
 
 void Renderer::createTonemapPipeline() {
-    VkDescriptorSetLayoutBinding samplerBinding{};
-    samplerBinding.binding = 0;
-    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerBinding.descriptorCount = 1;
-    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutBinding hdrBinding{};
+    hdrBinding.binding = 0;
+    hdrBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    hdrBinding.descriptorCount = 1;
+    hdrBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutBinding depthBinding{};
+    depthBinding.binding = 1;
+    depthBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    depthBinding.descriptorCount = 1;
+    depthBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings{hdrBinding, depthBinding};
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &samplerBinding;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
 
     if (vkCreateDescriptorSetLayout(device_.device(), &layoutInfo, nullptr, &tonemapSetLayout_) != VK_SUCCESS)
         throw std::runtime_error("failed to create tonemap descriptor set layout");
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 1;
+    poolSize.descriptorCount = 2;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -948,14 +1054,22 @@ void Renderer::createTonemapPipeline() {
     
     tonemapPipeline_ = std::make_unique<Pipeline>(device_, shaderPath("tonemap.vert.spv"),
         shaderPath("tonemap.frag.spv"), colorFormats, VK_FORMAT_UNDEFINED, setLayouts,
-        VK_SAMPLE_COUNT_1_BIT, false, false);
+        VK_SAMPLE_COUNT_1_BIT, false, false, sizeof(TonemapPushConstants));
 }
 
-void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex) {
+void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
+                                 Scene& scene, const Camera& camera) {
     VkImageMemoryBarrier2 toShaderRead = imageBarrier2(hdrImage_,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
         VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+    VkImage depthImage = depthResolveImage_ ? depthResolveImage_ : swapchain_->depthImage();
+    VkImageMemoryBarrier2 depthToShaderRead = imageBarrier2(depthImage,
+        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+        VK_IMAGE_ASPECT_DEPTH_BIT);
     
     VkImage swapImage = swapchain_->image(imageIndex);
     VkImageMemoryBarrier2 toColorAttach = imageBarrier2(swapImage,
@@ -963,23 +1077,33 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex) {
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
-    std::array<VkImageMemoryBarrier2, 2> barriers = {toShaderRead, toColorAttach};
+    std::array<VkImageMemoryBarrier2, 3> barriers = {toShaderRead, depthToShaderRead, toColorAttach};
     cmdImageBarriers(cmd, barriers.data(), barriers.size());
 
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = hdrView_;
-    imageInfo.sampler = tonemapSampler_;
+    VkDescriptorImageInfo hdrInfo{};
+    hdrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    hdrInfo.imageView = hdrView_;
+    hdrInfo.sampler = tonemapSampler_;
 
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = tonemapSet_;
-    write.dstBinding = 0;
-    write.dstArrayElement = 0;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.descriptorCount = 1;
-    write.pImageInfo = &imageInfo;
-    vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
+    VkDescriptorImageInfo depthInfo{};
+    depthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    depthInfo.imageView = depthResolveView_ ? depthResolveView_ : swapchain_->depthView();
+    depthInfo.sampler = tonemapSampler_;
+
+    std::array<VkWriteDescriptorSet, 2> writes{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = tonemapSet_;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].descriptorCount = 1;
+    writes[0].pImageInfo = &hdrInfo;
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = tonemapSet_;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = &depthInfo;
+    vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     VkRenderingAttachmentInfo colorAttach{};
     colorAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -1013,7 +1137,9 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex) {
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, tonemapPipeline_->layout(),
         0, 1, &tonemapSet_, 0, nullptr);
         
-    vkCmdPushConstants(cmd, tonemapPipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float), &exposure_);
+    TonemapPushConstants push = tonemapPushConstants(scene.settings(), camera.projection());
+    vkCmdPushConstants(cmd, tonemapPipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(TonemapPushConstants), &push);
 
     vkCmdDraw(cmd, 3, 1, 0, 0);
     uiRenderer_->recordCommands(cmd, swapchain_->extent().width, swapchain_->extent().height);
@@ -1305,7 +1431,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     VkImageView colorView = msaa ? hdrMsaaView_ : hdrView_;
 
     // Dynamic rendering does no implicit layout transitions: do them by hand.
-    std::array<VkImageMemoryBarrier2, 3> preBarriers{};
+    std::array<VkImageMemoryBarrier2, 4> preBarriers{};
     uint32_t preCount = 0;
     preBarriers[preCount++] = imageBarrier2(colorImage,
         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -1316,6 +1442,12 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    if (msaa)
+        preBarriers[preCount++] = imageBarrier2(depthResolveImage_,
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, 0,
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
     preBarriers[preCount++] = imageBarrier2(swapchain_->depthImage(),
         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, 0,
@@ -1341,8 +1473,13 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     depthAttach.imageView = swapchain_->depthView();
     depthAttach.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttach.storeOp = msaa ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
     depthAttach.clearValue.depthStencil = {1.0f, 0};
+    if (msaa) {
+        depthAttach.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+        depthAttach.resolveImageView = depthResolveView_;
+        depthAttach.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    }
 
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -1467,7 +1604,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
 
     vkCmdEndRendering(cmd);
 
-    recordTonemapPass(cmd, imageIndex);
+    recordTonemapPass(cmd, imageIndex, scene, camera);
 
     VkImage swapImage = swapchain_->image(imageIndex);
     // Transition the swap-chain image from color attachment to present.
@@ -1532,6 +1669,7 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     // and re-point this frame's set 0 at the current atlas (safe: fence waited).
     if (giUpdateThisFrame_) gi_->beginFrame();
     updateGIDescriptors();
+    updateEnvironmentDescriptor(scene);
 
     updateUniformBuffer(currentFrame_, scene, camera, project);
     uiRenderer_->gatherUI(scene);
@@ -1633,15 +1771,19 @@ void Renderer::createXrTargets() {
     // 2-layer depth.
     const VkFormat depthFormat = device_.findDepthFormat();
     ci.format = depthFormat;
-    ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     if (vmaCreateImage(device_.allocator(), &ci, &ai, &xrDepthImage_, &xrDepthAllocation_, nullptr) != VK_SUCCESS)
         throw std::runtime_error("XR: failed to create depth image");
     xrDepthArrayView_ = makeView(xrDepthImage_, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT,
                                  VK_IMAGE_VIEW_TYPE_2D_ARRAY, 0, xrViewCount_);
+    for (uint32_t i = 0; i < xrViewCount_; ++i)
+        xrDepthLayerViews_[i] = makeView(xrDepthImage_, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT,
+                                         VK_IMAGE_VIEW_TYPE_2D, i, 1);
 }
 
 void Renderer::cleanupXrTargets() {
     VkDevice d = device_.device();
+    for (auto& v : xrDepthLayerViews_) { if (v) vkDestroyImageView(d, v, nullptr); v = VK_NULL_HANDLE; }
     if (xrDepthArrayView_) vkDestroyImageView(d, xrDepthArrayView_, nullptr);
     if (xrDepthImage_) vmaDestroyImage(device_.allocator(), xrDepthImage_, xrDepthAllocation_);
     for (auto& v : xrHdrLayerViews_) { if (v) vkDestroyImageView(d, v, nullptr); v = VK_NULL_HANDLE; }
@@ -1668,15 +1810,21 @@ void Renderer::createXrPipelines() {
 
     // ── Skybox descriptor set (texture) + multiview pipeline ──
     {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = 0;
-        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        b.descriptorCount = 1;
-        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutBinding hdrBinding{};
+        hdrBinding.binding = 0;
+        hdrBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        hdrBinding.descriptorCount = 1;
+        hdrBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutBinding depthBinding{};
+        depthBinding.binding = 1;
+        depthBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        depthBinding.descriptorCount = 1;
+        depthBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        std::array<VkDescriptorSetLayoutBinding, 2> tonemapBindings{hdrBinding, depthBinding};
         VkDescriptorSetLayoutCreateInfo lci{};
         lci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        lci.bindingCount = 1;
-        lci.pBindings = &b;
+        lci.bindingCount = static_cast<uint32_t>(tonemapBindings.size());
+        lci.pBindings = tonemapBindings.data();
         if (vkCreateDescriptorSetLayout(device_.device(), &lci, nullptr, &skyboxSetLayout_) != VK_SUCCESS)
             throw std::runtime_error("XR: failed to create skybox set layout");
 
@@ -1730,7 +1878,7 @@ void Renderer::createXrPipelines() {
         if (vkCreateSampler(device_.device(), &sci, nullptr, &tonemapSampler_) != VK_SUCCESS)
             throw std::runtime_error("XR: failed to create tonemap sampler");
 
-        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, xrViewCount_};
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, xrViewCount_ * 2};
         VkDescriptorPoolCreateInfo pci{};
         pci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         pci.poolSizeCount = 1;
@@ -1749,18 +1897,29 @@ void Renderer::createXrPipelines() {
             if (vkAllocateDescriptorSets(device_.device(), &asi, &xrTonemapSets_[i]) != VK_SUCCESS)
                 throw std::runtime_error("XR: failed to allocate tonemap set");
 
-            VkDescriptorImageInfo ii{};
-            ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            ii.imageView = xrHdrLayerViews_[i];
-            ii.sampler = tonemapSampler_;
-            VkWriteDescriptorSet w{};
-            w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            w.dstSet = xrTonemapSets_[i];
-            w.dstBinding = 0;
-            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            w.descriptorCount = 1;
-            w.pImageInfo = &ii;
-            vkUpdateDescriptorSets(device_.device(), 1, &w, 0, nullptr);
+            VkDescriptorImageInfo hdrInfo{};
+            hdrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            hdrInfo.imageView = xrHdrLayerViews_[i];
+            hdrInfo.sampler = tonemapSampler_;
+            VkDescriptorImageInfo depthInfo{};
+            depthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            depthInfo.imageView = xrDepthLayerViews_[i];
+            depthInfo.sampler = tonemapSampler_;
+
+            std::array<VkWriteDescriptorSet, 2> writes{};
+            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[0].dstSet = xrTonemapSets_[i];
+            writes[0].dstBinding = 0;
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[0].descriptorCount = 1;
+            writes[0].pImageInfo = &hdrInfo;
+            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[1].dstSet = xrTonemapSets_[i];
+            writes[1].dstBinding = 1;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[1].descriptorCount = 1;
+            writes[1].pImageInfo = &depthInfo;
+            vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
         }
 
         std::vector<VkDescriptorSetLayout> setLayouts = {tonemapSetLayout_};
@@ -1768,7 +1927,7 @@ void Renderer::createXrPipelines() {
         xrTonemapPipeline_ = std::make_unique<Pipeline>(device_,
             shaderPath("tonemap.vert.spv"), shaderPath("tonemap.frag.spv"),
             colorFormats, VK_FORMAT_UNDEFINED, setLayouts, VK_SAMPLE_COUNT_1_BIT,
-            false, false);
+            false, false, sizeof(TonemapPushConstants));
     }
 }
 
@@ -1831,7 +1990,7 @@ void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
     depth.imageView = xrDepthArrayView_;
     depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depth.clearValue.depthStencil = {1.0f, 0};
 
     VkRenderingInfo ri{};
@@ -1921,14 +2080,22 @@ void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
     vkCmdEndRendering(cmd);
 }
 
-void Renderer::recordXrTonemap(VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes) {
+void Renderer::recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
+                               const std::vector<xr::EyeView>& eyes) {
     // HDR (all layers) → shader read for sampling.
     VkImageMemoryBarrier2 hdrToRead = imageBarrier2(xrHdrImage_,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
         VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT, 0, xrViewCount_);
-    cmdImageBarrier(cmd, hdrToRead);
+    VkImageMemoryBarrier2 depthToRead = imageBarrier2(xrDepthImage_,
+        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+        VK_IMAGE_ASPECT_DEPTH_BIT, 0, xrViewCount_);
+    std::array<VkImageMemoryBarrier2, 2> readBarriers{hdrToRead, depthToRead};
+    cmdImageBarriers(cmd, readBarriers.data(), readBarriers.size());
 
     const uint32_t n = std::min<uint32_t>(static_cast<uint32_t>(eyes.size()), xrViewCount_);
     for (uint32_t i = 0; i < n; ++i) {
@@ -1969,8 +2136,9 @@ void Renderer::recordXrTonemap(VkCommandBuffer cmd, const std::vector<xr::EyeVie
         vkCmdSetScissor(cmd, 0, 1, &sc);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
             xrTonemapPipeline_->layout(), 0, 1, &xrTonemapSets_[i], 0, nullptr);
+        TonemapPushConstants push = tonemapPushConstants(scene.settings(), eye.projection);
         vkCmdPushConstants(cmd, xrTonemapPipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
-            0, sizeof(float), &exposure_);
+            0, sizeof(TonemapPushConstants), &push);
         vkCmdDraw(cmd, 3, 1, 0, 0);
         vkCmdEndRendering(cmd);
     }
@@ -1997,6 +2165,7 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes,
 
     if (giUpdateThisFrame_) gi_->beginFrame();
     updateGIDescriptors();
+    updateEnvironmentDescriptor(scene);
 
     // CPU prep (per-eye matrices, lighting, draw list, bones).
     updateUniformBufferXr(currentFrame_, eyes, scene, project);
@@ -2025,7 +2194,7 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes,
         });
 
     recordXrScenePass(cmd, scene, eyes);
-    recordXrTonemap(cmd, eyes);
+    recordXrTonemap(cmd, scene, eyes);
 
     currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
 }

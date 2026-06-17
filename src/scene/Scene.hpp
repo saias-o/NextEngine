@@ -37,6 +37,30 @@ struct SceneSettings {
     float skyboxExposure = 1.0f;
     float skyboxRotation = 0.0f;
 
+    // Image-based lighting samples the same equirectangular environment as the
+    // skybox. The shader is shared by desktop/XR/mobile; platforms may only vary
+    // texture resolution, not the lighting equation.
+    bool iblEnabled = true;
+    float iblDiffuseIntensity = 0.35f;
+    float iblSpecularIntensity = 1.0f;
+
+    // Canonical screen-space AO. Realtime and Baked lighting both use this same
+    // pass; only buffer resolution may vary by platform.
+    bool aoEnabled = true;
+    float aoRadius = 0.75f;
+    float aoIntensity = 1.0f;
+    float aoPower = 1.35f;
+
+    bool fogEnabled = false;
+    glm::vec4 fogColor{0.55f, 0.62f, 0.72f, 1.0f};
+    float fogStart = 8.0f;
+    float fogDensity = 0.035f;
+
+    bool bloomEnabled = true;
+    float bloomThreshold = 1.0f;
+    float bloomIntensity = 0.25f;
+    float bloomRadius = 3.0f;
+
     // Debug: draw animated skeletons as bone lines (editor tool; desktop only).
     bool showSkeletons = false;
 

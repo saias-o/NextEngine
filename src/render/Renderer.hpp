@@ -31,6 +31,7 @@ class ShadowMap;
 class LightBaker;
 class UIRenderer;
 class GIVolume;
+struct SceneSettings;
 namespace xr { struct EyeView; }
 
 // Camera block shared by the desktop (mono) and XR (stereo multiview) paths:
@@ -74,6 +75,7 @@ struct LightingUBO {
     glm::vec4 giSpacing{1.0f};  // xyz = probe spacing
     glm::ivec4 giCounts{0};     // xyz = probe counts, w = probesPerRow in atlas
     glm::ivec4 giAtlas{0};      // x = irradiance texels/probe, y = visibility texels/probe
+    glm::vec4 environmentParams{0.0f}; // x enabled, y diffuse, z specular, w rotation
 };
 
 struct DrawCmd {
@@ -130,14 +132,26 @@ public:
                 Scene& scene, Project* project);
 
 private:
+    struct TonemapPushConstants {
+        glm::mat4 invProjection{1.0f};
+        glm::vec4 aoParams{0.0f};        // x enabled, y radius, z intensity, w power
+        glm::vec4 fogColor{0.0f};
+        glm::vec4 fogParams{0.0f};       // x enabled, y start, z density, w exposure
+        glm::vec4 bloomParams{0.0f};     // x enabled, y threshold, z intensity, w radius px
+    };
+
     void updateGlobalShadowDescriptor();
     void updateGIDescriptors();  // re-point set 0 bindings 4/5 at the current GI atlas
+    void updateEnvironmentDescriptor(Scene& scene);
+    TonemapPushConstants tonemapPushConstants(const SceneSettings& settings,
+                                              const glm::mat4& projection) const;
     void createGlobalSetLayout();
     void createPipeline(VkDescriptorSetLayout materialSetLayout);
     void createHdrResources();
     void cleanupHdrResources();
     void createTonemapPipeline();
-    void recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex);
+    void recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
+                           Scene& scene, const Camera& camera);
     void createUniformBuffers();
     void createGlobalDescriptorPool();
     void createGlobalDescriptorSets();
@@ -173,6 +187,9 @@ private:
     VkImage hdrMsaaImage_ = VK_NULL_HANDLE;  // MSAA resolve target (when MSAA on)
     VmaAllocation hdrMsaaAllocation_ = VK_NULL_HANDLE;
     VkImageView hdrMsaaView_ = VK_NULL_HANDLE;
+    VkImage depthResolveImage_ = VK_NULL_HANDLE;  // single-sample depth for AO when MSAA is enabled
+    VmaAllocation depthResolveAllocation_ = VK_NULL_HANDLE;
+    VkImageView depthResolveView_ = VK_NULL_HANDLE;
 
     // Tonemap pipeline
     std::unique_ptr<Pipeline> tonemapPipeline_;
@@ -181,7 +198,7 @@ private:
     VkDescriptorSet tonemapSet_ = VK_NULL_HANDLE;
     VkSampler tonemapSampler_ = VK_NULL_HANDLE;
     float exposure_ = 1.0f;
-    
+
     // Skybox pipeline
     std::unique_ptr<Pipeline> skyboxPipeline_;
     VkDescriptorSetLayout skyboxSetLayout_ = VK_NULL_HANDLE;
@@ -264,7 +281,8 @@ private:
                                Scene& scene, Project* project);
     void recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
                            const std::vector<xr::EyeView>& eyes);
-    void recordXrTonemap(VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes);
+    void recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
+                         const std::vector<xr::EyeView>& eyes);
 
     std::unique_ptr<Pipeline> xrScenePipeline_;    // multiview scene
     std::unique_ptr<Pipeline> xrSkyboxPipeline_;   // multiview skybox
@@ -278,6 +296,7 @@ private:
     VkImage xrDepthImage_ = VK_NULL_HANDLE;
     VmaAllocation xrDepthAllocation_ = VK_NULL_HANDLE;
     VkImageView xrDepthArrayView_ = VK_NULL_HANDLE;
+    std::array<VkImageView, 2> xrDepthLayerViews_{};   // per-layer, tonemap depth source
 
     VkDescriptorPool xrTonemapPool_ = VK_NULL_HANDLE;
     std::array<VkDescriptorSet, 2> xrTonemapSets_{};   // one per eye layer

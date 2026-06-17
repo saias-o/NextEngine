@@ -114,6 +114,21 @@ void Scene::serialize(nlohmann::json& j, ResourceManager& resources) const {
         {"skyboxTexture", settings_.skyboxTexture},
         {"skyboxExposure", settings_.skyboxExposure},
         {"skyboxRotation", settings_.skyboxRotation},
+        {"iblEnabled", settings_.iblEnabled},
+        {"iblDiffuseIntensity", settings_.iblDiffuseIntensity},
+        {"iblSpecularIntensity", settings_.iblSpecularIntensity},
+        {"aoEnabled", settings_.aoEnabled},
+        {"aoRadius", settings_.aoRadius},
+        {"aoIntensity", settings_.aoIntensity},
+        {"aoPower", settings_.aoPower},
+        {"fogEnabled", settings_.fogEnabled},
+        {"fogColor", vec3ToJson(glm::vec3(settings_.fogColor))},
+        {"fogStart", settings_.fogStart},
+        {"fogDensity", settings_.fogDensity},
+        {"bloomEnabled", settings_.bloomEnabled},
+        {"bloomThreshold", settings_.bloomThreshold},
+        {"bloomIntensity", settings_.bloomIntensity},
+        {"bloomRadius", settings_.bloomRadius},
         {"changeRenderingAtLoad", settings_.changeRenderingAtLoad}
     };
 }
@@ -140,6 +155,21 @@ void Scene::deserialize(const nlohmann::json& j, ResourceManager& resources) {
         }
         if (js.contains("skyboxExposure")) settings_.skyboxExposure = js["skyboxExposure"].get<float>();
         if (js.contains("skyboxRotation")) settings_.skyboxRotation = js["skyboxRotation"].get<float>();
+        if (js.contains("iblEnabled")) settings_.iblEnabled = js["iblEnabled"].get<bool>();
+        if (js.contains("iblDiffuseIntensity")) settings_.iblDiffuseIntensity = js["iblDiffuseIntensity"].get<float>();
+        if (js.contains("iblSpecularIntensity")) settings_.iblSpecularIntensity = js["iblSpecularIntensity"].get<float>();
+        if (js.contains("aoEnabled")) settings_.aoEnabled = js["aoEnabled"].get<bool>();
+        if (js.contains("aoRadius")) settings_.aoRadius = js["aoRadius"].get<float>();
+        if (js.contains("aoIntensity")) settings_.aoIntensity = js["aoIntensity"].get<float>();
+        if (js.contains("aoPower")) settings_.aoPower = js["aoPower"].get<float>();
+        if (js.contains("fogEnabled")) settings_.fogEnabled = js["fogEnabled"].get<bool>();
+        if (js.contains("fogColor")) settings_.fogColor = glm::vec4(jsonToVec3(js["fogColor"], glm::vec3(settings_.fogColor)), 1.0f);
+        if (js.contains("fogStart")) settings_.fogStart = js["fogStart"].get<float>();
+        if (js.contains("fogDensity")) settings_.fogDensity = js["fogDensity"].get<float>();
+        if (js.contains("bloomEnabled")) settings_.bloomEnabled = js["bloomEnabled"].get<bool>();
+        if (js.contains("bloomThreshold")) settings_.bloomThreshold = js["bloomThreshold"].get<float>();
+        if (js.contains("bloomIntensity")) settings_.bloomIntensity = js["bloomIntensity"].get<float>();
+        if (js.contains("bloomRadius")) settings_.bloomRadius = js["bloomRadius"].get<float>();
         if (js.contains("changeRenderingAtLoad")) settings_.changeRenderingAtLoad = js["changeRenderingAtLoad"].get<bool>();
     }
 
@@ -160,6 +190,21 @@ void Scene::deserialize(const nlohmann::json& j, ResourceManager& resources) {
                 }
                 if (bj.contains("skyboxExposure")) settings_.skyboxExposure = bj["skyboxExposure"].get<float>();
                 if (bj.contains("skyboxRotation")) settings_.skyboxRotation = bj["skyboxRotation"].get<float>();
+                if (bj.contains("iblEnabled")) settings_.iblEnabled = bj["iblEnabled"].get<bool>();
+                if (bj.contains("iblDiffuseIntensity")) settings_.iblDiffuseIntensity = bj["iblDiffuseIntensity"].get<float>();
+                if (bj.contains("iblSpecularIntensity")) settings_.iblSpecularIntensity = bj["iblSpecularIntensity"].get<float>();
+                if (bj.contains("aoEnabled")) settings_.aoEnabled = bj["aoEnabled"].get<bool>();
+                if (bj.contains("aoRadius")) settings_.aoRadius = bj["aoRadius"].get<float>();
+                if (bj.contains("aoIntensity")) settings_.aoIntensity = bj["aoIntensity"].get<float>();
+                if (bj.contains("aoPower")) settings_.aoPower = bj["aoPower"].get<float>();
+                if (bj.contains("fogEnabled")) settings_.fogEnabled = bj["fogEnabled"].get<bool>();
+                if (bj.contains("fogColor")) settings_.fogColor = glm::vec4(jsonToVec3(bj["fogColor"], glm::vec3(settings_.fogColor)), 1.0f);
+                if (bj.contains("fogStart")) settings_.fogStart = bj["fogStart"].get<float>();
+                if (bj.contains("fogDensity")) settings_.fogDensity = bj["fogDensity"].get<float>();
+                if (bj.contains("bloomEnabled")) settings_.bloomEnabled = bj["bloomEnabled"].get<bool>();
+                if (bj.contains("bloomThreshold")) settings_.bloomThreshold = bj["bloomThreshold"].get<float>();
+                if (bj.contains("bloomIntensity")) settings_.bloomIntensity = bj["bloomIntensity"].get<float>();
+                if (bj.contains("bloomRadius")) settings_.bloomRadius = bj["bloomRadius"].get<float>();
             }
         }
     }
