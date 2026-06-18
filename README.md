@@ -1,6 +1,6 @@
 # NextEngine
 
-A lightweight 3D game engine written in **C++17 + Vulkan**, built step by step with a focus on clean architecture, clear ownership, and readable code. No over-engineering — no heavy ECS, no AAA render-graph unless justified.
+A lightweight 3D game engine written in **C++17 + Vulkan** and LLM-native.
 
 ## Features
 
@@ -15,7 +15,7 @@ A lightweight 3D game engine written in **C++17 + Vulkan**, built step by step w
 - **Physics** — Jolt Physics integration (rigid bodies, characters, areas, triggers)
 - **OpenXR / VR** — stereo multiview rendering, action sets, NEXRTK toolkit (grab, teleport, anchors, passthrough)
 - **Editor** — scene tree, inspector, file browser, undo/redo, ImGui
-- **Scripting-ready** — node + behaviour + signal architecture (Lua scripting planned)
+- **Scripting-ready** — node + behaviour + signal architecture (in Javascript)
 
 ## Build
 
