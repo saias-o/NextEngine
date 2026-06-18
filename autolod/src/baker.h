@@ -54,3 +54,27 @@ struct BakeResult {
 bool bakeNormalMap(const BakeHigh& high, const BakeLow& low,
                    const unsigned char* srcNormalPng, size_t srcNormalPngSize,
                    int res, float cageScale, BakeResult& out);
+
+// --- Bake multi-textures (proxy LOD atlase) ---------------------------------
+// Bake plusieurs maps en une passe vers le layout UV du LOW (typiquement de
+// nouvelles UV xatlas). NormalTangent = re-projection tangent-space ; Color =
+// copie directe (albedo, metallic-roughness, occlusion, emissive).
+enum class MapKind { NormalTangent, Color };
+
+struct SrcMap {
+    const unsigned char* png = nullptr; // octets encodes (nullptr ok pour NormalTangent -> geo)
+    size_t  size = 0;
+    MapKind kind = MapKind::Color;
+};
+
+struct BakedMap { std::vector<unsigned char> png; };
+
+struct BakeMapsResult {
+    std::vector<float>    tangents;       // 4 * low.vcount
+    std::vector<BakedMap> maps;           // aligne avec les sources
+    long long texelsHit = 0, texelsTotal = 0;
+};
+
+bool bakeMaps(const BakeHigh& high, const BakeLow& low,
+              const SrcMap* sources, int nSources,
+              int res, float cageScale, BakeMapsResult& out);

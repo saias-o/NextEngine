@@ -17,6 +17,7 @@
 #include "tiny_gltf.h"
 
 #include <meshoptimizer.h>
+#include <xatlas.h>
 
 #include "baker.h"
 
@@ -73,6 +74,10 @@ struct Config {
     int   bakeRes   = 1024;    // resolution de la normal map (--bake-res)
     float bakeCage  = 0.03f;   // distance de recherche en fraction de la diag bbox
     float bakeMinRatio = 0.40f;// ne bake que les LOD dont ratio <= ce seuil (LOD2, LOD3...)
+
+    // --- Proxy LOD atlase (re-depliage xatlas + bake de TOUTES les textures) ---
+    bool  proxy        = false; // active le mode proxy (--proxy), implique le bake
+    float proxyBelow   = 0.15f; // les LOD de ratio < ce seuil deviennent des proxy
 };
 
 // ---------------------------------------------------------------------------
@@ -211,6 +216,81 @@ static int cloneMaterialWithNormal(Model& m, int srcMat, int normalTex, const st
     return static_cast<int>(m.materials.size() - 1);
 }
 
+// Octets encodes (PNG/JPG) de l'image d'une texture, via le loader as_is.
+static std::vector<unsigned char> textureBytes(const Model& m, int texIdx) {
+    if (texIdx < 0 || texIdx >= (int)m.textures.size()) return {};
+    const int img = m.textures[texIdx].source;
+    if (img < 0 || img >= (int)m.images.size()) return {};
+    return m.images[img].image;
+}
+
+// Re-depliage UV d'un mesh decime via xatlas. Produit un nouveau mesh (les
+// sommets peuvent etre dupliques le long des coutures) avec des UV propres [0,1].
+struct Unwrapped {
+    std::vector<float> pos, nrm, uv;        // 3*, 3*, 2*
+    std::vector<unsigned int> idx;
+    size_t vcount = 0;
+};
+// Normales lisses (ponderees par aire) recalculees sur un maillage decime.
+static std::vector<float> computeSmoothNormals(const std::vector<float>& pos,
+                                               const std::vector<unsigned int>& idx) {
+    const size_t vc = pos.size() / 3;
+    std::vector<float> nrm(vc * 3, 0.0f);
+    auto P = [&](unsigned int i, int c){ return pos[i*3+c]; };
+    for (size_t t = 0; t + 2 < idx.size(); t += 3) {
+        const unsigned int a=idx[t], b=idx[t+1], c=idx[t+2];
+        const float e1x=P(b,0)-P(a,0), e1y=P(b,1)-P(a,1), e1z=P(b,2)-P(a,2);
+        const float e2x=P(c,0)-P(a,0), e2y=P(c,1)-P(a,1), e2z=P(c,2)-P(a,2);
+        const float nx=e1y*e2z-e1z*e2y, ny=e1z*e2x-e1x*e2z, nz=e1x*e2y-e1y*e2x; // = 2*aire*normale
+        for (unsigned int v : { a,b,c }) { nrm[v*3+0]+=nx; nrm[v*3+1]+=ny; nrm[v*3+2]+=nz; }
+    }
+    for (size_t v = 0; v < vc; ++v) {
+        const float l = std::sqrt(nrm[v*3]*nrm[v*3]+nrm[v*3+1]*nrm[v*3+1]+nrm[v*3+2]*nrm[v*3+2]);
+        if (l > 1e-20f) { nrm[v*3]/=l; nrm[v*3+1]/=l; nrm[v*3+2]/=l; } else nrm[v*3+2]=1.0f;
+    }
+    return nrm;
+}
+
+static bool xatlasUnwrap(const std::vector<float>& pos, const std::vector<float>& nrm,
+                         const std::vector<unsigned int>& idx, int res, Unwrapped& out) {
+    xatlas::Atlas* atlas = xatlas::Create();
+    xatlas::MeshDecl md;
+    md.vertexCount          = (uint32_t)(pos.size() / 3);
+    md.vertexPositionData   = pos.data();
+    md.vertexPositionStride = 3 * sizeof(float);
+    md.vertexNormalData     = nrm.data();
+    md.vertexNormalStride   = 3 * sizeof(float);
+    md.indexCount           = (uint32_t)idx.size();
+    md.indexData            = idx.data();
+    md.indexFormat          = xatlas::IndexFormat::UInt32;
+    if (xatlas::AddMesh(atlas, md) != xatlas::AddMeshError::Success) { xatlas::Destroy(atlas); return false; }
+
+    xatlas::ChartOptions co;
+    xatlas::PackOptions po;
+    po.resolution = res;
+    po.padding    = 2;
+    po.bilinear   = true;
+    xatlas::Generate(atlas, co, po);
+
+    if (atlas->meshCount == 0 || atlas->width == 0 || atlas->height == 0) { xatlas::Destroy(atlas); return false; }
+    const xatlas::Mesh& om = atlas->meshes[0];
+    out.vcount = om.vertexCount;
+    out.pos.resize(om.vertexCount * 3);
+    out.nrm.resize(om.vertexCount * 3);
+    out.uv.resize (om.vertexCount * 2);
+    for (uint32_t v = 0; v < om.vertexCount; ++v) {
+        const xatlas::Vertex& vv = om.vertexArray[v];
+        const uint32_t r = vv.xref;
+        out.pos[v*3+0]=pos[r*3+0]; out.pos[v*3+1]=pos[r*3+1]; out.pos[v*3+2]=pos[r*3+2];
+        out.nrm[v*3+0]=nrm[r*3+0]; out.nrm[v*3+1]=nrm[r*3+1]; out.nrm[v*3+2]=nrm[r*3+2];
+        out.uv[v*2+0] = vv.uv[0] / atlas->width;
+        out.uv[v*2+1] = vv.uv[1] / atlas->height;
+    }
+    out.idx.assign(om.indexArray, om.indexArray + om.indexCount);
+    xatlas::Destroy(atlas);
+    return out.vcount >= 3 && out.idx.size() >= 3;
+}
+
 // ---------------------------------------------------------------------------
 // Generation des meshs LOD pour un mesh source -> indices des nouveaux meshs
 // ---------------------------------------------------------------------------
@@ -268,7 +348,8 @@ static std::vector<int> generateLodMeshes(Model& model, int meshIndex, const Con
         // High-poly deinterleave (positions + normales + UV) pour le baker, une fois.
         const bool canBake = cfg.bake && hasN && hasUV;
         std::vector<float> hpPos, hpNrm, hpUv;
-        std::vector<unsigned char> srcNormalPng; // normal map du materiau source
+        // Octets des textures source par canal (pour le proxy : on bake tout)
+        std::vector<unsigned char> srcNormalPng, srcColorPng, srcMrPng, srcAoPng, srcEmiPng;
         if (canBake) {
             hpPos.resize(uniqueCount * 3);
             hpNrm.resize(uniqueCount * 3);
@@ -278,15 +359,14 @@ static std::vector<int> generateLodMeshes(Model& model, int meshIndex, const Con
                 hpNrm[i*3+0] = wvtx[i*comps+3]; hpNrm[i*3+1] = wvtx[i*comps+4]; hpNrm[i*3+2] = wvtx[i*comps+5];
                 hpUv[i*2+0]  = wvtx[i*comps+6]; hpUv[i*2+1]  = wvtx[i*comps+7];
             }
-            // Recupere les octets PNG/JPG de la normal map du materiau source
             const int sm = prim.material;
             if (sm >= 0 && sm < (int)model.materials.size()) {
-                const int ntex = model.materials[sm].normalTexture.index;
-                if (ntex >= 0 && ntex < (int)model.textures.size()) {
-                    const int isrc = model.textures[ntex].source;
-                    if (isrc >= 0 && isrc < (int)model.images.size())
-                        srcNormalPng = model.images[isrc].image; // bytes encodes (loader as_is)
-                }
+                const auto& M = model.materials[sm];
+                srcNormalPng = textureBytes(model, M.normalTexture.index);
+                srcColorPng  = textureBytes(model, M.pbrMetallicRoughness.baseColorTexture.index);
+                srcMrPng     = textureBytes(model, M.pbrMetallicRoughness.metallicRoughnessTexture.index);
+                srcAoPng     = textureBytes(model, M.occlusionTexture.index);
+                srcEmiPng    = textureBytes(model, M.emissiveTexture.index);
             }
         }
 
@@ -309,6 +389,118 @@ static std::vector<int> generateLodMeshes(Model& model, int meshIndex, const Con
             size_t target = static_cast<size_t>(widx.size() * lvl.ratio);
             target -= target % 3;
             if (target < 3) target = 3;
+
+            // === PROXY LOD : re-depliage atlas + bake de toutes les textures ===
+            // Pour les niveaux tres agressifs (ratio < proxyBelow). Decouple le
+            // nombre de triangles de l'integrite UV : on re-deplie proprement et
+            // on bake albedo + normal + MR + AO + emissive dans un atlas neuf.
+            if (cfg.proxy && canBake && lvl.ratio < cfg.proxyBelow) {
+                // 1. Soudure par POSITION SEULE : connecte le maillage a travers les
+                // coutures UV/normales pour permettre une decimation tres profonde.
+                std::vector<unsigned int> premap(vcount);
+                const size_t pcount = meshopt_generateVertexRemap(
+                    premap.data(), idx.data(), idx.size(), pos.data(), vcount, 3*sizeof(float));
+                std::vector<float> ppos(pcount*3);
+                std::vector<unsigned int> pidx(idx.size());
+                meshopt_remapVertexBuffer(ppos.data(), pos.data(), vcount, 3*sizeof(float), premap.data());
+                meshopt_remapIndexBuffer(pidx.data(), idx.data(), idx.size(), premap.data());
+
+                // 2. Decimation geometrique agressive jusqu'a la cible
+                std::vector<unsigned int> dlod(pidx.size());
+                float derr = 0.0f;
+                size_t dn = meshopt_simplify(dlod.data(), pidx.data(), pidx.size(),
+                                             ppos.data(), pcount, 3*sizeof(float),
+                                             target, 1.0f, 0, &derr);
+                dlod.resize(dn);
+                std::vector<unsigned int> cr(pcount, ~0u); unsigned int dv = 0;
+                for (size_t k = 0; k < dn; ++k) if (cr[dlod[k]] == ~0u) cr[dlod[k]] = dv++;
+                std::vector<float> dpos(dv*3);
+                for (size_t vi = 0; vi < pcount; ++vi) if (cr[vi] != ~0u) {
+                    dpos[cr[vi]*3+0]=ppos[vi*3+0]; dpos[cr[vi]*3+1]=ppos[vi*3+1]; dpos[cr[vi]*3+2]=ppos[vi*3+2];
+                }
+                std::vector<unsigned int> didx(dn);
+                for (size_t k = 0; k < dn; ++k) didx[k] = cr[dlod[k]];
+                std::vector<float> dnrm = computeSmoothNormals(dpos, didx);
+
+                // 3. Re-depliage UV propre
+                Unwrapped um;
+                if (!xatlasUnwrap(dpos, dnrm, didx, cfg.bakeRes, um)) {
+                    std::cout << "    LOD" << (L+1) << "  [proxy] echec xatlas, niveau ignore\n";
+                    continue;
+                }
+
+                // 3. Bake de tous les canaux du materiau source
+                struct Ch { const std::vector<unsigned char>* bytes; MapKind kind; int slot; };
+                std::vector<Ch> chans = { { &srcNormalPng, MapKind::NormalTangent, 0 } };
+                if (!srcColorPng.empty()) chans.push_back({ &srcColorPng, MapKind::Color, 1 });
+                if (!srcMrPng.empty())    chans.push_back({ &srcMrPng,    MapKind::Color, 2 });
+                if (!srcAoPng.empty())    chans.push_back({ &srcAoPng,    MapKind::Color, 3 });
+                if (!srcEmiPng.empty())   chans.push_back({ &srcEmiPng,   MapKind::Color, 4 });
+                std::vector<SrcMap> srcs;
+                for (auto& ch : chans)
+                    srcs.push_back({ ch.bytes->empty() ? nullptr : ch.bytes->data(), ch.bytes->size(), ch.kind });
+
+                BakeHigh high{ hpPos.data(), hpNrm.data(), hpUv.data(), uniqueCount, widx.data(), widx.size() };
+                BakeLow  low { um.pos.data(), um.nrm.data(), um.uv.data(), um.vcount, um.idx.data(), um.idx.size() };
+                BakeMapsResult br;
+                if (!bakeMaps(high, low, srcs.data(), (int)srcs.size(), cfg.bakeRes, cfg.bakeCage, br)) {
+                    std::cout << "    LOD" << (L+1) << "  [proxy] echec bake, niveau ignore\n";
+                    continue;
+                }
+
+                // 4. Emission geometrie (pos/nrm/uv/tangent + indices)
+                auto appendVec3 = [&](const std::vector<float>& v, bool minmax)->int {
+                    const size_t off = appendData(model, v.data(), v.size()*sizeof(float), 4);
+                    const int bv = makeBufferView(model, off, v.size()*sizeof(float), 0, TINYGLTF_TARGET_ARRAY_BUFFER);
+                    std::vector<double> mn={1e30,1e30,1e30}, mx={-1e30,-1e30,-1e30};
+                    if (minmax) for (size_t i=0;i<v.size()/3;++i) for(int c=0;c<3;++c){ double d=v[i*3+c]; mn[c]=std::min(mn[c],d); mx[c]=std::max(mx[c],d); }
+                    return makeAccessor(model, bv, 0, TINYGLTF_COMPONENT_TYPE_FLOAT, TINYGLTF_TYPE_VEC3,
+                                        v.size()/3, minmax?&mn:nullptr, minmax?&mx:nullptr);
+                };
+                const int aPos = appendVec3(um.pos, true);
+                const int aNrm = appendVec3(um.nrm, false);
+                const size_t uvOff = appendData(model, um.uv.data(), um.uv.size()*sizeof(float), 4);
+                const int uvBv = makeBufferView(model, uvOff, um.uv.size()*sizeof(float), 0, TINYGLTF_TARGET_ARRAY_BUFFER);
+                const int aUv  = makeAccessor(model, uvBv, 0, TINYGLTF_COMPONENT_TYPE_FLOAT, TINYGLTF_TYPE_VEC2, um.vcount);
+                const size_t tOff = appendData(model, br.tangents.data(), br.tangents.size()*sizeof(float), 4);
+                const int tBv = makeBufferView(model, tOff, br.tangents.size()*sizeof(float), 0, TINYGLTF_TARGET_ARRAY_BUFFER);
+                const int aTan = makeAccessor(model, tBv, 0, TINYGLTF_COMPONENT_TYPE_FLOAT, TINYGLTF_TYPE_VEC4, um.vcount);
+                const size_t pOff = appendData(model, um.idx.data(), um.idx.size()*sizeof(unsigned int), 4);
+                const int iBv = makeBufferView(model, pOff, um.idx.size()*sizeof(unsigned int), 0, TINYGLTF_TARGET_ELEMENT_ARRAY_BUFFER);
+                const int aIdx = makeAccessor(model, iBv, 0, TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT, TINYGLTF_TYPE_SCALAR, um.idx.size());
+
+                // 5. Materiau atlase (clone -> garde les facteurs, remplace les textures)
+                tinygltf::Material pm;
+                if (prim.material>=0 && prim.material<(int)model.materials.size()) pm = model.materials[prim.material];
+                pm.name = (pm.name.empty()?"proxy":pm.name) + "_LOD"+std::to_string(L+1)+"_atlas";
+                for (size_t s = 0; s < chans.size(); ++s) {
+                    const int tex = addPngTexture(model, br.maps[s].png);
+                    switch (chans[s].slot) {
+                        case 0: pm.normalTexture.index=tex; pm.normalTexture.texCoord=0; pm.normalTexture.scale=1.0; break;
+                        case 1: pm.pbrMetallicRoughness.baseColorTexture.index=tex; pm.pbrMetallicRoughness.baseColorTexture.texCoord=0; break;
+                        case 2: pm.pbrMetallicRoughness.metallicRoughnessTexture.index=tex; pm.pbrMetallicRoughness.metallicRoughnessTexture.texCoord=0; break;
+                        case 3: pm.occlusionTexture.index=tex; pm.occlusionTexture.texCoord=0; break;
+                        case 4: pm.emissiveTexture.index=tex; pm.emissiveTexture.texCoord=0; break;
+                    }
+                }
+                model.materials.push_back(pm);
+
+                Primitive lp;
+                lp.mode = TINYGLTF_MODE_TRIANGLES;
+                lp.material = (int)model.materials.size()-1;
+                lp.indices  = aIdx;
+                lp.attributes["POSITION"]   = aPos;
+                lp.attributes["NORMAL"]     = aNrm;
+                lp.attributes["TEXCOORD_0"] = aUv;
+                lp.attributes["TANGENT"]    = aTan;
+                lodPrims[L].push_back(lp);
+
+                const int hitPct = br.texelsTotal ? (int)(100.0*double(br.texelsHit)/double(br.texelsTotal)) : 0;
+                std::cout << "    LOD" << (L+1) << "  [PROXY] tris " << (widx.size()/3) << " -> " << (um.idx.size()/3)
+                          << "  verts " << um.vcount << "  atlas " << cfg.bakeRes << "px x" << (int)srcs.size()
+                          << " maps  " << hitPct << "% hits\n";
+                continue;
+            }
 
             // 1. Decimation UV-aware via QEM
             // Extraction des UV dans un buffer separe (pas interleave) pour que
@@ -844,6 +1036,8 @@ static void usage() {
         "  --ratios a,b,c     ratios d'index par LOD     (defaut 0.6,0.3,0.1)\n"
         "  --errors a,b,c     erreurs relatives par LOD   (defaut 0.01,0.02,0.05)\n"
         "  --lock-border      verrouille les bords (assets modulaires)\n"
+        "  --sloppy           autorise la decimation sloppy (CASSE les UV/textures,\n"
+        "                     reserve aux LOD tres lointains sans dependance texture)\n"
         "  --uv-weight f      meme poids UV pour tous les LOD  (ex: 4.0)\n"
         "  --uv-weights a,b,c poids UV par niveau             (defaut 1.0,3.0,10.0)\n"
         "                     valeur haute = moins de distorsion de texture\n"
@@ -853,6 +1047,10 @@ static void usage() {
         "                     (restaure le detail de surface : LA solution qualite)\n"
         "  --bake-res N       resolution de la normal map      (defaut 1024)\n"
         "  --bake-cage f      distance de projection, frac. bbox (defaut 0.03)\n"
+        "  --proxy            LOD tres lointains (ratio < 0.15) : re-depliage UV\n"
+        "                     (xatlas) + bake albedo+normal+MR+AO+emissive en atlas.\n"
+        "                     Tres peu de tris mais ressemble aux LOD superieurs.\n"
+        "                     Implique --bake.\n"
         "  --split            ecrit un GLB minimal autonome par niveau LOD\n"
         "                     (ex: mesh_LOD0.glb, mesh_LOD1.glb, ...)\n"
         "                     chaque fichier ne contient QUE les donnees de son LOD\n"
@@ -919,6 +1117,7 @@ int main(int argc, char** argv) {
         else if (a == "--bake")                           cfg.bake = true;
         else if (a == "--bake-res"      && i+1 < argc)   cfg.bakeRes = std::stoi(argv[++i]);
         else if (a == "--bake-cage"     && i+1 < argc)   cfg.bakeCage = std::stof(argv[++i]);
+        else if (a == "--proxy")                        { cfg.proxy = true; cfg.bake = true; }
         else if (a[0] != '-')                             output = a;
         else { std::cerr << "Option inconnue : " << a << "\n"; return 1; }
     }

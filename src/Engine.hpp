@@ -18,7 +18,6 @@ class SceneTree;
 class ImGuiLayer;
 class Renderer;
 class Project;
-class WebEngine;
 namespace xr { class Instance; class Session; }
 
 // How a game populates the scene at startup. Provided by the executable (game

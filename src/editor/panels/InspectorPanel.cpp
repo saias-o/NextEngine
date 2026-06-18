@@ -15,6 +15,7 @@
 
 #include "scene/BehaviourRegistry.hpp"
 #include "scene/BVHLoader.hpp"
+#include "scene/LODGroupBehaviour.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/AnimationClip.hpp"
 
@@ -159,6 +160,10 @@ void InspectorPanel::draw(EditorUI* editor) {
 
         if (ImGui::Button("Reload Page", ImVec2(-FLT_MIN, 30))) {
             webNode->reload();
+        }
+        bool hotReload = webNode->hotReloadEnabled();
+        if (ImGui::Checkbox("Hot Reload", &hotReload)) {
+            webNode->setHotReloadEnabled(hotReload);
         }
         ImGui::Separator();
         ImGui::Text("Startup Scripts");
@@ -480,37 +485,128 @@ void InspectorPanel::drawMeshRenderer(MeshNode* meshNode, EditorUI* editor) {
     ImGui::Checkbox("Cast Shadows", &meshNode->castShadows());
     ImGui::Checkbox("Include to light baking", &meshNode->includeInLightBaking());
 
-    if (meshNode->hasLods()) {
-        ImGui::SeparatorText("LOD Group");
-        ImGui::Text("Levels: %zu", meshNode->lods().size());
-        ImGui::Text("Active LOD: %d", meshNode->activeLodIndex());
-        if (ImGui::BeginTable("MeshLods", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("LOD");
-            ImGui::TableSetupColumn("Triangles");
-            ImGui::TableSetupColumn("Min Coverage");
-            ImGui::TableSetupColumn("Status");
-            ImGui::TableHeadersRow();
-            for (int i = 0; i < static_cast<int>(meshNode->lods().size()); ++i) {
-                const MeshLodLevel& lvl = meshNode->lods()[static_cast<size_t>(i)];
-                Mesh* lodMesh = meshNode->meshForLod(i);
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::Text("LOD %d", i);
-                ImGui::TableSetColumnIndex(1);
-                if (lodMesh)
-                    ImGui::Text("%u", lodMesh->allocation().indexCount / 3);
-                else
-                    ImGui::TextDisabled("-");
-                ImGui::TableSetColumnIndex(2);
-                ImGui::Text("%.2f", lvl.minScreenCoverage);
-                ImGui::TableSetColumnIndex(3);
-                if (i == meshNode->activeLodIndex())
-                    ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "active");
-                else
-                    ImGui::TextDisabled("-");
+    if (!meshNode->getBehaviour<LODGroupBehaviour>()) {
+        if (ImGui::Button("Add LOD Group", ImVec2(-FLT_MIN, 0.0f))) {
+            meshNode->addBehaviour<LODGroupBehaviour>();
+            if (meshNode->lods().empty()) {
+                MeshLodLevel base;
+                base.mesh = meshNode->mesh();
+                base.material = meshNode->material();
+                base.minScreenCoverage = 0.0f;
+                meshNode->setLods({base});
             }
-            ImGui::EndTable();
         }
+    }
+}
+
+void InspectorPanel::drawLodGroup(MeshNode* meshNode, EditorUI* editor) {
+    if (!meshNode || !editor || !editor->ctxResources_) return;
+
+    if (meshNode->lods().empty()) {
+        MeshLodLevel base;
+        base.mesh = meshNode->mesh();
+        base.material = meshNode->material();
+        base.minScreenCoverage = 0.0f;
+        meshNode->setLods({base});
+    }
+
+    auto& lods = meshNode->lods();
+    ImGui::Text("Active LOD: %d", meshNode->activeLodIndex());
+    ImGui::Text("Levels: %zu", lods.size());
+
+    if (ImGui::Button("Add LOD", ImVec2(120, 0))) {
+        MeshLodLevel lvl;
+        lvl.mesh = meshNode->mesh();
+        lvl.material = meshNode->material();
+        lvl.minScreenCoverage = lods.empty() ? 0.0f : lods.back().minScreenCoverage * 0.5f;
+        lods.push_back(lvl);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Normalize Thresholds", ImVec2(170, 0))) {
+        const size_t count = lods.size();
+        const std::vector<float> thresholds = coverageThresholdsFromMsft({}, count);
+        for (size_t i = 0; i < count; ++i)
+            lods[i].minScreenCoverage = thresholds[i];
+    }
+
+    if (ImGui::BeginTable("LodGroupTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("LOD", ImGuiTableColumnFlags_WidthFixed, 54.0f);
+        ImGui::TableSetupColumn("Mesh");
+        ImGui::TableSetupColumn("Material");
+        ImGui::TableSetupColumn("Tris", ImGuiTableColumnFlags_WidthFixed, 64.0f);
+        ImGui::TableSetupColumn("Min Coverage", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 34.0f);
+        ImGui::TableHeadersRow();
+
+        int removeIndex = -1;
+        for (int i = 0; i < static_cast<int>(lods.size()); ++i) {
+            ImGui::PushID(i);
+            MeshLodLevel& lvl = lods[static_cast<size_t>(i)];
+            Mesh* lodMesh = meshNode->meshForLod(i);
+            Material* lodMaterial = meshNode->materialForLod(i);
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            if (i == meshNode->activeLodIndex())
+                ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "LOD %d", i);
+            else
+                ImGui::Text("LOD %d", i);
+
+            ImGui::TableSetColumnIndex(1);
+            AssetID meshId = lodMesh ? editor->ctxResources_->meshId(lodMesh) : kAssetInvalid;
+            std::string meshLabel = getAssetName(meshId, editor);
+            if (meshLabel == "None") meshLabel = "Drop Mesh";
+            ImGui::Button(meshLabel.c_str(), ImVec2(-FLT_MIN, 0));
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_ID")) {
+                    AssetID id = *(AssetID*)payload->Data;
+                    if (Mesh* newMesh = editor->ctxResources_->getMesh(id)) {
+                        if (i == 0) meshNode->setMesh(newMesh);
+                        lvl.mesh = newMesh;
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
+
+            ImGui::TableSetColumnIndex(2);
+            AssetID materialAlbedo = lodMaterial ? lodMaterial->desc().albedoId : kAssetInvalid;
+            std::string matLabel = getAssetName(materialAlbedo, editor);
+            if (matLabel == "None") matLabel = "Drop Texture";
+            ImGui::Button(matLabel.c_str(), ImVec2(-FLT_MIN, 0));
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_ID")) {
+                    AssetID id = *(AssetID*)payload->Data;
+                    MaterialDesc desc = lodMaterial ? lodMaterial->desc() : MaterialDesc{};
+                    desc.albedoId = id;
+                    if (Material* mat = editor->ctxResources_->getMaterial(desc)) {
+                        if (i == 0) meshNode->setMaterial(mat);
+                        lvl.material = mat;
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
+
+            ImGui::TableSetColumnIndex(3);
+            if (lodMesh)
+                ImGui::Text("%u", lodMesh->allocation().indexCount / 3);
+            else
+                ImGui::TextDisabled("-");
+
+            ImGui::TableSetColumnIndex(4);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::DragFloat("##coverage", &lvl.minScreenCoverage, 0.01f, 0.0f, 1.0f, "%.3f");
+
+            ImGui::TableSetColumnIndex(5);
+            if (i > 0 && ImGui::Button("X"))
+                removeIndex = i;
+
+            ImGui::PopID();
+        }
+
+        if (removeIndex > 0)
+            lods.erase(lods.begin() + removeIndex);
+
+        ImGui::EndTable();
     }
 }
 
@@ -570,7 +666,14 @@ void InspectorPanel::drawBehaviours(Node* node, EditorUI* editor) {
         }
 
         if (expanded) {
-            b->onDrawInspector();
+            if (dynamic_cast<LODGroupBehaviour*>(b.get())) {
+                if (auto* meshNode = dynamic_cast<MeshNode*>(node))
+                    drawLodGroup(meshNode, editor);
+                else
+                    ImGui::TextDisabled("LOD Group requires a MeshNode.");
+            } else {
+                b->onDrawInspector();
+            }
 
             // Animator: drop a .bvh from the file browser to add it as a clip.
             if (auto* anim = dynamic_cast<Animator*>(b.get())) {

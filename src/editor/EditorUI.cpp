@@ -1165,6 +1165,15 @@ void EditorUI::drawSettingsWindow(Project* project) {
 
             if (ImGui::BeginTabItem("Rendering")) {
                 ImGui::Spacing();
+                ImGui::SeparatorText("Mesh LODs");
+                bool autoLods = project->autoMeshLods();
+                if (ImGui::Checkbox("Auto Mesh LODs##Rendering", &autoLods)) {
+                    project->setAutoMeshLods(autoLods);
+                    project->save();
+                }
+                ImGui::TextDisabled("Imports .glb through AutoLOD and adds editable LOD Group components.");
+
+                ImGui::Spacing();
                 ImGui::SeparatorText("Shadows");
                 
                 int currentRes = project->shadowResolution();

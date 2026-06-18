@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(NextEngine LANGUAGES CXX)
+project(NextEngine LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -107,6 +107,50 @@ set(BUILD_SDK_TESTS OFF)
 set(BUILD_ALL_EXTENSIONS OFF)
 add_subdirectory(third_party/openxr ${CMAKE_BINARY_DIR}/openxr)
 
+# ── QuickJS + RmlUi (vendored, static) ───────────────────────────────────────
+# QuickJS is the single JavaScript runtime for gameplay scripts, editor tooling
+# and web UI logic. We build only the library, not qjs/qjsc executables.
+add_library(quickjs STATIC
+    third_party/quickjs/dtoa.c
+    third_party/quickjs/libregexp.c
+    third_party/quickjs/libunicode.c
+    third_party/quickjs/quickjs.c
+)
+target_include_directories(quickjs PUBLIC third_party/quickjs)
+target_compile_definitions(quickjs PRIVATE _GNU_SOURCE)
+if (WIN32)
+    target_compile_definitions(quickjs PRIVATE WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0601)
+endif()
+if (MINGW)
+    target_link_libraries(quickjs PUBLIC m)
+endif()
+
+# Freetype is used only by RmlUi's font engine. Disable optional compression /
+# shaping dependencies so the engine remains easy to build from source.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_HVF ON CACHE BOOL "" FORCE)
+add_subdirectory(third_party/freetype ${CMAKE_BINARY_DIR}/freetype)
+if (NOT TARGET Freetype::Freetype)
+    add_library(Freetype::Freetype ALIAS freetype)
+endif()
+
+set(RMLUI_SAMPLES OFF CACHE BOOL "" FORCE)
+set(RMLUI_TESTS OFF CACHE BOOL "" FORCE)
+set(RMLUI_BACKEND "auto" CACHE STRING "" FORCE)
+set(RMLUI_FONT_ENGINE "freetype" CACHE STRING "" FORCE)
+set(RMLUI_LUA_BINDINGS OFF CACHE BOOL "" FORCE)
+set(RMLUI_LOTTIE_PLUGIN OFF CACHE BOOL "" FORCE)
+set(RMLUI_SVG_PLUGIN OFF CACHE BOOL "" FORCE)
+set(RMLUI_HARFBUZZ_SAMPLE OFF CACHE BOOL "" FORCE)
+set(RMLUI_PRECOMPILED_HEADERS OFF CACHE BOOL "" FORCE)
+set(RMLUI_COMPILER_OPTIONS OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/rmlui ${CMAKE_BINARY_DIR}/rmlui)
+
 # AutoLOD is built separately: `cmake -S autolod -B build/autolod -G Ninja && cmake --build build/autolod`
 # AutoLODBridge resolves build/autolod/autolod.exe at runtime.
 
@@ -116,10 +160,17 @@ add_subdirectory(third_party/openxr ${CMAKE_BINARY_DIR}/openxr)
 # lives inside the lib for now (to be moved to an editor target later).
 add_library(ne_engine STATIC
     src/Engine.cpp
+    src/core/FileWatcher.cpp
     src/core/Window.cpp
     src/core/Camera.cpp
     src/core/Input.cpp
     src/scene/Node.cpp
+    src/scripting/JsContext.cpp
+    src/scripting/JsEngineBindings.cpp
+    src/scripting/JsRuntime.cpp
+    src/scripting/ScriptBehaviour.cpp
+    src/ui/RmlUiRenderInterface.cpp
+    src/ui/RmlUiRuntime.cpp
     src/scene/Behaviour.cpp
     src/scene/MeshNode.cpp
     src/scene/MeshLod.cpp
@@ -131,7 +182,6 @@ add_library(ne_engine STATIC
     src/scene/BehaviourRegistry.cpp
     src/scene/NodeRegistry.cpp
     src/scene/WebCanvasNode.cpp
-    src/scene/WebBridge.cpp
     src/scene/UINode.cpp
     src/scene/UICanvasNode.cpp
     src/scene/UIColorNode.cpp
@@ -208,7 +258,6 @@ add_library(ne_engine STATIC
     src/physics/CollisionObjectNode.cpp
     src/physics/CharacterBodyNode.cpp
     src/physics/PhysicsNodes.cpp
-    src/ui/WebEngine.cpp
     # Dear ImGui (vendored) + GLFW/Vulkan backends
     third_party/imgui/imgui.cpp
     third_party/imgui/imgui_draw.cpp
@@ -232,14 +281,8 @@ target_include_directories(ne_engine PUBLIC
     third_party/json
     third_party/miniaudio
     third_party/xatlas
-    third_party/ultralight/include
 )
-target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt openxr_loader
-    ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/Ultralight.dll
-    ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/UltralightCore.dll
-    ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/WebCore.dll
-    ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/AppCore.dll
-)
+target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt openxr_loader quickjs RmlUi::RmlUi)
 add_dependencies(ne_engine Shaders)
 
 # Absolute paths baked at configure time so the exe runs from any cwd; and GLM
@@ -303,23 +346,6 @@ target_compile_options(NextEngine PRIVATE -Wall -Wextra)
 add_dependencies(NextEngine Shaders)
 
 if (WIN32)
-    # Copy Ultralight resources
-    add_custom_command(TARGET NextEngine POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/third_party/ultralight/resources
-        $<TARGET_FILE_DIR:NextEngine>/resources
-    )
-
-    # Copy Ultralight DLLs
-    add_custom_command(TARGET NextEngine POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/AppCore.dll
-        ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/Ultralight.dll
-        ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/UltralightCore.dll
-        ${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/WebCore.dll
-        $<TARGET_FILE_DIR:NextEngine>
-    )
-
     # Copy glfw
     add_custom_command(TARGET NextEngine POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -340,10 +366,6 @@ if (WIN32)
     add_custom_command(TARGET NextEngineHub POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:glfw>"
-        "${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/Ultralight.dll"
-        "${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/UltralightCore.dll"
-        "${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/WebCore.dll"
-        "${CMAKE_SOURCE_DIR}/third_party/ultralight/bin/AppCore.dll"
         "$<TARGET_FILE_DIR:NextEngineHub>"
     )
 endif()

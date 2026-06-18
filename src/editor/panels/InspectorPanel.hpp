@@ -18,6 +18,7 @@ private:
     void drawTransform(Node* node);
     void drawUINode(class UINode* node);
     void drawMeshRenderer(class MeshNode* meshNode, EditorUI* editor);
+    void drawLodGroup(class MeshNode* meshNode, EditorUI* editor);
     void drawMaterial(Material* material, MeshNode* meshNode, EditorUI* editor);
     void drawPhysicsBody(CollisionObjectNode* body);
     void drawCollisionShape(CollisionShapeNode* shape);

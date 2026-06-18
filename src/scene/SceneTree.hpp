@@ -32,7 +32,7 @@ public:
 
     // ── World lifecycle ──────────────────────────────────────────────────────
     // Build the World, adopting `startScene` (the LIVE edit scene, moved — never
-    // copied, so live resources like Ultralight views aren't duplicated) as the
+    // copied, so live resources like WebCanvas views aren't duplicated) as the
     // current sub-scene. Returns the World (the render/update target). Spawns autoloads.
     Scene* mountWorld(std::unique_ptr<Scene> startScene);
     void unmountWorld();

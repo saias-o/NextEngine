@@ -99,11 +99,12 @@ bool UIInteractionSystem::update(Scene& scene, const glm::vec2& mousePos, bool i
                 int my = static_cast<int>(mousePos.y);
                 
                 if (isLeftJustPressed) {
-                    wcn->fireMouseEvent(kMouseEventType_MouseDown, mx, my, kMouseButton_Left);
+                    wcn->fireMouseEvent(WebCanvasNode::MouseEvent::Down, mx, my, WebCanvasNode::MouseButton::Left);
                 } else if (isLeftJustReleased) {
-                    wcn->fireMouseEvent(kMouseEventType_MouseUp, mx, my, kMouseButton_Left);
+                    wcn->fireMouseEvent(WebCanvasNode::MouseEvent::Up, mx, my, WebCanvasNode::MouseButton::Left);
                 } else {
-                    wcn->fireMouseEvent(kMouseEventType_MouseMoved, mx, my, isLeftDown ? kMouseButton_Left : kMouseButton_None);
+                    wcn->fireMouseEvent(WebCanvasNode::MouseEvent::Move, mx, my,
+                                        isLeftDown ? WebCanvasNode::MouseButton::Left : WebCanvasNode::MouseButton::None);
                 }
             }
         }

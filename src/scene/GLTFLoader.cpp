@@ -2,6 +2,7 @@
 #include "scene/Scene.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/MeshLod.hpp"
+#include "scene/LODGroupBehaviour.hpp"
 #include "scene/Node.hpp"
 #include "graphics/Mesh.hpp"
 #include "graphics/ResourceManager.hpp"
@@ -148,6 +149,7 @@ static void processNode(cgltf_node* node, Node* parent, ResourceManager& resourc
                         const std::vector<MaterialDesc>& materials, cgltf_data* data,
                         const std::unordered_set<size_t>& lodProxyNodes,
                         const std::unordered_map<size_t, NodeLodInfo>& lodByNodeIndex,
+                        bool autoMeshLods,
                         std::vector<std::pair<MeshNode*, cgltf_skin*>>& skinnedMeshes) {
     const size_t nodeIndex = static_cast<size_t>(node - data->nodes);
     if (lodProxyNodes.count(nodeIndex)) return;
@@ -176,6 +178,14 @@ static void processNode(cgltf_node* node, Node* parent, ResourceManager& resourc
             std::string primName = (node->name ? std::string(node->name) : "Mesh") + "_prim" + std::to_string(i);
             MeshNode* mNode = neNode->createChild<MeshNode>(primName, resources.getMesh(primitives[i]), mat);
             buildLodChain(mNode, nodeIndex, i, node, data, meshesPrimitives, materials, resources, lodByNodeIndex);
+            if (autoMeshLods && !mNode->getBehaviour<LODGroupBehaviour>()) {
+                MeshLodLevel base;
+                base.mesh = mNode->mesh();
+                base.material = mNode->material();
+                base.minScreenCoverage = 0.0f;
+                mNode->setLods({base});
+                mNode->addBehaviour<LODGroupBehaviour>();
+            }
             if (node->skin) {
                 skinnedMeshes.push_back({mNode, node->skin});
             }
@@ -184,7 +194,7 @@ static void processNode(cgltf_node* node, Node* parent, ResourceManager& resourc
 
     for (size_t i = 0; i < node->children_count; ++i) {
         processNode(node->children[i], neNode, resources, meshesPrimitives, materials, data,
-                    lodProxyNodes, lodByNodeIndex, skinnedMeshes);
+                    lodProxyNodes, lodByNodeIndex, autoMeshLods, skinnedMeshes);
     }
 }
 
@@ -369,7 +379,7 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
         containerNode->setImportedFromPath(loadPath);
         for (size_t i = 0; i < data->scene->nodes_count; ++i) {
             processNode(data->scene->nodes[i], containerNode, resources, meshesPrimitives, materials, data,
-                        lodProxyNodes, lodByNodeIndex, skinnedMeshes);
+                        lodProxyNodes, lodByNodeIndex, options.autoMeshLods, skinnedMeshes);
         }
     }
 

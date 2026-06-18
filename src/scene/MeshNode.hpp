@@ -34,7 +34,7 @@ public:
     // LOD chain (LOD0 = base mesh/material). Empty → single-LOD behaviour.
     const std::vector<MeshLodLevel>& lods() const { return lods_; }
     std::vector<MeshLodLevel>& lods() { return lods_; }
-    void setLods(std::vector<MeshLodLevel> levels) { lods_ = std::move(levels); }
+    void setLods(std::vector<MeshLodLevel> levels);
     bool hasLods() const { return lods_.size() > 1; }
 
     // Runtime: last LOD picked by the renderer (for inspector debug).

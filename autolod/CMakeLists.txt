@@ -27,6 +27,14 @@ FetchContent_Declare(
   GIT_SHALLOW    TRUE
 )
 
+# --- xatlas : re-depliage UV automatique pour les proxy LOD (MIT) ---
+FetchContent_Declare(
+  xatlas
+  GIT_REPOSITORY https://github.com/jpcy/xatlas.git
+  GIT_TAG        master
+  GIT_SHALLOW    TRUE
+)
+
 set(TINYGLTF_BUILD_LOADER_EXAMPLE OFF CACHE BOOL "" FORCE)
 set(TINYGLTF_BUILD_GL_EXAMPLES     OFF CACHE BOOL "" FORCE)
 set(TINYGLTF_BUILD_VALIDATOR_EXAMPLE OFF CACHE BOOL "" FORCE)
@@ -34,10 +42,16 @@ set(TINYGLTF_BUILD_BUILDER_EXAMPLE OFF CACHE BOOL "" FORCE)
 set(TINYGLTF_HEADER_ONLY           ON  CACHE BOOL "" FORCE)
 set(TINYGLTF_INSTALL               OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(meshoptimizer tinygltf)
+FetchContent_MakeAvailable(meshoptimizer tinygltf xatlas)
+
+# xatlas n'a pas de CMake : on compile son unique source nous-memes
+add_library(xatlas STATIC ${xatlas_SOURCE_DIR}/source/xatlas/xatlas.cpp)
+target_include_directories(xatlas PUBLIC ${xatlas_SOURCE_DIR}/source/xatlas)
+find_package(Threads REQUIRED)
+target_link_libraries(xatlas PUBLIC Threads::Threads)
 
 add_executable(autolod src/main.cpp src/baker.cpp)
-target_link_libraries(autolod PRIVATE meshoptimizer)
+target_link_libraries(autolod PRIVATE meshoptimizer xatlas)
 target_include_directories(autolod PRIVATE ${tinygltf_SOURCE_DIR})
 
 if(MSVC)

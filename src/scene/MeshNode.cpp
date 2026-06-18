@@ -1,9 +1,17 @@
 #include "scene/MeshNode.hpp"
+#include "scene/LODGroupBehaviour.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Material.hpp"
 #include <nlohmann/json.hpp>
 
 namespace ne {
+
+void MeshNode::setLods(std::vector<MeshLodLevel> levels) {
+    lods_ = std::move(levels);
+    activeLodIndex_ = 0;
+    if (lods_.size() > 1 && !getBehaviour<LODGroupBehaviour>())
+        addBehaviour<LODGroupBehaviour>();
+}
 
 Mesh* MeshNode::meshForLod(int lodIndex) const {
     if (lodIndex <= 0 || lods_.empty()) return mesh_;
@@ -103,7 +111,7 @@ void MeshNode::deserialize(const nlohmann::json& j, ResourceManager& resources) 
     if (j.contains("includeInLightBaking")) includeInLightBaking_ = j["includeInLightBaking"].get<bool>();
     if (j.contains("meshEnabled")) meshEnabled_ = j["meshEnabled"].get<bool>();
     if (j.contains("lods") && j["lods"].is_array()) {
-        lods_.clear();
+        std::vector<MeshLodLevel> levels;
         for (const auto& entry : j["lods"]) {
             MeshLodLevel lvl;
             if (entry.contains("mesh")) {
@@ -125,8 +133,9 @@ void MeshNode::deserialize(const nlohmann::json& j, ResourceManager& resources) 
             }
             if (entry.contains("minCoverage"))
                 lvl.minScreenCoverage = entry["minCoverage"].get<float>();
-            lods_.push_back(lvl);
+            levels.push_back(lvl);
         }
+        setLods(std::move(levels));
     }
 }
 

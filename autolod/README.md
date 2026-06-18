@@ -46,6 +46,9 @@ cmake --build build
 # LOD séparés autonomes + bake (workflow Unity LODGroup)
 ./build/autolod.exe casque.glb casque_lod.glb --split --bake --bake-res 2048
 
+# PROXY : LOD lointain ultra-léger (re-dépliage + atlas complet)
+./build/autolod.exe casque.glb casque_lod.glb --proxy --ratios 0.6,0.3,0.1,0.03
+
 # asset de test pour valider l'install (sphère ~8k tris)
 ./build/autolod.exe --gen-test sphere.glb
 
@@ -77,6 +80,27 @@ Note importante sur le **poids UV** :
   défaut). C'est pourquoi le bake donne à la fois *peu de triangles* **et** un beau rendu.
 
 Tu peux forcer le poids UV dans les deux cas avec `--uv-weights a,b,c`.
+
+### Les proxy LOD (`--proxy`) — LOD lointains ultra-légers
+
+Sous ~0.15 de ratio, la décimation classique ne peut plus réduire sans étirer ou
+déchirer les UV d'origine. Le mode `--proxy` change complètement d'approche pour ces
+niveaux très agressifs (ratio < 0.15) :
+
+1. Soudure par **position seule** (connecte le maillage à travers les coutures) →
+   décimation géométrique très profonde possible (quelques centaines de triangles).
+2. Normales lisses recalculées sur le maillage décimé.
+3. **Re-dépliage UV propre** via `xatlas` (nouvel atlas `[0,1]`).
+4. **Bake de TOUTES les textures** du matériau (albédo + normal + metallic-roughness +
+   occlusion + emissive) depuis le LOD0 vers ce nouvel atlas, par raycasting.
+5. Sortie : un mesh ultra-léger + un seul matériau atlasé autonome.
+
+Résultat : 200–600 triangles mais qui **ressemblent** au LOD0 de loin, car albédo ET
+normales sont bakés par texel. Rendu en glTF/Unity standard (pas de shader custom,
+contrairement aux impostors). `--proxy` implique `--bake`.
+
+Note : `--proxy` ne s'applique qu'aux niveaux de ratio < 0.15 ; tes LOD1/2/3 plus denses
+gardent le bake normal classique (UV d'origine préservées).
 
 ### Le bake de normal map (`--bake`)
 

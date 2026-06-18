@@ -35,8 +35,10 @@
 #include "audio/AudioSourceBehaviour.hpp"
 #include "scene/CharacterBehaviour.hpp"
 #include "scene/SpawnerBehaviour.hpp"
+#include "scene/LODGroupBehaviour.hpp"
 #include "scene/animation/Animator.hpp"
-#include "ui/WebEngine.hpp"
+#include "scripting/ScriptBehaviour.hpp"
+#include "ui/RmlUiRuntime.hpp"
 #include "xr/XrInstance.hpp"
 #include "xr/XrSession.hpp"
 #include "xr/toolkit/XRInput.hpp"
@@ -107,6 +109,8 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     BehaviourRegistry::instance().registerType<CharacterBehaviour>("Character");
     BehaviourRegistry::instance().registerType<SpawnerBehaviour>("Spawner");
     BehaviourRegistry::instance().registerType<Animator>("Animator");
+    BehaviourRegistry::instance().registerType<LODGroupBehaviour>("LOD Group");
+    BehaviourRegistry::instance().registerType<ScriptBehaviour>("ScriptBehaviour");
     // NEXRTK (XR Toolkit) interactables / interactors.
     BehaviourRegistry::instance().registerType<XRGrabbable>("XRGrabbable");
     BehaviourRegistry::instance().registerType<XRTouchable>("XRTouchable");
@@ -164,6 +168,10 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
 
 Engine::~Engine() {
     unmountWorld();  // tear down the World (and its physics) before subsystems
+    scene_.reset();
+    sceneOverride_ = nullptr;
+    sceneTree_.reset();
+    RmlUiRuntime::shutdown();
     AudioManager::get().shutdown();
     vkDeviceWaitIdle(device_->device());
     // Subsystems are torn down by their unique_ptr destructors, in reverse
@@ -189,7 +197,7 @@ void Engine::mountWorld() {
 
     // Keep a snapshot to restore the edit doc on Stop, then MOVE the live scene
     // into the World as the current sub-scene — moving (not copying) means a
-    // single set of live resources (no duplicate Ultralight views, audio, etc.).
+    // single set of live resources (no duplicate WebCanvas views, audio, etc.).
     playSnapshot_ = SceneSerializer::nodeToJson(*scene_, *resources_);
     std::unique_ptr<Scene> live = std::move(scene_);
     scene_ = std::make_unique<Scene>();  // placeholder while the doc is "in play"
@@ -260,7 +268,6 @@ void Engine::runDesktop() {
         imgui_->beginFrame();
         if (onFrame_)
             onFrame_(realDt);              // application: its input + UI
-        WebEngine::get().update();         // met à jour Ultralight et ses bitmaps CPU
         activeScene->update(Time::delta());     // behaviours: scaled time (pausable)
 
         // Apply deferred gameplay ops (queueFree, changeScene) once behaviours are

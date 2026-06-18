@@ -1,0 +1,507 @@
+#include "scripting/ScriptBehaviour.hpp"
+
+#include "core/Log.hpp"
+#include "core/Paths.hpp"
+#include "scripting/JsContext.hpp"
+#include "scripting/JsEngineBindings.hpp"
+#include "scripting/JsRuntime.hpp"
+
+#include <nlohmann/json.hpp>
+#include <imgui.h>
+#include <quickjs.h>
+
+#include <array>
+#include <algorithm>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <utility>
+
+namespace ne {
+
+namespace {
+
+constexpr size_t kScriptPathBufferSize = 512;
+constexpr size_t kStringPropertyBufferSize = 512;
+constexpr float kHotReloadCheckIntervalSeconds = 0.5f;
+
+class JsModuleDependencyCapture {
+public:
+    explicit JsModuleDependencyCapture(std::vector<std::string>& dependencies) {
+        JsRuntime::instance().beginModuleDependencyCapture(dependencies);
+    }
+
+    ~JsModuleDependencyCapture() {
+        JsRuntime::instance().endModuleDependencyCapture();
+    }
+
+    JsModuleDependencyCapture(const JsModuleDependencyCapture&) = delete;
+    JsModuleDependencyCapture& operator=(const JsModuleDependencyCapture&) = delete;
+};
+
+ScriptBehaviour* scriptBehaviourFromJs(JSContext* ctx) {
+    return dynamic_cast<ScriptBehaviour*>(static_cast<Behaviour*>(JS_GetContextOpaque(ctx)));
+}
+
+JSValue jsExportProperty(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* behaviour = scriptBehaviourFromJs(ctx);
+    if (!behaviour || argc < 2) return JS_NewBool(ctx, false);
+
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name || name[0] == '\0') {
+        JS_FreeCString(ctx, name);
+        return JS_NewBool(ctx, false);
+    }
+
+    bool ok = true;
+    if (JS_IsBool(argv[1])) {
+        int value = JS_ToBool(ctx, argv[1]);
+        if (value < 0) ok = false;
+        else behaviour->exportBoolProperty(name, value != 0);
+    } else if (JS_IsNumber(argv[1])) {
+        double value = 0.0;
+        ok = JS_ToFloat64(ctx, &value, argv[1]) == 0;
+        if (ok) behaviour->exportNumberProperty(name, value);
+    } else if (JS_IsString(argv[1])) {
+        const char* value = JS_ToCString(ctx, argv[1]);
+        ok = value != nullptr;
+        if (ok) behaviour->exportStringProperty(name, value);
+        JS_FreeCString(ctx, value);
+    } else {
+        Log::warn("ScriptBehaviour: exportProperty supports number, boolean and string only");
+        ok = false;
+    }
+
+    JS_FreeCString(ctx, name);
+    return JS_NewBool(ctx, ok);
+}
+
+JSValue propertyToJs(JSContext* ctx, const ScriptProperty& property) {
+    switch (property.type) {
+    case ScriptProperty::Type::Number:
+        return JS_NewFloat64(ctx, std::get<double>(property.value));
+    case ScriptProperty::Type::Boolean:
+        return JS_NewBool(ctx, std::get<bool>(property.value));
+    case ScriptProperty::Type::String:
+        return JS_NewString(ctx, std::get<std::string>(property.value).c_str());
+    }
+    return JS_UNDEFINED;
+}
+
+} // namespace
+
+ScriptBehaviour::~ScriptBehaviour() = default;
+
+void ScriptBehaviour::setScriptPath(std::string path) {
+    scriptPath_ = std::move(path);
+    loaded_ = false;
+    scriptWatcher_.clear();
+    moduleWatchers_.clear();
+}
+
+bool ScriptBehaviour::reload() {
+    bool ok = reloadContext(started_);
+    if (ok && started_ && context_) {
+        callHook("onReady");
+    }
+    return ok;
+}
+
+bool ScriptBehaviour::reloadContext(bool lifecycleReload) {
+    auto previousContext = std::move(context_);
+    bool previousLoaded = loaded_;
+    bool previousModuleMode = moduleMode_;
+    WatchedFile previousWatcher = scriptWatcher_;
+    auto previousProperties = properties_;
+    auto previousModuleWatchers = moduleWatchers_;
+
+    std::string path = resolveScriptPath();
+    if (path.empty()) {
+        Log::warn("ScriptBehaviour: no script path set");
+        context_ = std::move(previousContext);
+        loaded_ = previousLoaded;
+        moduleMode_ = previousModuleMode;
+        scriptWatcher_ = previousWatcher;
+        moduleWatchers_ = std::move(previousModuleWatchers);
+        return false;
+    }
+
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        Log::error("ScriptBehaviour: cannot open script: ", path);
+        context_ = std::move(previousContext);
+        loaded_ = previousLoaded;
+        moduleMode_ = previousModuleMode;
+        scriptWatcher_ = previousWatcher;
+        moduleWatchers_ = std::move(previousModuleWatchers);
+        return false;
+    }
+
+    std::stringstream ss;
+    ss << file.rdbuf();
+
+    preparePropertyReload();
+    context_ = JsRuntime::instance().createContext();
+    JsEngineBindings::installForBehaviour(*context_, *this);
+    installScriptApi();
+    applyAllPropertiesToJs();
+    moduleMode_ = shouldLoadAsModule(path);
+    std::vector<std::string> moduleDependencies;
+    if (moduleMode_) {
+        JsModuleDependencyCapture capture(moduleDependencies);
+        loaded_ = context_->evalModule(ss.str(), path);
+    } else {
+        loaded_ = context_->eval(ss.str(), path);
+    }
+    if (!loaded_) {
+        context_ = std::move(previousContext);
+        properties_ = std::move(previousProperties);
+        loaded_ = previousLoaded;
+        moduleMode_ = previousModuleMode;
+        scriptWatcher_ = previousWatcher;
+        moduleWatchers_ = std::move(previousModuleWatchers);
+        return false;
+    }
+
+    if (lifecycleReload && previousContext) {
+        if (previousModuleMode) previousContext->callModuleExport("onDestroy");
+        else previousContext->callGlobal("onDestroy");
+    }
+
+    pruneUnexportedProperties();
+    applyAllPropertiesToJs();
+    updateScriptWatchers(path, moduleDependencies);
+    return true;
+}
+
+void ScriptBehaviour::exportNumberProperty(const std::string& name, double defaultValue) {
+    if (auto* property = findProperty(name)) {
+        property->exportedThisLoad = true;
+        if (property->type != ScriptProperty::Type::Number) {
+            setPropertyValue(*property, defaultValue);
+        }
+        applyPropertyToJs(*property);
+        return;
+    }
+
+    ScriptProperty property;
+    property.name = name;
+    property.type = ScriptProperty::Type::Number;
+    property.value = defaultValue;
+    property.exportedThisLoad = true;
+    properties_.push_back(std::move(property));
+    applyPropertyToJs(properties_.back());
+}
+
+void ScriptBehaviour::exportBoolProperty(const std::string& name, bool defaultValue) {
+    if (auto* property = findProperty(name)) {
+        property->exportedThisLoad = true;
+        if (property->type != ScriptProperty::Type::Boolean) {
+            setPropertyValue(*property, defaultValue);
+        }
+        applyPropertyToJs(*property);
+        return;
+    }
+
+    ScriptProperty property;
+    property.name = name;
+    property.type = ScriptProperty::Type::Boolean;
+    property.value = defaultValue;
+    property.exportedThisLoad = true;
+    properties_.push_back(std::move(property));
+    applyPropertyToJs(properties_.back());
+}
+
+void ScriptBehaviour::exportStringProperty(const std::string& name, const std::string& defaultValue) {
+    if (auto* property = findProperty(name)) {
+        property->exportedThisLoad = true;
+        if (property->type != ScriptProperty::Type::String) {
+            setPropertyValue(*property, defaultValue);
+        }
+        applyPropertyToJs(*property);
+        return;
+    }
+
+    ScriptProperty property;
+    property.name = name;
+    property.type = ScriptProperty::Type::String;
+    property.value = defaultValue;
+    property.exportedThisLoad = true;
+    properties_.push_back(std::move(property));
+    applyPropertyToJs(properties_.back());
+}
+
+void ScriptBehaviour::onReady() {
+    if (!loaded_ && !reloadContext(false)) return;
+    callHook("onReady");
+    started_ = true;
+}
+
+void ScriptBehaviour::onUpdate(float dt) {
+    checkHotReload(dt);
+    callHook("onUpdate", dt);
+}
+
+void ScriptBehaviour::onDestroy() {
+    callHook("onDestroy");
+    context_.reset();
+    loaded_ = false;
+    started_ = false;
+}
+
+void ScriptBehaviour::onEnable() {
+    callHook("onEnable");
+}
+
+void ScriptBehaviour::onDisable() {
+    callHook("onDisable");
+}
+
+void ScriptBehaviour::onDrawInspector() {
+    std::array<char, kScriptPathBufferSize> buffer{};
+    std::strncpy(buffer.data(), scriptPath_.c_str(), buffer.size() - 1);
+    if (ImGui::InputText("Script", buffer.data(), buffer.size())) {
+        setScriptPath(buffer.data());
+    }
+    if (ImGui::Button("Reload")) {
+        reload();
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled(loaded_ ? "Loaded" : "Not loaded");
+    ImGui::Checkbox("Hot Reload", &hotReloadEnabled_);
+    drawPropertiesInspector();
+}
+
+void ScriptBehaviour::save(nlohmann::json& j) const {
+    j["script"] = scriptPath_;
+    j["hotReload"] = hotReloadEnabled_;
+    nlohmann::json props = nlohmann::json::object();
+    for (const auto& property : properties_) {
+        switch (property.type) {
+        case ScriptProperty::Type::Number:
+            props[property.name] = std::get<double>(property.value);
+            break;
+        case ScriptProperty::Type::Boolean:
+            props[property.name] = std::get<bool>(property.value);
+            break;
+        case ScriptProperty::Type::String:
+            props[property.name] = std::get<std::string>(property.value);
+            break;
+        }
+    }
+    j["properties"] = std::move(props);
+}
+
+void ScriptBehaviour::load(const nlohmann::json& j) {
+    scriptPath_ = j.value("script", "");
+    hotReloadEnabled_ = j.value("hotReload", true);
+    properties_.clear();
+    if (!j.contains("properties") || !j["properties"].is_object()) return;
+
+    for (auto it = j["properties"].begin(); it != j["properties"].end(); ++it) {
+        ScriptProperty property;
+        property.name = it.key();
+        if (it.value().is_boolean()) {
+            property.type = ScriptProperty::Type::Boolean;
+            property.value = it.value().get<bool>();
+        } else if (it.value().is_number()) {
+            property.type = ScriptProperty::Type::Number;
+            property.value = it.value().get<double>();
+        } else if (it.value().is_string()) {
+            property.type = ScriptProperty::Type::String;
+            property.value = it.value().get<std::string>();
+        } else {
+            continue;
+        }
+        properties_.push_back(std::move(property));
+    }
+}
+
+std::string ScriptBehaviour::resolveScriptPath() const {
+    if (scriptPath_.empty()) return {};
+
+    std::filesystem::path p(scriptPath_);
+    if (p.is_absolute() && std::filesystem::exists(p)) return p.string();
+
+    std::filesystem::path cwdRelative = std::filesystem::current_path() / p;
+    if (std::filesystem::exists(cwdRelative)) return cwdRelative.string();
+
+    std::filesystem::path rootRelative = assetPath(scriptPath_);
+    if (std::filesystem::exists(rootRelative)) return rootRelative.string();
+
+    return p.string();
+}
+
+bool ScriptBehaviour::shouldLoadAsModule(const std::string& resolvedPath) const {
+    std::filesystem::path path(resolvedPath);
+    return path.extension() == ".mjs";
+}
+
+bool ScriptBehaviour::callHook(const char* functionName) {
+    if (!context_) return true;
+    return moduleMode_ ? context_->callModuleExport(functionName) : context_->callGlobal(functionName);
+}
+
+bool ScriptBehaviour::callHook(const char* functionName, double arg) {
+    if (!context_) return true;
+    return moduleMode_ ? context_->callModuleExport(functionName, arg) : context_->callGlobal(functionName, arg);
+}
+
+void ScriptBehaviour::updateScriptWatchers(const std::string& resolvedPath, const std::vector<std::string>& moduleDependencies) {
+    scriptWatcher_.watch(resolvedPath);
+    moduleWatchers_.clear();
+    moduleWatchers_.reserve(moduleDependencies.size());
+    for (const auto& dependency : moduleDependencies) {
+        if (dependency == resolvedPath) continue;
+        WatchedFile watcher;
+        if (watcher.watch(dependency)) {
+            moduleWatchers_.push_back(std::move(watcher));
+        }
+    }
+}
+
+bool ScriptBehaviour::scriptFilesChanged() {
+    if (!scriptWatcher_.active()) {
+        std::string path = resolveScriptPath();
+        if (!path.empty()) scriptWatcher_.watch(path);
+        return false;
+    }
+
+    if (scriptWatcher_.pollChanged()) return true;
+    for (auto& watcher : moduleWatchers_) {
+        if (watcher.pollChanged()) return true;
+    }
+    return false;
+}
+
+void ScriptBehaviour::checkHotReload(float dt) {
+    if (!hotReloadEnabled_ || scriptPath_.empty()) return;
+
+    hotReloadTimer_ += dt;
+    if (hotReloadTimer_ < kHotReloadCheckIntervalSeconds) return;
+    hotReloadTimer_ = 0.0f;
+
+    if (scriptFilesChanged()) {
+        Log::info("ScriptBehaviour: hot reload ", scriptPath_);
+        if (!reload()) {
+            Log::warn("ScriptBehaviour: keeping previous script after reload failure");
+        }
+    }
+}
+
+void ScriptBehaviour::installScriptApi() {
+    if (!context_) return;
+
+    JSContext* ctx = context_->raw();
+    JSValue global = JS_GetGlobalObject(ctx);
+    JS_SetPropertyStr(ctx, global, "exportProperty", JS_NewCFunction(ctx, jsExportProperty, "exportProperty", 2));
+    JS_FreeValue(ctx, global);
+}
+
+void ScriptBehaviour::preparePropertyReload() {
+    for (auto& property : properties_) {
+        property.exportedThisLoad = false;
+    }
+}
+
+void ScriptBehaviour::pruneUnexportedProperties() {
+    properties_.erase(
+        std::remove_if(properties_.begin(), properties_.end(), [](const ScriptProperty& property) {
+            return !property.exportedThisLoad;
+        }),
+        properties_.end());
+}
+
+void ScriptBehaviour::applyAllPropertiesToJs() {
+    if (!context_) return;
+    for (const auto& property : properties_) {
+        applyPropertyToJs(property);
+    }
+}
+
+void ScriptBehaviour::applyPropertyToJs(const ScriptProperty& property) {
+    if (!context_) return;
+
+    JSContext* ctx = context_->raw();
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue props = JS_GetPropertyStr(ctx, global, "props");
+    if (!JS_IsObject(props)) {
+        JS_FreeValue(ctx, props);
+        props = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, global, "props", JS_DupValue(ctx, props));
+    }
+
+    JS_SetPropertyStr(ctx, props, property.name.c_str(), propertyToJs(ctx, property));
+    JS_FreeValue(ctx, props);
+    JS_FreeValue(ctx, global);
+}
+
+ScriptProperty* ScriptBehaviour::findProperty(const std::string& name) {
+    for (auto& property : properties_) {
+        if (property.name == name) return &property;
+    }
+    return nullptr;
+}
+
+const ScriptProperty* ScriptBehaviour::findProperty(const std::string& name) const {
+    for (const auto& property : properties_) {
+        if (property.name == name) return &property;
+    }
+    return nullptr;
+}
+
+void ScriptBehaviour::setPropertyValue(ScriptProperty& property, double value) {
+    property.type = ScriptProperty::Type::Number;
+    property.value = value;
+}
+
+void ScriptBehaviour::setPropertyValue(ScriptProperty& property, bool value) {
+    property.type = ScriptProperty::Type::Boolean;
+    property.value = value;
+}
+
+void ScriptBehaviour::setPropertyValue(ScriptProperty& property, const std::string& value) {
+    property.type = ScriptProperty::Type::String;
+    property.value = value;
+}
+
+void ScriptBehaviour::drawPropertiesInspector() {
+    if (properties_.empty()) return;
+
+    if (ImGui::CollapsingHeader("Script Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
+        for (auto& property : properties_) {
+            ImGui::PushID(property.name.c_str());
+            bool changed = false;
+
+            switch (property.type) {
+            case ScriptProperty::Type::Number: {
+                double value = std::get<double>(property.value);
+                changed = ImGui::InputDouble(property.name.c_str(), &value);
+                if (changed) property.value = value;
+                break;
+            }
+            case ScriptProperty::Type::Boolean: {
+                bool value = std::get<bool>(property.value);
+                changed = ImGui::Checkbox(property.name.c_str(), &value);
+                if (changed) property.value = value;
+                break;
+            }
+            case ScriptProperty::Type::String: {
+                std::array<char, kStringPropertyBufferSize> buffer{};
+                std::strncpy(buffer.data(), std::get<std::string>(property.value).c_str(), buffer.size() - 1);
+                changed = ImGui::InputText(property.name.c_str(), buffer.data(), buffer.size());
+                if (changed) property.value = std::string(buffer.data());
+                break;
+            }
+            }
+
+            if (changed) {
+                applyPropertyToJs(property);
+            }
+            ImGui::PopID();
+        }
+    }
+}
+
+} // namespace ne

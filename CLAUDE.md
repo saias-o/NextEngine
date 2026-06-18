@@ -46,6 +46,12 @@ et règle les lumières en direct. Le bugatti reste chargeable via
 - **VulkanMemoryAllocator (VMA)** v3.1.0 — header unique *vendu* dans
   `third_party/vma/vk_mem_alloc.h` (committé volontairement pour rester
   reproductible sans réseau ; ne pas supprimer).
+- **Scripting/UI cible : QuickJS + RmlUi.** Décision active : QuickJS devient
+  l'unique runtime JavaScript du moteur (gameplay, autoloads, outils, UI web) ;
+  RmlUi remplace Ultralight pour le rendu HTML/CSS léger en Screen Space et
+  World Space. L'ancienne intégration Ultralight/JavaScriptCore/WebCore/AppCore
+  est supprimée du build et de `third_party` ; aucune nouvelle fonctionnalité ne
+  doit être construite dessus.
 - Build : **CMake + Ninja**. Shaders compilés en SPIR-V par **glslc** (Vulkan SDK).
 - Toolchain de dev : **MSYS2 ucrt64 / GCC**.
 
@@ -311,7 +317,7 @@ Le moteur est construit par étapes numérotées :
             - **SceneTree + World persistant** (`scene/SceneTree`) : au Play, le
               moteur monte un World qui porte autoloads + sous-scène courante. La
               scène d'édition vivante est **déplacée** (pas copiée — sinon les
-              ressources live type WebCanvas/Ultralight se dupliquent et crashent)
+              ressources live type WebCanvas se dupliquent et crashent)
               dans le World ; à l'arrêt elle est reconstruite depuis un snapshot.
               `changeScene`/`queueFree` **différés** (après l'update, `Engine::run`).
               `Node::tree()`, flag `SceneSettings::changeRenderingAtLoad`.
@@ -332,11 +338,40 @@ Le moteur est construit par étapes numérotées :
             - **Cycle de vie** : `Behaviour::onDestroy/onEnable/onDisable`.
             - **`SpawnerBehaviour`** (démo réutilisable, enregistrée) : spawn une
               scène sur timer + lifetime/`queueFree`.
-      - [ ] *À faire (couche jeu)* : scripting Lua (Étape 8b), runtime standalone
-            sans éditeur (Étape 15).
-- [ ] **Étape 8b — Scripting (Lua).** Voir « Décision scripting » ci-dessous.
-      Différé : à faire une fois l'API moteur stable (après `Material`/
-      `ResourceManager`), pour exposer une API propre aux scripts.
+      - [ ] *À faire (couche jeu)* : runtime standalone sans éditeur (Étape 15).
+- [x] **Étape 8b — Scripting JavaScript (QuickJS).** Voir « Décision scripting »
+      ci-dessous. Objectif : un seul runtime JS léger et complet pour NextEngine :
+      `ScriptBehaviour`, autoloads JS, bindings moteur, hot-reload, inspector et
+      console/outils éditeur.
+      - [x] **Fondation QuickJS vendue et compilée** : `third_party/quickjs`,
+            target statique `quickjs`, `src/scripting/JsRuntime` + `JsContext`
+            (console, eval, erreurs avec stack, pending jobs).
+      - [x] **`ScriptBehaviour` MVP** : behaviour sérialisable, visible dans
+            l'inspector, champ `script`, bouton reload, hooks globaux
+            `onReady/onUpdate/onDestroy/onEnable/onDisable`.
+      - [x] **Bindings moteur de base** : `node` (`get/setName`,
+            `get/setPosition`, `translate`, `setEnabled`, `queueFree`, groupes)
+            `time` (`delta`, `elapsed`) et `input` action-based (`isHeld`,
+            `justPressed`, `justReleased`, `strength`, `axis`, `vector`,
+            `mousePosition`, `mouseDelta`) exposés aux `ScriptBehaviour`.
+      - [x] **Binding `tree` runtime** : `changeScene`, `reloadScene`, `quit`,
+            `setPaused`, `paused`, en respectant le modèle `SceneTree` existant.
+      - [x] **Propriétés JS inspectables** : un script peut déclarer
+            `exportProperty("speed", 3.0)` puis lire `props.speed`. Types
+            supportés : number, boolean, string. Les valeurs sont éditables dans
+            l'inspector, sérialisées en scène et réinjectées au reload.
+      - [x] **Hot-reload JS transactionnel** : les `ScriptBehaviour` surveillent
+            leur fichier, rechargent automatiquement le contexte QuickJS et
+            conservent l'ancien contexte si le nouveau script ne compile pas.
+            Le bouton Reload utilise le même chemin. En Play, un reload réussi
+            appelle proprement `onDestroy` sur l'ancien script puis `onReady`
+            sur le nouveau.
+      - [x] **Modules ES** : les `.mjs` sont évalués en module QuickJS, les hooks
+            sont des exports (`export function onUpdate(dt) {}`), les imports
+            relatifs (`./foo.mjs`) sont résolus depuis le fichier courant avec
+            fallback projet, et les modules importés participent au hot-reload.
+      - *Futurs bindings spécialisés* : physics/audio/UI/signaux peuvent être
+        ajoutés au même pont natif quand un gameplay concret le demande.
 - [x] **Étape 9 — Rendu global / GI pragmatique.** Validé jusqu'à nouvel ordre :
       l'objectif actif n'est plus d'empiler Radiance Cascades / World Cache /
       froxels, mais de garder un rendu moderne, léger, optimisé VR/mobile et
@@ -415,9 +450,36 @@ Le moteur est construit par étapes numérotées :
       - **Étape 11 terminée.** *Restes hors-périmètre/futurs* : vérification
             visuelle en éditeur (test manuel) ; *Note perf* : build sans
             `CMAKE_BUILD_TYPE` → Jolt non optimisé ; passer en Release pour la perf.
-- [x] **Étape 12 — UI 2D (Screen & World Space).** Système d'interface utilisateur complet :
-      - Canvas 2D en Screen space (overlay classique) et en World space (panneaux interactifs dans l'espace 3D, essentiels pour la VR/XR).
-      - Intégration et compatibilité HTML/CSS/JS (via Ultralight, Webview ou équivalent) pour le design d'UI avec des technos web standard.
+- [~] **Étape 12 — UI 2D (Screen & World Space).** Migration active vers une UI
+      web légère et libre : **RmlUi + QuickJS**, sans Ultralight.
+      - Canvas 2D en Screen Space (overlay classique) et World Space (panneaux
+        interactifs dans l'espace 3D, essentiels pour la VR/XR).
+      - HTML/CSS/JS côté moteur via RmlUi pour le DOM/layout/style et QuickJS
+        comme runtime JS unique. Le but n'est pas d'intégrer un navigateur
+        complet, mais une Web UI de jeu stable, légère, multiplateforme et
+        LLM-friendly.
+      - [x] Ultralight/JavaScriptCore/WebCore/AppCore supprimés du CMake, des
+            sources, du dossier `third_party` et des artefacts de build.
+      - [x] `third_party/rmlui` + `third_party/freetype` vendus et compilés en
+            statique.
+      - [x] `WebCanvasNode` ne dépend plus d'Ultralight, crée un contexte RmlUi,
+            charge RML depuis mémoire/fichier, exécute son JS via QuickJS et
+            expose un DOM minimal (`document.setText/setHTML/reload`).
+      - [x] Input souris/scroll routé vers le contexte RmlUi.
+      - [x] **Rendu WebCanvas réel vers texture** : backend RmlUi CPU
+            déterministe (`RmlUiRenderInterface`) qui rasterize les triangles
+            RmlUi en RGBA, dirty-only, puis upload via staging buffer persistant
+            dans la texture du `WebCanvasNode`. Ce chemin est léger, portable et
+            garantit le même rendu sur desktop/mobile/VR.
+      - [x] **Hot-reload WebCanvas transactionnel** : les documents `.rml/.html`
+            chargés par URL/fichier et les dépendances réellement ouvertes par
+            RmlUi (`.rcss`, imports, textures chargées au rendu) sont surveillés
+            via `WatchedFile`. Si un fichier change, le nouveau document RmlUi
+            est chargé avant de remplacer l'ancien ; en cas d'erreur, l'ancienne
+            UI reste affichée. Les URLs `file:///...` sont normalisées pour
+            l'interface fichier.
+      - [ ] Optimisation future optionnelle : backend GPU/Vulkan pour très gros
+            documents animés, sans changer l'API `WebCanvasNode`.
 - [ ] **Étape 13 — Intégration LLM Native.** Support natif d'intelligence artificielle agentique dans le moteur :
       - World model (compréhension et représentation de l'état du monde par l'IA).
       - Protocole MCP (Model Context Protocol) pour connecter des outils.
@@ -515,21 +577,42 @@ Quand une étape est finie : cocher ici et compiler pour vérifier.
 
 Note : l'ensemble des étapes vise à construire un unique pipeline de rendu universel et partagé (Desktop et XR). L'intégration XR (Étape 14) doit réutiliser l'intégralité du pipeline de scène et n'avoir de différent que la présentation (swapchain OpenXR). Toutes les étapes intermédiaires doivent être conçues sous cette contrainte d'unification (comme Godot et Unity).
 
-## Décision scripting (prise, différée)
+## Décision scripting (prise, à implémenter)
 
-Comment les développeurs écriront la logique de jeu. **Décidé, pas encore
-implémenté** (ne pas re-débattre) :
+Comment les développeurs écriront la logique de jeu et l'UI dynamique.
+**Décidé** : NextEngine utilise **JavaScript via QuickJS** comme unique langage
+de scripting moteur.
 
-- **Logique de jeu en C++ `Behaviour`** (déjà en place) pour le moteur et le
-  perf-critique, **+ scripts Lua** pour la logique itérée. Les deux se branchent
-  sur le même point de couture : un futur `ScriptBehaviour : Behaviour` qui
-  délègue `onReady`/`onUpdate` à des fonctions Lua.
-- **Pourquoi Lua** : contrainte clé = *ne pas recompiler/relier le moteur à
-  chaque évolution d'un script*. Lua est **vendu en source C compilée dans le
-  moteur** (zéro DLL, zéro lien dynamique) ; les scripts sont du **texte** →
-  changement = aucun recompile, aucun link, **hot-reload** sans redémarrage
-  (file-watcher). Binding via **sol2** (header-only). L'état du jeu reste
-  possédé côté moteur (survit au reload).
+- **Logique de jeu en C++ `Behaviour`** pour le moteur, les systèmes bas niveau
+  et le perf-critique, **+ `ScriptBehaviour` JavaScript** pour la logique itérée,
+  les prototypes, les comportements générés par LLM, les autoloads de gameplay
+  et les outils éditeur.
+- **QuickJS est le seul runtime JS du moteur.** Il sert aux behaviours JS, aux
+  autoloads JS, à la console/outillage et au JS de l'UI web. Ne pas introduire
+  un second moteur JS ou une dépendance de type navigateur complet.
+- **UI web cible : RmlUi + QuickJS.** RmlUi fournit le rendu/layout HTML-CSS
+  léger ; QuickJS exécute le JS d'UI et expose un DOM minimal adapté aux jeux
+  (`document`, `querySelector`, events, `classList`, `style`, `textContent`,
+  etc.). L'ancien chemin Ultralight/JavaScriptCore/WebCore/AppCore doit être
+  supprimé complètement.
+- **Pourquoi QuickJS** : runtime C léger, vendable en source, sans JIT, sans DLL
+  propriétaire, compatible build statique, suffisamment complet pour ES moderne
+  (modules, classes, async/pending jobs) et beaucoup plus naturel pour du code
+  généré par LLM qu'un langage de scripting spécialisé.
+- **Contrat d'architecture inchangé** : les scripts JS suivent les mêmes règles
+  que les behaviours C++ : logique attachée à des nodes, composition, signaux,
+  autoloads pour l'état persistant, groupes/requêtes scopées, pas de recherche
+  globale par nom, pas de singleton gameplay.
+- **Sécurité obligatoire** : les scripts manipulent des handles de nodes sûrs
+  (id/génération), pas des `Node*` bruts ; les callbacks sont déconnectés à la
+  destruction ; le runtime impose limites mémoire/stack et interrupt handler
+  pour éviter qu'une boucle JS bloque le moteur.
+- **Hot-reload texte** : modifier un `.js`, `.mjs`, `.html/.rml` ou `.css` ne doit pas
+  nécessiter de recompiler. Les `ScriptBehaviour` sont déjà hot-reloadés de
+  manière transactionnelle : un script invalide ne casse pas le contexte live.
+  Les `WebCanvasNode` hot-reloadent aussi leur document principal `.rml/.html`
+  et les dépendances RmlUi réellement ouvertes, sans casser l'UI affichée en cas
+  d'erreur. Les imports relatifs des modules JS participent aussi au hot-reload.
 - **Pourquoi PAS un hot-reload DLL natif C++** : il impose le **linkage
   dynamique de libstdc++**, ce qui réveille le bug `ld` (exit 116) de cette
   toolchain MSYS2 qu'on contourne avec `-static` (cf. « Pièges connus »). Trop
@@ -538,10 +621,12 @@ implémenté** (ne pas re-débattre) :
   effort disproportionné qui dépasserait la taille du moteur ; contredit
   l'objectif « léger ».
 
-Implémentation prévue : vendre Lua + sol2, `ScriptBehaviour`, file-watcher de
-hot-reload, et exposer une API de binding (`Node`/`Transform`/`Input`/…). À
-caler en **étape 8b**, après que `Material`/`ResourceManager` aient stabilisé
-l'API moteur.
+Implémentation **terminée pour la fondation Étape 8b + migration Étape 12** :
+QuickJS, RmlUi/freetype et la suppression complète d'Ultralight sont en place.
+Les `ScriptBehaviour` supportent scripts classiques, modules ES `.mjs`, imports
+relatifs, propriétés exportées inspectables/sérialisées, bindings moteur de base
+et hot-reload transactionnel. Les `WebCanvasNode` ont un DOM minimal, un rendu
+réel vers texture et un hot-reload transactionnel des documents/dépendances RmlUi.
 
 ## Pièges connus / environnement
 

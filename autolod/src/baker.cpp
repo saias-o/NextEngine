@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -41,11 +42,22 @@ struct SrcImage {
     int w = 0, h = 0, ch = 0;
     unsigned char* data = nullptr;
     bool valid() const { return data && w > 0 && h > 0; }
+    SrcImage() = default;
     ~SrcImage() { if (data) stbi_image_free(data); }
+    SrcImage(const SrcImage&) = delete;
+    SrcImage& operator=(const SrcImage&) = delete;
+    SrcImage(SrcImage&& o) noexcept { *this = std::move(o); }
+    SrcImage& operator=(SrcImage&& o) noexcept {
+        if (this != &o) { if (data) stbi_image_free(data);
+            w=o.w; h=o.h; ch=o.ch; data=o.data; o.data=nullptr; }
+        return *this;
+    }
+    void load(const unsigned char* png, size_t size) {
+        if (png && size) data = stbi_load_from_memory(png, (int)size, &w, &h, &ch, 0);
+    }
 
-    // Echantillonne en tangent-space [-1,1]. UV en convention glTF (origine
-    // haut-gauche, REPEAT). Bilineaire.
-    V3 sample(float u, float v) const {
+    // Echantillonne en RGB brut [0,1]. UV glTF (origine haut-gauche, REPEAT). Bilineaire.
+    V3 sampleColor(float u, float v) const {
         u = fract(u); v = fract(v);
         const float fx = u * w - 0.5f, fy = v * h - 0.5f;
         int x0 = (int)std::floor(fx), y0 = (int)std::floor(fy);
@@ -55,12 +67,15 @@ struct SrcImage {
         x0 = wrap(x0, w); y0 = wrap(y0, h);
         auto texel = [&](int x, int y){
             const unsigned char* p = data + ((size_t)y*w + x)*ch;
-            return V3{ p[0]/255.0f*2-1, p[1]/255.0f*2-1, (ch>=3?p[2]:255)/255.0f*2-1 };
+            return V3{ p[0]/255.0f, (ch>=2?p[1]:p[0])/255.0f, (ch>=3?p[2]:p[0])/255.0f };
         };
         const V3 a = texel(x0,y0), b = texel(x1,y0), c = texel(x0,y1), d = texel(x1,y1);
-        const V3 top = a*(1-tx) + b*tx;
-        const V3 bot = c*(1-tx) + d*tx;
-        return norm(top*(1-ty) + bot*ty);
+        return (a*(1-tx)+b*tx)*(1-ty) + (c*(1-tx)+d*tx)*ty;
+    }
+    // Idem mais decode en normale tangent-space [-1,1] (et renormalise).
+    V3 sampleNormal(float u, float v) const {
+        const V3 c = sampleColor(u, v);
+        return norm(V3{ c.x*2-1, c.y*2-1, c.z*2-1 });
     }
 };
 
@@ -205,11 +220,33 @@ void computeTangents(const float* pos, const float* nrm, const float* uv,
 
 } // namespace
 
+static void encodePng(const std::vector<float>& img, const std::vector<uint8_t>& mask,
+                      int W, int H, MapKind kind, std::vector<unsigned char>& outPng) {
+    std::vector<uint8_t> rgb(static_cast<size_t>(W)*H*3);
+    for (size_t i = 0; i < (size_t)W*H; ++i) {
+        V3 px;
+        if (mask[i]) px = { img[i*3], img[i*3+1], img[i*3+2] };
+        else px = (kind == MapKind::NormalTangent) ? V3{0,0,1} : V3{1,1,1};
+        for (int c = 0; c < 3; ++c) {
+            float v = px.x; if (c==1) v=px.y; else if (c==2) v=px.z;
+            const float enc = (kind == MapKind::NormalTangent) ? (v*0.5f+0.5f) : v;
+            rgb[i*3+c] = (uint8_t)std::clamp((int)std::lround(enc*255.0f), 0, 255);
+        }
+    }
+    outPng.clear();
+    stbi_write_png_to_func(
+        [](void* ctx, void* data, int size){
+            auto* vec = static_cast<std::vector<unsigned char>*>(ctx);
+            const uint8_t* p = static_cast<uint8_t*>(data);
+            vec->insert(vec->end(), p, p+size);
+        }, &outPng, W, H, 3, rgb.data(), W*3);
+}
+
 // --------------------------------------------------------------------------
-bool bakeNormalMap(const BakeHigh& high, const BakeLow& low,
-                   const unsigned char* srcPng, size_t srcPngSize,
-                   int res, float cageScale, BakeResult& out) {
-    if (!low.uv || low.icount < 3 || high.icount < 3) return false;
+bool bakeMaps(const BakeHigh& high, const BakeLow& low,
+              const SrcMap* sources, int nSources,
+              int res, float cageScale, BakeMapsResult& out) {
+    if (!low.uv || low.icount < 3 || high.icount < 3 || nSources <= 0) return false;
     if (res < 4) res = 4;
 
     AABB bb;
@@ -222,32 +259,32 @@ bool bakeNormalMap(const BakeHigh& high, const BakeLow& low,
     bvh.buildFrom(high);
     if (bvh.tris.empty()) return false;
 
-    // Normal map source (optionnelle)
-    SrcImage src;
-    if (srcPng && srcPngSize > 0)
-        src.data = stbi_load_from_memory(srcPng, (int)srcPngSize, &src.w, &src.h, &src.ch, 0);
-    const bool haveMap = src.valid() && high.uv;
-    out.usedSourceMap = haveMap;
+    // Decode des sources
+    std::vector<SrcImage> imgs(nSources);
+    bool anyNormalImg = false;
+    for (int s = 0; s < nSources; ++s) {
+        imgs[s].load(sources[s].png, sources[s].size);
+        if (sources[s].kind == MapKind::NormalTangent && imgs[s].valid() && high.uv)
+            anyNormalImg = true;
+    }
 
-    // Tangentes : LOW (toujours) et HIGH (si on composite la map source)
+    // Tangentes : LOW (toujours), HIGH (si une normal map detail est compositee)
     computeTangents(low.pos, low.nrm, low.uv, low.vcount, low.idx, low.icount, out.tangents);
     std::vector<float> hTan;
-    if (haveMap)
+    if (anyNormalImg)
         computeTangents(high.pos, high.nrm, high.uv, high.vcount, high.idx, high.icount, hTan);
 
     const int W = res, H = res;
-    std::vector<float>   img(static_cast<size_t>(W)*H*3, 0.0f);
-    std::vector<uint8_t> mask(static_cast<size_t>(W)*H, 0);
+    std::vector<std::vector<float>> chan(nSources, std::vector<float>((size_t)W*H*3, 0.0f));
+    std::vector<uint8_t> mask((size_t)W*H, 0);
     out.texelsHit = 0; out.texelsTotal = 0;
 
     for (size_t i = 0; i+2 < low.icount; i += 3) {
         const unsigned int a=low.idx[i], b=low.idx[i+1], c=low.idx[i+2];
         float au=low.uv[a*2],av=low.uv[a*2+1],bu=low.uv[b*2],bv=low.uv[b*2+1],cu=low.uv[c*2],cv=low.uv[c*2+1];
-        // UV hors [0,1] (REPEAT) : ramene le triangle dans la tuile [0,1].
         const float offU = std::floor(std::min({au,bu,cu}));
         const float offV = std::floor(std::min({av,bv,cv}));
         au-=offU;bu-=offU;cu-=offU; av-=offV;bv-=offV;cv-=offV;
-        // Convention glTF : origine texture en haut-gauche -> pas de flip V.
         const float ax=au*W, ay=av*H, bx=bu*W, by=bv*H, cx=cu*W, cy=cv*H;
 
         int minX=std::max(0,(int)std::floor(std::min({ax,bx,cx})));
@@ -287,94 +324,97 @@ bool bakeNormalMap(const BakeHigh& high, const BakeLow& low,
             ++out.texelsTotal;
             const size_t texel = (size_t)y*W + x;
 
-            V3 objN = N; // fallback : surface plate du LOW
+            // UV bas-poly interpole (fallback de sampling)
+            const float lu = low.uv[a*2]*l0 + low.uv[b*2]*l1 + low.uv[c*2]*l2;
+            const float lv = low.uv[a*2+1]*l0 + low.uv[b*2+1]*l1 + low.uv[c*2+1]*l2;
+
             const int hit = closestHit(bvh, o, d, cage*2.0f, t, u, v);
-            // Rejette les hits dont la surface fait face a l'oppose (mauvaise
-            // intersection sur une feature fine) -> evite les texels satures.
             bool goodHit = false;
-            V3 Nh{0,0,1};
+            V3 Nh{0,0,1}, Th{1,0,0}, Bh{0,1,0};
+            float hu = lu, hv = lv;
             if (hit >= 0) {
-                const Tri& tr0 = bvh.tris[hit];
-                const float w0=1-u-v, w1=u, w2=v;
-                Nh = norm(getV3(high.nrm,tr0.i0)*w0 + getV3(high.nrm,tr0.i1)*w1 + getV3(high.nrm,tr0.i2)*w2);
-                goodHit = dot(Nh, N) > 0.173f; // < ~80deg d'ecart
-            }
-            if (goodHit) {
                 const Tri& tr = bvh.tris[hit];
                 const float w0=1-u-v, w1=u, w2=v;
-                if (haveMap) {
-                    // Detail tangent-space de la map source @ UV haute-poly interpole
-                    const float hu = high.uv[tr.i0*2]*w0 + high.uv[tr.i1*2]*w1 + high.uv[tr.i2*2]*w2;
-                    const float hv = high.uv[tr.i0*2+1]*w0 + high.uv[tr.i1*2+1]*w1 + high.uv[tr.i2*2+1]*w2;
-                    const V3 det = src.sample(hu, hv);
-                    // Base tangente haute-poly au point touche
-                    const V3 Th0={hTan[tr.i0*4],hTan[tr.i0*4+1],hTan[tr.i0*4+2]};
-                    const V3 Th1={hTan[tr.i1*4],hTan[tr.i1*4+1],hTan[tr.i1*4+2]};
-                    const V3 Th2={hTan[tr.i2*4],hTan[tr.i2*4+1],hTan[tr.i2*4+2]};
-                    V3 Th = Th0*w0+Th1*w1+Th2*w2;
-                    Th = norm(Th - Nh*dot(Nh,Th));
-                    const V3 Bh = cross(Nh,Th) * hTan[tr.i0*4+3];
-                    // Detail -> espace objet (normale monde reelle du LOD0 detaille)
-                    objN = norm(Th*det.x + Bh*det.y + Nh*det.z);
-                } else {
-                    objN = Nh; // bake geometrique seul
+                Nh = norm(getV3(high.nrm,tr.i0)*w0 + getV3(high.nrm,tr.i1)*w1 + getV3(high.nrm,tr.i2)*w2);
+                goodHit = dot(Nh, N) > 0.173f;
+                if (goodHit) {
+                    hu = high.uv[tr.i0*2]*w0 + high.uv[tr.i1*2]*w1 + high.uv[tr.i2*2]*w2;
+                    hv = high.uv[tr.i0*2+1]*w0 + high.uv[tr.i1*2+1]*w1 + high.uv[tr.i2*2+1]*w2;
+                    if (anyNormalImg) {
+                        const V3 T0={hTan[tr.i0*4],hTan[tr.i0*4+1],hTan[tr.i0*4+2]};
+                        const V3 T1={hTan[tr.i1*4],hTan[tr.i1*4+1],hTan[tr.i1*4+2]};
+                        const V3 T2={hTan[tr.i2*4],hTan[tr.i2*4+1],hTan[tr.i2*4+2]};
+                        Th = norm((T0*w0+T1*w1+T2*w2) - Nh*dot(Nh, T0*w0+T1*w1+T2*w2));
+                        Bh = cross(Nh,Th) * hTan[tr.i0*4+3];
+                    }
                 }
-                ++out.texelsHit;
-            } else if (haveMap) {
-                // Pas de bon hit geometrique : on conserve le detail de la map
-                // source dans la base du LOW (revient a garder la normal map d'origine).
-                const float lu = low.uv[a*2]*l0 + low.uv[b*2]*l1 + low.uv[c*2]*l2;
-                const float lv = low.uv[a*2+1]*l0 + low.uv[b*2+1]*l1 + low.uv[c*2+1]*l2;
-                const V3 det = src.sample(lu, lv);
-                objN = norm(T*det.x + B*det.y + N*det.z);
             }
+            if (goodHit) ++out.texelsHit;
 
-            // Re-projection dans la base tangente du LOW
-            V3 nt = norm(V3{ dot(objN,T), dot(objN,B), dot(objN,N) });
-            img[texel*3+0]=nt.x; img[texel*3+1]=nt.y; img[texel*3+2]=nt.z;
+            for (int s = 0; s < nSources; ++s) {
+                V3 val;
+                if (sources[s].kind == MapKind::Color) {
+                    val = imgs[s].valid() ? imgs[s].sampleColor(goodHit ? hu : lu, goodHit ? hv : lv)
+                                          : V3{1,1,1};
+                } else { // NormalTangent
+                    V3 objN = N;
+                    if (goodHit) {
+                        if (imgs[s].valid()) {
+                            const V3 det = imgs[s].sampleNormal(hu, hv);
+                            objN = norm(Th*det.x + Bh*det.y + Nh*det.z);
+                        } else objN = Nh;
+                    } else if (imgs[s].valid()) {
+                        const V3 det = imgs[s].sampleNormal(lu, lv);
+                        objN = norm(T*det.x + B*det.y + N*det.z);
+                    }
+                    val = norm(V3{ dot(objN,T), dot(objN,B), dot(objN,N) });
+                }
+                chan[s][texel*3+0]=val.x; chan[s][texel*3+1]=val.y; chan[s][texel*3+2]=val.z;
+            }
             mask[texel]=1;
         }
     }
 
-    // Dilatation (padding) pour eviter les coutures sous filtrage/mip
-    for (int pass = 0; pass < 6; ++pass) {
+    // Dilatation commune (meme couverture pour toutes les maps)
+    for (int pass = 0; pass < 8; ++pass) {
         std::vector<uint8_t> m2 = mask;
         for (int y = 0; y < H; ++y)
         for (int x = 0; x < W; ++x) {
             const size_t idx=(size_t)y*W+x;
             if (mask[idx]) continue;
-            float acc[3]={0,0,0}; int cnt=0;
+            int cnt=0; std::vector<float> acc(nSources*3, 0.0f);
             for (int dy=-1; dy<=1; ++dy)
             for (int dx=-1; dx<=1; ++dx) {
                 const int nx=x+dx, ny=y+dy;
                 if (nx<0||ny<0||nx>=W||ny>=H) continue;
                 const size_t ni=(size_t)ny*W+nx;
-                if (mask[ni]){ acc[0]+=img[ni*3];acc[1]+=img[ni*3+1];acc[2]+=img[ni*3+2];++cnt; }
+                if (!mask[ni]) continue;
+                for (int s=0;s<nSources;++s){ acc[s*3]+=chan[s][ni*3];acc[s*3+1]+=chan[s][ni*3+1];acc[s*3+2]+=chan[s][ni*3+2]; }
+                ++cnt;
             }
-            if (cnt){ img[idx*3]=acc[0]/cnt;img[idx*3+1]=acc[1]/cnt;img[idx*3+2]=acc[2]/cnt; m2[idx]=1; }
+            if (cnt){ for (int s=0;s<nSources;++s){ chan[s][idx*3]=acc[s*3]/cnt;chan[s][idx*3+1]=acc[s*3+1]/cnt;chan[s][idx*3+2]=acc[s*3+2]/cnt; } m2[idx]=1; }
         }
         mask.swap(m2);
     }
 
-    // Encodage tangent-space, convention glTF (+Y vert), [-1,1] -> [0,255]
-    std::vector<uint8_t> rgb(static_cast<size_t>(W)*H*3);
-    for (size_t i = 0; i < (size_t)W*H; ++i) {
-        const V3 n = mask[i] ? V3{img[i*3],img[i*3+1],img[i*3+2]} : V3{0,0,1};
-        const float comp[3]={n.x,n.y,n.z};
-        for (int c = 0; c < 3; ++c) {
-            const int b = (int)std::lround((comp[c]*0.5f+0.5f)*255.0f);
-            rgb[i*3+c] = (uint8_t)std::clamp(b, 0, 255);
-        }
-    }
+    out.maps.resize(nSources);
+    for (int s = 0; s < nSources; ++s)
+        encodePng(chan[s], mask, W, H, sources[s].kind, out.maps[s].png);
+    return true;
+}
 
-    out.png.clear();
-    stbi_write_png_to_func(
-        [](void* ctx, void* data, int size){
-            auto* vec = static_cast<std::vector<uint8_t>*>(ctx);
-            const uint8_t* p = static_cast<uint8_t*>(data);
-            vec->insert(vec->end(), p, p+size);
-        }, &out.png, W, H, 3, rgb.data(), W*3);
-
-    out.width = W; out.height = H;
+// --------------------------------------------------------------------------
+// Wrapper : bake d'une seule normal map (chemin LOD standard, UV preservees).
+bool bakeNormalMap(const BakeHigh& high, const BakeLow& low,
+                   const unsigned char* srcPng, size_t srcPngSize,
+                   int res, float cageScale, BakeResult& out) {
+    SrcMap src{ srcPng, srcPngSize, MapKind::NormalTangent };
+    BakeMapsResult r;
+    if (!bakeMaps(high, low, &src, 1, res, cageScale, r) || r.maps.empty()) return false;
+    out.tangents     = std::move(r.tangents);
+    out.png          = std::move(r.maps[0].png);
+    out.width = res; out.height = res;
+    out.texelsHit = r.texelsHit; out.texelsTotal = r.texelsTotal;
+    out.usedSourceMap = (srcPng && srcPngSize > 0);
     return !out.png.empty();
 }
