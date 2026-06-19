@@ -43,6 +43,7 @@
 #include "xr/XrSession.hpp"
 #include "xr/toolkit/XRInput.hpp"
 #include "xr/toolkit/XRController.hpp"
+#include "xr/toolkit/XRHand.hpp"
 #include "xr/toolkit/XRGrabbable.hpp"
 #include "xr/toolkit/XRTouchable.hpp"
 #include "xr/toolkit/XRDirectInteractor.hpp"
@@ -52,9 +53,18 @@
 #include "xr/toolkit/XRAnchor.hpp"
 
 #include <exception>
+#include <cerrno>
+#include <cstring>
+#include <fstream>
+#include <vector>
+#include <stdexcept>
 #include <thread>
 #include <chrono>
 #include <filesystem>
+
+#ifdef _WIN32
+#include <process.h>
+#endif
 
 namespace ne {
 
@@ -63,14 +73,16 @@ constexpr uint32_t kWidth = 1600;
 constexpr uint32_t kHeight = 900;
 }
 
-Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
-    window_ = std::make_unique<Window>(kWidth, kHeight, "NextEngine");
+Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool requireXr) {
+    // The XR process currently has no desktop mirror swapchain. Keep its host
+    // GLFW window hidden instead of presenting a misleading unrendered surface.
+    window_ = std::make_unique<Window>(kWidth, kHeight, "NextEngine", !requireXr);
     Input::bind(window_.get());
 
-    // Auto-detect a headset. If one is present, OpenXR drives Vulkan device
-    // creation (binds the headset's GPU) and owns the present path via its own
-    // session. Any failure falls back cleanly to the desktop window path.
-    if (xr::Instance::headsetPresent()) {
+    // Process roles are explicit: the editor always owns a desktop Vulkan/ImGui
+    // path, while the --xr preview process requires OpenXR from startup. A Vulkan
+    // device cannot be converted from one presentation owner to the other later.
+    if (requireXr) {
         try {
             xrInstance_ = std::make_unique<xr::Instance>();
             device_ = std::make_unique<VulkanDevice>(*window_, xrInstance_.get());
@@ -78,11 +90,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
             xrMode_ = true;
             Log::info("XR mode active (OpenXR session)");
         } catch (const std::exception& e) {
-            Log::warn("XR init failed, falling back to desktop: ", e.what());
-            xrSession_.reset();
-            device_.reset();
-            xrInstance_.reset();
-            xrMode_ = false;
+            throw std::runtime_error(std::string("XR preview startup failed: ") + e.what());
         }
     }
     if (!device_) device_ = std::make_unique<VulkanDevice>(*window_);
@@ -137,6 +145,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     NodeRegistry::instance().registerType<AreaNode>("Area");
     NodeRegistry::instance().registerType<CharacterBodyNode>("CharacterBody");
     NodeRegistry::instance().registerType<XRController>("XRController");
+    NodeRegistry::instance().registerType<XRHandNode>("XRHand");
     NodeRegistry::instance().registerType<XROrigin>("XROrigin");
     NodeRegistry::instance().registerType<TeleportArea>("TeleportArea");
     NodeRegistry::instance().registerType<XRAnchor>("XRAnchor");
@@ -164,6 +173,71 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject) {
     camera_.position = {0.0f, 2.5f, 8.0f};
     camera_.yaw = -90.0f;
     camera_.pitch = -15.0f;
+}
+
+bool Engine::launchExternalPreviewIfNeeded() {
+    bool xrScene = false;
+    scene_->traverse([&](Node& node, const glm::mat4&) {
+        if (dynamic_cast<XROrigin*>(&node)) xrScene = true;
+    });
+    if (!xrScene) return false;
+
+    if (!project_->isLoaded()) {
+        Log::error("XR Preview requires a loaded .neproj project");
+        return true;
+    }
+
+    const std::filesystem::path scenePath =
+        std::filesystem::path(NE_BINARY_DIR) / "xr_preview.scene";
+    if (!SceneSerializer::saveToFile(*scene_, *resources_, scenePath.string())) {
+        Log::error("XR Preview could not serialize the current scene");
+        return true;
+    }
+
+    const std::filesystem::path executable =
+        std::filesystem::path(NE_BINARY_DIR) / "NextEngine.exe";
+    if (!std::filesystem::exists(executable)) {
+        Log::error("XR Preview executable not found: ", executable.string());
+        return true;
+    }
+
+    // MinGW's spawn command-line quoting is not reliable for arguments containing
+    // spaces. Keep the child command line path-free and transfer launch data via
+    // a fixed manifest next to the executable.
+    const std::filesystem::path manifestPath =
+        std::filesystem::path(NE_BINARY_DIR) / "xr_preview.launch";
+    {
+        std::ofstream manifest(manifestPath, std::ios::trunc);
+        if (!manifest) {
+            Log::error("XR Preview could not create launch manifest: ",
+                       manifestPath.string());
+            return true;
+        }
+        manifest << project_->filePath() << '\n' << scenePath.string() << '\n';
+    }
+
+#ifdef _WIN32
+    std::vector<std::string> arguments = {
+        executable.string(), "--xr-preview"};
+    std::vector<const char*> argv;
+    argv.reserve(arguments.size() + 1);
+    for (const std::string& argument : arguments) argv.push_back(argument.c_str());
+    argv.push_back(nullptr);
+
+    const intptr_t child = _spawnv(_P_NOWAIT, executable.string().c_str(), argv.data());
+    if (child == -1) {
+        Log::error("XR Preview process launch failed: ", std::strerror(errno));
+        return true;
+    }
+    std::thread([child] {
+        int exitCode = 0;
+        _cwait(&exitCode, child, _WAIT_CHILD);
+    }).detach();
+    Log::info("XR Preview launched (process ", child, ")");
+#else
+    Log::error("XR Preview process launch is currently implemented for Windows only");
+#endif
+    return true;
 }
 
 Engine::~Engine() {

@@ -16,6 +16,7 @@ namespace ne::xr {
 class Instance;
 class Swapchain;
 class Actions;
+class HandTracking;
 
 // Everything one eye needs to be rendered this frame: the acquired XR image to
 // draw into, and the per-eye camera matrices (already in the engine's Vulkan
@@ -85,6 +86,7 @@ public:
 
 private:
     void createSession();
+    void selectReferenceSpace();
     void createReferenceSpace();
     void enumerateViewConfig();
     void enumerateBlendModes();
@@ -98,6 +100,7 @@ private:
 
     XrSession session_ = XR_NULL_HANDLE;
     XrSpace appSpace_ = XR_NULL_HANDLE;
+    XrReferenceSpaceType appSpaceType_ = XR_REFERENCE_SPACE_TYPE_LOCAL;
     XrSessionState state_ = XR_SESSION_STATE_UNKNOWN;
     static constexpr XrViewConfigurationType kViewConfig =
         XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
@@ -105,6 +108,7 @@ private:
     std::vector<XrViewConfigurationView> viewConfigs_;
     std::vector<std::unique_ptr<Swapchain>> swapchains_;
     std::unique_ptr<Actions> actions_;   // OpenXR action-set input → ne::XRInput
+    std::unique_ptr<HandTracking> handTracking_; // optional XR_EXT_hand_tracking
     XrTime lastDisplayTime_ = 0;         // for locating action poses next frame
     int64_t colorFormat_ = 0;
 

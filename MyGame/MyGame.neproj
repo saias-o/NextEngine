@@ -11,4 +11,5 @@ audio_default_loop=0
 audio_default_spatial=0
 audio_default_min_dist=1
 audio_default_max_dist=100
+auto_mesh_lods=1
 audio_alias_big_band_banger=assets/sounds/big_band_banger.ogg

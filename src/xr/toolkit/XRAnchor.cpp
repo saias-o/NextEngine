@@ -12,6 +12,7 @@ namespace {
 // Not serialized (re-added by the XRAnchor constructor on load).
 class XRAnchorTracker : public Behaviour {
 public:
+    bool visibleInEditor() const override { return false; }
     void onReady() override {
         const glm::mat4& w = node()->worldTransform();
         XRPose pose;

@@ -649,6 +649,7 @@ void InspectorPanel::drawBehaviours(Node* node, EditorUI* editor) {
     Behaviour* toRemove = nullptr;
 
     for (const auto& b : node->behaviours()) {
+        if (!b->visibleInEditor()) continue;
         ImGui::PushID(b.get());
 
         bool enabled = b->enabled();

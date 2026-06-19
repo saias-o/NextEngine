@@ -59,7 +59,7 @@ public:
     static float getAxis(const std::string& negativeAction, const std::string& positiveAction);
     static glm::vec2 getVector(const std::string& left, const std::string& right, const std::string& down, const std::string& up);
 
-    // ---- Raw Input Queries (Ignores Contexts & ImGui blocking) ----
+    // ---- Raw Input Queries (Ignores Contexts & UI capture) ----
     static bool isKeyDown(KeyCode key);
     static bool isKeyPressed(KeyCode key);
     static bool isMouseButtonDown(MouseButton btn);
@@ -71,6 +71,9 @@ public:
     // ---- Event Consumption ----
     static void consumeMouse();
     static void consumeKeyboard();
+
+    // UI backends publish capture intent without coupling Input to a specific UI.
+    static void setUiCapture(bool keyboard, bool mouse);
 
     // ---- Context Management ----
     static void pushContext(const InputContextID& context);

@@ -10,8 +10,6 @@
 #include "imgui.h"
 
 #include "audio/AudioManager.hpp"
-#include "project/Project.hpp"
-#include "scene/SceneSerializer.hpp"
 #include "scene/SceneTree.hpp"
 
 namespace ne {
@@ -26,6 +24,11 @@ void EditorApp::setPlayMode(bool play) {
     ui_.clearSelection();  // selection refers to a tree that's about to swap
 
     if (play) {
+        // Some presentation modes require an isolated runtime process. The Engine
+        // owns that policy; the editor only issues a generic Play request.
+        if (engine_.launchExternalPreviewIfNeeded()) {
+            return;
+        }
         // Mount the persistent World from a snapshot of the edit scene (which is
         // left untouched — so Stop needs no restore). Autoloads spawn here.
         engine_.mountWorld();

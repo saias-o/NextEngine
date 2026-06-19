@@ -20,7 +20,9 @@ class XRInput {
 public:
     // ---- Consumer API ----
     static const XRHandState& hand(XRHand h);
+    static const XRHandSkeletonState& skeleton(XRHand h);
     static bool anyActive();
+    static bool handTrackingActive(XRHand h);
 
     // Head (HMD) pose in world space — fed by the engine each XR frame. Used e.g.
     // by teleport (head-relative placement) and head-facing UI.
@@ -46,6 +48,7 @@ public:
     static void beginFrame();
     // Provide a freshly polled state for one hand this frame.
     static void submitHand(XRHand h, const XRHandState& state);
+    static void submitSkeleton(XRHand h, const XRHandSkeletonState& state);
     // Mark a hand as not present this frame (e.g. controller dropped).
     static void clearHand(XRHand h);
     // Provide the head pose (world space) for this frame.

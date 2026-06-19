@@ -3,6 +3,7 @@
 #include "xr/XrInstance.hpp"
 #include "xr/XrSwapchain.hpp"
 #include "xr/XrActions.hpp"
+#include "xr/XrHandTracking.hpp"
 #include "xr/XrMath.hpp"
 
 #include "graphics/VulkanDevice.hpp"
@@ -18,6 +19,7 @@ namespace ne::xr {
 Session::Session(Instance& instance, VulkanDevice& device)
     : instance_(instance), device_(device) {
     createSession();
+    selectReferenceSpace();
     createReferenceSpace();
     enumerateViewConfig();
     enumerateBlendModes();
@@ -25,12 +27,21 @@ Session::Session(Instance& instance, VulkanDevice& device)
     createSwapchains();
     createCommandResources();
     actions_ = std::make_unique<Actions>(instance_, session_);  // feeds ne::XRInput
+    if (instance_.handTrackingSupported()) {
+        try {
+            handTracking_ = std::make_unique<HandTracking>(instance_, session_);
+            Log::info("XR hand trackers ready");
+        } catch (const std::exception& e) {
+            Log::warn("XR hand tracking initialization failed: ", e.what());
+        }
+    }
     Log::info("XR session ready: ", viewCount(), " views, ",
               swapchains_[0]->width(), "x", swapchains_[0]->height(), " per eye");
 }
 
 Session::~Session() {
     if (session_ != XR_NULL_HANDLE) vkDeviceWaitIdle(device_.device());
+    handTracking_.reset(); // native trackers must die before the session
     actions_.reset();  // destroy action spaces/set before the session
     for (VkFence f : fences_)
         if (f) vkDestroyFence(device_.device(), f, nullptr);
@@ -60,10 +71,28 @@ void Session::createSession() {
     check(xrCreateSession(instance_.handle(), &ci, &session_), "xrCreateSession");
 }
 
+void Session::selectReferenceSpace() {
+    uint32_t count = 0;
+    check(xrEnumerateReferenceSpaces(session_, 0, &count, nullptr),
+          "xrEnumerateReferenceSpaces(count)");
+    std::vector<XrReferenceSpaceType> spaces(count);
+    check(xrEnumerateReferenceSpaces(session_, count, &count, spaces.data()),
+          "xrEnumerateReferenceSpaces");
+    appSpaceType_ = XR_REFERENCE_SPACE_TYPE_LOCAL;
+    for (XrReferenceSpaceType type : spaces)
+        if (type == XR_REFERENCE_SPACE_TYPE_STAGE) {
+            appSpaceType_ = type;
+            break;
+        }
+    Log::info("XR reference space: ",
+              appSpaceType_ == XR_REFERENCE_SPACE_TYPE_STAGE ?
+                  "STAGE (room-scale)" : "LOCAL");
+}
+
 void Session::createReferenceSpace() {
-    // LOCAL: seated/standing origin at the recenter point — fine for "look around".
-    // STAGE (room-scale floor) can be added later. The rig offset (originPos_/Yaw_)
-    // is baked into poseInReferenceSpace so teleport recentres for free.
+    // Prefer STAGE so physical movement is expressed in a floor-level room-scale
+    // space. LOCAL remains the mandatory fallback. The rig offset is baked into
+    // poseInReferenceSpace so teleport/snap-turn still recenter the whole rig.
     if (appSpace_ != XR_NULL_HANDLE) {
         xrDestroySpace(appSpace_);
         appSpace_ = XR_NULL_HANDLE;
@@ -71,7 +100,7 @@ void Session::createReferenceSpace() {
     const float half = originYaw_ * 0.5f;
     XrReferenceSpaceCreateInfo ci{};
     ci.type = XR_TYPE_REFERENCE_SPACE_CREATE_INFO;
-    ci.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+    ci.referenceSpaceType = appSpaceType_;
     ci.poseInReferenceSpace.orientation.x = 0.0f;
     ci.poseInReferenceSpace.orientation.y = std::sin(half);
     ci.poseInReferenceSpace.orientation.z = 0.0f;
@@ -88,7 +117,9 @@ void Session::setReferenceOffset(const glm::vec3& position, float yawRadians) {
 }
 
 void Session::syncActions() {
-    if (running_ && actions_) actions_->sync(session_, appSpace_, lastDisplayTime_);
+    if (!running_) return;
+    if (actions_) actions_->sync(session_, appSpace_, lastDisplayTime_);
+    if (handTracking_) handTracking_->sync(appSpace_, lastDisplayTime_);
 }
 
 void Session::enumerateViewConfig() {

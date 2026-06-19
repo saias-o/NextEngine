@@ -10,7 +10,7 @@ namespace ne {
 // Owns the GLFW window and reports framebuffer resize events.
 class Window {
 public:
-    Window(int width, int height, std::string title);
+    Window(int width, int height, std::string title, bool visible = true);
     ~Window();
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;

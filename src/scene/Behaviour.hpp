@@ -36,6 +36,9 @@ public:
     virtual void onDisable() {}
 
     virtual const char* typeName() const { return nullptr; }
+    // Runtime-only implementation behaviours (trackers, adapters) can stay out
+    // of the authoring UI without pretending to be serializable components.
+    virtual bool visibleInEditor() const { return true; }
     virtual void save(nlohmann::json&) const {}
     virtual void load(const nlohmann::json&) {}
 

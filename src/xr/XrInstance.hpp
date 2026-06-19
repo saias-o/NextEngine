@@ -21,13 +21,9 @@ public:
     Instance(const Instance&) = delete;
     Instance& operator=(const Instance&) = delete;
 
-    // Probe whether an HMD + active runtime are present: spins up a throwaway
-    // instance, queries the system, tears it down. Never throws — returns false
-    // on any failure (no runtime, no headset, no vulkan_enable2).
-    static bool headsetPresent();
-
     XrInstance handle() const { return instance_; }
     XrSystemId systemId() const { return systemId_; }
+    bool handTrackingSupported() const { return handTrackingSupported_; }
 
     // Cached vulkan_enable2 procs, stored as the generic XR proc type (core, so
     // this header needs no platform include). XrVulkanBinding casts them back.
@@ -41,6 +37,7 @@ private:
 
     XrInstance instance_ = XR_NULL_HANDLE;
     XrSystemId systemId_ = XR_NULL_SYSTEM_ID;
+    bool handTrackingSupported_ = false;
 };
 
 } // namespace ne::xr

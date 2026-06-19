@@ -10,6 +10,7 @@ namespace {
 // Not serialized (no typeName) — re-added by the XRController constructor on load.
 class XRControllerTracker : public Behaviour {
 public:
+    bool visibleInEditor() const override { return false; }
     void onUpdate(float) override {
         auto* c = static_cast<XRController*>(node());
         const XRHandState& s = XRInput::hand(c->hand());

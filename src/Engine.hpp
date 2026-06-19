@@ -31,7 +31,8 @@ using SceneSetup = std::function<void(Scene&, ResourceManager&)>;
 // device_ outlives the GPU resources that reference it during destruction.
 class Engine {
 public:
-    explicit Engine(SceneSetup sceneSetup, const std::string& initialProject = "");
+    explicit Engine(SceneSetup sceneSetup, const std::string& initialProject = "",
+                    bool requireXr = false);
     ~Engine();
     Engine(const Engine&) = delete;
     Engine& operator=(const Engine&) = delete;
@@ -43,9 +44,15 @@ public:
 
     void run();
 
-    // True when an HMD was detected at startup and the engine drives an OpenXR
-    // session (head-tracked stereo) instead of the desktop window.
+    // True only in the explicit XR runtime process, which drives an OpenXR
+    // session (head-tracked stereo) instead of the desktop editor window.
     bool xrMode() const { return xrMode_; }
+
+    // Editor Play seam. Returns true when the current scene requires an external
+    // runtime and the request was handled (launched or reported as an error).
+    // The editor stays presentation-agnostic and only falls back to in-process
+    // Play when this returns false.
+    bool launchExternalPreviewIfNeeded();
 
     void setSceneOverride(Scene* scene) { sceneOverride_ = scene; }
 

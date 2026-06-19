@@ -1810,21 +1810,15 @@ void Renderer::createXrPipelines() {
 
     // ── Skybox descriptor set (texture) + multiview pipeline ──
     {
-        VkDescriptorSetLayoutBinding hdrBinding{};
-        hdrBinding.binding = 0;
-        hdrBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        hdrBinding.descriptorCount = 1;
-        hdrBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        VkDescriptorSetLayoutBinding depthBinding{};
-        depthBinding.binding = 1;
-        depthBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        depthBinding.descriptorCount = 1;
-        depthBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        std::array<VkDescriptorSetLayoutBinding, 2> tonemapBindings{hdrBinding, depthBinding};
+        VkDescriptorSetLayoutBinding skyboxBinding{};
+        skyboxBinding.binding = 0;
+        skyboxBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        skyboxBinding.descriptorCount = 1;
+        skyboxBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         VkDescriptorSetLayoutCreateInfo lci{};
         lci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        lci.bindingCount = static_cast<uint32_t>(tonemapBindings.size());
-        lci.pBindings = tonemapBindings.data();
+        lci.bindingCount = 1;
+        lci.pBindings = &skyboxBinding;
         if (vkCreateDescriptorSetLayout(device_.device(), &lci, nullptr, &skyboxSetLayout_) != VK_SUCCESS)
             throw std::runtime_error("XR: failed to create skybox set layout");
 
@@ -1855,15 +1849,19 @@ void Renderer::createXrPipelines() {
 
     // ── Tonemap set layout + sampler + per-eye sets + (mono) pipeline ──
     {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = 0;
-        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        b.descriptorCount = 1;
-        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutBinding hdrBinding{};
+        hdrBinding.binding = 0;
+        hdrBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        hdrBinding.descriptorCount = 1;
+        hdrBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutBinding depthBinding = hdrBinding;
+        depthBinding.binding = 1;
+        std::array<VkDescriptorSetLayoutBinding, 2> tonemapBindings{
+            hdrBinding, depthBinding};
         VkDescriptorSetLayoutCreateInfo lci{};
         lci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        lci.bindingCount = 1;
-        lci.pBindings = &b;
+        lci.bindingCount = static_cast<uint32_t>(tonemapBindings.size());
+        lci.pBindings = tonemapBindings.data();
         if (vkCreateDescriptorSetLayout(device_.device(), &lci, nullptr, &tonemapSetLayout_) != VK_SUCCESS)
             throw std::runtime_error("XR: failed to create tonemap set layout");
 

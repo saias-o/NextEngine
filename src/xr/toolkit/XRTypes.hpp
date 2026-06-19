@@ -3,6 +3,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include <array>
+
 // NextEngine XR Toolkit (NEXRTK) — shared types.
 //
 // The toolkit is a thin layer of nodes + behaviours on top of the engine's
@@ -44,6 +46,56 @@ struct XRHandState {
     glm::vec2 thumbstick{0.0f};   // primary 2D axis
     bool primaryButton = false;   // A / X
     bool secondaryButton = false; // B / Y
+};
+
+// OpenXR's default hand skeleton has 26 joints. The numeric values deliberately
+// match XrHandJointEXT so the native bridge can copy them without a lookup table,
+// while the toolkit remains independent from OpenXR headers.
+enum class XRHandJoint : int {
+    Palm = 0,
+    Wrist,
+    ThumbMetacarpal,
+    ThumbProximal,
+    ThumbDistal,
+    ThumbTip,
+    IndexMetacarpal,
+    IndexProximal,
+    IndexIntermediate,
+    IndexDistal,
+    IndexTip,
+    MiddleMetacarpal,
+    MiddleProximal,
+    MiddleIntermediate,
+    MiddleDistal,
+    MiddleTip,
+    RingMetacarpal,
+    RingProximal,
+    RingIntermediate,
+    RingDistal,
+    RingTip,
+    LittleMetacarpal,
+    LittleProximal,
+    LittleIntermediate,
+    LittleDistal,
+    LittleTip,
+    Count
+};
+
+inline constexpr int kXRHandJointCount = static_cast<int>(XRHandJoint::Count);
+
+struct XRHandJointState {
+    bool valid = false;
+    XRPose pose;
+    float radius = 0.0f;
+};
+
+struct XRHandSkeletonState {
+    bool active = false;
+    std::array<XRHandJointState, kXRHandJointCount> joints{};
+
+    const XRHandJointState& joint(XRHandJoint j) const {
+        return joints[static_cast<int>(j)];
+    }
 };
 
 // Group tags used to locate interactables without coupling by name (the engine

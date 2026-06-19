@@ -7,6 +7,7 @@ namespace {
 // Edges are current-vs-previous so the producer only ever submits raw values.
 XRHandState g_current[kXRHandCount];
 XRHandState g_previous[kXRHandCount];
+XRHandSkeletonState g_skeletons[kXRHandCount];
 XRPose g_head;
 float g_pressThreshold = 0.5f;
 
@@ -14,7 +15,12 @@ bool down(float v) { return v >= g_pressThreshold; }
 } // namespace
 
 const XRHandState& XRInput::hand(XRHand h) { return g_current[xrHandIndex(h)]; }
+const XRHandSkeletonState& XRInput::skeleton(XRHand h) { return g_skeletons[xrHandIndex(h)]; }
 const XRPose& XRInput::head() { return g_head; }
+
+bool XRInput::handTrackingActive(XRHand h) {
+    return g_skeletons[xrHandIndex(h)].active;
+}
 
 bool XRInput::anyActive() {
     for (const auto& s : g_current) if (s.active) return true;
@@ -49,10 +55,15 @@ void XRInput::beginFrame() {
     // Default this frame to "absent"; submitHand() restores presence for tracked
     // controllers. This way a hand that stops reporting reads back inactive.
     for (auto& s : g_current) s.active = false;
+    for (auto& s : g_skeletons) s.active = false;
 }
 
 void XRInput::submitHand(XRHand h, const XRHandState& state) {
     g_current[xrHandIndex(h)] = state;
+}
+
+void XRInput::submitSkeleton(XRHand h, const XRHandSkeletonState& state) {
+    g_skeletons[xrHandIndex(h)] = state;
 }
 
 void XRInput::clearHand(XRHand h) {

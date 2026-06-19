@@ -107,6 +107,13 @@ set(BUILD_SDK_TESTS OFF)
 set(BUILD_ALL_EXTENSIONS OFF)
 add_subdirectory(third_party/openxr ${CMAKE_BINARY_DIR}/openxr)
 
+# MinGW's winapifamily.h does not define the UWP system partition constant
+# used by OpenXR 1.1.60.  This is a desktop Win32 build, so that partition is
+# absent; defining it to zero also keeps the loader's -Werror=undef happy.
+if (MINGW)
+    target_compile_definitions(openxr_loader PRIVATE WINAPI_PARTITION_SYSTEM=0)
+endif()
+
 # ── QuickJS + RmlUi (vendored, static) ───────────────────────────────────────
 # QuickJS is the single JavaScript runtime for gameplay scripts, editor tooling
 # and web UI logic. We build only the library, not qjs/qjsc executables.
@@ -229,8 +236,10 @@ add_library(ne_engine STATIC
     src/xr/XrSwapchain.cpp
     src/xr/XrSession.cpp
     src/xr/XrActions.cpp
+    src/xr/XrHandTracking.cpp
     src/xr/toolkit/XRInput.cpp
     src/xr/toolkit/XRController.cpp
+    src/xr/toolkit/XRHand.cpp
     src/xr/toolkit/XRGrabbable.cpp
     src/xr/toolkit/XRTouchable.cpp
     src/xr/toolkit/XRDirectInteractor.cpp
@@ -289,6 +298,7 @@ add_dependencies(ne_engine Shaders)
 # conventions (radians, Vulkan 0..1 depth) — PUBLIC so game code sees them too.
 target_compile_definitions(ne_engine PUBLIC
     NE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+    NE_BINARY_DIR="${CMAKE_BINARY_DIR}"
     NE_SHADER_DIR="${SHADER_OUT_DIR}"
     GLM_FORCE_RADIANS
     GLM_FORCE_DEPTH_ZERO_TO_ONE)

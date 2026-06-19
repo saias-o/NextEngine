@@ -1,9 +1,7 @@
 #include "core/Input.hpp"
 #include "core/Window.hpp"
 
-#include <imgui.h>
 #include <algorithm>
-#include <iostream>
 
 namespace ne {
 
@@ -17,6 +15,8 @@ bool g_mouseCurr[GLFW_MOUSE_BUTTON_LAST + 1] = {};
 bool g_mousePrev[GLFW_MOUSE_BUTTON_LAST + 1] = {};
 glm::vec2 g_mouseDelta{0.0f};
 glm::vec2 g_mousePos{0.0f};
+bool g_uiCapturesKeyboard = false;
+bool g_uiCapturesMouse = false;
 
 // Action bindings & state
 std::vector<ActionBinding> g_bindings;
@@ -141,19 +141,17 @@ void Input::bind(Window* window) {
 
 float Input::evaluateBinding(const ActionBinding& binding) {
     if (!g_window) return 0.0f;
-    
-    ImGuiIO& io = ImGui::GetIO();
-    
-    bool ignoreImGui = g_window->cursorCaptured();
-    
+
+    const bool ignoreUi = g_window->cursorCaptured();
+
     if (binding.isKey) {
-        if (io.WantCaptureKeyboard && !ignoreImGui) return 0.0f; // ImGui is capturing keyboard
+        if (g_uiCapturesKeyboard && !ignoreUi) return 0.0f;
         int glfwKey = glfwKeyFromKeyCode(binding.key);
         if (glfwKey >= 0 && glfwKey <= GLFW_KEY_LAST) {
             return g_keyCurr[glfwKey] ? 1.0f : 0.0f;
         }
     } else if (binding.isMouse) {
-        if (io.WantCaptureMouse && !ignoreImGui) return 0.0f; // ImGui is capturing mouse
+        if (g_uiCapturesMouse && !ignoreUi) return 0.0f;
         int glfwBtn = glfwMouseFromMouseButton(binding.mouseBtn);
         if (glfwBtn >= 0 && glfwBtn <= GLFW_MOUSE_BUTTON_LAST) {
             return g_mouseCurr[glfwBtn] ? 1.0f : 0.0f;
@@ -162,6 +160,11 @@ float Input::evaluateBinding(const ActionBinding& binding) {
     
     // Gamepad axis not implemented yet
     return 0.0f;
+}
+
+void Input::setUiCapture(bool keyboard, bool mouse) {
+    g_uiCapturesKeyboard = keyboard;
+    g_uiCapturesMouse = mouse;
 }
 
 void Input::newFrame() {

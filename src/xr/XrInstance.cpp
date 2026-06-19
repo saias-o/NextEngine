@@ -6,14 +6,18 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace ne::xr {
 
 namespace {
 
-// The single instance extension we require: OpenXR drives Vulkan instance/device
-// creation so it can pick the GPU the headset is attached to.
-const char* kRequiredExtensions[] = {XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME};
+bool extensionAvailable(const std::vector<XrExtensionProperties>& extensions,
+                        const char* name) {
+    for (const auto& extension : extensions)
+        if (std::strcmp(extension.extensionName, name) == 0) return true;
+    return false;
+}
 
 const char* resultName(XrInstance instance, XrResult r) {
     static char buf[XR_MAX_RESULT_STRING_SIZE];
@@ -24,8 +28,26 @@ const char* resultName(XrInstance instance, XrResult r) {
 }
 
 // Create an instance + resolve the HMD system. Returns true on full success.
-// Used both by the throwaway probe and the real ctor (which then keeps them).
-bool createInstanceAndSystem(XrInstance& outInstance, XrSystemId& outSystem) {
+bool createInstanceAndSystem(XrInstance& outInstance, XrSystemId& outSystem,
+                             bool& outHandTrackingExtension) {
+    uint32_t extensionCount = 0;
+    if (XR_FAILED(xrEnumerateInstanceExtensionProperties(
+            nullptr, 0, &extensionCount, nullptr))) return false;
+    XrExtensionProperties extensionTemplate{};
+    extensionTemplate.type = XR_TYPE_EXTENSION_PROPERTIES;
+    std::vector<XrExtensionProperties> extensions(extensionCount, extensionTemplate);
+    if (XR_FAILED(xrEnumerateInstanceExtensionProperties(
+            nullptr, extensionCount, &extensionCount, extensions.data()))) return false;
+
+    if (!extensionAvailable(extensions, XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME))
+        return false;
+
+    std::vector<const char*> enabledExtensions{XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME};
+    outHandTrackingExtension = extensionAvailable(
+        extensions, XR_EXT_HAND_TRACKING_EXTENSION_NAME);
+    if (outHandTrackingExtension)
+        enabledExtensions.push_back(XR_EXT_HAND_TRACKING_EXTENSION_NAME);
+
     XrInstanceCreateInfo ci{};
     ci.type = XR_TYPE_INSTANCE_CREATE_INFO;
     std::strncpy(ci.applicationInfo.applicationName, "NextEngine",
@@ -35,8 +57,8 @@ bool createInstanceAndSystem(XrInstance& outInstance, XrSystemId& outSystem) {
                  XR_MAX_ENGINE_NAME_SIZE - 1);
     ci.applicationInfo.engineVersion = 1;
     ci.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
-    ci.enabledExtensionCount = static_cast<uint32_t>(std::size(kRequiredExtensions));
-    ci.enabledExtensionNames = kRequiredExtensions;
+    ci.enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size());
+    ci.enabledExtensionNames = enabledExtensions.data();
 
     XrResult r = xrCreateInstance(&ci, &outInstance);
     if (XR_FAILED(r)) return false;  // no runtime / extension unsupported
@@ -61,16 +83,8 @@ void check(XrResult r, const char* what) {
                                  resultName(XR_NULL_HANDLE, r));
 }
 
-bool Instance::headsetPresent() {
-    XrInstance instance = XR_NULL_HANDLE;
-    XrSystemId system = XR_NULL_SYSTEM_ID;
-    if (!createInstanceAndSystem(instance, system)) return false;
-    xrDestroyInstance(instance);
-    return true;
-}
-
 Instance::Instance() {
-    if (!createInstanceAndSystem(instance_, systemId_))
+    if (!createInstanceAndSystem(instance_, systemId_, handTrackingSupported_))
         throw std::runtime_error("OpenXR: failed to create instance / find HMD system");
 
     XrInstanceProperties props{};
@@ -78,10 +92,19 @@ Instance::Instance() {
     if (XR_SUCCEEDED(xrGetInstanceProperties(instance_, &props)))
         Log::info("OpenXR runtime: ", props.runtimeName);
 
+    XrSystemHandTrackingPropertiesEXT handProperties{};
+    handProperties.type = XR_TYPE_SYSTEM_HAND_TRACKING_PROPERTIES_EXT;
     XrSystemProperties sysProps{};
     sysProps.type = XR_TYPE_SYSTEM_PROPERTIES;
-    if (XR_SUCCEEDED(xrGetSystemProperties(instance_, systemId_, &sysProps)))
+    if (handTrackingSupported_) sysProps.next = &handProperties;
+    if (XR_SUCCEEDED(xrGetSystemProperties(instance_, systemId_, &sysProps))) {
         Log::info("XR system: ", sysProps.systemName);
+        handTrackingSupported_ = handTrackingSupported_ &&
+                                 handProperties.supportsHandTracking == XR_TRUE;
+    } else {
+        handTrackingSupported_ = false;
+    }
+    Log::info("XR hand tracking ", handTrackingSupported_ ? "supported" : "unavailable");
 
     loadFunctions();
 }

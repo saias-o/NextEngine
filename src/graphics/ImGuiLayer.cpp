@@ -1,4 +1,5 @@
 #include "graphics/ImGuiLayer.hpp"
+#include "core/Input.hpp"
 
 #include "core/Window.hpp"
 #include "graphics/VulkanDevice.hpp"
@@ -73,6 +74,8 @@ void ImGuiLayer::beginFrame() {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+    const ImGuiIO& io = ImGui::GetIO();
+    Input::setUiCapture(io.WantCaptureKeyboard, io.WantCaptureMouse);
 }
 
 void ImGuiLayer::endFrame() {
