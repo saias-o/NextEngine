@@ -2,8 +2,7 @@
 
 #include "core/Log.hpp"
 #include "core/Window.hpp"
-#include "xr/XrInstance.hpp"
-#include "xr/XrVulkanBinding.hpp"
+#include "graphics/VulkanDeviceCreator.hpp"
 #include "vk_mem_alloc.h"
 
 #include <cstring>
@@ -81,9 +80,7 @@ void populateDebugMessengerCI(VkDebugUtilsMessengerCreateInfoEXT& ci) {
 
 } // namespace
 
-VulkanDevice::VulkanDevice(Window& window) : VulkanDevice(window, nullptr) {}
-
-VulkanDevice::VulkanDevice(Window& window, xr::Instance* xrInstance) : xr_(xrInstance) {
+VulkanDevice::VulkanDevice(Window& window, VulkanDeviceCreator* creator) : creator_(creator) {
     createInstance();
     setupDebugMessenger();
     createSurface(window);     // no-op in XR mode (no GLFW surface)
@@ -130,7 +127,7 @@ std::vector<const char*> VulkanDevice::requiredInstanceExtensions() const {
     std::vector<const char*> extensions;
     // XR mode presents through OpenXR swapchains, not a GLFW VkSurfaceKHR, so the
     // GLFW surface extensions are not needed (the runtime adds what it requires).
-    if (!xr_) {
+    if (!creator_) {
         uint32_t glfwExtCount = 0;
         const char** glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
         extensions.assign(glfwExts, glfwExts + glfwExtCount);
@@ -177,9 +174,9 @@ void VulkanDevice::createInstance() {
         createInfo.pNext = &debugCI;
     }
 
-    if (xr_) {
-        // OpenXR creates the instance (merging the runtime's required extensions).
-        instance_ = xr::createVulkanInstance(*xr_, createInfo);
+    if (creator_) {
+        // OpenXR/Custom creator creates the instance.
+        instance_ = creator_->createInstance(createInfo);
     } else if (vkCreateInstance(&createInfo, nullptr, &instance_) != VK_SUCCESS) {
         throw std::runtime_error("failed to create Vulkan instance");
     }
@@ -194,7 +191,7 @@ void VulkanDevice::setupDebugMessenger() {
 }
 
 void VulkanDevice::createSurface(Window& window) {
-    if (xr_) return;  // XR presents through OpenXR swapchains, not a window surface
+    if (creator_ && !creator_->requiresSurface()) return;  // XR presents through OpenXR swapchains, not a window surface
     surface_ = window.createSurface(instance_);
 }
 
@@ -275,12 +272,12 @@ bool VulkanDevice::isDeviceSuitable(VkPhysicalDevice dev) const {
 }
 
 void VulkanDevice::pickPhysicalDevice() {
-    if (xr_) {
-        // OpenXR mandates the GPU the headset is attached to — no choice to make.
-        physicalDevice_ = xr::pickPhysicalDevice(*xr_, instance_);
+    if (creator_) {
+        // OpenXR/Custom creator mandates the GPU selection.
+        physicalDevice_ = creator_->pickPhysicalDevice(instance_);
         VkPhysicalDeviceProperties props;
         vkGetPhysicalDeviceProperties(physicalDevice_, &props);
-        Log::info("GPU (XR): ", props.deviceName);
+        Log::info("GPU (Custom): ", props.deviceName);
         return;
     }
 
@@ -452,10 +449,9 @@ void VulkanDevice::createLogicalDevice() {
         ci.pEnabledFeatures = &features;
     }
 
-    if (xr_) {
-        // OpenXR creates the device (merging the runtime's required extensions),
-        // sharing it with the XR session for composition.
-        device_ = xr::createVulkanDevice(*xr_, physicalDevice_, ci);
+    if (creator_) {
+        // OpenXR/Custom creator creates the device.
+        device_ = creator_->createDevice(physicalDevice_, ci);
     } else if (vkCreateDevice(physicalDevice_, &ci, nullptr, &device_) != VK_SUCCESS) {
         throw std::runtime_error("failed to create logical device");
     }

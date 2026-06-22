@@ -4,6 +4,7 @@
 #include "scene/Node.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/LightNode.hpp"
+#include "scene/CameraNode.hpp"
 #include "physics/StaticBodyNode.hpp"
 #include "physics/RigidBodyNode.hpp"
 #include "physics/AreaNode.hpp"
@@ -56,6 +57,8 @@ static std::unique_ptr<Node> makeNodeOfType(CreateNodeType type, Mesh* defaultMe
             return std::make_unique<LightNode>("Point Light", LightType::Point);
         case CreateNodeType::SpotLight:
             return std::make_unique<LightNode>("Spot Light", LightType::Spot);
+        case CreateNodeType::Camera:
+            return std::make_unique<CameraNode>("Camera");
         case CreateNodeType::UICanvas: {
             auto n = std::make_unique<UICanvasNode>(); n->setName("UICanvas"); return n;
         }
@@ -206,6 +209,10 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
                     editor->nodeToCreateChildUnder_ = scene;
                     editor->createType_ = CreateNodeType::SpotLight;
                 }
+                if (ImGui::MenuItem("Camera")) {
+                    editor->nodeToCreateChildUnder_ = scene;
+                    editor->createType_ = CreateNodeType::Camera;
+                }
                 ImGui::Separator();
                 if (ImGui::BeginMenu("UI Nodes")) {
                     if (ImGui::MenuItem("UI Canvas")) {
@@ -276,18 +283,33 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
         ImGui::EndPopup();
     }
 
+    // Play is read-only: drop any mutation queued from a context menu this frame
+    // instead of applying it (and avoid its selection side effects).
+    if (!editor->canEdit()) {
+        editor->nodeToDelete_ = nullptr;
+        editor->nodeToReparent_ = nullptr;
+        editor->newParent_ = nullptr;
+        editor->nodeToCreateChildUnder_ = nullptr;
+        editor->createType_ = CreateNodeType::None;
+        editor->nodeToCreateParentFor_ = nullptr;
+        editor->createParentType_ = CreateNodeType::None;
+        editor->nodeToRename_ = nullptr;
+    }
+
     if (editor->nodeToDelete_) {
         if (editor->nodeToDelete_->parent()) {
             if (editor->selectedNode_ && (editor->selectedNode_ == editor->nodeToDelete_ || isDescendantOf(editor->selectedNode_, editor->nodeToDelete_)))
                 editor->selectedNode_ = nullptr;
-            editor->history_.execute(std::make_unique<DeleteNodeCommand>(editor->nodeToDelete_));
+            editor->execute(
+                std::make_unique<DeleteNodeCommand>(editor->nodeToDelete_->id()));
         }
         editor->nodeToDelete_ = nullptr;
     }
 
     if (editor->nodeToReparent_ && editor->newParent_) {
         if (editor->nodeToReparent_->parent() && !isDescendantOf(editor->newParent_, editor->nodeToReparent_))
-            editor->history_.execute(std::make_unique<ReparentNodeCommand>(editor->nodeToReparent_, editor->newParent_));
+            editor->execute(std::make_unique<ReparentNodeCommand>(
+                editor->nodeToReparent_->id(), editor->newParent_->id()));
         editor->nodeToReparent_ = nullptr;
         editor->newParent_ = nullptr;
     }
@@ -318,9 +340,10 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
         }
 
         if (newNode) {
-            Node* added = newNode.get();
-            editor->history_.execute(std::make_unique<AddNodeCommand>(editor->nodeToCreateChildUnder_, std::move(newNode)));
-            editor->selectedNode_ = added;
+            NodeId addedId = newNode->id();
+            editor->execute(std::make_unique<AddNodeCommand>(
+                editor->nodeToCreateChildUnder_->id(), std::move(newNode)));
+            editor->selectedNode_ = editor->document_.find(addedId);
         }
         editor->nodeToCreateChildUnder_ = nullptr;
         editor->createType_ = CreateNodeType::None;
@@ -339,9 +362,10 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
             }
             auto newParent = makeNodeOfType(editor->createParentType_, defaultMesh, defaultMaterial, editor->ctxResources_, /*bodyWithCube=*/false);
             if (newParent) {
-                Node* rawParent = newParent.get();
-                editor->history_.execute(std::make_unique<CreateParentCommand>(editor->nodeToCreateParentFor_, std::move(newParent)));
-                editor->selectedNode_ = rawParent;
+                NodeId parentId = newParent->id();
+                editor->execute(std::make_unique<CreateParentCommand>(
+                    editor->nodeToCreateParentFor_->id(), std::move(newParent)));
+                editor->selectedNode_ = editor->document_.find(parentId);
             }
         }
         editor->nodeToCreateParentFor_ = nullptr;
@@ -425,11 +449,13 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
         ImGui::SetKeyboardFocusHere();
         if (ImGui::InputText("##rename_node", editor->nodeRenameBuf_, sizeof(editor->nodeRenameBuf_), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
             if (node->name() != editor->nodeRenameBuf_)
-                editor->history_.execute(std::make_unique<RenameNodeCommand>(node, editor->nodeRenameBuf_));
+                editor->execute(std::make_unique<RenameNodeCommand>(
+                    node->id(), node->name(), editor->nodeRenameBuf_));
             editor->nodeToRename_ = nullptr;
         } else if (ImGui::IsItemDeactivated() && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
             if (node->name() != editor->nodeRenameBuf_)
-                editor->history_.execute(std::make_unique<RenameNodeCommand>(node, editor->nodeRenameBuf_));
+                editor->execute(std::make_unique<RenameNodeCommand>(
+                    node->id(), node->name(), editor->nodeRenameBuf_));
             editor->nodeToRename_ = nullptr;
         }
         ImGui::PopStyleVar();
@@ -523,6 +549,10 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
             if (ImGui::MenuItem("Spot Light")) {
                 editor->nodeToCreateChildUnder_ = node;
                 editor->createType_ = CreateNodeType::SpotLight;
+            }
+            if (ImGui::MenuItem("Camera")) {
+                editor->nodeToCreateChildUnder_ = node;
+                editor->createType_ = CreateNodeType::Camera;
             }
             ImGui::Separator();
             if (ImGui::BeginMenu("UI Nodes")) {

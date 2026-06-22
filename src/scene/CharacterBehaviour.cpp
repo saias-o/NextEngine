@@ -1,26 +1,54 @@
 #include "scene/CharacterBehaviour.hpp"
 #include "scene/Node.hpp"
+#include "scene/SceneTree.hpp"
 #include "physics/CharacterBodyNode.hpp"
 #include "scene/animation/Animator.hpp"
 #include "core/Input.hpp"
 #include "core/Log.hpp"
 
-#include <imgui.h>
 #include <nlohmann/json.hpp>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
-#include <cstring>
+#include <cmath>
 
 namespace ne {
 
+namespace {
+constexpr glm::vec3 kWorldUp{0.0f, 1.0f, 0.0f};
+
+// Horizontal forward/right of the active camera (found by group), so movement is
+// camera-relative. Falls back to world axes when no camera is present.
+void cameraBasis(SceneTree* tree, glm::vec3& forward, glm::vec3& right) {
+    forward = glm::vec3(0.0f, 0.0f, -1.0f);
+    right = glm::vec3(1.0f, 0.0f, 0.0f);
+    if (!tree) return;
+    Node* cam = tree->firstInGroup("camera");
+    if (!cam) return;
+    glm::vec3 camFwd = glm::vec3(cam->worldTransform() * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f));
+    camFwd.y = 0.0f;
+    if (glm::dot(camFwd, camFwd) < 1e-6f) return;  // camera looking straight up/down
+    forward = glm::normalize(camFwd);
+    right = glm::normalize(glm::cross(forward, kWorldUp));
+}
+}  // namespace
+
 void CharacterBehaviour::onReady() {
-    // Default WASD/ZQSD bindings (GLFW key codes are physical QWERTY positions).
+    // Default WASD/ZQSD bindings (GLFW key codes are physical QWERTY positions, so
+    // these positions already cover ZQSD on an AZERTY layout). Arrow keys too.
+    // Bindings are additive (max strength wins), so multiple keys per action work.
     Input::bindKey("MoveForward", KeyCode::W);
     Input::bindKey("MoveLeft", KeyCode::A);
     Input::bindKey("MoveBackward", KeyCode::S);
     Input::bindKey("MoveRight", KeyCode::D);
+    Input::bindKey("MoveForward", KeyCode::Up);
+    Input::bindKey("MoveLeft", KeyCode::Left);
+    Input::bindKey("MoveBackward", KeyCode::Down);
+    Input::bindKey("MoveRight", KeyCode::Right);
     Input::bindKey("Jump", KeyCode::Space);
+    Input::bindKey("Sprint", KeyCode::LeftShift);
 }
 
 void CharacterBehaviour::onUpdate(float dt) {
@@ -36,9 +64,17 @@ void CharacterBehaviour::onUpdate(float dt) {
     // Logic only: read input → write velocity. The engine performs the slide in
     // the physics step (no moveAndSlide to call or forget).
     glm::vec2 in = Input::getVector("MoveLeft", "MoveRight", "MoveBackward", "MoveForward");
+
+    // Movement is relative to the active camera's horizontal facing.
+    glm::vec3 forward, right;
+    cameraBasis(tree(), forward, right);
+    glm::vec3 moveDir = right * in.x + forward * in.y;
+    if (glm::length(moveDir) > 1.0f) moveDir = glm::normalize(moveDir);  // no faster diagonals
+
+    float speed = moveSpeed * (Input::isActionHeld("Sprint") ? sprintMultiplier : 1.0f);
     glm::vec3 v = body->velocity;
-    v.x = in.x * moveSpeed;
-    v.z = -in.y * moveSpeed;  // forward = -Z
+    v.x = moveDir.x * speed;
+    v.z = moveDir.z * speed;
 
     if (body->isOnFloor()) {
         v.y = 0.0f;
@@ -50,6 +86,17 @@ void CharacterBehaviour::onUpdate(float dt) {
     body->velocity = v;
 
     bool moving = glm::length(glm::vec2(v.x, v.z)) > 0.1f;
+
+    // Turn to face the movement direction (smoothed). The model's forward is -Z.
+    if (faceMovement && moving) {
+        glm::vec3 flatDir = glm::normalize(glm::vec3(moveDir.x, 0.0f, moveDir.z));
+        glm::quat targetRot =
+            glm::quat_cast(glm::inverse(glm::lookAt(glm::vec3(0.0f), flatDir, kWorldUp)));
+        float a = 1.0f - std::exp(-turnSpeed * dt);
+        node()->transform().rotation =
+            glm::normalize(glm::slerp(node()->transform().rotation, targetRot, a));
+    }
+
     updateAnimation(body->isOnFloor(), moving);
 }
 
@@ -62,31 +109,13 @@ void CharacterBehaviour::updateAnimation(bool onFloor, bool moving) {
         animator_->play(want);  // play() no-ops if it's already the current clip
 }
 
-void CharacterBehaviour::onDrawInspector() {
-    ImGui::DragFloat("Move Speed", &moveSpeed, 0.1f, 0.1f, 50.0f);
-    ImGui::DragFloat("Jump Force", &jumpForce, 0.1f, 0.1f, 50.0f);
-    ImGui::DragFloat("Gravity", &gravity, 0.1f, 0.1f, 50.0f);
-    if (CharacterBodyNode* body = node() ? node()->asCharacterBody() : nullptr)
-        ImGui::TextDisabled("On floor: %s", body->isOnFloor() ? "yes" : "no");
-    else
-        ImGui::TextDisabled("(attach to a CharacterBody node)");
-
-    ImGui::SeparatorText("Animation clips (child Animator)");
-    auto clipField = [](const char* label, std::string& s) {
-        char buf[64];
-        std::strncpy(buf, s.c_str(), sizeof(buf) - 1);
-        buf[sizeof(buf) - 1] = '\0';
-        if (ImGui::InputText(label, buf, sizeof(buf))) s = buf;
-    };
-    clipField("Idle", idleClip);
-    clipField("Walk", walkClip);
-    clipField("Jump", jumpClip);
-}
-
 void CharacterBehaviour::save(nlohmann::json& j) const {
     j["moveSpeed"] = moveSpeed;
+    j["sprintMultiplier"] = sprintMultiplier;
     j["jumpForce"] = jumpForce;
     j["gravity"] = gravity;
+    j["faceMovement"] = faceMovement;
+    j["turnSpeed"] = turnSpeed;
     j["idleClip"] = idleClip;
     j["walkClip"] = walkClip;
     j["jumpClip"] = jumpClip;
@@ -94,8 +123,11 @@ void CharacterBehaviour::save(nlohmann::json& j) const {
 
 void CharacterBehaviour::load(const nlohmann::json& j) {
     if (j.contains("moveSpeed")) moveSpeed = j["moveSpeed"].get<float>();
+    if (j.contains("sprintMultiplier")) sprintMultiplier = j["sprintMultiplier"].get<float>();
     if (j.contains("jumpForce")) jumpForce = j["jumpForce"].get<float>();
     if (j.contains("gravity")) gravity = j["gravity"].get<float>();
+    if (j.contains("faceMovement")) faceMovement = j["faceMovement"].get<bool>();
+    if (j.contains("turnSpeed")) turnSpeed = j["turnSpeed"].get<float>();
     if (j.contains("idleClip")) idleClip = j["idleClip"].get<std::string>();
     if (j.contains("walkClip")) walkClip = j["walkClip"].get<std::string>();
     if (j.contains("jumpClip")) jumpClip = j["jumpClip"].get<std::string>();

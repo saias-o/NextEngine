@@ -2,9 +2,12 @@
 
 #include "editor/CommandHistory.hpp"
 #include "editor/EditorEnums.hpp"
-#include "editor/ImGuiTextureCache.hpp"
+#include "editor/SceneDocument.hpp"
+#include "editor/ThumbnailCache.hpp"
 
+#include <any>
 #include <string>
+#include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -37,6 +40,7 @@ class EditorUI {
     friend class FileBrowserPanel;
     friend class ViewportPanel;
     friend class ModelImporterPanel;
+    friend class PropertyEditor;
 public:
     EditorUI();
     ~EditorUI();  // defined in .cpp where Scene is complete (previewScene_ unique_ptr)
@@ -49,7 +53,7 @@ public:
     Node* selectedNode() const { return selectedNode_; }
     Project* ctxProject() const { return ctxProject_; }
 
-    void clearSelection() { selectedNode_ = nullptr; }
+    void clearSelection() { selectedNode_ = nullptr; document_.clearSelection(); }
 
     // Request to quit the application
     bool quitRequested() const { return quitRequested_; }
@@ -65,7 +69,20 @@ public:
     bool isPreviewMode() const { return isPreviewMode_; }
     Scene* previewScene() const { return previewScene_.get(); }
 
+    // Play is inspectable but read-only: no editor mutation may touch the live
+    // World sub-scene. Every command and inspector edit is gated on this.
+    bool canEdit() const;
+
+    // Mark the document dirty for mutations that do not yet go through a command
+    // (resource/asset edits handled by later lots). No-op in Play.
+    void markDirty();
+
 private:
+    // Single chokepoint for document mutations. Drops the command (no-op) when
+    // editing is disabled (Play mode), otherwise records it on the history so
+    // the change is undoable and marks the document dirty.
+    void execute(std::unique_ptr<Command> command);
+
     // Scene update: serialization, clipboard and undo/redo.
     void saveScene(Scene* scene, ResourceManager* resources, const std::string& path);
     void loadScene(Scene* scene, ResourceManager* resources, const std::string& path);
@@ -110,6 +127,19 @@ private:
     // File browser state
     std::string currentBrowsePath_;
     float fileBrowserZoom_ = 1.0f;
+
+    // Cached directory listing so the browser does not hit the disk every frame.
+    // Rescanned when the path/query changes, after a local file mutation, or
+    // every kRefreshSeconds to pick up external changes. Paths are absolute;
+    // directories and files are pre-sorted by name.
+    struct FileListing {
+        std::string path;
+        std::string query;
+        double time = -1.0;        // GetTime() of last scan; < 0 forces a rescan
+        std::vector<std::string> dirs;
+        std::vector<std::string> files;
+    };
+    FileListing fileListing_;
 
     // Project dialogs
     bool showNewProjectDialog_  = false;
@@ -180,7 +210,19 @@ private:
     glm::vec2 viewportSize_{0.0f, 0.0f};
 
     // Scene update state.
+    SceneDocument document_;
     CommandHistory history_;
+
+    // Transient state for transactional inspector edits (see PropertyEditor):
+    // the ImGui id and the pre-edit value of the property currently being
+    // dragged. A single widget is active at a time, so one slot suffices.
+    unsigned int propEditId_ = 0;       // ImGuiID of the active property widget
+    std::any propEditOld_;              // value captured when the edit began
+
+    // Last seen Project::version(); a change means the project was created or
+    // (re)loaded, so the per-project editor state (history, clipboard, …) must be
+    // dropped — its commands reference nodes from the previous scene.
+    uint64_t lastProjectVersion_ = 0;
     std::string clipboard_;          // JSON of a copied node subtree
     std::string currentScenePath_;   // last saved/opened .scene path
     EditorApp* app_ = nullptr;
@@ -188,7 +230,7 @@ private:
     Camera* ctxCamera_ = nullptr;
     ResourceManager* ctxResources_ = nullptr;  // set each frame in draw()
     Project* ctxProject_ = nullptr;            // set each frame in draw()
-    ImGuiTextureCache texCache_;     // cache for ImGui texture IDs
+    ThumbnailCache thumbnails_;      // bounded, downscaled asset-browser thumbnails
 
     // Importer State
     bool isPreviewMode_ = false;

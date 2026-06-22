@@ -1,0 +1,74 @@
+#include "editor/Command.hpp"
+#include "editor/CommandHistory.hpp"
+#include "editor/SceneDocument.hpp"
+#include "scene/Node.hpp"
+#include "scene/Scene.hpp"
+
+#include <cassert>
+#include <memory>
+#include <string>
+
+namespace {
+
+class CountingCommand final : public ne::Command {
+public:
+    explicit CountingCommand(int& value) : value_(value) {}
+    void execute(ne::SceneDocument&) override { ++value_; }
+    void undo(ne::SceneDocument&) override { --value_; }
+
+private:
+    int& value_;
+};
+
+// History budget: pushing past the cap keeps the most recent commands and the
+// undo/redo stacks stay consistent.
+void testHistoryBudget() {
+    ne::SceneDocument document;
+    ne::CommandHistory history(document);
+    int value = 0;
+
+    for (int i = 0; i < 300; ++i)
+        history.execute(std::make_unique<CountingCommand>(value));
+
+    assert(value == 300);
+    assert(history.undoCount() == 256);
+    history.undo();
+    assert(value == 299);
+    assert(history.redoCount() == 1);
+    history.redo();
+    assert(value == 300);
+}
+
+// SetPropertyCommand resolves its node by id every time and is a clean undo/redo
+// round-trip, even though it carries only type-erased apply closures.
+void testSetPropertyCommand() {
+    ne::Scene scene;
+    ne::SceneDocument document;
+    document.bind(&scene, nullptr);
+
+    ne::Node* node = scene.createChild<ne::Node>("Original");
+    const ne::NodeId id = node->id();
+
+    ne::CommandHistory history(document);
+    history.execute(std::make_unique<ne::SetPropertyCommand>(
+        id, "Rename",
+        [](ne::Node& n) { n.setName("Original"); },
+        [](ne::Node& n) { n.setName("Edited"); }));
+
+    assert(document.find(id)->name() == "Edited");
+    assert(document.dirty());
+
+    history.undo();
+    assert(document.find(id)->name() == "Original");
+
+    history.redo();
+    assert(document.find(id)->name() == "Edited");
+}
+
+} // namespace
+
+int main() {
+    testHistoryBudget();
+    testSetPropertyCommand();
+    return 0;
+}

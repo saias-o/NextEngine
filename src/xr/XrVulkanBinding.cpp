@@ -13,6 +13,18 @@ void vkCheck(VkResult r, const char* what) {
 }
 } // namespace
 
+VkInstance XrVulkanDeviceCreator::createInstance(const VkInstanceCreateInfo& ci) {
+    return createVulkanInstance(xr_, ci);
+}
+
+VkPhysicalDevice XrVulkanDeviceCreator::pickPhysicalDevice(VkInstance instance) {
+    return xr::pickPhysicalDevice(xr_, instance);
+}
+
+VkDevice XrVulkanDeviceCreator::createDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo& ci) {
+    return createVulkanDevice(xr_, physicalDevice, ci);
+}
+
 VkInstance createVulkanInstance(const Instance& xr, const VkInstanceCreateInfo& ci) {
     // The runtime validates that our requested Vulkan version is supported.
     XrGraphicsRequirementsVulkan2KHR req{};

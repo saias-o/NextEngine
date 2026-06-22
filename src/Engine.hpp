@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Camera.hpp"
+#include "render/CameraDirector.hpp"
 #include "ui/UIInteractionSystem.hpp"
 
 #include <functional>
@@ -18,7 +19,10 @@ class SceneTree;
 class ImGuiLayer;
 class Renderer;
 class Project;
+#ifdef NE_ENABLE_XR
 namespace xr { class Instance; class Session; }
+class VulkanDeviceCreator;
+#endif
 
 // How a game populates the scene at startup. Provided by the executable (game
 // code), so the engine library has no built-in content.
@@ -48,18 +52,19 @@ public:
     // session (head-tracked stereo) instead of the desktop editor window.
     bool xrMode() const { return xrMode_; }
 
-    // Editor Play seam. Returns true when the current scene requires an external
-    // runtime and the request was handled (launched or reported as an error).
-    // The editor stays presentation-agnostic and only falls back to in-process
-    // Play when this returns false.
-    bool launchExternalPreviewIfNeeded();
-
     void setSceneOverride(Scene* scene) { sceneOverride_ = scene; }
 
     // Runtime/Play: wrap the current edit scene in the persistent World (hosting
     // autoloads + the swappable gameplay sub-scene) and render that instead.
     void mountWorld();
     void unmountWorld();
+
+#ifdef NE_ENABLE_XR
+    // Returns true and launches an isolated XR preview process when the scene
+    // contains XR nodes that require OpenXR presentation. The editor calls this
+    // before mountWorld() so the desktop editor never tries to drive OpenXR.
+    bool launchExternalPreviewIfNeeded();
+#endif
 
     // Accessors for the application layer.
     Scene& scene() { return *scene_; }
@@ -72,12 +77,15 @@ public:
 private:
     // Desktop frame loop (window present path) and XR frame loop (OpenXR session).
     void runDesktop();
+#ifdef NE_ENABLE_XR
     void runXr();
+#endif
 
     std::unique_ptr<Window> window_;
-    // Declared before device_ so the OpenXR instance outlives the Vulkan device it
-    // created (destruction is reverse declaration order).
+#ifdef NE_ENABLE_XR
     std::unique_ptr<xr::Instance> xrInstance_;
+    std::unique_ptr<VulkanDeviceCreator> xrCreator_;
+#endif
     std::unique_ptr<VulkanDevice> device_;
     std::unique_ptr<Swapchain> swapchain_;
     std::unique_ptr<ResourceManager> resources_;
@@ -93,12 +101,15 @@ private:
 
     FrameFn onFrame_;
     Camera camera_;
+    CameraDirector cameraDirector_;  // picks + blends scene cameras during Play
 
     std::string playSnapshot_;  // edit doc serialized at play start, to restore on stop
 
+#ifdef NE_ENABLE_XR
     // OpenXR session — declared last so it is destroyed first (before device_ and
     // xrInstance_), since it owns Vulkan command buffers / image views.
     std::unique_ptr<xr::Session> xrSession_;
+#endif
     bool xrMode_ = false;
 };
 

@@ -34,7 +34,8 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
                 ImGui::TextDisabled("  (no project)");
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("New Scene")) {
+            const bool canEdit = editor->canEdit();  // Play is read-only.
+            if (ImGui::MenuItem("New Scene", nullptr, false, canEdit)) {
                 if (scene) {
                     scene->clearChildren();
                     editor->selectedNode_ = nullptr;
@@ -42,10 +43,10 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
                     editor->history_.clear();
                 }
             }
-            if (ImGui::MenuItem("Reload Scene", "F5")) {
+            if (ImGui::MenuItem("Reload Scene", "F5", false, canEdit)) {
                 editor->loadScene(scene, resources, editor->resolveScenePath(project));
             }
-            if (ImGui::MenuItem("Open Scene...")) {
+            if (ImGui::MenuItem("Open Scene...", nullptr, false, canEdit)) {
                 editor->loadScene(scene, resources, editor->resolveScenePath(project));
             }
             ImGui::Separator();
@@ -68,20 +69,21 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
 
         // ── 2. Edit Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("Edit")) {
-            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, editor->history_.canUndo())) {
+            const bool canEdit = editor->canEdit();  // Play is read-only.
+            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canEdit && editor->history_.canUndo())) {
                 editor->history_.undo(); editor->selectedNode_ = nullptr;
             }
-            if (ImGui::MenuItem("Redo", "Ctrl+Y", false, editor->history_.canRedo())) {
+            if (ImGui::MenuItem("Redo", "Ctrl+Y", false, canEdit && editor->history_.canRedo())) {
                 editor->history_.redo(); editor->selectedNode_ = nullptr;
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Copy", "Ctrl+C", false, editor->selectedNode_ != nullptr)) {
                 editor->copySelected(resources);
             }
-            if (ImGui::MenuItem("Paste", "Ctrl+V", false, !editor->clipboard_.empty())) {
+            if (ImGui::MenuItem("Paste", "Ctrl+V", false, canEdit && !editor->clipboard_.empty())) {
                 editor->pasteClipboard(scene, resources);
             }
-            if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, editor->selectedNode_ != nullptr)) {
+            if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, canEdit && editor->selectedNode_ != nullptr)) {
                 editor->duplicateSelected(resources);
             }
             ImGui::EndMenu();
@@ -100,7 +102,7 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
         // ── 4. Scene Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("Scene")) {
             Node* parentNode = editor->selectedNode_ ? editor->selectedNode_ : scene;
-            bool hasParent = parentNode != nullptr;
+            bool hasParent = parentNode != nullptr && editor->canEdit();  // Play is read-only.
             if (ImGui::MenuItem("Add Node", nullptr, false, hasParent)) {
                 editor->nodeToCreateChildUnder_ = parentNode;
                 editor->createType_ = CreateNodeType::Node;
@@ -128,7 +130,7 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
                 ImGui::EndMenu();
             }
             ImGui::Separator();
-            bool canDelete = editor->selectedNode_ != nullptr && editor->selectedNode_->parent() != nullptr;
+            bool canDelete = editor->selectedNode_ != nullptr && editor->selectedNode_->parent() != nullptr && editor->canEdit();
             if (ImGui::MenuItem("Delete Selected", "Del", false, canDelete)) {
                 editor->nodeToDelete_ = editor->selectedNode_;
             }

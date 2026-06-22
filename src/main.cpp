@@ -1,7 +1,6 @@
 #include "Engine.hpp"
 #include "core/Log.hpp"
 #include "editor/EditorApp.hpp"
-#include "game/DemoScene.hpp"
 #include "core/Time.hpp"
 #include "scene/SceneSerializer.hpp"
 
@@ -46,7 +45,10 @@ int main(int argc, char** argv) {
         // XR Preview is a standalone child process launched by the desktop editor.
         // It must create its Vulkan device through OpenXR from process startup;
         // switching the editor's existing desktop device in place is not valid.
-        ne::Engine engine(ne::buildDemoScene, initialProject, xrPreview);
+        //
+        // No SceneSetup: launched directly (no --project), the editor opens on an
+        // empty scene. The Hub passes a project via --project to load real content.
+        ne::Engine engine(nullptr, initialProject, xrPreview);
         if (xrPreview) {
             if (runtimeScene.empty())
                 throw std::runtime_error("--xr requires --scene <path>");

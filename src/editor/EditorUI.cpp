@@ -58,7 +58,7 @@ bool intersectRayPlane(const glm::vec3& rayOrigin, const glm::vec3& rayDir, cons
 }
 } // namespace
 
-EditorUI::EditorUI() {
+EditorUI::EditorUI() : history_(document_) {
     applyEditorStyle();
     // Default open path for the "Open Project" dialog.
     std::strncpy(newProjectPath_, NE_PROJECT_ROOT, sizeof(newProjectPath_) - 1);
@@ -159,6 +159,22 @@ void EditorUI::applyEditorStyle() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* project, ResourceManager* resources, float dt) {
+    document_.bind(scene, resources);
+
+    // A project create/load invalidates all per-project editor state: the undo
+    // history references nodes from the previous scene, the clipboard holds a
+    // subtree serialized against the old resources, etc. Drop them on change.
+    if (project && project->version() != lastProjectVersion_) {
+        lastProjectVersion_ = project->version();
+        history_.clear();
+        clipboard_.clear();
+        currentScenePath_.clear();
+        document_.clearSelection();
+        propEditId_ = 0;
+        propEditOld_.reset();
+    }
+
+    selectedNode_ = document_.selectedNode();
     app_ = app;
     ctxScene_ = scene;
     ctxCamera_ = camera;
@@ -168,18 +184,22 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     // Keyboard shortcuts (skip while typing in a text field).
     ImGuiIO& io = ImGui::GetIO();
     if (io.KeyCtrl && !io.WantTextInput) {
-        if (ImGui::IsKeyPressed(ImGuiKey_Z) && history_.canUndo()) { history_.undo(); selectedNode_ = nullptr; }
-        if (ImGui::IsKeyPressed(ImGuiKey_Y) && history_.canRedo()) { history_.redo(); selectedNode_ = nullptr; }
+        // Copy and Save are read-only and stay available in Play; the mutating
+        // shortcuts (undo/redo/paste/duplicate) are gated on canEdit().
         if (ImGui::IsKeyPressed(ImGuiKey_C)) copySelected(resources);
-        if (ImGui::IsKeyPressed(ImGuiKey_V)) pasteClipboard(scene, resources);
-        if (ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelected(resources);
         if (ImGui::IsKeyPressed(ImGuiKey_S)) {
             saveScene(scene, resources, resolveScenePath(project));
+        }
+        if (canEdit()) {
+            if (ImGui::IsKeyPressed(ImGuiKey_Z) && history_.canUndo()) { history_.undo(); selectedNode_ = nullptr; }
+            if (ImGui::IsKeyPressed(ImGuiKey_Y) && history_.canRedo()) { history_.redo(); selectedNode_ = nullptr; }
+            if (ImGui::IsKeyPressed(ImGuiKey_V)) pasteClipboard(scene, resources);
+            if (ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelected(resources);
         }
     }
 
     // Delete / Backspace removes the selected node (mirrors the context Delete).
-    if (!io.WantTextInput && selectedNode_ && selectedNode_->parent()
+    if (canEdit() && !io.WantTextInput && selectedNode_ && selectedNode_->parent()
         && (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace))) {
         nodeToDelete_ = selectedNode_;
     }
@@ -263,7 +283,7 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
 
     if (showModelImporter_) {
         ModelImporterPanel modelImporterPanel;
-        modelImporterPanel.draw(this, previewScene_.get(), previewModelPath_, resources);
+        modelImporterPanel.draw(this, previewScene_.get(), previewModelPath_);
     }
 
     ViewportPanel viewportPanel;
@@ -279,22 +299,39 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     drawNewProjectDialog(project);
     drawOpenProjectDialog(project);
     drawSaveSceneAsDialog(project, scene, resources);
+    document_.select(selectedNode_);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Scene update: serialization, clipboard, undo/redo helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+bool EditorUI::canEdit() const {
+    return !(app_ && app_->isPlayMode());
+}
+
+void EditorUI::markDirty() {
+    if (canEdit()) document_.markDirty();
+}
+
+void EditorUI::execute(std::unique_ptr<Command> command) {
+    if (!canEdit()) return;  // Play mode is read-only.
+    history_.execute(std::move(command));
+}
+
 void EditorUI::saveScene(Scene* scene, ResourceManager* resources, const std::string& path) {
     if (!scene || !resources) return;
-    if (SceneSerializer::saveToFile(*scene, *resources, path))
+    if (SceneSerializer::saveToFile(*scene, *resources, path)) {
         currentScenePath_ = path;
+        document_.markSaved();
+    }
 }
 
 void EditorUI::loadScene(Scene* scene, ResourceManager* resources, const std::string& path) {
     if (!scene || !resources) return;
     if (SceneSerializer::loadIntoScene(*scene, *resources, path)) {
         currentScenePath_ = path;
+        document_.markLoaded();
         selectedNode_ = nullptr;
         history_.clear();
     }
@@ -310,9 +347,9 @@ void EditorUI::pasteClipboard(Scene* scene, ResourceManager* resources) {
     Node* parent = selectedNode_ ? selectedNode_ : scene;
     if (!parent) return;
     if (auto node = SceneSerializer::nodeFromJson(clipboard_, *resources)) {
-        Node* added = node.get();
-        history_.execute(std::make_unique<AddNodeCommand>(parent, std::move(node)));
-        selectedNode_ = added;
+        NodeId addedId = node->id();
+        execute(std::make_unique<AddNodeCommand>(parent->id(), std::move(node)));
+        selectedNode_ = document_.find(addedId);
     }
 }
 
@@ -320,9 +357,10 @@ void EditorUI::duplicateSelected(ResourceManager* resources) {
     if (!selectedNode_ || !resources || !selectedNode_->parent()) return;
     std::string json = SceneSerializer::nodeToJson(*selectedNode_, *resources);
     if (auto node = SceneSerializer::nodeFromJson(json, *resources)) {
-        Node* added = node.get();
-        history_.execute(std::make_unique<AddNodeCommand>(selectedNode_->parent(), std::move(node)));
-        selectedNode_ = added;
+        NodeId addedId = node->id();
+        NodeId parentId = selectedNode_->parent()->id();
+        execute(std::make_unique<AddNodeCommand>(parentId, std::move(node)));
+        selectedNode_ = document_.find(addedId);
     }
 }
 
@@ -904,6 +942,20 @@ void EditorUI::drawGizmo(Camera* camera, Scene* scene) {
     if (grabbedAxis_ != GizmoAxis::None && isMouseDown) {
         handleGizmoDrag(rayOrigin, rayDir, mousePos);
     } else if (!isMouseDown) {
+        // Drag released: record the net move (start → final) as one undoable,
+        // dirty-marking command instead of leaving a silent direct mutation.
+        if (grabbedAxis_ != GizmoAxis::None && selectedNode_) {
+            Transform oldT;
+            oldT.position = dragStartNodePos_;
+            oldT.rotation = dragStartNodeRotQuat_;
+            oldT.scale    = dragStartNodeScale_;
+            const Transform& newT = selectedNode_->transform();
+            bool changed = glm::distance(oldT.position, newT.position) > 1e-6f
+                        || glm::distance(oldT.scale, newT.scale) > 1e-6f
+                        || std::abs(glm::dot(oldT.rotation, newT.rotation)) < 0.999999f;
+            if (changed)
+                execute(std::make_unique<TransformCommand>(selectedNode_->id(), oldT, newT));
+        }
         grabbedAxis_ = GizmoAxis::None;
     }
 

@@ -32,7 +32,17 @@ class LightBaker;
 class UIRenderer;
 class GIVolume;
 struct SceneSettings;
-namespace xr { struct EyeView; }
+
+// Everything one eye/view needs for stereo/multiview rendering and tonemapping.
+// This decouples the core rendering pipeline from the OpenXR structures.
+struct EyeRenderInfo {
+    VkImage image = VK_NULL_HANDLE;
+    VkImageView imageView = VK_NULL_HANDLE;
+    VkExtent2D extent{};
+    glm::mat4 view{1.0f};
+    glm::mat4 projection{1.0f};
+    glm::vec3 eyePosition{0.0f};
+};
 
 // Camera block shared by the desktop (mono) and XR (stereo multiview) paths:
 // view/proj are arrays of 2 (left/right eye). Mono fills/uses index 0; the
@@ -110,12 +120,14 @@ class Renderer {
 public:
     Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
              ResourceManager& resources, ImGuiLayer& imgui);
+#ifdef NE_ENABLE_XR
     // XR constructor: no window swapchain / ImGui — presentation is owned by the
     // OpenXR session. Builds the multiview (stereo) scene/skybox/tonemap pipelines
     // and the 2-layer render targets sized to one eye. Shares all the rest of the
     // engine's rendering machinery (pipelines, descriptors, shadows, GI).
     Renderer(VulkanDevice& device, Window& window, ResourceManager& resources,
              VkExtent2D xrEyeExtent, VkFormat xrColorFormat, uint32_t xrViewCount);
+#endif
     ~Renderer();
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
@@ -123,13 +135,10 @@ public:
     // Desktop frame: render the scene and present to the window swapchain.
     void drawFrame(Scene& scene, Camera& camera, Project* project);
 
-    // XR frame: render the scene once in stereo (multiview) into the eyes' images.
-    // Called from the OpenXR session's per-frame render callback with the acquired
-    // swapchain images + per-eye matrices already laid out. Records everything into
-    // `cmd` (the session owns submit/sync). Leaves each eye image in
-    // COLOR_ATTACHMENT_OPTIMAL, ready for the compositor.
-    void drawXr(VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes,
+#ifdef NE_ENABLE_XR
+    void drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eyes,
                 Scene& scene, Project* project);
+#endif
 
 private:
     struct TonemapPushConstants {
@@ -265,6 +274,7 @@ private:
     int giBakeFramesRemaining_ = 0;
     bool giUpdateThisFrame_ = true;
 
+#ifdef NE_ENABLE_XR
     // ── XR / multiview (stereo) ────────────────────────────────────────────────
     // Created only by the XR constructor. The scene is rendered once into a
     // 2-layer HDR target (viewMask = 0b11, gl_ViewIndex per eye), then each layer
@@ -277,12 +287,12 @@ private:
     void createXrTargets();
     void createXrPipelines();
     void cleanupXrTargets();
-    void updateUniformBufferXr(uint32_t frame, const std::vector<xr::EyeView>& eyes,
+    void updateUniformBufferXr(uint32_t frame, const std::vector<EyeRenderInfo>& eyes,
                                Scene& scene, Project* project);
     void recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
-                           const std::vector<xr::EyeView>& eyes);
+                           const std::vector<EyeRenderInfo>& eyes);
     void recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
-                         const std::vector<xr::EyeView>& eyes);
+                         const std::vector<EyeRenderInfo>& eyes);
 
     std::unique_ptr<Pipeline> xrScenePipeline_;    // multiview scene
     std::unique_ptr<Pipeline> xrSkyboxPipeline_;   // multiview skybox
@@ -307,6 +317,9 @@ private:
         float exposure;
         float rotation;
     };
+#else
+    bool xrMode_ = false; // fallback for non-XR builds
+#endif
 
     glm::mat4 lodView_{1.0f};
     glm::mat4 lodProj_{1.0f};

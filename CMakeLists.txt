@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(NextEngine LANGUAGES C CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -96,22 +98,27 @@ set(DOUBLE_PRECISION OFF)                        # 32-bit positions: smaller/fas
 add_subdirectory(third_party/jolt/Build ${CMAKE_BINARY_DIR}/jolt)
 
 # ── OpenXR (vendored, loader only) ──────────────────────────────────────────
-# Build just the static openxr_loader from the pre-generated SDK repo (no Python
-# generation, no API layers/tests). The loader finds the active runtime (Quest
-# Link / Oculus) via the registry at runtime. Headers are propagated by the target.
-set(DYNAMIC_LOADER OFF)        # static loader, consistent with the project's -static link
-set(BUILD_API_LAYERS OFF)
-set(BUILD_TESTS OFF)
-set(BUILD_CONFORMANCE_TESTS OFF)
-set(BUILD_SDK_TESTS OFF)
-set(BUILD_ALL_EXTENSIONS OFF)
-add_subdirectory(third_party/openxr ${CMAKE_BINARY_DIR}/openxr)
+# Set NE_ENABLE_XR=OFF to produce a pure-desktop build with no OpenXR dependency.
+option(NE_ENABLE_XR "Enable OpenXR support (Étape 14)" ON)
 
-# MinGW's winapifamily.h does not define the UWP system partition constant
-# used by OpenXR 1.1.60.  This is a desktop Win32 build, so that partition is
-# absent; defining it to zero also keeps the loader's -Werror=undef happy.
-if (MINGW)
-    target_compile_definitions(openxr_loader PRIVATE WINAPI_PARTITION_SYSTEM=0)
+if(NE_ENABLE_XR)
+    # Build just the static openxr_loader from the pre-generated SDK repo (no Python
+    # generation, no API layers/tests). The loader finds the active runtime (Quest
+    # Link / Oculus) via the registry at runtime. Headers are propagated by the target.
+    set(DYNAMIC_LOADER OFF)        # static loader, consistent with the project's -static link
+    set(BUILD_API_LAYERS OFF)
+    set(BUILD_TESTS OFF)
+    set(BUILD_CONFORMANCE_TESTS OFF)
+    set(BUILD_SDK_TESTS OFF)
+    set(BUILD_ALL_EXTENSIONS OFF)
+    add_subdirectory(third_party/openxr ${CMAKE_BINARY_DIR}/openxr)
+
+    # MinGW's winapifamily.h does not define the UWP system partition constant
+    # used by OpenXR 1.1.60.  This is a desktop Win32 build, so that partition is
+    # absent; defining it to zero also keeps the loader's -Werror=undef happy.
+    if (MINGW)
+        target_compile_definitions(openxr_loader PRIVATE WINAPI_PARTITION_SYSTEM=0)
+    endif()
 endif()
 
 # ── QuickJS + RmlUi (vendored, static) ───────────────────────────────────────
@@ -162,15 +169,15 @@ add_subdirectory(third_party/rmlui ${CMAKE_BINARY_DIR}/rmlui)
 # AutoLODBridge resolves build/autolod/autolod.exe at runtime.
 
 # ── Engine library ──────────────────────────────────────────────────────────
-# Everything reusable lives here and compiles once. Game/editor executables
-# link it, so changing game code doesn't recompile the engine. The editor still
-# lives inside the lib for now (to be moved to an editor target later).
+# Everything reusable lives here and compiles once. Game and editor targets link
+# it, so changing application code does not recompile the engine.
 add_library(ne_engine STATIC
     src/Engine.cpp
     src/core/FileWatcher.cpp
     src/core/Window.cpp
     src/core/Camera.cpp
     src/core/Input.cpp
+    src/scene/NodeId.cpp
     src/scene/Node.cpp
     src/scripting/JsContext.cpp
     src/scripting/JsEngineBindings.cpp
@@ -182,6 +189,9 @@ add_library(ne_engine STATIC
     src/scene/MeshNode.cpp
     src/scene/MeshLod.cpp
     src/scene/LightNode.cpp
+    src/scene/CameraNode.cpp
+    src/render/CameraDirector.cpp
+    src/scene/CameraFollowBehaviour.cpp
     src/scene/Scene.cpp
     src/scene/SceneTree.cpp
     src/scene/SceneSerializer.cpp
@@ -224,40 +234,18 @@ add_library(ne_engine STATIC
     src/graphics/StorageImage.cpp
     src/graphics/ShadowMap.cpp
     src/graphics/Texture.cpp
-    src/graphics/Material.cpp
     src/graphics/ResourceManager.cpp
-    src/graphics/ImGuiLayer.cpp
     src/render/Renderer.cpp
     src/render/LightBaker.cpp
     src/render/GIVolume.cpp
-    # XR / OpenXR (Étape 14) — module découpé, présentation via session OpenXR.
-    src/xr/XrInstance.cpp
-    src/xr/XrVulkanBinding.cpp
-    src/xr/XrSwapchain.cpp
-    src/xr/XrSession.cpp
-    src/xr/XrActions.cpp
-    src/xr/XrHandTracking.cpp
-    src/xr/toolkit/XRInput.cpp
-    src/xr/toolkit/XRController.cpp
-    src/xr/toolkit/XRHand.cpp
-    src/xr/toolkit/XRGrabbable.cpp
-    src/xr/toolkit/XRTouchable.cpp
-    src/xr/toolkit/XRDirectInteractor.cpp
-    src/xr/toolkit/XROrigin.cpp
-    src/xr/toolkit/TeleportArea.cpp
-    src/xr/toolkit/XRRayInteractor.cpp
-    src/xr/toolkit/XRPassthrough.cpp
-    src/xr/toolkit/XRAnchors.cpp
-    src/xr/toolkit/XRAnchor.cpp
+    # XR sources are added conditionally below via target_sources (NE_ENABLE_XR)
     src/project/Project.cpp
     src/project/AssetRegistry.cpp
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
-    src/graphics/StbImageUsage.cpp
     src/graphics/cgltf_impl.cpp
     src/scene/GLTFLoader.cpp
     src/tools/AutoLODBridge.cpp
-    src/audio/AudioManager.cpp
     src/audio/AudioUsage.cpp
     src/audio/AudioSourceBehaviour.cpp
     src/scene/CharacterBehaviour.cpp
@@ -291,7 +279,31 @@ target_include_directories(ne_engine PUBLIC
     third_party/miniaudio
     third_party/xatlas
 )
-target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt openxr_loader quickjs RmlUi::RmlUi)
+target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt quickjs RmlUi::RmlUi)
+if(NE_ENABLE_XR)
+    target_sources(ne_engine PRIVATE
+        src/xr/XrInstance.cpp
+        src/xr/XrVulkanBinding.cpp
+        src/xr/XrRegistration.cpp
+        src/xr/XrSwapchain.cpp
+        src/xr/XrSession.cpp
+        src/xr/XrActions.cpp
+        src/xr/XrHandTracking.cpp
+        src/xr/toolkit/XRInput.cpp
+        src/xr/toolkit/XRController.cpp
+        src/xr/toolkit/XRHand.cpp
+        src/xr/toolkit/XRGrabbable.cpp
+        src/xr/toolkit/XRTouchable.cpp
+        src/xr/toolkit/XRDirectInteractor.cpp
+        src/xr/toolkit/XROrigin.cpp
+        src/xr/toolkit/TeleportArea.cpp
+        src/xr/toolkit/XRRayInteractor.cpp
+        src/xr/toolkit/XRPassthrough.cpp
+        src/xr/toolkit/XRAnchors.cpp
+        src/xr/toolkit/XRAnchor.cpp
+    )
+    target_link_libraries(ne_engine PUBLIC openxr_loader)
+endif()
 add_dependencies(ne_engine Shaders)
 
 # Absolute paths baked at configure time so the exe runs from any cwd; and GLM
@@ -302,6 +314,9 @@ target_compile_definitions(ne_engine PUBLIC
     NE_SHADER_DIR="${SHADER_OUT_DIR}"
     GLM_FORCE_RADIANS
     GLM_FORCE_DEPTH_ZERO_TO_ONE)
+if(NE_ENABLE_XR)
+    target_compile_definitions(ne_engine PUBLIC NE_ENABLE_XR)
+endif()
 
 # Warnings for the engine's own sources (third-party TUs override this with -w).
 target_compile_options(ne_engine PRIVATE -Wall -Wextra)
@@ -334,7 +349,11 @@ endif()
 add_library(ne_editor STATIC
     src/editor/EditorApp.cpp
     src/editor/EditorUI.cpp
+    src/editor/SceneDocument.cpp
+    src/editor/Command.cpp
     src/editor/CommandHistory.cpp
+    src/editor/ThumbnailCache.cpp
+    src/editor/InspectorRegistry.cpp
     src/editor/panels/MenuBarPanel.cpp
     src/editor/panels/SceneHierarchyPanel.cpp
     src/editor/panels/InspectorPanel.cpp
@@ -345,11 +364,37 @@ add_library(ne_editor STATIC
 target_link_libraries(ne_editor PUBLIC ne_engine)
 target_compile_options(ne_editor PRIVATE -Wall -Wextra)
 
+if (BUILD_TESTING)
+    add_executable(ne_core_tests tests/CoreTests.cpp)
+    target_include_directories(ne_core_tests PRIVATE src)
+    target_compile_options(ne_core_tests PRIVATE -Wall -Wextra)
+    add_test(NAME ne_core_tests COMMAND ne_core_tests)
+
+    add_executable(ne_scene_lifecycle_tests tests/SceneLifecycleTests.cpp)
+    target_link_libraries(ne_scene_lifecycle_tests PRIVATE ne_engine)
+    target_compile_options(ne_scene_lifecycle_tests PRIVATE -Wall -Wextra)
+    add_test(NAME ne_scene_lifecycle_tests COMMAND ne_scene_lifecycle_tests)
+
+    add_executable(ne_physics_character_tests tests/PhysicsCharacterTest.cpp)
+    target_link_libraries(ne_physics_character_tests PRIVATE ne_engine)
+    add_test(NAME ne_physics_character_tests COMMAND ne_physics_character_tests)
+
+    add_executable(ne_editor_command_tests tests/EditorCommandTests.cpp)
+    target_link_libraries(ne_editor_command_tests PRIVATE ne_editor)
+    target_compile_options(ne_editor_command_tests PRIVATE -Wall -Wextra)
+    add_test(NAME ne_editor_command_tests COMMAND ne_editor_command_tests)
+
+    add_executable(ne_editor_document_tests tests/EditorDocumentTests.cpp)
+    target_link_libraries(ne_editor_document_tests PRIVATE ne_editor)
+    target_compile_options(ne_editor_document_tests PRIVATE -Wall -Wextra)
+    add_test(NAME ne_editor_document_tests COMMAND ne_editor_document_tests)
+endif()
+
 # ── Editor executable (the app the Hub launches) ────────────────────────────
-# Thin target: entry point + the game's scene/behaviours, linking the editor.
+# Thin target: just the entry point, linking the editor. Launched directly it
+# opens an empty scene; the Hub passes a project via --project to load content.
 add_executable(NextEngine
     src/main.cpp
-    src/game/DemoScene.cpp
 )
 target_link_libraries(NextEngine PRIVATE ne_editor)
 target_compile_options(NextEngine PRIVATE -Wall -Wextra)

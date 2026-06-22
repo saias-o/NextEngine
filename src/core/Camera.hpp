@@ -27,9 +27,14 @@ public:
     // Rotate by mouse deltas (degrees); pitch is clamped to avoid flipping.
     void rotate(float deltaYawDeg, float deltaPitchDeg);
 
+    // Point the camera at a world position (sets yaw/pitch from the direction).
+    // Used by the CameraDirector to drive the camera from a blended pose.
+    void lookAt(const glm::vec3& target);
+
     glm::vec3 position{0.0f, 0.0f, 3.0f};
-    float yaw = -90.0f;    // degrees; -90 looks toward -Z
-    float pitch = 0.0f;    // degrees
+    float yaw = -90.0f;        // degrees; -90 looks toward -Z
+    float pitch = 0.0f;        // degrees
+    float fovDegrees = 45.0f;  // vertical field of view (driven per-camera)
 
 private:
     glm::mat4 projection_{1.0f};

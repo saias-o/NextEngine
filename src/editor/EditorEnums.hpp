@@ -9,6 +9,7 @@ enum class CreateNodeType {
     DirectionalLight,
     PointLight,
     SpotLight,
+    Camera,
     SceneInstance,
     UICanvas,
     UIColorNode,

@@ -12,7 +12,6 @@ namespace ne {
 class SpawnerBehaviour : public Behaviour {
 public:
     void onReady() override;
-    void onDrawInspector() override;
 
     const char* typeName() const override { return "Spawner"; }
     void save(nlohmann::json& json) const override;

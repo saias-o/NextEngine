@@ -66,6 +66,10 @@ public:
     TimerId every(Node* owner, float interval, std::function<void()> fn);   // repeating
     TimerId tween(Node* owner, float duration, Easing easing,
                   std::function<void(float)> fn);  // fn(eased t) each frame until done
+    TimerId after(Behaviour* owner, float seconds, std::function<void()> fn);
+    TimerId every(Behaviour* owner, float interval, std::function<void()> fn);
+    TimerId tween(Behaviour* owner, float duration, Easing easing,
+                  std::function<void(float)> fn);
     void cancelTimer(TimerId id);
     void cancelTimersOwnedBy(Node* owner);
     void tickTimers(float dt);  // called by the Engine each frame (scaled dt)
@@ -135,7 +139,8 @@ private:
     // timers
     struct Timer {
         TimerId id;
-        Node* owner;
+        Node* nodeOwner;
+        Behaviour* behaviourOwner;
         enum Kind { After, Every, Tween } kind;
         float time = 0.0f;       // accumulated
         float duration;          // delay / interval / tween length

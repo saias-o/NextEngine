@@ -34,6 +34,11 @@ void CharacterBodyNode::syncToPhysics(PhysicsWorld& world) {
         glm::vec3 d = position - glm::vec3(cp.GetX(), cp.GetY(), cp.GetZ());
         if (glm::dot(d, d) > 1e-4f)  // > 1 cm
             character_->SetPosition(JPH::RVec3(position.x, position.y, position.z));
+        // Follow the node's gameplay rotation (e.g. a controller turning the
+        // character to face its movement). The capsule is rotationally symmetric,
+        // so this never affects the simulation — it just keeps the authored facing
+        // instead of syncFromPhysics overwriting it with a frozen orientation.
+        character_->SetRotation(toJolt(rotation));
         return;
     }
 

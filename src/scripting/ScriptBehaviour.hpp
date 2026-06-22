@@ -36,12 +36,19 @@ public:
     void exportBoolProperty(const std::string& name, bool defaultValue);
     void exportStringProperty(const std::string& name, const std::string& defaultValue);
 
+    // Editor-facing accessors (the inspector UI lives in the editor's
+    // InspectorRegistry, not in this gameplay behaviour).
+    bool loaded() const { return loaded_; }
+    bool hotReloadEnabled() const { return hotReloadEnabled_; }
+    void setHotReloadEnabled(bool enabled) { hotReloadEnabled_ = enabled; }
+    std::vector<ScriptProperty>& properties() { return properties_; }
+    void applyProperty(const ScriptProperty& property) { applyPropertyToJs(property); }
+
     void onReady() override;
     void onUpdate(float dt) override;
     void onDestroy() override;
     void onEnable() override;
     void onDisable() override;
-    void onDrawInspector() override;
 
     const char* typeName() const override { return "ScriptBehaviour"; }
     void save(nlohmann::json& j) const override;
@@ -66,7 +73,6 @@ private:
     void setPropertyValue(ScriptProperty& property, double value);
     void setPropertyValue(ScriptProperty& property, bool value);
     void setPropertyValue(ScriptProperty& property, const std::string& value);
-    void drawPropertiesInspector();
 
     std::string scriptPath_;
     WatchedFile scriptWatcher_;

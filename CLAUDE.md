@@ -90,10 +90,13 @@ par un dossier d'assets relatif à l'exe.)
 ## Architecture
 
 **Split lib/exe** : le moteur compile en bibliothèque statique `ne_engine`
-(tout `src/` sauf `main.cpp` + `game/`) ; l'exécutable `NextEngine` ne contient
-que `main.cpp` + le code de jeu (`game/`) et linke la lib. Conséquence : itérer
-le jeu ne recompile/relink que l'exe, jamais le moteur. (L'éditeur vit encore
-dans la lib — à déplacer dans un target éditeur dédié plus tard.)
+(tout `src/` sauf `main.cpp`) ; l'exécutable `NextEngine` ne contient que
+`main.cpp` et linke la lib (via `ne_editor`). Conséquence : itérer le jeu ne
+recompile/relink que l'exe, jamais le moteur. Lancé directement (sans
+`--project`), l'éditeur ouvre une **scène vierge** ; le Hub passe un projet via
+`--project`. Le moteur reste sans contenu en dur : `Engine` accepte un
+`SceneSetup` optionnel (peupleur de scène fourni par l'exe), aujourd'hui non
+utilisé par défaut.
 
 Tout est dans le namespace `ne`. Chaque classe possède ses handles Vulkan et
 les détruit (RAII), tout emprunte un `VulkanDevice&`, copies interdites.
@@ -102,11 +105,8 @@ les détruit (RAII), tout emprunte un `VulkanDevice&`, copies interdites.
 
 ```
 src/
-  main.cpp              Point d'entrée du jeu : crée Engine(buildDemoScene), run.
-  game/
-    DemoScene.{hpp,cpp} Contenu du *jeu* (cube, matériaux, lumières, behaviours
-                        de démo). Vit dans l'exe, pas dans la lib moteur → itérer
-                        le jeu ne recompile pas le moteur.
+  main.cpp              Point d'entrée : parse les args (--project/--scene/--xr),
+                        crée l'Engine (scène vierge par défaut), lance l'éditeur.
   Engine.{hpp,cpp}      Orchestration légère : possède les sous-systèmes, la
                         boucle (input, update de scène, UI, present délégué au
                         Renderer), la caméra. Reçoit un `SceneSetup` (le jeu
@@ -301,8 +301,9 @@ Le moteur est construit par étapes numérotées :
             capture du curseur (TAB) dans `Window` pour passer fly-cam ↔ UI.
 - [~] **Étape 8 — Couche jeu.**
       - [x] **Split moteur (lib `ne_engine`) / jeu (exe)** : le moteur compile
-            une fois, le jeu est un petit target. Le contenu de jeu (scène,
-            behaviours) vit dans `game/` (exe) ; l'`Engine` reçoit un `SceneSetup`.
+            une fois, l'exe est un petit target (`main.cpp`). L'`Engine` accepte
+            un `SceneSetup` optionnel pour peupler la scène ; par défaut (lancement
+            direct sans `--project`) l'éditeur ouvre une scène vierge.
       - [x] **Sérialisation de scène** (JSON via nlohmann vendu) :
             `SceneSerializer` save/load + nœud↔JSON. Behaviours sérialisables
             via `BehaviourRegistry`. Round-trip vérifié (save→load→save identique).
@@ -533,6 +534,12 @@ Le moteur est construit par étapes numérotées :
       - [ ] Hand tracking (skeletal, `XR_EXT_hand_tracking`) — optionnel, plus tard.
       - [ ] *Suites perf/qualité XR* : MSAA multiview (+resolve par layer),
             overlay ImGui (quad/layer), culling stéréo combiné.
+      - [ ] *Découplage Renderer (DRY)* : la boucle de dessin des meshes est encore
+            dupliquée entre `recordScenePass` (desktop) et `recordXrScenePass` (XR)
+            dans `src/render/Renderer.cpp`. Extraire une méthode commune
+            `recordMeshDraws(VkCommandBuffer, Pipeline&)` qui prend le pipeline en
+            paramètre — les deux chemins appellent la même logique, seul le pipeline
+            (mono vs multiview) diffère. À valider visuellement au casque avant merge.
       - [~] **NEXRTK — NextEngine XR Toolkit** (`src/xr/toolkit/`, namespace `ne`).
             Package d'interaction VR/AR dans le style moteur (behaviours + nodes +
             signaux + groupes, zéro singleton de gameplay). Lit l'état des mains via

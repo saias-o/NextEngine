@@ -7,12 +7,9 @@
 #include "scripting/JsRuntime.hpp"
 
 #include <nlohmann/json.hpp>
-#include <imgui.h>
 #include <quickjs.h>
 
-#include <array>
 #include <algorithm>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -22,8 +19,6 @@ namespace ne {
 
 namespace {
 
-constexpr size_t kScriptPathBufferSize = 512;
-constexpr size_t kStringPropertyBufferSize = 512;
 constexpr float kHotReloadCheckIntervalSeconds = 0.5f;
 
 class JsModuleDependencyCapture {
@@ -258,21 +253,6 @@ void ScriptBehaviour::onDisable() {
     callHook("onDisable");
 }
 
-void ScriptBehaviour::onDrawInspector() {
-    std::array<char, kScriptPathBufferSize> buffer{};
-    std::strncpy(buffer.data(), scriptPath_.c_str(), buffer.size() - 1);
-    if (ImGui::InputText("Script", buffer.data(), buffer.size())) {
-        setScriptPath(buffer.data());
-    }
-    if (ImGui::Button("Reload")) {
-        reload();
-    }
-    ImGui::SameLine();
-    ImGui::TextDisabled(loaded_ ? "Loaded" : "Not loaded");
-    ImGui::Checkbox("Hot Reload", &hotReloadEnabled_);
-    drawPropertiesInspector();
-}
-
 void ScriptBehaviour::save(nlohmann::json& j) const {
     j["script"] = scriptPath_;
     j["hotReload"] = hotReloadEnabled_;
@@ -464,44 +444,6 @@ void ScriptBehaviour::setPropertyValue(ScriptProperty& property, bool value) {
 void ScriptBehaviour::setPropertyValue(ScriptProperty& property, const std::string& value) {
     property.type = ScriptProperty::Type::String;
     property.value = value;
-}
-
-void ScriptBehaviour::drawPropertiesInspector() {
-    if (properties_.empty()) return;
-
-    if (ImGui::CollapsingHeader("Script Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
-        for (auto& property : properties_) {
-            ImGui::PushID(property.name.c_str());
-            bool changed = false;
-
-            switch (property.type) {
-            case ScriptProperty::Type::Number: {
-                double value = std::get<double>(property.value);
-                changed = ImGui::InputDouble(property.name.c_str(), &value);
-                if (changed) property.value = value;
-                break;
-            }
-            case ScriptProperty::Type::Boolean: {
-                bool value = std::get<bool>(property.value);
-                changed = ImGui::Checkbox(property.name.c_str(), &value);
-                if (changed) property.value = value;
-                break;
-            }
-            case ScriptProperty::Type::String: {
-                std::array<char, kStringPropertyBufferSize> buffer{};
-                std::strncpy(buffer.data(), std::get<std::string>(property.value).c_str(), buffer.size() - 1);
-                changed = ImGui::InputText(property.name.c_str(), buffer.data(), buffer.size());
-                if (changed) property.value = std::string(buffer.data());
-                break;
-            }
-            }
-
-            if (changed) {
-                applyPropertyToJs(property);
-            }
-            ImGui::PopID();
-        }
-    }
 }
 
 } // namespace ne

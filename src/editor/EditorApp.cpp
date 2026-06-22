@@ -12,6 +12,9 @@
 #include "audio/AudioManager.hpp"
 #include "scene/SceneTree.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 namespace ne {
 
 EditorApp::EditorApp(Engine& engine) : engine_(engine) {
@@ -20,15 +23,26 @@ EditorApp::EditorApp(Engine& engine) : engine_(engine) {
 
 void EditorApp::setPlayMode(bool play) {
     if (playMode_ == play) return;
+    // Defer: the call site is typically inside ui_.draw() (the Scene/Play button)
+    // or processInput(), both of which run while the panels still hold the live
+    // Scene pointer. Mounting/unmounting the world here would free that Scene
+    // mid-frame. applyPlayMode() runs at the end of update(), when it's safe.
+    pendingPlayMode_ = play ? 1 : 0;
+}
+
+void EditorApp::applyPlayMode(bool play) {
+    if (playMode_ == play) return;
 
     ui_.clearSelection();  // selection refers to a tree that's about to swap
 
     if (play) {
         // Some presentation modes require an isolated runtime process. The Engine
         // owns that policy; the editor only issues a generic Play request.
+#ifdef NE_ENABLE_XR
         if (engine_.launchExternalPreviewIfNeeded()) {
             return;
         }
+#endif
         // Mount the persistent World from a snapshot of the edit scene (which is
         // left untouched — so Stop needs no restore). Autoloads spawn here.
         engine_.mountWorld();
@@ -57,6 +71,15 @@ void EditorApp::update(float dt) {
             engine_.setSceneOverride(ui_.previewScene());
         else
             engine_.setSceneOverride(nullptr);
+    }
+
+    // Now that the UI frame is fully recorded and no panel holds the live Scene
+    // pointer anymore, it's safe to mount/unmount the world for any Play/Stop
+    // requested during this frame.
+    if (pendingPlayMode_ != -1) {
+        bool play = pendingPlayMode_ == 1;
+        pendingPlayMode_ = -1;
+        applyPlayMode(play);
     }
 }
 
@@ -130,18 +153,24 @@ void EditorApp::processInput(float dt) {
         return; // Bail out! Don't process FPS fly controls.
     }
 
-    // FPS fly mode - only in Scene Mode!
+    // Right-click fly mode - only in Scene Mode! (cf. Unity/Unreal/Godot navigation)
     if (isPlayMode()) {
         return; // The editor camera should not be controlled by WASD/mouse in Play Mode.
     }
 
-    constexpr float sensitivity = 0.003f;
+    // Mouse look: pixel delta → degrees (sensitivity tuned to feel like 3D DCC tools).
+    constexpr float sensitivity = 0.1f;  // degrees per pixel
     glm::vec2 d = Input::mouseDelta();
     camera.rotate(d.x * sensitivity, -d.y * sensitivity);  // screen Y is down
 
+    // Scroll wheel adjusts the fly speed while navigating (like Unity/Unreal/Godot).
+    float wheel = ImGui::GetIO().MouseWheel;
+    if (wheel != 0.0f)
+        flySpeed_ = std::clamp(flySpeed_ * std::pow(1.15f, wheel), 0.5f, 200.0f);
+
     glm::vec3 front = camera.front();
     glm::vec3 right = camera.right();
-    float speed = (Input::isKeyDown(KeyCode::LeftShift) ? 6.0f : 2.5f) * dt;
+    float speed = flySpeed_ * (Input::isKeyDown(KeyCode::LeftShift) ? 3.0f : 1.0f) * dt;
 
     if (Input::isKeyDown(KeyCode::W)) camera.position += front * speed;
     if (Input::isKeyDown(KeyCode::S)) camera.position -= front * speed;

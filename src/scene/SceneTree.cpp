@@ -37,6 +37,7 @@ void SceneTree::unmountWorld() {
     pendingChange_ = false;
     quitRequested_ = false;
     world_.reset();  // ~Scene clears children (and their physics bodies) while alive
+    timers_.clear();
 }
 
 Scene& SceneTree::currentScene() {
@@ -140,14 +141,25 @@ TimerId SceneTree::addTimer(Timer t) {
 }
 
 TimerId SceneTree::after(Node* owner, float seconds, std::function<void()> fn) {
-    return addTimer({0, owner, Timer::After, 0.0f, seconds, Easing::Linear, std::move(fn), {}, false});
+    return addTimer({0, owner, nullptr, Timer::After, 0.0f, seconds, Easing::Linear, std::move(fn), {}, false});
 }
 TimerId SceneTree::every(Node* owner, float interval, std::function<void()> fn) {
-    return addTimer({0, owner, Timer::Every, 0.0f, interval, Easing::Linear, std::move(fn), {}, false});
+    return addTimer({0, owner, nullptr, Timer::Every, 0.0f, interval, Easing::Linear, std::move(fn), {}, false});
 }
 TimerId SceneTree::tween(Node* owner, float duration, Easing easing,
                          std::function<void(float)> fn) {
-    return addTimer({0, owner, Timer::Tween, 0.0f, duration, easing, {}, std::move(fn), false});
+    return addTimer({0, owner, nullptr, Timer::Tween, 0.0f, duration, easing, {}, std::move(fn), false});
+}
+
+TimerId SceneTree::after(Behaviour* owner, float seconds, std::function<void()> fn) {
+    return addTimer({0, nullptr, owner, Timer::After, 0.0f, seconds, Easing::Linear, std::move(fn), {}, false});
+}
+TimerId SceneTree::every(Behaviour* owner, float interval, std::function<void()> fn) {
+    return addTimer({0, nullptr, owner, Timer::Every, 0.0f, interval, Easing::Linear, std::move(fn), {}, false});
+}
+TimerId SceneTree::tween(Behaviour* owner, float duration, Easing easing,
+                         std::function<void(float)> fn) {
+    return addTimer({0, nullptr, owner, Timer::Tween, 0.0f, duration, easing, {}, std::move(fn), false});
 }
 
 void SceneTree::cancelTimer(TimerId id) {
@@ -157,7 +169,7 @@ void SceneTree::cancelTimer(TimerId id) {
 
 void SceneTree::cancelTimersOwnedBy(Node* owner) {
     for (auto& t : timers_)
-        if (t.owner == owner) t.dead = true;
+        if (t.nodeOwner == owner) t.dead = true;
 }
 
 void SceneTree::tickTimers(float dt) {

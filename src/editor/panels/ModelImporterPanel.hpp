@@ -6,12 +6,10 @@
 namespace ne {
 
 class Scene;
-class ResourceManager;
-class Project;
 
 class ModelImporterPanel {
 public:
-    void draw(EditorUI* editor, Scene* previewScene, const std::string& modelPath, ResourceManager* resources);
+    void draw(EditorUI* editor, Scene* previewScene, const std::string& modelPath);
 };
 
 } // namespace ne

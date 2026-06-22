@@ -24,13 +24,15 @@ glm::mat4 Transform::matrix() const {
     return m;
 }
 
-Node::Node(std::string name) : name_(std::move(name)) {}
+Node::Node(std::string name) : id_(generateNodeId()), name_(std::move(name)) {}
 
 Node::~Node() {
     // Notify behaviours that ran, then cancel this node's timers — while the node
     // (and its parent chain, so tree()) is still valid.
-    for (auto& b : behaviours_)
+    for (auto& b : behaviours_) {
         if (b->ready_) b->onDestroy();
+        b->cancelTimers();
+    }
     if (SceneTree* t = tree()) t->cancelTimersOwnedBy(this);
     AudioManager::get().stopAllOnNode(this);
 }
@@ -67,6 +69,8 @@ void Node::removeBehaviour(Behaviour* b) {
     if (!b) return;
     for (auto it = behaviours_.begin(); it != behaviours_.end(); ++it) {
         if (it->get() == b) {
+            if (b->ready_) b->onDestroy();
+            b->cancelTimers();
             behaviours_.erase(it);
             g_hierarchyVersion++;
             return;
@@ -173,10 +177,15 @@ void Node::traverse(const glm::mat4& parentWorld,
 
 void Node::serialize(nlohmann::json& j, ResourceManager& resources) const {
     j["type"] = typeName();
+    j["id"] = id();
     j["name"] = name();
     j["enabled"] = enabled();
     if (!importedFromPath_.empty())
         j["importedFrom"] = importedFromPath_;
+    // Groups are the sanctioned lookup mechanism (e.g. "player"), so they must
+    // round-trip. Omitted when empty to keep existing scenes unchanged.
+    if (!groups_.empty())
+        j["groups"] = groups_;
 
     const Transform& t = transform();
     j["transform"] = {
@@ -210,6 +219,9 @@ void Node::deserialize(const nlohmann::json& j, ResourceManager& resources) {
     if (j.contains("name")) setName(j["name"].get<std::string>());
     if (j.contains("enabled")) setEnabled(j["enabled"].get<bool>());
     if (j.contains("importedFrom")) importedFromPath_ = j["importedFrom"].get<std::string>();
+    if (j.contains("groups") && j["groups"].is_array())
+        for (const auto& g : j["groups"])
+            if (g.is_string()) addToGroup(g.get<std::string>());
 
     if (j.contains("transform")) {
         auto jt = j["transform"];

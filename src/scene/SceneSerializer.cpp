@@ -19,13 +19,14 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <unordered_set>
 
 namespace ne {
 
 namespace {
 using json = nlohmann::json;
 
-constexpr int kSceneVersion = 1;
+constexpr int kSceneVersion = 2;
 
 bool isModelPath(const std::string& path) {
     std::string ext = std::filesystem::path(path).extension().string();
@@ -61,7 +62,8 @@ json serializeNode(Node& node, ResourceManager& resources) {
 }
 
 // ── JSON -> Node ─────────────────────────────────────────────────────────────
-std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources) {
+std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources,
+                                      NodeIdPolicy idPolicy) {
     const std::string type = j.value("type", "Node");
 
     // Special case for scene prefabs
@@ -71,9 +73,12 @@ std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources)
             std::string absPath = resources.getRegistry()->getAbsolutePath(prefabId);
             if (!absPath.empty()) {
                 // Load the nested scene from file instead of reading children
-                std::unique_ptr<Node> loaded = SceneSerializer::loadNodeFromSceneFile(absPath, resources);
+                std::unique_ptr<Node> loaded = SceneSerializer::loadNodeFromSceneFile(
+                    absPath, resources, NodeIdPolicy::Regenerate);
                 if (loaded) {
                     loaded->deserialize(j, resources); // apply settings overrides on top of the prefab
+                    if (idPolicy == NodeIdPolicy::Preserve && j.contains("id"))
+                        loaded->assignSerializedId(j["id"].get<NodeId>());
                     return loaded;
                 }
             }
@@ -87,6 +92,10 @@ std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources)
     }
 
     node->deserialize(j, resources);
+    if (idPolicy == NodeIdPolicy::Preserve && j.contains("id"))
+        node->assignSerializedId(j["id"].get<NodeId>());
+    else if (idPolicy == NodeIdPolicy::Regenerate)
+        node->regenerateId();
     bool childrenLoadedFromImport = false;
     if (!node->importedFromPath().empty()) {
         childrenLoadedFromImport = reloadImportedModel(*node, node->importedFromPath(), resources);
@@ -101,7 +110,7 @@ std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources)
     if (!childrenLoadedFromImport) {
         if (auto it = j.find("children"); it != j.end() && it->is_array()) {
             for (const json& cj : *it) {
-                if (auto child = deserializeNode(cj, resources)) {
+                if (auto child = deserializeNode(cj, resources, idPolicy)) {
                     node->addChild(std::move(child));
                 }
             }
@@ -113,7 +122,8 @@ std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources)
         if (s->prefabAssetId() != kAssetInvalid && resources.getRegistry()) {
             std::string path = resources.getRegistry()->getAbsolutePath(s->prefabAssetId());
             if (!path.empty()) {
-                if (auto prefabNode = SceneSerializer::loadNodeFromSceneFile(path, resources)) {
+                if (auto prefabNode = SceneSerializer::loadNodeFromSceneFile(
+                        path, resources, NodeIdPolicy::Regenerate)) {
                     // Move all children from the prefab file into this instance
                     // We only want the children, not the root settings of the prefab
                     while (!prefabNode->children().empty()) {
@@ -127,6 +137,15 @@ std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources)
     return node;
 }
 
+void ensureUniqueIds(Node& root) {
+    std::unordered_set<NodeId> seen;
+    root.traverse([&](Node& node, const glm::mat4&) {
+        while (node.id() == kNodeInvalid || !seen.insert(node.id()).second)
+            node.regenerateId();
+        seen.insert(node.id());
+    });
+}
+
 } // namespace
 
 std::string SceneSerializer::nodeToJson(Node& node, ResourceManager& resources) {
@@ -134,9 +153,12 @@ std::string SceneSerializer::nodeToJson(Node& node, ResourceManager& resources) 
 }
 
 std::unique_ptr<Node> SceneSerializer::nodeFromJson(const std::string& text,
-                                                    ResourceManager& resources) {
+                                                    ResourceManager& resources,
+                                                    NodeIdPolicy idPolicy) {
     try {
-        return deserializeNode(json::parse(text), resources);
+        auto node = deserializeNode(json::parse(text), resources, idPolicy);
+        if (node) ensureUniqueIds(*node);
+        return node;
     } catch (const std::exception& e) {
         Log::error("nodeFromJson: ", e.what());
         return nullptr;
@@ -144,7 +166,8 @@ std::unique_ptr<Node> SceneSerializer::nodeFromJson(const std::string& text,
 }
 
 std::unique_ptr<Node> SceneSerializer::loadNodeFromSceneFile(const std::string& path,
-                                                             ResourceManager& resources) {
+                                                             ResourceManager& resources,
+                                                             NodeIdPolicy idPolicy) {
     std::ifstream file(path);
     if (!file.is_open()) {
         Log::error("loadNodeFromSceneFile: cannot open ", path);
@@ -154,7 +177,9 @@ std::unique_ptr<Node> SceneSerializer::loadNodeFromSceneFile(const std::string& 
         json doc = json::parse(file);
         json root = doc.at("scene");
         root["type"] = "Scene"; // Force the root node to be instantiated as a Scene
-        return deserializeNode(root, resources);
+        auto node = deserializeNode(root, resources, idPolicy);
+        if (node) ensureUniqueIds(*node);
+        return node;
     } catch (const std::exception& e) {
         Log::error("loadNodeFromSceneFile: ", e.what());
         return nullptr;
@@ -190,6 +215,8 @@ bool SceneSerializer::loadIntoScene(Scene& scene, ResourceManager& resources,
         const json& root = doc.at("scene");
 
         scene.clearChildren();
+        if (root.contains("id")) scene.assignSerializedId(root["id"].get<NodeId>());
+        else scene.regenerateId();
         
         // Load native scene settings (if new format)
         if (auto it = root.find("settings"); it != root.end()) {
@@ -254,9 +281,11 @@ bool SceneSerializer::loadIntoScene(Scene& scene, ResourceManager& resources,
                     }
                     continue; // Skip creating the legacy node
                 }
-                scene.addChild(deserializeNode(cj, resources));
+                scene.addChild(deserializeNode(cj, resources, NodeIdPolicy::Preserve));
             }
         }
+
+        ensureUniqueIds(scene);
 
         Log::info("loaded scene from ", path);
         return true;

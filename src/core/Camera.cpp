@@ -36,6 +36,15 @@ void Camera::rotate(float deltaYawDeg, float deltaPitchDeg) {
     pitch = std::clamp(pitch + deltaPitchDeg, -89.0f, 89.0f);
 }
 
+void Camera::lookAt(const glm::vec3& target) {
+    glm::vec3 dir = target - position;
+    if (glm::dot(dir, dir) < 1e-12f) return;  // target == position: keep orientation
+    dir = glm::normalize(dir);
+    // Inverse of front(): yaw from XZ, pitch from Y (world up is +Y).
+    pitch = glm::degrees(std::asin(std::clamp(dir.y, -1.0f, 1.0f)));
+    yaw = glm::degrees(std::atan2(dir.z, dir.x));
+}
+
 glm::mat4 Camera::view() const {
     return glm::lookAt(position, position + front(), kWorldUp);
 }

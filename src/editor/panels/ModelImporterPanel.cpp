@@ -10,10 +10,17 @@
 
 namespace ne {
 
-void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::string& modelPath, ResourceManager* resources) {
+void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::string& modelPath) {
     if (!editor->showModelImporter_) return;
 
-    ImGui::Begin("3D Importer", &editor->showModelImporter_);
+    bool open = editor->showModelImporter_;
+    bool visible = ImGui::Begin("3D Importer", &open);
+    bool closeRequested = !open;
+    if (!visible) {
+        ImGui::End();
+        if (closeRequested) editor->closeModelImporter();
+        return;
+    }
 
     ImGui::Text("Previewing Model:");
     ImGui::TextDisabled("%s", modelPath.c_str());
@@ -73,10 +80,11 @@ void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::
     ImGui::Spacing();
 
     if (ImGui::Button("Close Preview", ImVec2(150, 30))) {
-        editor->closeModelImporter();
+        closeRequested = true;
     }
 
     ImGui::End();
+    if (closeRequested) editor->closeModelImporter();
 }
 
 } // namespace ne

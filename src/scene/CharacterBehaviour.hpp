@@ -15,7 +15,6 @@ public:
 
     void onReady() override;
     void onUpdate(float dt) override;
-    void onDrawInspector() override;
 
     // Serialize / Deserialize
     const char* typeName() const override { return "Character"; }
@@ -23,8 +22,14 @@ public:
     void load(const nlohmann::json& j) override;
 
     float moveSpeed = 5.0f;
+    float sprintMultiplier = 1.8f;  // speed factor while holding Sprint (Shift)
     float jumpForce = 5.0f;
     float gravity = 9.81f;
+
+    // Movement is relative to the active camera (found via the "camera" group). The
+    // character turns to face its movement direction when faceMovement is on.
+    bool faceMovement = true;
+    float turnSpeed = 12.0f;  // exponential turn rate toward the move direction
 
     // Animation clips played from a child Animator based on movement state. Empty
     // or missing names are simply skipped (animation is optional).

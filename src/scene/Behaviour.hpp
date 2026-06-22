@@ -24,10 +24,9 @@ class SceneTree;
 // without a typeName are skipped on save.
 class Behaviour {
 public:
-    virtual ~Behaviour() = default;
+    virtual ~Behaviour();
     virtual void onReady() {}
     virtual void onUpdate(float /*dt*/) {}
-    virtual void onDrawInspector() {}
 
     // Lifecycle hooks. onDestroy fires when the node is being destroyed (while it
     // is still valid). onEnable/onDisable fire when enabled flips after onReady.
@@ -69,9 +68,12 @@ private:
     friend class Node;  // sets node_ on attach, drives ready_/lifecycle
     friend class Scene; // flattens behaviours and drives lifecycle
     Node* node_ = nullptr;
+    void cancelTimers();
     bool ready_ = false;
     bool enabled_ = true;
     std::vector<Connection> connections_;  // owned subscriptions
+    SceneTree* timerTree_ = nullptr;
+    std::vector<uint64_t> timerIds_;
 };
 
 } // namespace ne

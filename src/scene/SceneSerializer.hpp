@@ -9,6 +9,11 @@ class Node;
 class Scene;
 class ResourceManager;
 
+enum class NodeIdPolicy {
+    Preserve,
+    Regenerate,
+};
+
 // Reads/writes a scene (node hierarchy, transforms, lights, mesh/material
 // references by key, and registered behaviours) as JSON. Also converts a single
 // node subtree to/from a JSON string, used for the editor's copy/paste/duplicate.
@@ -18,12 +23,15 @@ public:
     static bool loadIntoScene(Scene& scene, ResourceManager& resources, const std::string& path);
 
     static std::string nodeToJson(Node& node, ResourceManager& resources);
-    static std::unique_ptr<Node> nodeFromJson(const std::string& json, ResourceManager& resources);
+    static std::unique_ptr<Node> nodeFromJson(
+        const std::string& json, ResourceManager& resources,
+        NodeIdPolicy idPolicy = NodeIdPolicy::Regenerate);
 
     // Load a .scene file as a single node subtree (for instancing a scene as a
     // child of another). Returns nullptr on failure.
     static std::unique_ptr<Node> loadNodeFromSceneFile(const std::string& path,
-                                                       ResourceManager& resources);
+                                                       ResourceManager& resources,
+                                                       NodeIdPolicy idPolicy = NodeIdPolicy::Regenerate);
 };
 
 } // namespace ne

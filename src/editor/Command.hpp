@@ -2,167 +2,144 @@
 
 #include "scene/Node.hpp"
 
+#include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
 
 namespace ne {
 
-// An undoable editor operation. execute() also serves as redo.
+class ResourceManager;
+class SceneDocument;
+
 class Command {
 public:
     virtual ~Command() = default;
-    virtual void execute() = 0;
-    virtual void undo() = 0;
+    virtual void execute(SceneDocument& document) = 0;
+    virtual void undo(SceneDocument& document) = 0;
     virtual const char* name() const { return "Command"; }
+    virtual size_t memoryCost() const { return sizeof(*this); }
 };
 
-// ── Add a (pre-built) node under a parent ────────────────────────────────────
-// The node is usually built by the editor (e.g. createChild, or a clone via the
-// serializer) and handed to the command to own while undone.
 class AddNodeCommand : public Command {
 public:
-    AddNodeCommand(Node* parent, std::unique_ptr<Node> node)
-        : parent_(parent), pending_(std::move(node)) {}
-
-    void execute() override { added_ = parent_->addChild(std::move(pending_)); }
-    void undo() override { pending_ = parent_->detachChild(added_); added_ = nullptr; }
+    AddNodeCommand(NodeId parent, std::unique_ptr<Node> node);
+    void execute(SceneDocument& document) override;
+    void undo(SceneDocument& document) override;
     const char* name() const override { return "Add Node"; }
-
-    Node* node() const { return added_ ? added_ : pending_.get(); }
+    size_t memoryCost() const override { return sizeof(*this) + snapshot_.size(); }
+    NodeId nodeId() const { return nodeId_; }
 
 private:
-    Node* parent_;
-    std::unique_ptr<Node> pending_;  // owns the node while it's out of the tree
-    Node* added_ = nullptr;          // borrowed while it's in the tree
+    NodeId parentId_;
+    NodeId nodeId_;
+    std::unique_ptr<Node> pending_;
+    std::string snapshot_;
 };
 
-// ── Delete a node ────────────────────────────────────────────────────────────
 class DeleteNodeCommand : public Command {
 public:
-    explicit DeleteNodeCommand(Node* node) : parent_(node->parent()), target_(node) {}
-
-    void execute() override { owned_ = parent_->detachChild(target_); }
-    void undo() override { parent_->addChild(std::move(owned_)); }
+    explicit DeleteNodeCommand(NodeId node) : nodeId_(node) {}
+    void execute(SceneDocument& document) override;
+    void undo(SceneDocument& document) override;
     const char* name() const override { return "Delete Node"; }
+    size_t memoryCost() const override { return sizeof(*this) + snapshot_.size(); }
 
 private:
-    Node* parent_;
-    Node* target_;
-    std::unique_ptr<Node> owned_;  // owns the node while it's deleted
+    NodeId parentId_ = kNodeInvalid;
+    NodeId nodeId_ = kNodeInvalid;
+    size_t index_ = 0;
+    std::string snapshot_;
 };
 
-// ── Rename a node ────────────────────────────────────────────────────────────
 class RenameNodeCommand : public Command {
 public:
-    RenameNodeCommand(Node* node, std::string newName)
-        : node_(node), oldName_(node->name()), newName_(std::move(newName)) {}
-
-    void execute() override { node_->setName(newName_); }
-    void undo() override { node_->setName(oldName_); }
+    RenameNodeCommand(NodeId node, std::string oldName, std::string newName)
+        : nodeId_(node), oldName_(std::move(oldName)), newName_(std::move(newName)) {}
+    void execute(SceneDocument& document) override;
+    void undo(SceneDocument& document) override;
     const char* name() const override { return "Rename Node"; }
+    size_t memoryCost() const override { return sizeof(*this) + oldName_.size() + newName_.size(); }
 
 private:
-    Node* node_;
+    NodeId nodeId_;
     std::string oldName_;
     std::string newName_;
 };
 
-// ── Re-parent a node (e.g. drag-drop in the scene tree) ──────────────────────
 class ReparentNodeCommand : public Command {
 public:
-    ReparentNodeCommand(Node* node, Node* newParent)
-        : node_(node), oldParent_(node->parent()), newParent_(newParent) {}
-
-    void execute() override {
-        auto owned = oldParent_->detachChild(node_);
-        newParent_->addChild(std::move(owned));
-    }
-    void undo() override {
-        auto owned = newParent_->detachChild(node_);
-        oldParent_->addChild(std::move(owned));
-    }
+    ReparentNodeCommand(NodeId node, NodeId newParent)
+        : nodeId_(node), newParentId_(newParent) {}
+    void execute(SceneDocument& document) override;
+    void undo(SceneDocument& document) override;
     const char* name() const override { return "Reparent Node"; }
 
 private:
-    Node* node_;
-    Node* oldParent_;
-    Node* newParent_;
+    NodeId nodeId_;
+    NodeId oldParentId_ = kNodeInvalid;
+    NodeId newParentId_;
+    size_t oldIndex_ = 0;
+    size_t newIndex_ = 0;
+    Transform oldLocal_;
+    Transform newLocal_;
+    bool initialized_ = false;
 };
 
-// ── Create a parent node (Option A: Pivot Matching) ──────────────────────────
 class CreateParentCommand : public Command {
 public:
-    CreateParentCommand(Node* target, std::unique_ptr<Node> newParent)
-        : target_(target), oldParent_(target->parent()), pendingParent_(std::move(newParent)) {
-        if (oldParent_) {
-            const auto& children = oldParent_->children();
-            for (size_t i = 0; i < children.size(); ++i) {
-                if (children[i].get() == target_) {
-                    targetIndex_ = i;
-                    break;
-                }
-            }
-        }
-    }
-
-    void execute() override {
-        if (!oldParent_ || !pendingParent_) return;
-
-        // Save target transform and transfer it to the new parent
-        originalTargetTransform_ = target_->transform();
-        pendingParent_->transform() = originalTargetTransform_;
-        target_->transform() = Transform(); // reset to identity
-
-        // Reparent target_ under new parent, and insert new parent in place of target_
-        auto ownedTarget = oldParent_->detachChild(target_);
-        if (!ownedTarget) return;
-
-        addedParent_ = oldParent_->addChildAt(std::move(pendingParent_), targetIndex_);
-        addedParent_->addChild(std::move(ownedTarget));
-    }
-
-    void undo() override {
-        if (!oldParent_ || !addedParent_) return;
-
-        // Revert parenting
-        auto ownedTarget = addedParent_->detachChild(target_);
-        if (!ownedTarget) return;
-
-        pendingParent_ = oldParent_->detachChild(addedParent_);
-        addedParent_ = nullptr;
-
-        oldParent_->addChildAt(std::move(ownedTarget), targetIndex_);
-
-        // Restore target's original transform
-        target_->transform() = originalTargetTransform_;
-    }
-
+    CreateParentCommand(NodeId target, std::unique_ptr<Node> newParent);
+    void execute(SceneDocument& document) override;
+    void undo(SceneDocument& document) override;
     const char* name() const override { return "Create Parent"; }
-
-    Node* parentNode() const { return addedParent_ ? addedParent_ : pendingParent_.get(); }
+    size_t memoryCost() const override { return sizeof(*this) + parentSnapshot_.size(); }
+    NodeId parentNodeId() const { return parentNodeId_; }
 
 private:
-    Node* target_;
-    Node* oldParent_;
-    std::unique_ptr<Node> pendingParent_;
-    Node* addedParent_ = nullptr;
+    NodeId targetId_;
+    NodeId oldParentId_ = kNodeInvalid;
+    NodeId parentNodeId_ = kNodeInvalid;
     size_t targetIndex_ = 0;
     Transform originalTargetTransform_;
+    std::unique_ptr<Node> pendingParent_;
+    std::string parentSnapshot_;
+    bool initialized_ = false;
 };
 
-// ── Set a node's transform (e.g. after an inspector/gizmo edit) ──────────────
+// Generic single-property edit on one node. The before/after values are baked
+// into the `apply` closures (captured by value), keeping the command fully
+// type-erased: it re-resolves the node by id on every execute/undo, so it stays
+// valid across scene reconstructions (à la NodeId policy). Used by the inspector
+// property editor to make every field edit undoable and dirty-marking.
+class SetPropertyCommand : public Command {
+public:
+    using Apply = std::function<void(Node&)>;
+    SetPropertyCommand(NodeId node, std::string label, Apply applyOld, Apply applyNew)
+        : nodeId_(node), label_(std::move(label)),
+          applyOld_(std::move(applyOld)), applyNew_(std::move(applyNew)) {}
+    void execute(SceneDocument& document) override;
+    void undo(SceneDocument& document) override;
+    const char* name() const override { return label_.c_str(); }
+    size_t memoryCost() const override { return sizeof(*this) + label_.capacity(); }
+
+private:
+    NodeId nodeId_;
+    std::string label_;
+    Apply applyOld_;
+    Apply applyNew_;
+};
+
 class TransformCommand : public Command {
 public:
-    TransformCommand(Node* node, const Transform& oldT, const Transform& newT)
-        : node_(node), old_(oldT), new_(newT) {}
-
-    void execute() override { node_->transform() = new_; }
-    void undo() override { node_->transform() = old_; }
+    TransformCommand(NodeId node, const Transform& oldT, const Transform& newT)
+        : nodeId_(node), old_(oldT), new_(newT) {}
+    void execute(SceneDocument& document) override;
+    void undo(SceneDocument& document) override;
     const char* name() const override { return "Transform"; }
 
 private:
-    Node* node_;
+    NodeId nodeId_;
     Transform old_;
     Transform new_;
 };

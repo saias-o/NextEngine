@@ -26,8 +26,10 @@
 #include "scene/MeshNode.hpp"
 #include "scene/MeshLod.hpp"
 #include "scene/animation/Animator.hpp"
+#ifdef NE_ENABLE_XR
 #include "xr/XrSession.hpp"   // xr::EyeView
 #include "xr/toolkit/XRPassthrough.hpp"
+#endif
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -128,6 +130,7 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
     }
 }
 
+#ifdef NE_ENABLE_XR
 Renderer::Renderer(VulkanDevice& device, Window& window, ResourceManager& resources,
                    VkExtent2D xrEyeExtent, VkFormat xrColorFormat, uint32_t xrViewCount)
     : device_(device), window_(window), resources_(resources),
@@ -146,6 +149,7 @@ Renderer::Renderer(VulkanDevice& device, Window& window, ResourceManager& resour
     createXrTargets();
     createXrPipelines();
 }
+#endif
 
 Renderer::~Renderer() {
     vkDeviceWaitIdle(device_.device());
@@ -154,10 +158,12 @@ Renderer::~Renderer() {
         vkDestroySemaphore(device_.device(), imageAvailableSemaphores_[i], nullptr);
         vkDestroyFence(device_.device(), inFlightFences_[i], nullptr);
     }
+#ifdef NE_ENABLE_XR
     if (xrMode_) {
         cleanupXrTargets();
         if (xrTonemapPool_) vkDestroyDescriptorPool(device_.device(), xrTonemapPool_, nullptr);
     }
+#endif
     vkDestroyDescriptorPool(device_.device(), globalPool_, nullptr);
     vkDestroyDescriptorSetLayout(device_.device(), globalSetLayout_, nullptr);
     cleanupHdrResources();
@@ -1292,7 +1298,7 @@ void Renderer::recordDebugLines(VkCommandBuffer cmd, Scene& scene) {
 }
 
 void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera, Project* project) {
-    camera.setPerspective(glm::radians(45.0f), swapchain_->aspectRatio(), 0.1f, 100.0f);
+    camera.setPerspective(glm::radians(camera.fovDegrees), swapchain_->aspectRatio(), 0.1f, 100.0f);
     
     // Store camera frustum for culling compute shader
     cameraFrustum_ = camera.getFrustum();
@@ -1717,6 +1723,10 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
 }
 
+} // namespace ne
+
+#ifdef NE_ENABLE_XR
+namespace ne {
 // ────────────────────────────────────────────────────────────── XR (multiview)
 
 namespace {
@@ -1929,7 +1939,7 @@ void Renderer::createXrPipelines() {
     }
 }
 
-void Renderer::updateUniformBufferXr(uint32_t frame, const std::vector<xr::EyeView>& eyes,
+void Renderer::updateUniformBufferXr(uint32_t frame, const std::vector<EyeRenderInfo>& eyes,
                                      Scene& scene, Project* project) {
     UniformBufferObject ubo{};
     const uint32_t n = std::min<uint32_t>(static_cast<uint32_t>(eyes.size()), 2);
@@ -1954,7 +1964,7 @@ void Renderer::updateUniformBufferXr(uint32_t frame, const std::vector<xr::EyeVi
 }
 
 void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
-                                 const std::vector<xr::EyeView>& eyes) {
+                                 const std::vector<EyeRenderInfo>& eyes) {
     auto& settings = scene.settings();
     // Passthrough (AR): clear fully transparent so the compositor blends the real
     // world through the background; opaque geometry (alpha 1) stays visible.
@@ -2079,7 +2089,7 @@ void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
 }
 
 void Renderer::recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
-                               const std::vector<xr::EyeView>& eyes) {
+                               const std::vector<EyeRenderInfo>& eyes) {
     // HDR (all layers) → shader read for sampling.
     VkImageMemoryBarrier2 hdrToRead = imageBarrier2(xrHdrImage_,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -2097,7 +2107,7 @@ void Renderer::recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
 
     const uint32_t n = std::min<uint32_t>(static_cast<uint32_t>(eyes.size()), xrViewCount_);
     for (uint32_t i = 0; i < n; ++i) {
-        const xr::EyeView& eye = eyes[i];
+        const EyeRenderInfo& eye = eyes[i];
         // The XR image starts UNDEFINED; the compositor wants it left in
         // COLOR_ATTACHMENT_OPTIMAL, which is exactly where rendering leaves it.
         VkImageMemoryBarrier2 toColor = imageBarrier2(eye.image,
@@ -2142,7 +2152,7 @@ void Renderer::recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
     }
 }
 
-void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes,
+void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eyes,
                       Scene& scene, Project* project) {
     if (eyes.empty()) return;
     auto& settings = scene.settings();
@@ -2198,3 +2208,4 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes,
 }
 
 } // namespace ne
+#endif // NE_ENABLE_XR

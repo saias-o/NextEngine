@@ -1,9 +1,12 @@
 #include "editor/panels/InspectorPanel.hpp"
 #include "editor/EditorUI.hpp"
+#include "editor/InspectorRegistry.hpp"
+#include "editor/PropertyEditor.hpp"
 #include "scene/Scene.hpp"
 #include "scene/Node.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/LightNode.hpp"
+#include "scene/CameraNode.hpp"
 #include "physics/CollisionObjectNode.hpp"
 #include "physics/CollisionShapeNode.hpp"
 #include "physics/RigidBodyNode.hpp"
@@ -30,6 +33,8 @@
 #include <imgui.h>
 #include <cstring>
 #include <algorithm>
+#include <functional>
+#include <utility>
 
 namespace ne {
 
@@ -59,14 +64,23 @@ void InspectorPanel::draw(EditorUI* editor) {
 
     Node* node = editor->selectedNode_;
 
+    // Play is inspectable but read-only: show the live values, disable edits.
+    const bool readOnly = !editor->canEdit();
+    if (readOnly)
+        ImGui::TextDisabled("Play mode — inspecting (read-only)");
+    ImGui::BeginDisabled(readOnly);
+
     drawNodeHeader(node, editor);
 
     if (auto* uiNode = dynamic_cast<UINode*>(node)) {
-        drawUINode(uiNode);
+        drawUINode(uiNode, editor);
+        PropertyEditor pe(*editor, node);
         if (auto* colorNode = dynamic_cast<UIColorNode*>(uiNode)) {
+            (void)colorNode;
             ImGui::SeparatorText("UIColorNode");
-            glm::vec4 color = colorNode->color();
-            if (ImGui::ColorEdit4("Color##UIColor", &color.x)) colorNode->setColor(color);
+            pe.colorEdit4("Color##UIColor",
+                          [](Node& n) { return static_cast<UIColorNode&>(n).color(); },
+                          [](Node& n, glm::vec4 v) { static_cast<UIColorNode&>(n).setColor(v); });
         }
         else if (auto* imageNode = dynamic_cast<UIImageNode*>(uiNode)) {
             ImGui::SeparatorText("UIImageNode");
@@ -76,57 +90,66 @@ void InspectorPanel::draw(EditorUI* editor) {
             if (ImGui::BeginDragDropTarget()) {
                 if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_ID")) {
                     AssetID id = *(AssetID*)payload->Data;
-                    imageNode->setTexture(id);
+                    pe.push<AssetID>("Image Texture",
+                                     [](Node& n) { return static_cast<UIImageNode&>(n).texture(); },
+                                     [](Node& n, AssetID a) { static_cast<UIImageNode&>(n).setTexture(a); },
+                                     id);
                 }
                 ImGui::EndDragDropTarget();
             }
         }
         else if (auto* textNode = dynamic_cast<UITextNode*>(uiNode)) {
+            (void)textNode;
             ImGui::SeparatorText("UITextNode");
-            char textBuf[256];
-            std::strncpy(textBuf, textNode->text().c_str(), sizeof(textBuf));
-            textBuf[sizeof(textBuf) - 1] = '\0';
-            if (ImGui::InputText("Text", textBuf, sizeof(textBuf))) {
-                textNode->setText(textBuf);
-            }
-            
-            float fontSize = textNode->fontSize();
-            if (ImGui::DragFloat("Font Size", &fontSize, 0.5f, 1.0f, 128.0f)) textNode->setFontSize(fontSize);
-            
-            glm::vec4 color = textNode->color();
-            if (ImGui::ColorEdit4("Color##UIText", &color.x)) textNode->setColor(color);
+            pe.inputText("Text",
+                         [](Node& n) { return static_cast<UITextNode&>(n).text(); },
+                         [](Node& n, std::string v) { static_cast<UITextNode&>(n).setText(v); });
+            pe.dragFloat("Font Size",
+                         [](Node& n) { return static_cast<UITextNode&>(n).fontSize(); },
+                         [](Node& n, float v) { static_cast<UITextNode&>(n).setFontSize(v); }, 0.5f, 1.0f, 128.0f);
+            pe.colorEdit4("Color##UIText",
+                          [](Node& n) { return static_cast<UITextNode&>(n).color(); },
+                          [](Node& n, glm::vec4 v) { static_cast<UITextNode&>(n).setColor(v); });
         }
-        
+
         if (auto* interactable = dynamic_cast<UIInteractableNode*>(uiNode)) {
+            (void)interactable;
             ImGui::SeparatorText("UI Interactable");
-            bool isInteractable = interactable->interactable();
-            if (ImGui::Checkbox("Interactable", &isInteractable)) interactable->setInteractable(isInteractable);
-            
+            pe.checkbox("Interactable",
+                        [](Node& n) { return static_cast<UIInteractableNode&>(n).interactable(); },
+                        [](Node& n, bool v) { static_cast<UIInteractableNode&>(n).setInteractable(v); });
+
             if (auto* btn = dynamic_cast<UIButtonNode*>(interactable)) {
-                glm::vec4 normal = btn->normalColor();
-                glm::vec4 hover = btn->hoverColor();
-                glm::vec4 press = btn->pressedColor();
-                bool changed = false;
-                changed |= ImGui::ColorEdit4("Normal Color", &normal.x);
-                changed |= ImGui::ColorEdit4("Hover Color", &hover.x);
-                changed |= ImGui::ColorEdit4("Pressed Color", &press.x);
-                if (changed) btn->setColors(normal, hover, press);
+                (void)btn;
+                // setColors is a bundle; each edit re-reads the siblings so the
+                // command captures only the changed channel.
+                pe.colorEdit4("Normal Color",
+                              [](Node& n) { return static_cast<UIButtonNode&>(n).normalColor(); },
+                              [](Node& n, glm::vec4 v) { auto& b = static_cast<UIButtonNode&>(n); b.setColors(v, b.hoverColor(), b.pressedColor()); });
+                pe.colorEdit4("Hover Color",
+                              [](Node& n) { return static_cast<UIButtonNode&>(n).hoverColor(); },
+                              [](Node& n, glm::vec4 v) { auto& b = static_cast<UIButtonNode&>(n); b.setColors(b.normalColor(), v, b.pressedColor()); });
+                pe.colorEdit4("Pressed Color",
+                              [](Node& n) { return static_cast<UIButtonNode&>(n).pressedColor(); },
+                              [](Node& n, glm::vec4 v) { auto& b = static_cast<UIButtonNode&>(n); b.setColors(b.normalColor(), b.hoverColor(), v); });
             }
             else if (auto* tgl = dynamic_cast<UIToggleNode*>(interactable)) {
-                bool isOn = tgl->isOn();
-                if (ImGui::Checkbox("Is On", &isOn)) tgl->setIsOn(isOn);
-                
-                glm::vec4 onCol = tgl->onColor();
-                glm::vec4 offCol = tgl->offColor();
-                bool changed = false;
-                changed |= ImGui::ColorEdit4("On Color", &onCol.x);
-                changed |= ImGui::ColorEdit4("Off Color", &offCol.x);
-                if (changed) tgl->setColors(onCol, offCol);
+                (void)tgl;
+                pe.checkbox("Is On",
+                            [](Node& n) { return static_cast<UIToggleNode&>(n).isOn(); },
+                            [](Node& n, bool v) { static_cast<UIToggleNode&>(n).setIsOn(v); });
+                pe.colorEdit4("On Color",
+                              [](Node& n) { return static_cast<UIToggleNode&>(n).onColor(); },
+                              [](Node& n, glm::vec4 v) { auto& t = static_cast<UIToggleNode&>(n); t.setColors(v, t.offColor()); });
+                pe.colorEdit4("Off Color",
+                              [](Node& n) { return static_cast<UIToggleNode&>(n).offColor(); },
+                              [](Node& n, glm::vec4 v) { auto& t = static_cast<UIToggleNode&>(n); t.setColors(t.onColor(), v); });
             }
         }
     } else if (auto* webNode = dynamic_cast<WebCanvasNode*>(node)) {
         ImGui::SeparatorText("Web Canvas");
-        
+        PropertyEditor pe(*editor, node);
+
         int w = webNode->width();
         int h = webNode->height();
         if (ImGui::DragInt("Width", &w, 1, 1, 8192) || ImGui::DragInt("Height", &h, 1, 1, 8192)) {
@@ -135,25 +158,21 @@ void InspectorPanel::draw(EditorUI* editor) {
             // A potential improvement is to expose a resize method to WebCanvasNode.
         }
 
-        int mode = static_cast<int>(webNode->mode());
-        if (ImGui::Combo("Mode", &mode, "ScreenSpace\0WorldSpace\0")) {
-            webNode->setMode(static_cast<WebCanvasNode::Mode>(mode));
-        }
+        pe.combo("Mode",
+                 [](Node& n) { return static_cast<int>(static_cast<WebCanvasNode&>(n).mode()); },
+                 [](Node& n, int v) { static_cast<WebCanvasNode&>(n).setMode(static_cast<WebCanvasNode::Mode>(v)); },
+                 "ScreenSpace\0WorldSpace\0");
 
-        char urlBuf[512];
-        std::strncpy(urlBuf, webNode->url().c_str(), sizeof(urlBuf));
-        urlBuf[sizeof(urlBuf) - 1] = '\0';
-        ImGui::InputText("URL", urlBuf, sizeof(urlBuf));
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            webNode->setUrl(urlBuf);
-        }
-        
+        pe.inputText("URL",
+                     [](Node& n) { return static_cast<WebCanvasNode&>(n).url(); },
+                     [](Node& n, std::string v) { static_cast<WebCanvasNode&>(n).setUrl(v); });
+
         if (ImGui::BeginDragDropTarget()) {
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_HTML")) {
                 const char* path = (const char*)payload->Data;
                 std::string url = "file:///" + std::string(path);
                 std::replace(url.begin(), url.end(), '\\', '/');
-                webNode->setUrl(url);
+                webNode->setUrl(url); editor->markDirty();
             }
             ImGui::EndDragDropTarget();
         }
@@ -161,10 +180,9 @@ void InspectorPanel::draw(EditorUI* editor) {
         if (ImGui::Button("Reload Page", ImVec2(-FLT_MIN, 30))) {
             webNode->reload();
         }
-        bool hotReload = webNode->hotReloadEnabled();
-        if (ImGui::Checkbox("Hot Reload", &hotReload)) {
-            webNode->setHotReloadEnabled(hotReload);
-        }
+        pe.checkbox("Hot Reload",
+                    [](Node& n) { return static_cast<WebCanvasNode&>(n).hotReloadEnabled(); },
+                    [](Node& n, bool v) { static_cast<WebCanvasNode&>(n).setHotReloadEnabled(v); });
         ImGui::Separator();
         ImGui::Text("Startup Scripts");
         
@@ -177,20 +195,23 @@ void InspectorPanel::draw(EditorUI* editor) {
             strncpy(buffer, scripts[i].c_str(), sizeof(buffer) - 1);
             buffer[sizeof(buffer) - 1] = '\0';
             
+            // Startup-script list edits are collection mutations, not yet
+            // undoable; they mark the document dirty (full treatment: later lot).
             if (ImGui::InputText("##script", buffer, sizeof(buffer))) {
-                scripts[i] = buffer;
+                scripts[i] = buffer; editor->markDirty();
             }
-            
+
             ImGui::SameLine();
             if (ImGui::Button("X")) {
                 scripts.erase(scripts.begin() + i);
                 --i;
+                editor->markDirty();
             }
             ImGui::PopID();
         }
-        
+
         if (ImGui::Button("Add Script")) {
-            webNode->addStartupScript("");
+            webNode->addStartupScript(""); editor->markDirty();
         }
         
         ImGui::Separator();
@@ -202,44 +223,62 @@ void InspectorPanel::draw(EditorUI* editor) {
         }
     } else {
         // Not a UI node, draw standard transform
-        drawTransform(node);
+        drawTransform(node, editor);
     }
 
     if (Scene* sceneNode = dynamic_cast<Scene*>(node)) {
         SceneSettings& s = sceneNode->settings();
+        PropertyEditor pe(*editor, node);
+        // Every SceneSettings field is reached the same way; these generic
+        // factories turn a member pointer into get/set callables so each field
+        // becomes a one-line undoable command.
+        auto G = [](auto m) { return [m](Node& n) { return static_cast<Scene&>(n).settings().*m; }; };
+        auto S = [](auto m) { return [m](Node& n, auto v) { static_cast<Scene&>(n).settings().*m = v; }; };
+
+        // RGB color members are stored as vec4; edit rgb, preserve alpha.
+        auto colorRGB = [](glm::vec4 SceneSettings::* m) {
+            return std::pair{
+                std::function<glm::vec3(Node&)>([m](Node& n) { return glm::vec3(static_cast<Scene&>(n).settings().*m); }),
+                std::function<void(Node&, glm::vec3)>([m](Node& n, glm::vec3 v) {
+                    glm::vec4& c = static_cast<Scene&>(n).settings().*m; c = glm::vec4(v, c.w); })};
+        };
+
         ImGui::SeparatorText("Scene Settings");
-        ImGui::ColorEdit3("Ambient Light", &s.ambientLight.x);
-        ImGui::ColorEdit3("Clear Color", &s.clearColor.x);
-        ImGui::Checkbox("Post Processing", &s.enablePostProcessing);
-        ImGui::Checkbox("Change Rendering At Load", &s.changeRenderingAtLoad);
+        { auto c = colorRGB(&SceneSettings::ambientLight); pe.colorEdit3("Ambient Light", c.first, c.second); }
+        { auto c = colorRGB(&SceneSettings::clearColor); pe.colorEdit3("Clear Color", c.first, c.second); }
+        pe.checkbox("Post Processing", G(&SceneSettings::enablePostProcessing), S(&SceneSettings::enablePostProcessing));
+        pe.checkbox("Change Rendering At Load", G(&SceneSettings::changeRenderingAtLoad), S(&SceneSettings::changeRenderingAtLoad));
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("When loaded as a sub-scene at play time, override the\n"
                               "World's rendering settings (skybox/GI/ambient) with this scene's.");
 
         ImGui::SeparatorText("Lighting");
+        // Radio buttons are instantaneous: record a one-shot command on click.
         int mode = static_cast<int>(s.lightingMode);
+        auto modeGet = [](Node& n) { return static_cast<int>(static_cast<Scene&>(n).settings().lightingMode); };
+        auto modeSet = [](Node& n, int v) { static_cast<Scene&>(n).settings().lightingMode = static_cast<LightingMode>(v); };
         if (ImGui::RadioButton("Realtime", &mode, static_cast<int>(LightingMode::Realtime)))
-            s.lightingMode = LightingMode::Realtime;
+            pe.push<int>("Lighting Mode", modeGet, modeSet, static_cast<int>(LightingMode::Realtime));
         ImGui::SameLine();
         if (ImGui::RadioButton("Baked", &mode, static_cast<int>(LightingMode::Baked)))
-            s.lightingMode = LightingMode::Baked;
+            pe.push<int>("Lighting Mode", modeGet, modeSet, static_cast<int>(LightingMode::Baked));
 
         if (s.lightingMode == LightingMode::Realtime) {
             ImGui::TextDisabled("Lighting & shadows computed live; baking disabled.");
         } else {
             if (ImGui::Button("Generate Bake"))
-                s.bakeRequested = true;
+                s.bakeRequested = true;  // transient action request, not a document edit
             ImGui::SameLine();
             ImGui::TextDisabled(s.baked ? "Bake: ready" : "Bake: none");
         }
 
         ImGui::SeparatorText("Global Illumination");
-        ImGui::Checkbox("Enable GI (indirect diffuse)", &s.giEnabled);
-        ImGui::SliderFloat("GI Intensity", &s.giIntensity, 0.0f, 8.0f);
-        ImGui::Checkbox("Debug: show voxel grid", &s.giDebugVoxels);
+        pe.checkbox("Enable GI (indirect diffuse)", G(&SceneSettings::giEnabled), S(&SceneSettings::giEnabled));
+        pe.sliderFloat("GI Intensity", G(&SceneSettings::giIntensity), S(&SceneSettings::giIntensity), 0.0f, 8.0f);
+        pe.checkbox("Debug: show voxel grid", G(&SceneSettings::giDebugVoxels), S(&SceneSettings::giDebugVoxels));
 
         ImGui::SeparatorText("Debug");
-        ImGui::Checkbox("Show skeletons (bone lines)", &s.showSkeletons);
+        pe.checkbox("Show skeletons (bone lines)", G(&SceneSettings::showSkeletons), S(&SceneSettings::showSkeletons));
 
         ImGui::SeparatorText("Skybox");
         std::string skyboxName = "Skybox Texture [" + getAssetName(s.skyboxTexture, editor) + "]";
@@ -248,35 +287,35 @@ void InspectorPanel::draw(EditorUI* editor) {
         if (ImGui::BeginDragDropTarget()) {
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_ID")) {
                 AssetID id = *(AssetID*)payload->Data;
-                s.skyboxTexture = id;
+                pe.push<AssetID>("Skybox Texture", G(&SceneSettings::skyboxTexture), S(&SceneSettings::skyboxTexture), id);
             }
             ImGui::EndDragDropTarget();
         }
-        ImGui::DragFloat("Exposure", &s.skyboxExposure, 0.05f, 0.0f, 20.0f);
-        ImGui::SliderAngle("Rotation", &s.skyboxRotation);
+        pe.dragFloat("Exposure", G(&SceneSettings::skyboxExposure), S(&SceneSettings::skyboxExposure), 0.05f, 0.0f, 20.0f);
+        pe.sliderAngle("Rotation", G(&SceneSettings::skyboxRotation), S(&SceneSettings::skyboxRotation));
 
         ImGui::SeparatorText("Image-Based Lighting");
-        ImGui::Checkbox("Enable IBL", &s.iblEnabled);
-        ImGui::SliderFloat("IBL Diffuse", &s.iblDiffuseIntensity, 0.0f, 4.0f);
-        ImGui::SliderFloat("IBL Specular", &s.iblSpecularIntensity, 0.0f, 4.0f);
+        pe.checkbox("Enable IBL", G(&SceneSettings::iblEnabled), S(&SceneSettings::iblEnabled));
+        pe.sliderFloat("IBL Diffuse", G(&SceneSettings::iblDiffuseIntensity), S(&SceneSettings::iblDiffuseIntensity), 0.0f, 4.0f);
+        pe.sliderFloat("IBL Specular", G(&SceneSettings::iblSpecularIntensity), S(&SceneSettings::iblSpecularIntensity), 0.0f, 4.0f);
 
         ImGui::SeparatorText("Ambient Occlusion");
-        ImGui::Checkbox("Enable AO", &s.aoEnabled);
-        ImGui::SliderFloat("AO Radius", &s.aoRadius, 0.05f, 3.0f);
-        ImGui::SliderFloat("AO Intensity", &s.aoIntensity, 0.0f, 3.0f);
-        ImGui::SliderFloat("AO Power", &s.aoPower, 0.25f, 4.0f);
+        pe.checkbox("Enable AO", G(&SceneSettings::aoEnabled), S(&SceneSettings::aoEnabled));
+        pe.sliderFloat("AO Radius", G(&SceneSettings::aoRadius), S(&SceneSettings::aoRadius), 0.05f, 3.0f);
+        pe.sliderFloat("AO Intensity", G(&SceneSettings::aoIntensity), S(&SceneSettings::aoIntensity), 0.0f, 3.0f);
+        pe.sliderFloat("AO Power", G(&SceneSettings::aoPower), S(&SceneSettings::aoPower), 0.25f, 4.0f);
 
         ImGui::SeparatorText("Fog");
-        ImGui::Checkbox("Enable Fog", &s.fogEnabled);
-        ImGui::ColorEdit3("Fog Color", &s.fogColor.x);
-        ImGui::SliderFloat("Fog Start", &s.fogStart, 0.0f, 100.0f);
-        ImGui::SliderFloat("Fog Density", &s.fogDensity, 0.0f, 0.25f);
+        pe.checkbox("Enable Fog", G(&SceneSettings::fogEnabled), S(&SceneSettings::fogEnabled));
+        { auto c = colorRGB(&SceneSettings::fogColor); pe.colorEdit3("Fog Color", c.first, c.second); }
+        pe.sliderFloat("Fog Start", G(&SceneSettings::fogStart), S(&SceneSettings::fogStart), 0.0f, 100.0f);
+        pe.sliderFloat("Fog Density", G(&SceneSettings::fogDensity), S(&SceneSettings::fogDensity), 0.0f, 0.25f);
 
         ImGui::SeparatorText("Bloom");
-        ImGui::Checkbox("Enable Bloom", &s.bloomEnabled);
-        ImGui::SliderFloat("Bloom Threshold", &s.bloomThreshold, 0.0f, 10.0f);
-        ImGui::SliderFloat("Bloom Intensity", &s.bloomIntensity, 0.0f, 3.0f);
-        ImGui::SliderFloat("Bloom Radius", &s.bloomRadius, 0.5f, 8.0f);
+        pe.checkbox("Enable Bloom", G(&SceneSettings::bloomEnabled), S(&SceneSettings::bloomEnabled));
+        pe.sliderFloat("Bloom Threshold", G(&SceneSettings::bloomThreshold), S(&SceneSettings::bloomThreshold), 0.0f, 10.0f);
+        pe.sliderFloat("Bloom Intensity", G(&SceneSettings::bloomIntensity), S(&SceneSettings::bloomIntensity), 0.0f, 3.0f);
+        pe.sliderFloat("Bloom Radius", G(&SceneSettings::bloomRadius), S(&SceneSettings::bloomRadius), 0.5f, 8.0f);
     }
 
     if (auto* meshNode = dynamic_cast<MeshNode*>(node)) {
@@ -292,31 +331,74 @@ void InspectorPanel::draw(EditorUI* editor) {
                           : light->type == LightType::Point       ? "Point"
                                                                   : "Spot";
         ImGui::Text("Type: %s", ltype);
-        ImGui::ColorEdit3("Color", &light->color.x);
-        ImGui::DragFloat("Intensity", &light->intensity, 0.05f, 0.0f, 20.0f);
+
+        PropertyEditor pe(*editor, node);
+        pe.colorEdit3("Color",
+                      [](Node& n) { return n.asLight()->color; },
+                      [](Node& n, glm::vec3 v) { n.asLight()->color = v; });
+        pe.dragFloat("Intensity",
+                     [](Node& n) { return n.asLight()->intensity; },
+                     [](Node& n, float v) { n.asLight()->intensity = v; }, 0.05f, 0.0f, 20.0f);
 
         if (light->type == LightType::Directional || light->type == LightType::Spot)
-            ImGui::SliderFloat3("Direction", &light->direction.x, -1.0f, 1.0f);
+            pe.sliderFloat3("Direction",
+                            [](Node& n) { return n.asLight()->direction; },
+                            [](Node& n, glm::vec3 v) { n.asLight()->direction = v; }, -1.0f, 1.0f);
         if (light->type == LightType::Point || light->type == LightType::Spot)
-            ImGui::DragFloat("Range", &light->range, 0.1f, 0.1f, 100.0f);
+            pe.dragFloat("Range",
+                         [](Node& n) { return n.asLight()->range; },
+                         [](Node& n, float v) { n.asLight()->range = v; }, 0.1f, 0.1f, 100.0f);
 
         if (light->type == LightType::Spot) {
-            ImGui::DragFloat("Inner Angle", &light->spotInnerAngle, 0.5f, 1.0f, 89.0f);
-            ImGui::DragFloat("Outer Angle", &light->spotOuterAngle, 0.5f, 1.0f, 89.0f);
-            if (light->spotInnerAngle > light->spotOuterAngle)
-                light->spotInnerAngle = light->spotOuterAngle;
+            pe.dragFloat("Inner Angle",
+                         [](Node& n) { return n.asLight()->spotInnerAngle; },
+                         [](Node& n, float v) {
+                             LightNode* l = n.asLight();
+                             l->spotInnerAngle = std::min(v, l->spotOuterAngle);
+                         }, 0.5f, 1.0f, 89.0f);
+            pe.dragFloat("Outer Angle",
+                         [](Node& n) { return n.asLight()->spotOuterAngle; },
+                         [](Node& n, float v) {
+                             LightNode* l = n.asLight();
+                             l->spotOuterAngle = std::max(v, l->spotInnerAngle);
+                         }, 0.5f, 1.0f, 89.0f);
         }
 
         if (light->type != LightType::Point)
-            ImGui::Checkbox("Cast Shadows", &light->castShadows);
+            pe.checkbox("Cast Shadows",
+                        [](Node& n) { return n.asLight()->castShadows; },
+                        [](Node& n, bool v) { n.asLight()->castShadows = v; });
+    }
+
+    if (dynamic_cast<CameraNode*>(node)) {
+        ImGui::SeparatorText("Camera");
+        PropertyEditor pe(*editor, node);
+        pe.dragInt("Priority",
+                   [](Node& n) { return static_cast<CameraNode&>(n).priority; },
+                   [](Node& n, int v) { static_cast<CameraNode&>(n).priority = v; }, 1.0f, 0, 1000);
+        pe.checkbox("Active",
+                    [](Node& n) { return static_cast<CameraNode&>(n).active; },
+                    [](Node& n, bool v) { static_cast<CameraNode&>(n).active = v; });
+        pe.sliderFloat("Field of View",
+                       [](Node& n) { return static_cast<CameraNode&>(n).fovDegrees; },
+                       [](Node& n, float v) { static_cast<CameraNode&>(n).fovDegrees = v; }, 20.0f, 120.0f);
+        pe.dragFloat("Near",
+                     [](Node& n) { return static_cast<CameraNode&>(n).nearZ; },
+                     [](Node& n, float v) { static_cast<CameraNode&>(n).nearZ = v; }, 0.01f, 0.01f, 10.0f);
+        pe.dragFloat("Far",
+                     [](Node& n) { return static_cast<CameraNode&>(n).farZ; },
+                     [](Node& n, float v) { static_cast<CameraNode&>(n).farZ = v; }, 1.0f, 1.0f, 10000.0f);
+        ImGui::TextDisabled("Highest priority active camera is live (Play).");
     }
 
     if (auto* body = node->asCollisionObject())
-        drawPhysicsBody(body);
+        drawPhysicsBody(body, editor);
     if (auto* shape = dynamic_cast<CollisionShapeNode*>(node))
-        drawCollisionShape(shape);
+        drawCollisionShape(shape, editor);
 
     drawBehaviours(node, editor);
+
+    ImGui::EndDisabled();
 
     ImGui::End();
 }
@@ -328,32 +410,64 @@ static void markOwningBodyDirty(Node* node) {
     }
 }
 
-void InspectorPanel::drawPhysicsBody(CollisionObjectNode* body) {
+void InspectorPanel::drawPhysicsBody(CollisionObjectNode* body, EditorUI* editor) {
     ImGui::SeparatorText("Physics Body");
-    bool dirty = false;
-    dirty |= ImGui::DragFloat("Friction", &body->friction, 0.01f, 0.0f, 2.0f);
-    dirty |= ImGui::DragFloat("Restitution", &body->restitution, 0.01f, 0.0f, 1.0f);
+
+    // Every setter rebuilds the body so creation-time params take effect — on
+    // undo too, since the command replays the same setter with the old value.
+    PropertyEditor pe(*editor, body);
+    auto rebuild = [](Node& n) { if (auto* b = n.asCollisionObject()) b->markDirty(); };
+
+    pe.dragFloat("Friction",
+                 [](Node& n) { return n.asCollisionObject()->friction; },
+                 [rebuild](Node& n, float v) { n.asCollisionObject()->friction = v; rebuild(n); }, 0.01f, 0.0f, 2.0f);
+    pe.dragFloat("Restitution",
+                 [](Node& n) { return n.asCollisionObject()->restitution; },
+                 [rebuild](Node& n, float v) { n.asCollisionObject()->restitution = v; rebuild(n); }, 0.01f, 0.0f, 1.0f);
 
     if (auto* rb = dynamic_cast<RigidBodyNode*>(body)) {
-        dirty |= ImGui::Checkbox("Kinematic", &rb->kinematic);
-        dirty |= ImGui::DragFloat("Mass", &rb->mass, 0.05f, 0.0f, 1000.0f);
-        dirty |= ImGui::DragFloat("Gravity Factor", &rb->gravityFactor, 0.05f, 0.0f, 4.0f);
-        dirty |= ImGui::DragFloat("Linear Damping", &rb->linearDamping, 0.005f, 0.0f, 1.0f);
-        dirty |= ImGui::DragFloat("Angular Damping", &rb->angularDamping, 0.005f, 0.0f, 1.0f);
+        (void)rb;
+        pe.checkbox("Kinematic",
+                    [](Node& n) { return static_cast<RigidBodyNode&>(n).kinematic; },
+                    [rebuild](Node& n, bool v) { static_cast<RigidBodyNode&>(n).kinematic = v; rebuild(n); });
+        pe.dragFloat("Mass",
+                     [](Node& n) { return static_cast<RigidBodyNode&>(n).mass; },
+                     [rebuild](Node& n, float v) { static_cast<RigidBodyNode&>(n).mass = v; rebuild(n); }, 0.05f, 0.0f, 1000.0f);
+        pe.dragFloat("Gravity Factor",
+                     [](Node& n) { return static_cast<RigidBodyNode&>(n).gravityFactor; },
+                     [rebuild](Node& n, float v) { static_cast<RigidBodyNode&>(n).gravityFactor = v; rebuild(n); }, 0.05f, 0.0f, 4.0f);
+        pe.dragFloat("Linear Damping",
+                     [](Node& n) { return static_cast<RigidBodyNode&>(n).linearDamping; },
+                     [rebuild](Node& n, float v) { static_cast<RigidBodyNode&>(n).linearDamping = v; rebuild(n); }, 0.005f, 0.0f, 1.0f);
+        pe.dragFloat("Angular Damping",
+                     [](Node& n) { return static_cast<RigidBodyNode&>(n).angularDamping; },
+                     [rebuild](Node& n, float v) { static_cast<RigidBodyNode&>(n).angularDamping = v; rebuild(n); }, 0.005f, 0.0f, 1.0f);
     } else if (auto* area = dynamic_cast<AreaNode*>(body)) {
-        dirty |= ImGui::Checkbox("Moving (kinematic trigger)", &area->moving);
+        (void)area;
+        pe.checkbox("Moving (kinematic trigger)",
+                    [](Node& n) { return static_cast<AreaNode&>(n).moving; },
+                    [rebuild](Node& n, bool v) { static_cast<AreaNode&>(n).moving = v; rebuild(n); });
     } else if (auto* ch = dynamic_cast<CharacterBodyNode*>(body)) {
-        dirty |= ImGui::DragFloat("Mass", &ch->mass, 0.5f, 1.0f, 500.0f);
-        dirty |= ImGui::DragFloat("Max Slope Angle", &ch->maxSlopeAngle, 0.5f, 0.0f, 89.0f);
+        pe.dragFloat("Mass",
+                     [](Node& n) { return static_cast<CharacterBodyNode&>(n).mass; },
+                     [rebuild](Node& n, float v) { static_cast<CharacterBodyNode&>(n).mass = v; rebuild(n); }, 0.5f, 1.0f, 500.0f);
+        pe.dragFloat("Max Slope Angle",
+                     [](Node& n) { return static_cast<CharacterBodyNode&>(n).maxSlopeAngle; },
+                     [rebuild](Node& n, float v) { static_cast<CharacterBodyNode&>(n).maxSlopeAngle = v; rebuild(n); }, 0.5f, 0.0f, 89.0f);
         ImGui::TextDisabled("On floor: %s", ch->isOnFloor() ? "yes" : "no");
     }
-
-    if (dirty) body->markDirty();  // rebuild so creation-time params take effect
 }
 
-void InspectorPanel::drawCollisionShape(CollisionShapeNode* shape) {
+void InspectorPanel::drawCollisionShape(CollisionShapeNode* shape, EditorUI* editor) {
     ImGui::SeparatorText("Collision Shape");
 
+    PropertyEditor pe(*editor, shape);
+    // Editing a shape field rebuilds the owning body (on undo too).
+    auto rebuild = [](Node& n) { markOwningBodyDirty(&n); };
+
+    // Switching the shape type and the Auto detection have one-shot side effects
+    // (resetAuto), so they stay outside the value-command path; they still mark
+    // the document dirty. (Full command treatment: Lot 4 alongside resources.)
     const char* kinds[] = {"Auto", "Box", "Sphere", "Capsule", "ConvexHull", "Mesh"};
     int current = static_cast<int>(shape->shapeType);
     if (ImGui::Combo("Shape", &current, kinds, IM_ARRAYSIZE(kinds))) {
@@ -361,24 +475,35 @@ void InspectorPanel::drawCollisionShape(CollisionShapeNode* shape) {
         if (shape->shapeType == CollisionShapeType::Auto)
             shape->resetAuto();  // detect once, now, then freeze
         markOwningBodyDirty(shape);
+        editor->markDirty();
     }
 
-    bool dirty = false;
     if (shape->shapeType == CollisionShapeType::Auto) {
         ImGui::TextDisabled("Detected: %s (frozen)", toString(shape->resolvedType()));
         if (ImGui::Button("Recompute from mesh")) {
             shape->resetAuto();
             markOwningBodyDirty(shape);
+            editor->markDirty();
         }
     } else if (shape->shapeType == CollisionShapeType::Box) {
-        dirty |= ImGui::DragFloat3("Half Extents", &shape->halfExtents.x, 0.02f, 0.02f, 100.0f);
+        pe.dragFloat3("Half Extents",
+                      [](Node& n) { return static_cast<CollisionShapeNode&>(n).halfExtents; },
+                      [rebuild](Node& n, glm::vec3 v) { static_cast<CollisionShapeNode&>(n).halfExtents = v; rebuild(n); }, 0.02f, 0.02f, 100.0f);
     } else if (shape->shapeType == CollisionShapeType::Sphere) {
-        dirty |= ImGui::DragFloat("Radius", &shape->radius, 0.02f, 0.02f, 100.0f);
+        pe.dragFloat("Radius",
+                     [](Node& n) { return static_cast<CollisionShapeNode&>(n).radius; },
+                     [rebuild](Node& n, float v) { static_cast<CollisionShapeNode&>(n).radius = v; rebuild(n); }, 0.02f, 0.02f, 100.0f);
     } else if (shape->shapeType == CollisionShapeType::Capsule) {
-        dirty |= ImGui::DragFloat("Radius", &shape->radius, 0.02f, 0.02f, 100.0f);
-        dirty |= ImGui::DragFloat("Height", &shape->height, 0.02f, 0.04f, 100.0f);
+        pe.dragFloat("Radius",
+                     [](Node& n) { return static_cast<CollisionShapeNode&>(n).radius; },
+                     [rebuild](Node& n, float v) { static_cast<CollisionShapeNode&>(n).radius = v; rebuild(n); }, 0.02f, 0.02f, 100.0f);
+        pe.dragFloat("Height",
+                     [](Node& n) { return static_cast<CollisionShapeNode&>(n).height; },
+                     [rebuild](Node& n, float v) { static_cast<CollisionShapeNode&>(n).height = v; rebuild(n); }, 0.02f, 0.04f, 100.0f);
         const char* axes[] = {"X", "Y", "Z"};
-        dirty |= ImGui::Combo("Axis", &shape->axis, axes, IM_ARRAYSIZE(axes));
+        pe.combo("Axis",
+                 [](Node& n) { return static_cast<CollisionShapeNode&>(n).axis; },
+                 [rebuild](Node& n, int v) { static_cast<CollisionShapeNode&>(n).axis = v; rebuild(n); }, axes, IM_ARRAYSIZE(axes));
     } else if (shape->shapeType == CollisionShapeType::ConvexHull) {
         ImGui::TextDisabled("Convex hull of the body's mesh (dynamic-capable).");
     } else if (shape->shapeType == CollisionShapeType::Mesh) {
@@ -386,18 +511,18 @@ void InspectorPanel::drawCollisionShape(CollisionShapeNode* shape) {
     }
     if (shape->shapeType != CollisionShapeType::ConvexHull &&
         shape->shapeType != CollisionShapeType::Mesh)
-        dirty |= ImGui::DragFloat3("Offset", &shape->offset.x, 0.02f);
-
-    if (dirty) markOwningBodyDirty(shape);
+        pe.dragFloat3("Offset",
+                      [](Node& n) { return static_cast<CollisionShapeNode&>(n).offset; },
+                      [rebuild](Node& n, glm::vec3 v) { static_cast<CollisionShapeNode&>(n).offset = v; rebuild(n); }, 0.02f);
 }
 
 void InspectorPanel::drawNodeHeader(Node* node, EditorUI* editor) {
     ImGui::SeparatorText("Node");
-    
-    bool enabled = node->enabled();
-    if (ImGui::Checkbox("##NodeEnabled", &enabled)) {
-        node->setEnabled(enabled);
-    }
+
+    PropertyEditor pe(*editor, node);
+    pe.checkbox("##NodeEnabled",
+                [](Node& n) { return n.enabled(); },
+                [](Node& n, bool v) { n.setEnabled(v); });
     ImGui::SameLine();
     ImGui::Text("Name: %s", node->name().c_str());
     
@@ -406,6 +531,32 @@ void InspectorPanel::drawNodeHeader(Node* node, EditorUI* editor) {
     else if (node->mesh()) typeLabel = "MeshNode";
     
     ImGui::Text("Type: %s", typeLabel);
+
+    // Groups (tags) — the sanctioned way to locate a node (e.g. a follow camera's
+    // "player" target). Editable here; serialized with the node.
+    ImGui::Spacing();
+    ImGui::SeparatorText("Groups");
+    std::string groupToRemove;
+    for (const std::string& g : node->groups()) {
+        ImGui::PushID(g.c_str());
+        if (ImGui::SmallButton("x")) groupToRemove = g;
+        ImGui::SameLine();
+        ImGui::TextUnformatted(g.c_str());
+        ImGui::PopID();
+    }
+    if (!groupToRemove.empty()) { node->removeFromGroup(groupToRemove); editor->markDirty(); }
+
+    static char groupBuf[64] = "";
+    ImGui::SetNextItemWidth(-50.0f);
+    bool submit = ImGui::InputTextWithHint("##newgroup", "group name", groupBuf,
+                                           sizeof(groupBuf), ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    submit |= ImGui::Button("Add");
+    if (submit && groupBuf[0] != '\0') {
+        node->addToGroup(groupBuf);
+        editor->markDirty();
+        groupBuf[0] = '\0';
+    }
 
     if (!node->importedFromPath().empty()) {
         ImGui::Spacing();
@@ -419,71 +570,85 @@ void InspectorPanel::drawNodeHeader(Node* node, EditorUI* editor) {
     }
 }
 
-void InspectorPanel::drawTransform(Node* node) {
+void InspectorPanel::drawTransform(Node* node, EditorUI* editor) {
     ImGui::SeparatorText("Transform");
-    Transform& t = node->transform();
-    ImGui::DragFloat3("Position", &t.position.x, 0.05f);
+    PropertyEditor pe(*editor, node);
 
-    glm::vec3 euler = glm::degrees(glm::eulerAngles(t.rotation));
-    if (ImGui::DragFloat3("Rotation", &euler.x, 0.5f))
-        t.rotation = glm::quat(glm::radians(euler));
+    pe.dragFloat3("Position",
+                  [](Node& n) { return n.transform().position; },
+                  [](Node& n, glm::vec3 v) { n.transform().position = v; }, 0.05f);
 
-    ImGui::DragFloat3("Scale", &t.scale.x, 0.01f, 0.001f, 100.0f);
+    // Rotation is edited as Euler degrees; the command stores the Euler triple
+    // and reconstructs the quaternion on apply/undo.
+    pe.dragFloat3("Rotation",
+                  [](Node& n) { return glm::degrees(glm::eulerAngles(n.transform().rotation)); },
+                  [](Node& n, glm::vec3 e) { n.transform().rotation = glm::quat(glm::radians(e)); }, 0.5f);
+
+    pe.dragFloat3("Scale",
+                  [](Node& n) { return n.transform().scale; },
+                  [](Node& n, glm::vec3 v) { n.transform().scale = v; }, 0.01f, 0.001f, 100.0f);
 }
 
-void InspectorPanel::drawUINode(UINode* ui) {
+void InspectorPanel::drawUINode(UINode* ui, EditorUI* editor) {
     ImGui::SeparatorText("UI Transform");
-    
-    float x = ui->x();
-    float y = ui->y();
-    float w = ui->width();
-    float h = ui->height();
-    float px = ui->pivotX();
-    float py = ui->pivotY();
-    float ax = ui->anchorX();
-    float ay = ui->anchorY();
 
-    bool changed = false;
-    changed |= ImGui::DragFloat("X", &x, 1.0f);
-    changed |= ImGui::DragFloat("Y", &y, 1.0f);
-    changed |= ImGui::DragFloat("Width", &w, 1.0f, 0.0f);
-    changed |= ImGui::DragFloat("Height", &h, 1.0f, 0.0f);
-    changed |= ImGui::DragFloat("Pivot X", &px, 0.01f, 0.0f, 1.0f);
-    changed |= ImGui::DragFloat("Pivot Y", &py, 0.01f, 0.0f, 1.0f);
-    changed |= ImGui::DragFloat("Anchor X", &ax, 0.01f, 0.0f, 1.0f);
-    changed |= ImGui::DragFloat("Anchor Y", &ay, 0.01f, 0.0f, 1.0f);
-
-    if (changed) {
-        ui->setPosition(x, y);
-        ui->setSize(w, h);
-        ui->setPivot(px, py);
-        ui->setAnchor(ax, ay);
-    }
+    PropertyEditor pe(*editor, ui);
+    pe.dragFloat("X",
+                 [](Node& n) { return static_cast<UINode&>(n).x(); },
+                 [](Node& n, float v) { auto& u = static_cast<UINode&>(n); u.setPosition(v, u.y()); }, 1.0f);
+    pe.dragFloat("Y",
+                 [](Node& n) { return static_cast<UINode&>(n).y(); },
+                 [](Node& n, float v) { auto& u = static_cast<UINode&>(n); u.setPosition(u.x(), v); }, 1.0f);
+    pe.dragFloat("Width",
+                 [](Node& n) { return static_cast<UINode&>(n).width(); },
+                 [](Node& n, float v) { auto& u = static_cast<UINode&>(n); u.setSize(v, u.height()); }, 1.0f, 0.0f);
+    pe.dragFloat("Height",
+                 [](Node& n) { return static_cast<UINode&>(n).height(); },
+                 [](Node& n, float v) { auto& u = static_cast<UINode&>(n); u.setSize(u.width(), v); }, 1.0f, 0.0f);
+    pe.dragFloat("Pivot X",
+                 [](Node& n) { return static_cast<UINode&>(n).pivotX(); },
+                 [](Node& n, float v) { auto& u = static_cast<UINode&>(n); u.setPivot(v, u.pivotY()); }, 0.01f, 0.0f, 1.0f);
+    pe.dragFloat("Pivot Y",
+                 [](Node& n) { return static_cast<UINode&>(n).pivotY(); },
+                 [](Node& n, float v) { auto& u = static_cast<UINode&>(n); u.setPivot(u.pivotX(), v); }, 0.01f, 0.0f, 1.0f);
+    pe.dragFloat("Anchor X",
+                 [](Node& n) { return static_cast<UINode&>(n).anchorX(); },
+                 [](Node& n, float v) { auto& u = static_cast<UINode&>(n); u.setAnchor(v, u.anchorY()); }, 0.01f, 0.0f, 1.0f);
+    pe.dragFloat("Anchor Y",
+                 [](Node& n) { return static_cast<UINode&>(n).anchorY(); },
+                 [](Node& n, float v) { auto& u = static_cast<UINode&>(n); u.setAnchor(u.anchorX(), v); }, 0.01f, 0.0f, 1.0f);
 }
 
 void InspectorPanel::drawMeshRenderer(MeshNode* meshNode, EditorUI* editor) {
     ImGui::SeparatorText("Mesh Renderer");
-    
-    bool enabled = meshNode->meshEnabled();
-    if (ImGui::Checkbox("Enabled##MeshEnabled", &enabled)) {
-        meshNode->setMeshEnabled(enabled);
-    }
-    
-    std::string meshName = "Mesh [" + getAssetName(meshNode->mesh() ? editor->ctxResources_->meshId(meshNode->mesh()) : kAssetInvalid, editor) + "]";
+
+    PropertyEditor pe(*editor, meshNode);
+    pe.checkbox("Enabled##MeshEnabled",
+                [](Node& n) { return static_cast<MeshNode&>(n).meshEnabled(); },
+                [](Node& n, bool v) { static_cast<MeshNode&>(n).setMeshEnabled(v); });
+
+    ResourceManager* res = editor->ctxResources_;
+    std::string meshName = "Mesh [" + getAssetName(meshNode->mesh() ? res->meshId(meshNode->mesh()) : kAssetInvalid, editor) + "]";
     if (!meshNode->mesh()) meshName = "Drop Mesh Here";
     ImGui::Button(meshName.c_str(), ImVec2(-FLT_MIN, 30));
-    if (ImGui::BeginDragDropTarget()) {
+    if (res && ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_ID")) {
             AssetID id = *(AssetID*)payload->Data;
-            Mesh* newMesh = editor->ctxResources_->getMesh(id);
-            if (newMesh) meshNode->setMesh(newMesh);
+            pe.push<AssetID>("Assign Mesh",
+                             [res](Node& n) { auto* m = static_cast<MeshNode&>(n).mesh(); return m ? res->meshId(m) : kAssetInvalid; },
+                             [res](Node& n, AssetID a) { if (Mesh* m = res->getMesh(a)) static_cast<MeshNode&>(n).setMesh(m); },
+                             id);
         }
         ImGui::EndDragDropTarget();
     }
-    
+
     ImGui::Spacing();
-    ImGui::Checkbox("Cast Shadows", &meshNode->castShadows());
-    ImGui::Checkbox("Include to light baking", &meshNode->includeInLightBaking());
+    pe.checkbox("Cast Shadows",
+                [](Node& n) { return static_cast<MeshNode&>(n).castShadows(); },
+                [](Node& n, bool v) { static_cast<MeshNode&>(n).castShadows() = v; });
+    pe.checkbox("Include to light baking",
+                [](Node& n) { return static_cast<MeshNode&>(n).includeInLightBaking(); },
+                [](Node& n, bool v) { static_cast<MeshNode&>(n).includeInLightBaking() = v; });
 
     if (!meshNode->getBehaviour<LODGroupBehaviour>()) {
         if (ImGui::Button("Add LOD Group", ImVec2(-FLT_MIN, 0.0f))) {
@@ -495,6 +660,7 @@ void InspectorPanel::drawMeshRenderer(MeshNode* meshNode, EditorUI* editor) {
                 base.minScreenCoverage = 0.0f;
                 meshNode->setLods({base});
             }
+            editor->markDirty();
         }
     }
 }
@@ -514,12 +680,16 @@ void InspectorPanel::drawLodGroup(MeshNode* meshNode, EditorUI* editor) {
     ImGui::Text("Active LOD: %d", meshNode->activeLodIndex());
     ImGui::Text("Levels: %zu", lods.size());
 
+    // The LOD list is a per-element collection editor; its edits mark the
+    // document dirty but are not individually undoable (a dedicated LOD-list
+    // command is out of scope here — tracked as a follow-up).
     if (ImGui::Button("Add LOD", ImVec2(120, 0))) {
         MeshLodLevel lvl;
         lvl.mesh = meshNode->mesh();
         lvl.material = meshNode->material();
         lvl.minScreenCoverage = lods.empty() ? 0.0f : lods.back().minScreenCoverage * 0.5f;
         lods.push_back(lvl);
+        editor->markDirty();
     }
     ImGui::SameLine();
     if (ImGui::Button("Normalize Thresholds", ImVec2(170, 0))) {
@@ -527,6 +697,7 @@ void InspectorPanel::drawLodGroup(MeshNode* meshNode, EditorUI* editor) {
         const std::vector<float> thresholds = coverageThresholdsFromMsft({}, count);
         for (size_t i = 0; i < count; ++i)
             lods[i].minScreenCoverage = thresholds[i];
+        editor->markDirty();
     }
 
     if (ImGui::BeginTable("LodGroupTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
@@ -563,6 +734,7 @@ void InspectorPanel::drawLodGroup(MeshNode* meshNode, EditorUI* editor) {
                     if (Mesh* newMesh = editor->ctxResources_->getMesh(id)) {
                         if (i == 0) meshNode->setMesh(newMesh);
                         lvl.mesh = newMesh;
+                        editor->markDirty();
                     }
                 }
                 ImGui::EndDragDropTarget();
@@ -581,6 +753,7 @@ void InspectorPanel::drawLodGroup(MeshNode* meshNode, EditorUI* editor) {
                     if (Material* mat = editor->ctxResources_->getMaterial(desc)) {
                         if (i == 0) meshNode->setMaterial(mat);
                         lvl.material = mat;
+                        editor->markDirty();
                     }
                 }
                 ImGui::EndDragDropTarget();
@@ -594,7 +767,8 @@ void InspectorPanel::drawLodGroup(MeshNode* meshNode, EditorUI* editor) {
 
             ImGui::TableSetColumnIndex(4);
             ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::DragFloat("##coverage", &lvl.minScreenCoverage, 0.01f, 0.0f, 1.0f, "%.3f");
+            if (ImGui::DragFloat("##coverage", &lvl.minScreenCoverage, 0.01f, 0.0f, 1.0f, "%.3f"))
+                editor->markDirty();
 
             ImGui::TableSetColumnIndex(5);
             if (i > 0 && ImGui::Button("X"))
@@ -603,8 +777,10 @@ void InspectorPanel::drawLodGroup(MeshNode* meshNode, EditorUI* editor) {
             ImGui::PopID();
         }
 
-        if (removeIndex > 0)
+        if (removeIndex > 0) {
             lods.erase(lods.begin() + removeIndex);
+            editor->markDirty();
+        }
 
         ImGui::EndTable();
     }
@@ -612,34 +788,47 @@ void InspectorPanel::drawLodGroup(MeshNode* meshNode, EditorUI* editor) {
 
 void InspectorPanel::drawMaterial(Material* material, MeshNode* meshNode, EditorUI* editor) {
     ImGui::SeparatorText("Material");
+
+    ResourceManager* res = editor->ctxResources_;
+    PropertyEditor pe(*editor, meshNode);
+
+    // A material edit is, from the node's view, switching which (interned)
+    // Material it points to: the setter rebuilds the desc and re-interns it, so
+    // it round-trips for undo. The getter reads one field off the current desc;
+    // the setter overrides that one field on the *current* desc, so edits to
+    // different fields compose cleanly.
+    auto MG = [](auto m) {
+        return [m](Node& n) {
+            Material* mat = static_cast<MeshNode&>(n).material();
+            return (mat ? mat->desc() : MaterialDesc{}).*m;
+        };
+    };
+    auto MS = [res](auto m) {
+        return [res, m](Node& n, auto v) {
+            auto& mn = static_cast<MeshNode&>(n);
+            MaterialDesc d = mn.material() ? mn.material()->desc() : MaterialDesc{};
+            d.*m = v;
+            if (Material* nm = res->getMaterial(d)) mn.setMaterial(nm);
+        };
+    };
+
     std::string texName = "Base Texture [" + getAssetName(material ? material->desc().albedoId : kAssetInvalid, editor) + "]";
     if (!material || material->desc().albedoId == kAssetInvalid) texName = "Drop Base Texture Here";
     ImGui::Button(texName.c_str(), ImVec2(-FLT_MIN, 30));
-    if (ImGui::BeginDragDropTarget()) {
+    if (res && ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_ID")) {
             AssetID id = *(AssetID*)payload->Data;
-            MaterialDesc desc = material ? material->desc() : MaterialDesc{};
-            desc.albedoId = id;
-            Material* newMat = editor->ctxResources_->getMaterial(desc);
-            if (newMat) meshNode->setMaterial(newMat);
+            pe.push<AssetID>("Base Texture", MG(&MaterialDesc::albedoId), MS(&MaterialDesc::albedoId), id);
         }
         ImGui::EndDragDropTarget();
     }
-    
-    if (material) {
-        MaterialDesc desc = material->desc();
-        bool changed = false;
-        
-        if (ImGui::ColorEdit4("Base Color", &desc.baseColor.x)) changed = true;
-        if (ImGui::SliderFloat("Metallic", &desc.metallic, 0.0f, 1.0f)) changed = true;
-        if (ImGui::SliderFloat("Roughness", &desc.roughness, 0.0f, 1.0f)) changed = true;
-        if (ImGui::ColorEdit4("Emissive", &desc.emissiveColor.x)) changed = true;
-        if (ImGui::SliderFloat("Ambient Occlusion", &desc.ao, 0.0f, 1.0f)) changed = true;
-        
-        if (changed) {
-            Material* newMat = editor->ctxResources_->getMaterial(desc);
-            if (newMat) meshNode->setMaterial(newMat);
-        }
+
+    if (material && res) {
+        pe.colorEdit4("Base Color", MG(&MaterialDesc::baseColor), MS(&MaterialDesc::baseColor));
+        pe.sliderFloat("Metallic", MG(&MaterialDesc::metallic), MS(&MaterialDesc::metallic), 0.0f, 1.0f);
+        pe.sliderFloat("Roughness", MG(&MaterialDesc::roughness), MS(&MaterialDesc::roughness), 0.0f, 1.0f);
+        pe.colorEdit4("Emissive", MG(&MaterialDesc::emissiveColor), MS(&MaterialDesc::emissiveColor));
+        pe.sliderFloat("Ambient Occlusion", MG(&MaterialDesc::ao), MS(&MaterialDesc::ao), 0.0f, 1.0f);
     }
 }
 
@@ -652,9 +841,12 @@ void InspectorPanel::drawBehaviours(Node* node, EditorUI* editor) {
         if (!b->visibleInEditor()) continue;
         ImGui::PushID(b.get());
 
+        // Behaviour edits (enable, add/remove, internal fields) are not yet
+        // routed through commands — that arrives with the InspectorRegistry in
+        // Lot 6. Until then they mark the document dirty.
         bool enabled = b->enabled();
         if (ImGui::Checkbox("##enabled", &enabled)) {
-            b->setEnabled(enabled);
+            b->setEnabled(enabled); editor->markDirty();
         }
         ImGui::SameLine();
 
@@ -673,7 +865,7 @@ void InspectorPanel::drawBehaviours(Node* node, EditorUI* editor) {
                 else
                     ImGui::TextDisabled("LOD Group requires a MeshNode.");
             } else {
-                b->onDrawInspector();
+                InspectorRegistry::instance().draw(*b, *editor);
             }
 
             // Animator: drop a .bvh from the file browser to add it as a clip.
@@ -696,22 +888,22 @@ void InspectorPanel::drawBehaviours(Node* node, EditorUI* editor) {
     }
     
     if (toRemove) {
-        node->removeBehaviour(toRemove);
+        node->removeBehaviour(toRemove); editor->markDirty();
     }
-    
+
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
-    
+
     if (ImGui::Button("Add Component", ImVec2(-1.0f, 0.0f))) {
         ImGui::OpenPopup("AddComponentPopup");
     }
-    
+
     if (ImGui::BeginPopup("AddComponentPopup")) {
         auto& factories = BehaviourRegistry::instance().factories();
         for (const auto& pair : factories) {
             if (ImGui::Selectable(pair.first.c_str())) {
-                node->addBehaviour(pair.second());
+                node->addBehaviour(pair.second()); editor->markDirty();
             }
         }
         ImGui::EndPopup();

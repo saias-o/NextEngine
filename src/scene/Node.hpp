@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scene/Behaviour.hpp"
+#include "scene/NodeId.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -107,6 +108,9 @@ public:
 
     const std::string& name() const { return name_; }
     void setName(const std::string& name) { name_ = name; }
+    NodeId id() const { return id_; }
+    void assignSerializedId(NodeId id) { id_ = id != kNodeInvalid ? id : generateNodeId(); }
+    void regenerateId() { id_ = generateNodeId(); }
     
     bool enabled() const { return enabled_; }
     void setEnabled(bool enabled);
@@ -189,6 +193,7 @@ public:
     void setImportedFromPath(const std::string& path) { importedFromPath_ = path; }
 
 protected:
+    NodeId id_ = kNodeInvalid;
     std::string name_;
     std::string importedFromPath_;
     bool enabled_ = true;

@@ -32,6 +32,11 @@ public:
 
     bool isLoaded() const { return loaded_; }
 
+    // Bumped on every successful create()/load(). Lets the editor detect a
+    // project change (even a reload of the same path) and drop stale per-project
+    // state such as the undo history, which references the old scene's nodes.
+    uint64_t version() const { return version_; }
+
     const std::string& name() const { return name_; }
     void setName(const std::string& name) { name_ = name; }
     const std::string& rootPath() const { return rootPath_; }     // project directory
@@ -86,6 +91,7 @@ public:
 
 private:
     bool loaded_ = false;
+    uint64_t version_ = 0;
     std::string name_;
     std::string rootPath_;
     std::string filePath_;

@@ -1,0 +1,508 @@
+{
+  "version": 1,
+  "scene": {
+    "type": "Scene",
+    "name": "CharacterTest",
+    "enabled": true,
+    "behaviours": [],
+    "transform": {
+      "position": [0.0, 0.0, 0.0],
+      "rotation": [0.0, 0.0, 0.0, 1.0],
+      "scale": [1.0, 1.0, 1.0]
+    },
+    "settings": {
+      "ambient": [0.28, 0.29, 0.34],
+      "clearColor": [0.45, 0.62, 0.82],
+      "postProcessing": true,
+      "lightingMode": 0,
+      "giEnabled": true,
+      "giIntensity": 1.0,
+      "skyboxTexture": 0,
+      "skyboxExposure": 1.0,
+      "skyboxRotation": 0.0,
+      "iblEnabled": true,
+      "aoEnabled": true,
+      "fogEnabled": false,
+      "bloomEnabled": true,
+      "changeRenderingAtLoad": true
+    },
+    "children": [
+      {
+        "type": "LightNode",
+        "name": "Sun",
+        "enabled": true,
+        "behaviours": [],
+        "lightType": 0,
+        "color": [1.0, 0.96, 0.88],
+        "intensity": 2.2,
+        "direction": [-0.45, -0.82, -0.35],
+        "range": 10.0,
+        "spotInnerAngle": 25.0,
+        "spotOuterAngle": 35.0,
+        "castShadows": true,
+        "bakeMode": 0,
+        "transform": {
+          "position": [0.0, 10.0, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        }
+      },
+
+      {
+        "type": "StaticBody",
+        "name": "Floor",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.9,
+        "restitution": 0.0,
+        "transform": {
+          "position": [0.0, 0.0, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "FloorMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [0.40, 0.41, 0.45, 1.0],
+            "meshEnabled": true,
+            "castShadows": false,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [0.0, 0.0, 0.0],
+              "rotation": [0.0, 0.0, 0.0, 1.0],
+              "scale": [40.0, 1.0, 40.0]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [20.0, 0.5, 20.0],
+            "radius": 0.5, "height": 1.0, "axis": 1,
+            "offset": [0.0, 0.0, 0.0],
+            "transform": { "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0] }
+          }
+        ]
+      },
+
+      {
+        "type": "StaticBody",
+        "name": "Wall +X",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [20.0, 2.0, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "WallMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [0.30, 0.35, 0.50, 1.0],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [0.0, 0.0, 0.0],
+              "rotation": [0.0, 0.0, 0.0, 1.0],
+              "scale": [1.0, 4.0, 40.0]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [0.5, 2.0, 20.0],
+            "radius": 0.5, "height": 1.0, "axis": 1,
+            "offset": [0.0, 0.0, 0.0],
+            "transform": { "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0] }
+          }
+        ]
+      },
+
+      {
+        "type": "StaticBody",
+        "name": "Wall -X",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [-20.0, 2.0, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "WallMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [0.30, 0.35, 0.50, 1.0],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [0.0, 0.0, 0.0],
+              "rotation": [0.0, 0.0, 0.0, 1.0],
+              "scale": [1.0, 4.0, 40.0]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [0.5, 2.0, 20.0],
+            "radius": 0.5, "height": 1.0, "axis": 1,
+            "offset": [0.0, 0.0, 0.0],
+            "transform": { "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0] }
+          }
+        ]
+      },
+
+      {
+        "type": "StaticBody",
+        "name": "Wall +Z",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [0.0, 2.0, 20.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "WallMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [0.32, 0.37, 0.52, 1.0],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [0.0, 0.0, 0.0],
+              "rotation": [0.0, 0.0, 0.0, 1.0],
+              "scale": [40.0, 4.0, 1.0]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [20.0, 2.0, 0.5],
+            "radius": 0.5, "height": 1.0, "axis": 1,
+            "offset": [0.0, 0.0, 0.0],
+            "transform": { "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0] }
+          }
+        ]
+      },
+
+      {
+        "type": "StaticBody",
+        "name": "Wall -Z",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [0.0, 2.0, -20.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "WallMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [0.32, 0.37, 0.52, 1.0],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [0.0, 0.0, 0.0],
+              "rotation": [0.0, 0.0, 0.0, 1.0],
+              "scale": [40.0, 4.0, 1.0]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [20.0, 2.0, 0.5],
+            "radius": 0.5, "height": 1.0, "axis": 1,
+            "offset": [0.0, 0.0, 0.0],
+            "transform": { "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0] }
+          }
+        ]
+      },
+
+      {
+        "type": "StaticBody",
+        "name": "Block A",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [5.0, 1.5, 5.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "BlockMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [0.62, 0.40, 0.30, 1.0],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [0.0, 0.0, 0.0],
+              "rotation": [0.0, 0.0, 0.0, 1.0],
+              "scale": [3.0, 3.0, 3.0]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [1.5, 1.5, 1.5],
+            "radius": 0.5, "height": 1.0, "axis": 1,
+            "offset": [0.0, 0.0, 0.0],
+            "transform": { "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0] }
+          }
+        ]
+      },
+
+      {
+        "type": "StaticBody",
+        "name": "Block B",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [-7.0, 1.0, -4.0],
+          "rotation": [0.0, 0.3826834, 0.0, 0.9238795],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "BlockMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [0.55, 0.45, 0.30, 1.0],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [0.0, 0.0, 0.0],
+              "rotation": [0.0, 0.0, 0.0, 1.0],
+              "scale": [4.0, 2.0, 2.0]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [2.0, 1.0, 1.0],
+            "radius": 0.5, "height": 1.0, "axis": 1,
+            "offset": [0.0, 0.0, 0.0],
+            "transform": { "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0] }
+          }
+        ]
+      },
+
+      {
+        "type": "StaticBody",
+        "name": "Step",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [9.0, 0.4, -9.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "StepMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [0.50, 0.50, 0.40, 1.0],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [0.0, 0.0, 0.0],
+              "rotation": [0.0, 0.0, 0.0, 1.0],
+              "scale": [3.0, 0.8, 3.0]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [1.5, 0.4, 1.5],
+            "radius": 0.5, "height": 1.0, "axis": 1,
+            "offset": [0.0, 0.0, 0.0],
+            "transform": { "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0] }
+          }
+        ]
+      },
+
+      {
+        "type": "CharacterBody",
+        "name": "Player",
+        "enabled": true,
+        "groups": ["player"],
+        "mass": 70.0,
+        "maxSlopeAngle": 50.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "behaviours": [
+          {
+            "type": "Character",
+            "enabled": true,
+            "moveSpeed": 6.0,
+            "sprintMultiplier": 1.8,
+            "jumpForce": 6.0,
+            "gravity": 16.0,
+            "faceMovement": true,
+            "turnSpeed": 14.0
+          }
+        ],
+        "transform": {
+          "position": [0.0, 3.0, 6.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Body",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [0.20, 0.70, 0.35, 1.0],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [0.0, 0.0, 0.0],
+              "rotation": [0.0, 0.0, 0.0, 1.0],
+              "scale": [0.8, 1.8, 0.8]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "FacingNub",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [1.0, 0.90, 0.10, 1.0],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [0.0, 0.35, -0.55],
+              "rotation": [0.0, 0.0, 0.0, 1.0],
+              "scale": [0.25, 0.25, 0.45]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 3,
+            "halfExtents": [0.4, 0.9, 0.4],
+            "radius": 0.4,
+            "height": 1.8,
+            "axis": 1,
+            "offset": [0.0, 0.0, 0.0],
+            "transform": {
+              "position": [0.0, 0.0, 0.0],
+              "rotation": [0.0, 0.0, 0.0, 1.0],
+              "scale": [1.0, 1.0, 1.0]
+            }
+          }
+        ]
+      },
+
+      {
+        "type": "Camera",
+        "name": "Follow Camera",
+        "enabled": true,
+        "fovDegrees": 60.0,
+        "nearZ": 0.1,
+        "farZ": 200.0,
+        "priority": 10,
+        "active": true,
+        "behaviours": [
+          {
+            "type": "CameraFollow",
+            "enabled": true,
+            "targetGroup": "player",
+            "distance": 6.0,
+            "height": 1.5,
+            "shoulderOffset": 0.0,
+            "yawSensitivity": 0.18,
+            "pitchSensitivity": 0.16,
+            "minPitch": -30.0,
+            "maxPitch": 65.0,
+            "positionDamping": 14.0,
+            "collisionMargin": 0.3,
+            "minDistance": 0.8
+          }
+        ],
+        "transform": {
+          "position": [0.0, 4.0, 12.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        }
+      }
+    ]
+  }
+}

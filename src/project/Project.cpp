@@ -57,6 +57,7 @@ bool Project::create(const std::string& parentDir, const std::string& projectNam
 
     AudioManager::get().setProjectRoot(rootPath_);
 
+    ++version_;
     Log::info("Created project '", name_, "' at ", rootPath_);
     return true;
 }
@@ -151,6 +152,7 @@ bool Project::load(const std::string& neprojPath) {
 
     AudioManager::get().setProjectRoot(rootPath_);
 
+    ++version_;
     Log::info("Loaded project '", name_, "' from ", rootPath_);
     return true;
 }

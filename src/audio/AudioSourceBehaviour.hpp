@@ -8,7 +8,6 @@ namespace ne {
 class AudioSourceBehaviour : public Behaviour {
 public:
     void onReady() override;
-    void onDrawInspector() override;
 
     const char* typeName() const override { return "AudioSource"; }
     void save(nlohmann::json& json) const override;

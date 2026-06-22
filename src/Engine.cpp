@@ -17,6 +17,7 @@
 #include "scene/NodeRegistry.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/LightNode.hpp"
+#include "scene/CameraNode.hpp"
 #include "physics/CollisionShapeNode.hpp"
 #include "physics/StaticBodyNode.hpp"
 #include "physics/RigidBodyNode.hpp"
@@ -34,23 +35,20 @@
 #include "audio/AudioManager.hpp"
 #include "audio/AudioSourceBehaviour.hpp"
 #include "scene/CharacterBehaviour.hpp"
+#include "scene/CameraFollowBehaviour.hpp"
 #include "scene/SpawnerBehaviour.hpp"
 #include "scene/LODGroupBehaviour.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scripting/ScriptBehaviour.hpp"
 #include "ui/RmlUiRuntime.hpp"
+#ifdef NE_ENABLE_XR
 #include "xr/XrInstance.hpp"
 #include "xr/XrSession.hpp"
+#include "xr/XrVulkanBinding.hpp"
+#include "xr/XrRegistration.hpp"
 #include "xr/toolkit/XRInput.hpp"
-#include "xr/toolkit/XRController.hpp"
-#include "xr/toolkit/XRHand.hpp"
-#include "xr/toolkit/XRGrabbable.hpp"
-#include "xr/toolkit/XRTouchable.hpp"
-#include "xr/toolkit/XRDirectInteractor.hpp"
 #include "xr/toolkit/XROrigin.hpp"
-#include "xr/toolkit/TeleportArea.hpp"
-#include "xr/toolkit/XRRayInteractor.hpp"
-#include "xr/toolkit/XRAnchor.hpp"
+#endif
 
 #include <exception>
 #include <cerrno>
@@ -82,10 +80,12 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     // Process roles are explicit: the editor always owns a desktop Vulkan/ImGui
     // path, while the --xr preview process requires OpenXR from startup. A Vulkan
     // device cannot be converted from one presentation owner to the other later.
+#ifdef NE_ENABLE_XR
     if (requireXr) {
         try {
             xrInstance_ = std::make_unique<xr::Instance>();
-            device_ = std::make_unique<VulkanDevice>(*window_, xrInstance_.get());
+            xrCreator_ = std::make_unique<xr::XrVulkanDeviceCreator>(*xrInstance_);
+            device_ = std::make_unique<VulkanDevice>(*window_, xrCreator_.get());
             xrSession_ = std::make_unique<xr::Session>(*xrInstance_, *device_);
             xrMode_ = true;
             Log::info("XR mode active (OpenXR session)");
@@ -93,6 +93,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
             throw std::runtime_error(std::string("XR preview startup failed: ") + e.what());
         }
     }
+#endif
     if (!device_) device_ = std::make_unique<VulkanDevice>(*window_);
     if (!xrMode_) swapchain_ = std::make_unique<Swapchain>(*device_, *window_);
     resources_ = std::make_unique<ResourceManager>(*device_);
@@ -115,21 +116,21 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     // Register built-in behaviours
     BehaviourRegistry::instance().registerType<AudioSourceBehaviour>("AudioSource");
     BehaviourRegistry::instance().registerType<CharacterBehaviour>("Character");
+    BehaviourRegistry::instance().registerType<CameraFollowBehaviour>("CameraFollow");
     BehaviourRegistry::instance().registerType<SpawnerBehaviour>("Spawner");
     BehaviourRegistry::instance().registerType<Animator>("Animator");
     BehaviourRegistry::instance().registerType<LODGroupBehaviour>("LOD Group");
     BehaviourRegistry::instance().registerType<ScriptBehaviour>("ScriptBehaviour");
-    // NEXRTK (XR Toolkit) interactables / interactors.
-    BehaviourRegistry::instance().registerType<XRGrabbable>("XRGrabbable");
-    BehaviourRegistry::instance().registerType<XRTouchable>("XRTouchable");
-    BehaviourRegistry::instance().registerType<XRDirectInteractor>("XRDirectInteractor");
-    BehaviourRegistry::instance().registerType<XRRayInteractor>("XRRayInteractor");
+#ifdef NE_ENABLE_XR
+    ne::xr::registerTypes();
+#endif
 
     // Register built-in nodes
     NodeRegistry::instance().registerType<Node>("Node");
     NodeRegistry::instance().registerType<Scene>("Scene");
     NodeRegistry::instance().registerType<MeshNode>("MeshNode");
     NodeRegistry::instance().registerType<LightNode>("LightNode");
+    NodeRegistry::instance().registerType<CameraNode>("Camera");
     NodeRegistry::instance().registerType<WebCanvasNode>("WebCanvasNode");
     NodeRegistry::instance().registerType<UINode>("UINode");
     NodeRegistry::instance().registerType<UICanvasNode>("UICanvasNode");
@@ -144,11 +145,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     NodeRegistry::instance().registerType<RigidBodyNode>("RigidBody");
     NodeRegistry::instance().registerType<AreaNode>("Area");
     NodeRegistry::instance().registerType<CharacterBodyNode>("CharacterBody");
-    NodeRegistry::instance().registerType<XRController>("XRController");
-    NodeRegistry::instance().registerType<XRHandNode>("XRHand");
-    NodeRegistry::instance().registerType<XROrigin>("XROrigin");
-    NodeRegistry::instance().registerType<TeleportArea>("TeleportArea");
-    NodeRegistry::instance().registerType<XRAnchor>("XRAnchor");
+    // XR Toolkit nodes/behaviours are registered by xr::registerTypes() above.
     if (project_->isLoaded()) {
         AudioManager::get().setProjectRoot(project_->rootPath());
         AudioManager::get().setDefaultSettings(project_->defaultAudioSettings());
@@ -163,11 +160,14 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
             swapchain_->imageCount(), VK_SAMPLE_COUNT_1_BIT);
         renderer_ = std::make_unique<Renderer>(*device_, *swapchain_, *window_,
             *resources_, *imgui_);
-    } else {
+    }
+#ifdef NE_ENABLE_XR
+    else {
         renderer_ = std::make_unique<Renderer>(*device_, *window_, *resources_,
             xrSession_->eyeExtent(), static_cast<VkFormat>(xrSession_->colorFormat()),
             xrSession_->viewCount());
     }
+#endif
 
     // Default editor/viewport camera placement (the app may move it).
     camera_.position = {0.0f, 2.5f, 8.0f};
@@ -175,6 +175,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     camera_.pitch = -15.0f;
 }
 
+#ifdef NE_ENABLE_XR
 bool Engine::launchExternalPreviewIfNeeded() {
     bool xrScene = false;
     scene_->traverse([&](Node& node, const glm::mat4&) {
@@ -236,9 +237,10 @@ bool Engine::launchExternalPreviewIfNeeded() {
     Log::info("XR Preview launched (process ", child, ")");
 #else
     Log::error("XR Preview process launch is currently implemented for Windows only");
-#endif
+#endif  // _WIN32
     return true;
 }
+#endif  // NE_ENABLE_XR
 
 Engine::~Engine() {
     unmountWorld();  // tear down the World (and its physics) before subsystems
@@ -254,6 +256,7 @@ Engine::~Engine() {
 }
 
 void Engine::mountWorld() {
+    cameraDirector_.reset();  // first scene camera snaps in (no blend from stale state)
     sceneTree_->setProjectRoot(project_->rootPath());  // resolve relative .scene paths
 
     // Register the project's data-driven autoloads (idempotent: dedup by name).
@@ -287,15 +290,18 @@ void Engine::unmountWorld() {
 
     // Rebuild the edit document from the snapshot taken at play start.
     if (!playSnapshot_.empty()) {
-        if (auto restored = SceneSerializer::nodeFromJson(playSnapshot_, *resources_))
+        if (auto restored = SceneSerializer::nodeFromJson(
+                playSnapshot_, *resources_, NodeIdPolicy::Preserve))
             scene_.reset(static_cast<Scene*>(restored.release()));
         playSnapshot_.clear();
     }
 }
 
 void Engine::run() {
-    if (xrMode_) runXr();
-    else runDesktop();
+#ifdef NE_ENABLE_XR
+    if (xrMode_) { runXr(); return; }
+#endif
+    runDesktop();
 }
 
 void Engine::runDesktop() {
@@ -342,7 +348,18 @@ void Engine::runDesktop() {
         imgui_->beginFrame();
         if (onFrame_)
             onFrame_(realDt);              // application: its input + UI
+
+        // The application callback may switch Play/Preview mode and destroy the
+        // previously active scene. Never carry that borrowed pointer across the
+        // callback boundary.
+        activeScene = sceneOverride_ ? sceneOverride_ : scene_.get();
         activeScene->update(Time::delta());     // behaviours: scaled time (pausable)
+
+        // During Play, scene cameras drive the view (the editor fly cam is frozen).
+        // The director picks the highest-priority active CameraNode and blends; with
+        // no camera it returns false and the editor camera stays in control.
+        if (sceneTree_->mounted())
+            cameraDirector_.update(*activeScene, camera_, Time::delta());
 
         // Apply deferred gameplay ops (queueFree, changeScene) once behaviours are
         // done — never mutate the tree mid-update. The World object identity is
@@ -361,6 +378,7 @@ void Engine::runDesktop() {
     vkDeviceWaitIdle(device_->device());
 }
 
+#ifdef NE_ENABLE_XR
 void Engine::runXr() {
     // XR loop: paced by xrWaitFrame (inside renderFrame), not GLFW. The window
     // still exists (mirror/host) so we keep pumping it to stay responsive.
@@ -429,10 +447,16 @@ void Engine::runXr() {
         // is reused — only presentation differs from the desktop path.
         xrSession_->renderFrame(
             [&](VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes) {
-                renderer_->drawXr(cmd, eyes, *activeScene, project_.get());
+                // Convert xr::EyeView → EyeRenderInfo to keep the Renderer decoupled from XR types.
+                std::vector<EyeRenderInfo> eyeInfos;
+                eyeInfos.reserve(eyes.size());
+                for (const auto& e : eyes)
+                    eyeInfos.push_back({e.image, e.imageView, e.extent, e.view, e.projection, e.eyePosition});
+                renderer_->drawXr(cmd, eyeInfos, *activeScene, project_.get());
             });
     }
     vkDeviceWaitIdle(device_->device());
 }
+#endif  // NE_ENABLE_XR
 
 } // namespace ne

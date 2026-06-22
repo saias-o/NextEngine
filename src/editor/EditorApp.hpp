@@ -17,16 +17,23 @@ public:
     void update(float dt);  // input + UI; call from the engine's onFrame hook
 
     bool isPlayMode() const { return playMode_; }
+    // Requests a Play/Stop transition. The actual world mount/unmount is DEFERRED
+    // to the end of update(): tearing down the world mid-UI-frame would free the
+    // Scene that the panels (hierarchy/inspector/gizmo) are still drawing this
+    // frame — a use-after-free. See applyPlayMode().
     void setPlayMode(bool play);
 
 private:
     void processInput(float dt);
     void updateCursorCapture(bool isPlayMode);
+    void applyPlayMode(bool play);  // does the real mount/unmount (deferred)
 
     Engine& engine_;
     EditorUI ui_;
     bool playMode_ = false;
     bool wasPlayMode_ = false;
+    int pendingPlayMode_ = -1;  // -1 none, 0 stop, 1 play (applied at end of update)
+    float flySpeed_ = 6.0f;     // editor fly speed (units/s); scroll wheel adjusts it
 };
 
 } // namespace ne

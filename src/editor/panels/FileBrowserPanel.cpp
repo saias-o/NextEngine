@@ -3,7 +3,6 @@
 #include "project/Project.hpp"
 #include "scene/Scene.hpp"
 #include "graphics/ResourceManager.hpp"
-#include "graphics/Texture.hpp"
 
 #include <imgui.h>
 #include <filesystem>
@@ -21,9 +20,8 @@ static std::string toLower(const std::string& str) {
     return lower;
 }
 
-const char* fileIcon(const std::filesystem::directory_entry& entry) {
-    if (entry.is_directory()) return "[D]";
-    auto ext = entry.path().extension().string();
+const char* fileIcon(const std::filesystem::path& path) {
+    auto ext = path.extension().string();
     if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".glb") return "[3D]";
     if (ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr")  return "[Img]";
     if (ext == ".vert" || ext == ".frag" || ext == ".glsl" || ext == ".spv") return "[Sh]";
@@ -38,6 +36,7 @@ const char* fileIcon(const std::filesystem::directory_entry& entry) {
 } // namespace
 
 void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, ResourceManager* resources) {
+    editor->thumbnails_.beginFrame();  // advance the cache clock / drain retired thumbnails
     ImGui::Begin("File Browser", &editor->showFileBrowser_);
 
     if (!project || !project->isLoaded()) {
@@ -102,40 +101,50 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
     ImGui::Separator();
 
     try {
-        std::vector<fs::directory_entry> dirs;
-        std::vector<fs::directory_entry> files;
         std::string query = toLower(editor->fileBrowserSearchBuf_);
 
-        if (query.empty()) {
-            for (auto& entry : fs::directory_iterator(browsePath)) {
-                auto name = entry.path().filename().string();
-                if (name.empty() || name[0] == '.') continue;
-                if (name == "build") continue;
+        // Rescan the directory only when something changed (path/query), after a
+        // local mutation (time reset to < 0), or once per refresh window — never
+        // every frame. The listing is cached on the editor as sorted paths.
+        constexpr double kRefreshSeconds = 1.0;
+        EditorUI::FileListing& listing = editor->fileListing_;
+        const std::string browsePathStr = browsePath.string();
+        const double now = ImGui::GetTime();
+        if (listing.path != browsePathStr || listing.query != query ||
+            listing.time < 0.0 || now - listing.time > kRefreshSeconds) {
+            listing.path = browsePathStr;
+            listing.query = query;
+            listing.time = now;
+            listing.dirs.clear();
+            listing.files.clear();
 
-                if (entry.is_directory()) dirs.push_back(entry);
-                else files.push_back(entry);
-            }
-        } else {
-            for (auto& entry : fs::recursive_directory_iterator(project->rootPath())) {
-                auto name = entry.path().filename().string();
-                if (name.empty() || name[0] == '.') continue;
-                if (name == "build") continue;
-
-                std::string nameLower = toLower(name);
-                std::string extLower = toLower(entry.path().extension().string());
-                
-                if (nameLower.find(query) != std::string::npos || extLower.find(query) != std::string::npos) {
-                    if (entry.is_directory()) dirs.push_back(entry);
-                    else files.push_back(entry);
+            auto consider = [&](const fs::directory_entry& entry) {
+                const std::string name = entry.path().filename().string();
+                if (name.empty() || name[0] == '.' || name == "build") return;
+                if (!query.empty()) {
+                    const std::string nameLower = toLower(name);
+                    const std::string extLower = toLower(entry.path().extension().string());
+                    if (nameLower.find(query) == std::string::npos &&
+                        extLower.find(query) == std::string::npos)
+                        return;
                 }
-            }
+                (entry.is_directory() ? listing.dirs : listing.files).push_back(entry.path().string());
+            };
+
+            if (query.empty())
+                for (auto& e : fs::directory_iterator(browsePath)) consider(e);
+            else
+                for (auto& e : fs::recursive_directory_iterator(project->rootPath())) consider(e);
+
+            auto byName = [](const std::string& a, const std::string& b) {
+                return fs::path(a).filename() < fs::path(b).filename();
+            };
+            std::sort(listing.dirs.begin(), listing.dirs.end(), byName);
+            std::sort(listing.files.begin(), listing.files.end(), byName);
         }
 
-        auto cmp = [](const fs::directory_entry& a, const fs::directory_entry& b) {
-            return a.path().filename() < b.path().filename();
-        };
-        std::sort(dirs.begin(), dirs.end(), cmp);
-        std::sort(files.begin(), files.end(), cmp);
+        const std::vector<std::string>& dirs = listing.dirs;
+        const std::vector<std::string>& files = listing.files;
 
         bool useGrid = editor->fileBrowserZoom_ > 1.0f;
         float iconSize = 64.0f * editor->fileBrowserZoom_;
@@ -179,9 +188,11 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                 if (ImGui::InputText(("##rename_" + pathStr).c_str(), editor->fileRenameBuf_, sizeof(editor->fileRenameBuf_), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
                     try { fs::rename(editor->fileToRename_, fs::path(editor->fileToRename_).parent_path() / editor->fileRenameBuf_); } catch(...) {}
                     editor->fileToRename_.clear();
+                    editor->fileListing_.time = -1.0;  // refresh listing
                 } else if (ImGui::IsItemDeactivated() && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
                     try { fs::rename(editor->fileToRename_, fs::path(editor->fileToRename_).parent_path() / editor->fileRenameBuf_); } catch(...) {}
                     editor->fileToRename_.clear();
+                    editor->fileListing_.time = -1.0;  // refresh listing
                 }
                 return true;
             }
@@ -189,9 +200,8 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
         };
 
         char buffer[256];
-        for (auto& d : dirs) {
-            std::string pathStr = d.path().string();
-            std::string filename = d.path().filename().string();
+        for (const auto& pathStr : dirs) {
+            std::string filename = fs::path(pathStr).filename().string();
             if (useGrid) {
                 ImGui::BeginGroup();
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
@@ -218,22 +228,25 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
             }
         }
         
-        for (auto& f : files) {
-            std::string pathStr = f.path().string();
-            std::string filename = f.path().filename().string();
-            auto ext = f.path().extension().string();
-            
+        for (const auto& pathStr : files) {
+            fs::path fp(pathStr);
+            std::string filename = fp.filename().string();
+            auto ext = fp.extension().string();
+
             if (useGrid) {
                 ImGui::BeginGroup();
                 
                 if (ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr") {
-                    AssetID id = resources->getOrRegister(f.path().string(), AssetType::Texture);
-                    Texture* tex = resources->getTexture(id);
-                    if (tex && editor->texCache_.get(tex)) {
-                        ImGui::Image(editor->texCache_.get(tex), ImVec2(iconSize, iconSize));
-                    } else {
+                    // Only generate a thumbnail for on-screen items; off-screen
+                    // grid cells (and any past the per-frame budget) fall back to
+                    // the placeholder and resolve on a later frame.
+                    ImTextureID thumb = 0;
+                    if (ImGui::IsRectVisible(ImVec2(iconSize, iconSize)))
+                        thumb = editor->thumbnails_.get(resources->device(), pathStr);
+                    if (thumb)
+                        ImGui::Image(thumb, ImVec2(iconSize, iconSize));
+                    else
                         ImGui::Button("[IMG]", ImVec2(iconSize, iconSize));
-                    }
                 } else if (ext == ".scene") {
                     ImGui::Button("[SCENE]", ImVec2(iconSize, iconSize));
                     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
@@ -306,7 +319,7 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                 ImGui::NextColumn();
             } else {
                 if (!handleInlineRename(pathStr, -1.0f)) {
-                    std::snprintf(buffer, sizeof(buffer), "%s %s", fileIcon(f), filename.c_str());
+                    std::snprintf(buffer, sizeof(buffer), "%s %s", fileIcon(fp), filename.c_str());
                     if (ImGui::Selectable(buffer, false, ImGuiSelectableFlags_AllowDoubleClick)) {
                         if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                             if (ext == ".scene") {
@@ -368,6 +381,7 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
         
         if (!pathToDelete_.empty()) {
             try { fs::remove_all(pathToDelete_); } catch (...) {}
+            editor->fileListing_.time = -1.0;  // refresh listing
         }
 
         if (useGrid) {
