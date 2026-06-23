@@ -5,6 +5,7 @@
 #include "scene/BehaviourRegistry.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SceneSerializer.hpp"
+#include "scripting/ScriptBehaviour.hpp"
 
 #include <glm/gtc/quaternion.hpp>
 
@@ -198,6 +199,25 @@ void AddBehaviourCommand::undo(SceneDocument& document) {
     Behaviour* victim = nullptr;
     for (const auto& b : node->behaviours())
         if (b->typeName() && type_ == b->typeName()) victim = b.get();
+    if (victim) node->removeBehaviour(victim);
+    document.markDirty();
+}
+
+void AttachScriptCommand::execute(SceneDocument& document) {
+    Node* node = document.find(nodeId_);
+    if (!node) return;
+    auto script = std::make_unique<ScriptBehaviour>();
+    script->setScriptPath(scriptPath_);
+    node->addBehaviour(std::move(script));
+    document.markDirty();
+}
+
+void AttachScriptCommand::undo(SceneDocument& document) {
+    Node* node = document.find(nodeId_);
+    if (!node) return;
+    Behaviour* victim = nullptr;
+    for (const auto& b : node->behaviours())
+        if (dynamic_cast<ScriptBehaviour*>(b.get())) victim = b.get();
     if (victim) node->removeBehaviour(victim);
     document.markDirty();
 }

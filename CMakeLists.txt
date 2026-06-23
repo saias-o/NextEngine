@@ -277,6 +277,14 @@ add_library(ne_engine STATIC
     third_party/xatlas/xatlas.cpp
 )
 
+# LLM-generated behaviours (written by the MCP write_cpp_behaviour tool). Globbed
+# with CONFIGURE_DEPENDS so Ninja re-globs on build when a new file appears — no
+# manual CMake edit needed. Registered centrally in scene/ReflectedTypes.cpp.
+file(GLOB NE_GENERATED_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/generated/*.cpp)
+if(NE_GENERATED_SOURCES)
+    target_sources(ne_engine PRIVATE ${NE_GENERATED_SOURCES})
+endif()
+
 # PUBLIC: propagated to anything linking the engine (the game/editor exe).
 target_include_directories(ne_engine PUBLIC
     src

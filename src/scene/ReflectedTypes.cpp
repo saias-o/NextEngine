@@ -8,6 +8,7 @@
 #include "scene/CharacterBehaviour.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/RotatorBehaviour.hpp"
+// <<NE_MCP_INCLUDES>>  (write_cpp_behaviour inserts generated #includes above this line)
 
 namespace ne {
 namespace {
@@ -41,6 +42,7 @@ void registerReflectedTypes() {
 
     // ── nodes ──
     registerNode<LightNode>();
+    // <<NE_MCP_REGISTER>>  (write_cpp_behaviour inserts registerBehaviour<T>() calls above this line)
 }
 
 } // namespace ne

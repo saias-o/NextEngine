@@ -160,6 +160,21 @@ private:
     std::string type_;
 };
 
+// Attach a ScriptBehaviour pointing at a JS file to a node. Undo removes the last
+// ScriptBehaviour. Used by the MCP `write_script` tool's optional attach step.
+class AttachScriptCommand : public Command {
+public:
+    AttachScriptCommand(NodeId node, std::string scriptPath)
+        : nodeId_(node), scriptPath_(std::move(scriptPath)) {}
+    void execute(SceneDocument& document) override;
+    void undo(SceneDocument& document) override;
+    const char* name() const override { return "Attach Script"; }
+
+private:
+    NodeId nodeId_;
+    std::string scriptPath_;
+};
+
 // Append a data-driven signal→slot link to the scene's connections. Used by the
 // MCP `connect_signal` tool.
 class ConnectSignalCommand : public Command {

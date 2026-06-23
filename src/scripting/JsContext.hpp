@@ -23,6 +23,12 @@ public:
 
     bool eval(const std::string& source, const std::string& filename = "<eval>");
     bool evalModule(const std::string& source, const std::string& filename);
+
+    // Compile-only syntax check (does not run the script). Returns true if the
+    // source compiles; otherwise false with the error message in `errorOut`.
+    // `asModule` picks the module vs global parse mode (.mjs vs .js).
+    bool compileCheck(const std::string& source, const std::string& filename,
+                      bool asModule, std::string& errorOut);
     bool callGlobal(const char* functionName);
     bool callGlobal(const char* functionName, double arg);
     bool callModuleExport(const char* functionName);

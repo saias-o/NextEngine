@@ -531,9 +531,17 @@ Le moteur est construit par étapes numérotées :
             `connect_signal`, `set_scene_settings`). Port via `NE_MCP_PORT`
             (défaut 8765), désactivable par `NE_MCP=0`. Transport vérifié end-to-end
             (`ne_mcp_server_tests`). Suite complète verte (10/10).
-      - [ ] **M4 — Outils de code + boucle de validation** : `write_script`,
-            `write_cpp_behaviour` (template+build+erreurs), `write_ui`,
-            `run_headless_check`.
+      - [x] **M4 — Outils de code + boucle de validation** (outils MCP) :
+            `write_script` (JS/.mjs sous `scripts/`, hot-reload ; option
+            `attachTo` → `AttachScriptCommand` undoable), `write_ui` (HTML/RML/CSS
+            pour WebCanvas), `write_cpp_behaviour` (scaffold C++ réfléchi dans
+            `src/generated/` **globé `CONFIGURE_DEPENDS`** + patch auto de
+            `ReflectedTypes.cpp` via marqueurs → zéro édition CMake/Engine),
+            `build` (`cmake --build`, renvoie ok + sortie compilateur),
+            `run_headless_check` (compile chaque script de la scène via
+            `JsContext::compileCheck`, sans GPU → erreurs par script), `read_logs`
+            (ring buffer ajouté à `core/Log`). Chemin scaffold→build vérifié
+            end-to-end (le glob auto-détecte, compile et linke). Suite 10/10 verte.
       - [ ] **M5 — Primitives haut niveau** : `StateMachineBehaviour`,
             `Blackboard` autoload, `ScenarioBehaviour` ; recettes NPC/lumière.
       - [ ] **M6 — Token-opt** : scène compacte, deltas de manifeste, guide agent

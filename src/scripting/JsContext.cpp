@@ -127,6 +127,22 @@ bool JsContext::evalModule(const std::string& source, const std::string& filenam
     return true;
 }
 
+bool JsContext::compileCheck(const std::string& source, const std::string& filename,
+                             bool asModule, std::string& errorOut) {
+    int flags = JS_EVAL_FLAG_COMPILE_ONLY | (asModule ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL);
+    JSValue compiled = JS_Eval(ctx_, source.c_str(), source.size(), filename.c_str(), flags);
+    bool ok = !JS_IsException(compiled);
+    if (!ok) {
+        JSValue exc = JS_GetException(ctx_);
+        const char* message = JS_ToCString(ctx_, exc);
+        errorOut = message ? message : "unknown compile error";
+        JS_FreeCString(ctx_, message);
+        JS_FreeValue(ctx_, exc);
+    }
+    JS_FreeValue(ctx_, compiled);
+    return ok;
+}
+
 bool JsContext::callGlobal(const char* functionName) {
     return callGlobalImpl(functionName, 0, nullptr);
 }

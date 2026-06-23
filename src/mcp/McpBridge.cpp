@@ -7,17 +7,26 @@
 #include "editor/SceneDocument.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "mcp/McpServer.hpp"
+#include "project/Project.hpp"
 #include "scene/BehaviourRegistry.hpp"
 #include "scene/Node.hpp"
 #include "scene/NodeRegistry.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SceneSerializer.hpp"
 #include "scene/SignalWiring.hpp"
+#include "scripting/JsContext.hpp"
+#include "scripting/JsRuntime.hpp"
+#include "scripting/ScriptBehaviour.hpp"
 
 #include "nlohmann/json.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <functional>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -33,6 +42,7 @@ struct ToolCtx {
     Scene* scene = nullptr;
     ResourceManager* resources = nullptr;
     SceneDocument* doc = nullptr;
+    Project* project = nullptr;
     bool canEdit = false;
     std::function<void(std::unique_ptr<Command>)> exec;
 };
@@ -333,6 +343,229 @@ json toolSetSceneSettings(const ToolCtx& ctx, const json& args) {
     return {{"ok", true}};
 }
 
+// ── M4: code authoring + validation ─────────────────────────────────────────
+namespace fs = std::filesystem;
+
+std::string slurp(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+
+void spit(const std::string& path, const std::string& content) {
+    fs::path p(path);
+    std::error_code ec;
+    if (p.has_parent_path()) fs::create_directories(p.parent_path(), ec);
+    std::ofstream f(path, std::ios::binary);
+    if (!f) fail("could not write " + path);
+    f << content;
+}
+
+std::string sanitizeIdent(const std::string& s) {
+    std::string out;
+    for (char c : s)
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') out += c;
+    if (out.empty() || std::isdigit(static_cast<unsigned char>(out[0]))) out = "B" + out;
+    return out;
+}
+
+std::string projectRootOf(const ToolCtx& ctx) {
+    if (ctx.project && ctx.project->isLoaded()) return ctx.project->rootPath();
+    return std::string(NE_PROJECT_ROOT);
+}
+
+json toolWriteScript(const ToolCtx& ctx, const json& args) {
+    if (!args.contains("path") || !args.contains("code")) fail("missing 'path'/'code'");
+    std::string rel = args["path"].get<std::string>();
+    fs::path rp(rel);
+    std::string projectRel = rel, abs;
+    if (rp.is_absolute()) {
+        abs = rel;
+    } else {
+        if (!ctx.project || !ctx.project->isLoaded()) fail("no project loaded; pass an absolute path");
+        if (!rp.has_parent_path()) projectRel = "scripts/" + rel;  // default scripts/
+        abs = ctx.project->rootPath() + "/" + projectRel;
+    }
+    spit(abs, args["code"].get<std::string>());
+
+    json out{{"path", abs}};
+    if (args.contains("attachTo")) {
+        requireEdit(ctx);
+        Node* node = ctx.doc->find(parseNodeId(args["attachTo"]));
+        if (!node) fail("attachTo node not found");
+        ctx.exec(std::make_unique<AttachScriptCommand>(node->id(), projectRel));
+        out["attached"] = true;
+    }
+    return out;
+}
+
+json toolWriteUi(const ToolCtx& ctx, const json& args) {
+    if (!args.contains("path") || !args.contains("code")) fail("missing 'path'/'code'");
+    std::string rel = args["path"].get<std::string>();
+    fs::path rp(rel);
+    std::string abs = rp.is_absolute() ? rel : projectRootOf(ctx) + "/" + rel;
+    spit(abs, args["code"].get<std::string>());
+    return {{"path", abs}};
+}
+
+std::string cppType(const std::string& t) {
+    if (t == "int") return "int";
+    if (t == "bool") return "bool";
+    if (t == "string") return "std::string";
+    if (t == "vec3") return "glm::vec3";
+    return "float";
+}
+
+std::string cppDefault(const std::string& t, const json& d) {
+    if (t == "bool") return (d.is_boolean() && d.get<bool>()) ? "true" : "false";
+    if (t == "string") return "\"" + (d.is_string() ? d.get<std::string>() : std::string()) + "\"";
+    if (t == "int") return d.is_number() ? std::to_string(d.get<int>()) : "0";
+    if (t == "vec3") {
+        if (d.is_array() && d.size() == 3)
+            return "{" + std::to_string(d[0].get<float>()) + "f," + std::to_string(d[1].get<float>()) +
+                   "f," + std::to_string(d[2].get<float>()) + "f}";
+        return "{0.0f, 0.0f, 0.0f}";
+    }
+    return (d.is_number() ? std::to_string(d.get<float>()) : "0.0") + "f";
+}
+
+void patchReflectedTypes(const std::string& className) {
+    std::string path = std::string(NE_PROJECT_ROOT) + "/src/scene/ReflectedTypes.cpp";
+    std::string src = slurp(path);
+    if (src.empty()) fail("could not read ReflectedTypes.cpp");
+
+    std::string includeLine = "#include \"generated/" + className + ".hpp\"";
+    std::string registerLine = "    registerBehaviour<" + className + ">();";
+    if (src.find(includeLine) != std::string::npos) return;  // already registered
+
+    const std::string incMarker = "// <<NE_MCP_INCLUDES>>";
+    const std::string regMarker = "// <<NE_MCP_REGISTER>>";
+    auto incPos = src.find(incMarker);
+    auto regPos = src.find(regMarker);
+    if (incPos == std::string::npos || regPos == std::string::npos)
+        fail("ReflectedTypes.cpp markers missing");
+    src.insert(incPos, includeLine + "\n");
+    regPos = src.find(regMarker);  // shifted by the insert above
+    src.insert(regPos, registerLine + "\n    ");
+    spit(path, src);
+}
+
+json toolWriteCppBehaviour(const ToolCtx&, const json& args) {
+    if (!args.contains("name")) fail("missing 'name'");
+    std::string className = sanitizeIdent(args["name"].get<std::string>());
+    const json& props = args.contains("properties") ? args["properties"] : json::array();
+    std::string doc = args.value("doc", std::string());
+    std::string onUpdate = args.value("onUpdate", std::string());
+    std::string onReady = args.value("onReady", std::string());
+
+    // Members + describe() property lines.
+    std::string members, describeBody;
+    for (const auto& p : props) {
+        std::string pn = sanitizeIdent(p.at("name").get<std::string>());
+        std::string ty = p.value("type", std::string("float"));
+        json def = p.contains("default") ? p["default"] : json(nullptr);
+        members += "    " + cppType(ty) + " " + pn + " = " + cppDefault(ty, def) + ";\n";
+        describeBody += "    t.property(\"" + pn + "\", &" + className + "::" + pn + ")";
+        if (p.contains("min") && p.contains("max"))
+            describeBody += ".range(" + std::to_string(p["min"].get<double>()) + ", " +
+                            std::to_string(p["max"].get<double>()) + ")";
+        if (p.contains("tooltip"))
+            describeBody += ".tooltip(\"" + p["tooltip"].get<std::string>() + "\")";
+        describeBody += ";\n";
+    }
+
+    std::string header =
+        "#pragma once\n\n"
+        "#include \"core/Reflection.hpp\"\n"
+        "#include \"scene/Behaviour.hpp\"\n\n"
+        "#include <glm/glm.hpp>\n"
+        "#include <string>\n\n"
+        "namespace ne {\n\n"
+        "// LLM-authored behaviour (MCP write_cpp_behaviour). Registered in\n"
+        "// scene/ReflectedTypes.cpp; serialization is generated by reflection.\n"
+        "class " + className + " : public Behaviour {\n"
+        "public:\n";
+    if (!onReady.empty()) header += "    void onReady() override;\n";
+    header +=
+        "    void onUpdate(float dt) override;\n\n"
+        "    NE_REFLECT_BEHAVIOUR(" + className + ", \"" + className + "\")\n\n" +
+        members +
+        "};\n\n"
+        "} // namespace ne\n";
+
+    std::string body =
+        "#include \"generated/" + className + ".hpp\"\n\n"
+        "#include \"core/Reflection.hpp\"\n"
+        "#include \"scene/Node.hpp\"\n\n"
+        "namespace ne {\n\n"
+        "void " + className + "::describe(reflect::TypeBuilder<" + className + ">& t) {\n";
+    if (!doc.empty()) body += "    t.doc(\"" + doc + "\");\n";
+    body += describeBody;
+    body += "}\n\n";
+    if (!onReady.empty())
+        body += "void " + className + "::onReady() {\n" + onReady + "\n}\n\n";
+    body +=
+        "void " + className + "::onUpdate(float dt) {\n"
+        "    (void)dt;\n" +
+        onUpdate + "\n"
+        "}\n\n"
+        "} // namespace ne\n";
+
+    std::string dir = std::string(NE_PROJECT_ROOT) + "/src/generated/";
+    spit(dir + className + ".hpp", header);
+    spit(dir + className + ".cpp", body);
+    patchReflectedTypes(className);
+
+    return {{"type", className},
+            {"files", json::array({dir + className + ".hpp", dir + className + ".cpp"})},
+            {"note", "Run the 'build' tool to compile; the type then appears in describe_api."}};
+}
+
+json toolBuild(const ToolCtx&, const json&) {
+    std::string cmd = "cmake --build \"" + std::string(NE_PROJECT_ROOT) + "/build\" -j 2 2>&1";
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) fail("could not launch build (is cmake on PATH?)");
+    std::string out;
+    char buf[4096];
+    while (fgets(buf, sizeof(buf), pipe)) out += buf;
+    int rc = pclose(pipe);
+    std::string tail = out.size() > 6000 ? out.substr(out.size() - 6000) : out;
+    return {{"ok", rc == 0}, {"exitCode", rc}, {"output", tail}};
+}
+
+json toolHeadlessCheck(const ToolCtx& ctx, const json&) {
+    json errors = json::array();
+    int checked = 0;
+    if (ctx.scene) {
+        JsContext jsctx(JsRuntime::instance());
+        std::string root = projectRootOf(ctx);
+        ctx.scene->traverse([&](Node& n, const glm::mat4&) {
+            for (const auto& b : n.behaviours()) {
+                auto* sb = dynamic_cast<ScriptBehaviour*>(b.get());
+                if (!sb || sb->scriptPath().empty()) continue;
+                fs::path pp(sb->scriptPath());
+                std::string abs = pp.is_absolute() ? sb->scriptPath() : root + "/" + sb->scriptPath();
+                std::string code = slurp(abs);
+                ++checked;
+                if (code.empty()) {
+                    errors.push_back({{"script", sb->scriptPath()}, {"error", "file not found or empty"}});
+                    continue;
+                }
+                std::string err;
+                if (!jsctx.compileCheck(code, abs, pp.extension() == ".mjs", err))
+                    errors.push_back({{"script", sb->scriptPath()}, {"error", err}});
+            }
+        });
+    }
+    return {{"ok", errors.empty()}, {"scriptsChecked", checked}, {"errors", errors}};
+}
+
+json toolReadLogs(const ToolCtx&, const json& args) {
+    size_t count = args.value("count", static_cast<size_t>(100));
+    return Log::recent(count);
+}
+
 // ── tool schema list (kept concise; descriptions guide the LLM) ──────────────
 json tool(const char* name, const char* desc, json schema) {
     return {{"name", name}, {"description", desc}, {"inputSchema", std::move(schema)}};
@@ -371,6 +604,21 @@ json toolList() {
         obj({{"from", str()}, {"signal", str()}, {"to", str()}, {"slot", str()}}, {"from", "signal", "to", "slot"})));
     tools.push_back(tool("set_scene_settings",
         "Set scene-wide rendering (ambient, clearColor, gi*, fog*, bloom*, aoEnabled, skyboxExposure).", obj({})));
+    tools.push_back(tool("write_script",
+        "Write a JS/.mjs gameplay script (hot-reloaded). Path is project-relative (defaults under scripts/). Optionally {attachTo:<nodeId>} to add a ScriptBehaviour.",
+        obj({{"path", str()}, {"code", str()}, {"attachTo", str()}}, {"path", "code"})));
+    tools.push_back(tool("write_ui",
+        "Write an HTML/RML/CSS file for a WebCanvasNode (hot-reloaded). Path is project-relative.",
+        obj({{"path", str()}, {"code", str()}}, {"path", "code"})));
+    tools.push_back(tool("write_cpp_behaviour",
+        "Scaffold a reflected C++ behaviour (perf path). {name, doc?, properties:[{name,type,default,min,max,tooltip}], onReady?, onUpdate?}. Then call 'build'.",
+        obj({{"name", str()}, {"doc", str()}, {"properties", json{{"type", "array"}}}, {"onReady", str()}, {"onUpdate", str()}}, {"name"})));
+    tools.push_back(tool("build",
+        "Compile the engine (picks up new C++ behaviours). Returns ok + compiler output.", obj({})));
+    tools.push_back(tool("run_headless_check",
+        "Validate the current scene: compile every attached script (no GPU). Returns ok + per-script errors.", obj({})));
+    tools.push_back(tool("read_logs",
+        "Recent engine log lines (newest last).", obj({{"count", json{{"type", "number"}}}})));
     return tools;
 }
 
@@ -412,6 +660,7 @@ json McpBridge::callTool(EditorUI& ui, const std::string& name, const json& args
     ctx.doc = &ui.document_;
     ctx.scene = ui.document_.scene();
     ctx.resources = ui.ctxResources_;
+    ctx.project = ui.ctxProject_;
     ctx.canEdit = ui.canEdit();
     ctx.exec = [&ui](std::unique_ptr<Command> c) { ui.execute(std::move(c)); };
 
@@ -432,6 +681,12 @@ json McpBridge::callTool(EditorUI& ui, const std::string& name, const json& args
     if (name == "remove_from_group") return toolGroup(ctx, args, false);
     if (name == "connect_signal") return toolConnectSignal(ctx, args);
     if (name == "set_scene_settings") return toolSetSceneSettings(ctx, args);
+    if (name == "write_script") return toolWriteScript(ctx, args);
+    if (name == "write_ui") return toolWriteUi(ctx, args);
+    if (name == "write_cpp_behaviour") return toolWriteCppBehaviour(ctx, args);
+    if (name == "build") return toolBuild(ctx, args);
+    if (name == "run_headless_check") return toolHeadlessCheck(ctx, args);
+    if (name == "read_logs") return toolReadLogs(ctx, args);
     throw std::runtime_error("unknown tool '" + name + "'");
 }
 
