@@ -164,18 +164,28 @@ void CollisionShapeNode::ensureResolved(const glm::mat4& invBodyTR, Node& bodyNo
         resolved_ = shapeType;
         return;
     }
-    if (autoResolved_) return;  // Auto is one-shot — keep the frozen result
 
     // Derive the primitive from the mesh AABB expressed in the body's local
-    // (unscaled) frame; this bakes mesh-vs-body scale into the shape.
+    // (unscaled) frame; this bakes mesh-vs-body scale into the shape. The source
+    // matrix is invariant under moving/rotating the body, so a stable shape only
+    // re-resolves when the mesh's scale/offset relative to the body actually
+    // changes — including the identity→scaled transition right after a load.
     glm::mat4 meshWorld(1.0f);
     if (Mesh* m = findMesh(bodyNode, meshWorld)) {
-        autoDetectFrom(transformAabb(m->bounds(), invBodyTR * meshWorld));
-    } else {
+        resolveAutoFrom(m->bounds(), invBodyTR * meshWorld);
+    } else if (!autoResolved_) {
         resolved_ = CollisionShapeType::Box;
         halfExtents = glm::vec3(0.5f);
+        autoResolved_ = true;
     }
+}
+
+bool CollisionShapeNode::resolveAutoFrom(const Aabb& meshBounds, const glm::mat4& toBody) {
+    if (autoResolved_ && toBody == resolvedFrom_) return false;  // unchanged → keep result
+    autoDetectFrom(transformAabb(meshBounds, toBody));
     autoResolved_ = true;
+    resolvedFrom_ = toBody;
+    return true;
 }
 
 CollisionShapeViz CollisionShapeNode::resolveViz(const glm::mat4& invBodyTR, Node& bodyNode) {

@@ -54,9 +54,12 @@ public:
     // Jolt shape — used by the editor to draw the collider wireframe.
     CollisionShapeViz resolveViz(const glm::mat4& invBodyTR, Node& bodyNode);
 
-    // Run Auto detection exactly once (on creation, on switching to Auto, or after
-    // resetAuto). After that the detected primitive is frozen — moving/rotating the
-    // object no longer re-derives the shape. No-op for non-Auto shapes.
+    // Resolve Auto detection from the mesh expressed in the body's local frame
+    // (`invBodyTR * meshWorld`). The result is cached against that source matrix:
+    // moving/rotating the whole body leaves it invariant (so the shape stays
+    // stable), but changing the mesh's scale/offset relative to the body — or the
+    // identity→scaled transition right after a scene load — re-derives the shape.
+    // No-op for non-Auto shapes.
     void ensureResolved(const glm::mat4& invBodyTR, Node& bodyNode);
     // Re-arm Auto so the next ensureResolved detects again (editor "Recompute").
     void resetAuto() { autoResolved_ = false; }
@@ -64,6 +67,11 @@ public:
     // Re-run Auto detection now (editor button); fills the manual params with the
     // detected values so the user can tweak from there.
     void autoDetectFrom(const class Aabb& bodyFrameBounds);
+
+    // Core of Auto resolution, GPU-free for testing: derive the primitive from a
+    // mesh AABB and the mesh-in-body matrix `toBody`, caching against that matrix.
+    // Returns true if it (re-)resolved, false if the cached result was reused.
+    bool resolveAutoFrom(const class Aabb& meshBounds, const glm::mat4& toBody);
 
     CollisionShapeType shapeType = CollisionShapeType::Auto;
     CollisionShapeType resolvedType() const { return resolved_; }
@@ -77,7 +85,8 @@ public:
 
 private:
     CollisionShapeType resolved_ = CollisionShapeType::Box;
-    bool autoResolved_ = false;  // true once Auto has detected (so it stays frozen)
+    bool autoResolved_ = false;        // true once Auto has detected a primitive
+    glm::mat4 resolvedFrom_{0.0f};     // mesh-in-body matrix the detection used
 };
 
 } // namespace ne

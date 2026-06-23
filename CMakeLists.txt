@@ -379,6 +379,10 @@ if (BUILD_TESTING)
     target_link_libraries(ne_physics_character_tests PRIVATE ne_engine)
     add_test(NAME ne_physics_character_tests COMMAND ne_physics_character_tests)
 
+    add_executable(ne_collision_auto_tests tests/CollisionAutoShapeTest.cpp)
+    target_link_libraries(ne_collision_auto_tests PRIVATE ne_engine)
+    add_test(NAME ne_collision_auto_tests COMMAND ne_collision_auto_tests)
+
     add_executable(ne_editor_command_tests tests/EditorCommandTests.cpp)
     target_link_libraries(ne_editor_command_tests PRIVATE ne_editor)
     target_compile_options(ne_editor_command_tests PRIVATE -Wall -Wextra)
