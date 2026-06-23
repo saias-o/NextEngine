@@ -481,11 +481,13 @@ Le moteur est construit par étapes numérotées :
             l'interface fichier.
       - [ ] Optimisation future optionnelle : backend GPU/Vulkan pour très gros
             documents animés, sans changer l'API `WebCanvasNode`.
-- [~] **Étape 13 — Intégration LLM Native.** Objectif : qu'un LLM local
+- [x] **Étape 13 — Intégration LLM Native.** Objectif : qu'un LLM local
       (2027/2028) développe un jeu de A à Z avec le moins de tokens possible et
       **sans lire le C++** du moteur. Surface d'API minimale, structurée,
       auto-validée. Pilotage principal via **serveur MCP in-process** ; le LLM
-      écrit en C++ quand la perf compte, en JS sinon. 6 jalons (M1→M6) :
+      écrit en C++ quand la perf compte, en JS sinon. **6 jalons M1→M6 terminés**
+      (réflexion+manifeste, signaux data-driven, serveur MCP, outils de code+
+      validation, primitives FSM/Blackboard/Scénario, token-opt) :
       - [x] **M1 — Réflexion légère + Manifeste + auto-registration.**
             `core/Reflection.{hpp,cpp}` : descripteurs via pointeurs-membres
             (header-only, pas de codegen externe). Une seule déclaration
@@ -556,8 +558,17 @@ Le moteur est construit par étapes numérotées :
             NPC patrol↔chase, lumière déclenchée, séquence scriptée). NPC =
             CharacterBody + Character + StateMachine + Area + Blackboard.
             Vérifié headless (`ne_gameplay_primitive_tests`). Suite 11/11 verte.
-      - [ ] **M6 — Token-opt** : scène compacte, deltas de manifeste, guide agent
-            généré, `import_model` + autoLOD.
+      - [x] **M6 — Token-opt & finitions** : `get_scene` **compact** (omet les
+            défauts : enabled/groups/behaviours/children vides). `describe_api`
+            **3 modes** — `{summary:true}` (noms seuls, très léger → lister puis
+            descendre), `{type:'X'}` (un seul type), filtré par catégorie ; chaque
+            réponse porte un **`hash`** de manifeste (clé de cache : hash inchangé →
+            réutiliser). Outil **`agent_guide`** (doc d'onboarding unique : contrat
+            + workflow d'outils, token-cheap). Outil **`import_model`** (charge
+            .glb/.gltf en sous-arbre via `GLTFLoader`, **autoLOD** par défaut
+            `autoMeshLods`, undoable, ré-importé au undo/redo). Le générateur 3D
+            externe (MCP séparé) produit le fichier ; `import_model` l'intègre.
+            Build vert, suite 11/11.
       - *Cibles transverses* : World model (état du monde pour l'IA), concept de
         "skills" exécutables et agents autonomes agissant sur la scène.
 - [~] **Étape 14 — XR / OpenXR.** Rendu et interactions XR via OpenXR (Objectif final du moteur).

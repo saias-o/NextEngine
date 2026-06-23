@@ -9,6 +9,7 @@
 #include "mcp/McpServer.hpp"
 #include "project/Project.hpp"
 #include "scene/BehaviourRegistry.hpp"
+#include "scene/GLTFLoader.hpp"
 #include "scene/Node.hpp"
 #include "scene/NodeRegistry.hpp"
 #include "scene/Scene.hpp"
@@ -154,10 +155,31 @@ json readProp(const Node& n, bool onBehaviour, const std::string& behType, const
 }
 
 // ── tools ────────────────────────────────────────────────────────────────────
+std::string manifestHash() {
+    std::string dump = reflect::TypeRegistry::instance().manifest("").dump();
+    return std::to_string(std::hash<std::string>{}(dump));
+}
+
 json toolDescribeApi(const ToolCtx&, const json& args) {
-    if (args.contains("type"))
-        return reflect::TypeRegistry::instance().manifestFor(args["type"].get<std::string>());
-    return reflect::TypeRegistry::instance().manifest(args.value("category", std::string()));
+    auto& reg = reflect::TypeRegistry::instance();
+    if (args.contains("type")) return reg.manifestFor(args["type"].get<std::string>());
+
+    // Token-light: just type names + a hash, so the LLM lists first and only
+    // fetches a type's full detail (with {type:...}) when it needs it.
+    if (args.value("summary", false)) {
+        json out, behaviours = json::array(), nodes = json::array();
+        json all = reg.manifest("");
+        for (const auto& t : all.value("behaviours", json::array())) behaviours.push_back(t["name"]);
+        for (const auto& t : all.value("nodes", json::array())) nodes.push_back(t["name"]);
+        out["behaviours"] = std::move(behaviours);
+        out["nodes"] = std::move(nodes);
+        out["hash"] = manifestHash();
+        return out;
+    }
+
+    json full = reg.manifest(args.value("category", std::string()));
+    full["hash"] = manifestHash();  // cache key: unchanged hash => reuse last manifest
+    return full;
 }
 
 json toolListNodeTypes(const ToolCtx&, const json&) {
@@ -593,6 +615,55 @@ json toolConfigureBehaviour(const ToolCtx& ctx, const json& args) {
     return {{"ok", true}};
 }
 
+// Import a generated .glb/.gltf as a node subtree, optionally with auto LODs.
+// The external model generator (a separate MCP) produces the file; this brings it
+// into the scene. Undoable; re-imported from the path on undo/redo.
+json toolImportModel(const ToolCtx& ctx, const json& args) {
+    requireEdit(ctx);
+    if (!args.contains("path")) fail("missing 'path'");
+    if (!ctx.resources) fail("no resources bound");
+    fs::path pp(args["path"].get<std::string>());
+    std::string abs = pp.is_absolute() ? pp.string() : projectRootOf(ctx) + "/" + pp.string();
+    if (!fs::exists(abs)) fail("model not found: " + abs);
+
+    auto node = std::make_unique<Node>(args.value("name", pp.stem().string()));
+    node->setImportedFromPath(abs);
+    GLTFLoadOptions opts;
+    opts.autoMeshLods = args.value("lod", true);  // autoLOD by default
+    if (!GLTFLoader::load(abs, *node, *ctx.resources, opts)) fail("failed to import model: " + abs);
+    node->regenerateId();
+    NodeId id = node->id();
+
+    NodeId parent = args.contains("parent") ? parseNodeId(args["parent"]) : ctx.scene->id();
+    if (!ctx.doc->find(parent)) fail("no parent node with id " + idStr(parent));
+    ctx.exec(std::make_unique<AddNodeCommand>(parent, std::move(node)));
+    return {{"id", idStr(id)}};
+}
+
+// The single onboarding doc the LLM reads first: the authoring contract + the
+// tool workflow. Curated to stay token-cheap.
+json toolAgentGuide(const ToolCtx&, const json&) {
+    static const char* guide =
+        "NextEngine authoring (LLM). One paradigm: nodes + behaviours + signals.\n"
+        "RULES: 1) all logic is a Behaviour (no manager classes). 2) compose small\n"
+        "focused behaviours, don't grow god-classes. 3) call down, signal up. 4) no\n"
+        "globals except services/autoloads (Blackboard). 5) find nodes by group or\n"
+        "scoped query, never by global name.\n\n"
+        "WORKFLOW:\n"
+        "- describe_api {summary:true} to list types; then {type:'X'} for one type's\n"
+        "  properties/signals/slots. Cache by 'hash'.\n"
+        "- Build scenes with create_node / set_property / set_transform / add_to_group.\n"
+        "- Behaviour: add_behaviour, then set_property (scalars) or configure_behaviour\n"
+        "  (full JSON: StateMachine/Scenario/Blackboard/script props).\n"
+        "- Wire events: connect_signal {from,signal,to,slot} (reflected names).\n"
+        "- Code: write_script (JS, fast iteration) or write_cpp_behaviour + build (perf).\n"
+        "  UI: write_ui (HTML/RML/CSS).\n"
+        "- Validate: run_headless_check (scripts), read_logs. Maps: import_model.\n"
+        "- Complex behaviour: see list_recipes (NPC, trigger light, scripted sequence).\n"
+        "All edits are undoable and rejected during Play.";
+    return {{"guide", guide}};
+}
+
 // Curated composition recipes for the "complex things" — the LLM reads these
 // instead of guessing how primitives fit together. Pure data; no engine state.
 json toolListRecipes(const ToolCtx&, const json&) {
@@ -637,9 +708,11 @@ json str() { return {{"type", "string"}}; }
 
 json toolList() {
     json tools = json::array();
+    tools.push_back(tool("agent_guide",
+        "Read FIRST: the authoring contract + tool workflow (token-cheap onboarding).", obj({})));
     tools.push_back(tool("describe_api",
-        "Reflected type manifest (properties, signals, slots). Filter with {category:'behaviour'|'node'} or {type:'<TypeName>'}.",
-        obj({{"category", str()}, {"type", str()}})));
+        "Reflected type manifest. {summary:true} lists names only (cheap); {type:'X'} one type; {category:'behaviour'|'node'} filters. Cache by returned 'hash'.",
+        obj({{"summary", json{{"type", "boolean"}}}, {"category", str()}, {"type", str()}})));
     tools.push_back(tool("list_node_types", "Names of all instantiable node types.", obj({})));
     tools.push_back(tool("list_behaviour_types", "Names of all attachable behaviour types.", obj({})));
     tools.push_back(tool("get_scene", "Compact tree of the current scene (ids, names, types, behaviours, connections).", obj({})));
@@ -682,6 +755,9 @@ json toolList() {
         obj({{"id", str()}, {"behaviour", str()}, {"data", json{{"type", "object"}}}}, {"id", "behaviour", "data"})));
     tools.push_back(tool("list_recipes",
         "Curated composition recipes for complex things (NPC, trigger light, scripted sequence).", obj({})));
+    tools.push_back(tool("import_model",
+        "Import a .glb/.gltf as a node subtree (autoLOD on by default). {path, parent?, name?, lod?}.",
+        obj({{"path", str()}, {"parent", str()}, {"name", str()}, {"lod", json{{"type", "boolean"}}}}, {"path"})));
     return tools;
 }
 
@@ -752,6 +828,8 @@ json McpBridge::callTool(EditorUI& ui, const std::string& name, const json& args
     if (name == "read_logs") return toolReadLogs(ctx, args);
     if (name == "configure_behaviour") return toolConfigureBehaviour(ctx, args);
     if (name == "list_recipes") return toolListRecipes(ctx, args);
+    if (name == "import_model") return toolImportModel(ctx, args);
+    if (name == "agent_guide") return toolAgentGuide(ctx, args);
     throw std::runtime_error("unknown tool '" + name + "'");
 }
 
