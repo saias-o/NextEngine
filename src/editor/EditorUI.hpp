@@ -25,6 +25,7 @@ class InspectorPanel;
 class FileBrowserPanel;
 class ViewportPanel;
 class ModelImporterPanel;
+class McpBridge;
 
 // The full editor interface (Godot/Unity-style). Draws a dockable layout:
 // main menu bar, scene tree (left), inspector (right), file browser (bottom),
@@ -41,6 +42,7 @@ class EditorUI {
     friend class ViewportPanel;
     friend class ModelImporterPanel;
     friend class PropertyEditor;
+    friend class McpBridge;  // reaches document_ + execute() for MCP-driven edits
 public:
     EditorUI();
     ~EditorUI();  // defined in .cpp where Scene is complete (previewScene_ unique_ptr)
@@ -248,6 +250,11 @@ private:
     bool isPreviewMode_ = false;
     std::string previewModelPath_;
     std::unique_ptr<Scene> previewScene_;
+
+#ifdef NE_ENABLE_MCP
+    // In-process MCP server (dev only): polled once per frame in draw().
+    std::unique_ptr<McpBridge> mcp_;
+#endif
 };
 
 } // namespace ne

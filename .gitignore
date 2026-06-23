@@ -26,3 +26,6 @@ build_*.txt
 # Editor play-mode backup (regenerated each Play; never source)
 .play_mode_backup.scene
 *.play_mode_backup.scene
+# Packaged game build output (artifacts, never source)
+MyGame/build/
+**/build/export/

@@ -24,6 +24,10 @@
 #include "editor/panels/ViewportPanel.hpp"
 #include "editor/panels/ModelImporterPanel.hpp"
 #include "scene/GLTFLoader.hpp"
+#ifdef NE_ENABLE_MCP
+#include "mcp/McpBridge.hpp"
+#include <cstdlib>
+#endif
 
 #include <memory>
 
@@ -65,9 +69,23 @@ EditorUI::EditorUI() : history_(document_) {
     std::strncpy(newProjectPath_, NE_PROJECT_ROOT, sizeof(newProjectPath_) - 1);
     newProjectPath_[sizeof(newProjectPath_) - 1] = '\0';
     openBrowsePath_ = std::string(NE_PROJECT_ROOT);
+
+#ifdef NE_ENABLE_MCP
+    // Start the in-process MCP server (LLM-driven editing). Port overridable via
+    // NE_MCP_PORT; default 8765. Disabled entirely by NE_MCP=0.
+    const char* disabled = std::getenv("NE_MCP");
+    if (!disabled || std::string(disabled) != "0") {
+        uint16_t port = 8765;
+        if (const char* p = std::getenv("NE_MCP_PORT")) {
+            try { port = static_cast<uint16_t>(std::stoi(p)); } catch (...) {}
+        }
+        mcp_ = std::make_unique<McpBridge>();
+        mcp_->start(port);
+    }
+#endif
 }
 
-EditorUI::~EditorUI() = default;  // Scene is complete here (previewScene_ unique_ptr)
+EditorUI::~EditorUI() = default;  // Scene/McpBridge complete here (unique_ptr members)
 
 void EditorUI::applyEditorStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
@@ -181,6 +199,15 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     ctxCamera_ = camera;
     ctxProject_ = project;
     ctxResources_ = resources;
+
+#ifdef NE_ENABLE_MCP
+    // Bind the document to the live scene, then service any queued MCP requests
+    // on this (main) thread while all ctx pointers are valid.
+    if (mcp_) {
+        document_.bind(scene, resources);
+        mcp_->poll(*this);
+    }
+#endif
 
     // Keyboard shortcuts (skip while typing in a text field).
     ImGuiIO& io = ImGui::GetIO();

@@ -516,7 +516,21 @@ Le moteur est construit par étapes numérotées :
             (`JsContext::retainSignalSubscription`/`fromRaw`). Tests
             `ne_signal_wiring_tests` + `ne_js_signal_tests` (déclenchement bidi,
             lecture côté JS, lifetime au teardown, round-trip) ✔. **9/9 verts.**
-      - [ ] **M3 — Serveur MCP** : découverte + édition de scène (Command-backed).
+      - [x] **M3 — Serveur MCP** : serveur JSON-RPC MCP in-process
+            (`src/mcp/`, `ne_editor` sous `NE_ENABLE_MCP`, **exclu du runtime
+            livré**). Transport TCP localhost ligne-à-ligne sur un thread, requêtes
+            **marshalées sur le thread principal** (`McpServer::poll`, drainé
+            chaque frame par `EditorUI::draw`). `McpBridge` parle le protocole MCP
+            (`initialize`/`tools/list`/`tools/call`) et route les mutations par le
+            **Command pattern éditeur** (undoables) ; toutes validées contre le
+            manifeste de réflexion. Outils : *découverte* (`describe_api`,
+            `list_node_types`, `list_behaviour_types`, `get_scene` compact,
+            `get_node`, `find_nodes`) et *édition* (`create_node`, `delete_node`,
+            `rename_node`, `reparent_node`, `set_transform`, `add_behaviour`,
+            `set_property` réfléchi, `add_to_group`/`remove_from_group`,
+            `connect_signal`, `set_scene_settings`). Port via `NE_MCP_PORT`
+            (défaut 8765), désactivable par `NE_MCP=0`. Transport vérifié end-to-end
+            (`ne_mcp_server_tests`). Suite complète verte (10/10).
       - [ ] **M4 — Outils de code + boucle de validation** : `write_script`,
             `write_cpp_behaviour` (template+build+erreurs), `write_ui`,
             `run_headless_check`.

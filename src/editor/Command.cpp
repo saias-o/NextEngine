@@ -2,6 +2,8 @@
 
 #include "editor/SceneDocument.hpp"
 #include "graphics/ResourceManager.hpp"
+#include "scene/BehaviourRegistry.hpp"
+#include "scene/Scene.hpp"
 #include "scene/SceneSerializer.hpp"
 
 #include <glm/gtc/quaternion.hpp>
@@ -178,6 +180,45 @@ void TransformCommand::execute(SceneDocument& document) {
 
 void TransformCommand::undo(SceneDocument& document) {
     if (Node* node = document.find(nodeId_)) node->transform() = old_;
+    document.markDirty();
+}
+
+void AddBehaviourCommand::execute(SceneDocument& document) {
+    Node* node = document.find(nodeId_);
+    if (!node) return;
+    if (auto behaviour = BehaviourRegistry::instance().create(type_))
+        node->addBehaviour(std::move(behaviour));
+    document.markDirty();
+}
+
+void AddBehaviourCommand::undo(SceneDocument& document) {
+    Node* node = document.find(nodeId_);
+    if (!node) return;
+    // Remove the last attached behaviour of this type (the one execute() added).
+    Behaviour* victim = nullptr;
+    for (const auto& b : node->behaviours())
+        if (b->typeName() && type_ == b->typeName()) victim = b.get();
+    if (victim) node->removeBehaviour(victim);
+    document.markDirty();
+}
+
+void ConnectSignalCommand::execute(SceneDocument& document) {
+    if (Scene* scene = document.scene()) scene->connections().push_back(def_);
+    document.markDirty();
+}
+
+void ConnectSignalCommand::undo(SceneDocument& document) {
+    Scene* scene = document.scene();
+    if (!scene) return;
+    auto& defs = scene->connections();
+    for (auto it = defs.end(); it != defs.begin();) {
+        --it;
+        if (it->from == def_.from && it->to == def_.to &&
+            it->signal == def_.signal && it->slot == def_.slot) {
+            defs.erase(it);
+            break;
+        }
+    }
     document.markDirty();
 }
 

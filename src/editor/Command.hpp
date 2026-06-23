@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scene/Node.hpp"
+#include "scene/SignalWiring.hpp"
 
 #include <cstddef>
 #include <functional>
@@ -142,6 +143,34 @@ private:
     NodeId nodeId_;
     Transform old_;
     Transform new_;
+};
+
+// Attach a behaviour (by registered type name) to a node. Undo removes the last
+// instance of that type. Used by the MCP `add_behaviour` tool.
+class AddBehaviourCommand : public Command {
+public:
+    AddBehaviourCommand(NodeId node, std::string behaviourType)
+        : nodeId_(node), type_(std::move(behaviourType)) {}
+    void execute(SceneDocument& document) override;
+    void undo(SceneDocument& document) override;
+    const char* name() const override { return "Add Behaviour"; }
+
+private:
+    NodeId nodeId_;
+    std::string type_;
+};
+
+// Append a data-driven signal→slot link to the scene's connections. Used by the
+// MCP `connect_signal` tool.
+class ConnectSignalCommand : public Command {
+public:
+    explicit ConnectSignalCommand(SignalConnectionDef def) : def_(std::move(def)) {}
+    void execute(SceneDocument& document) override;
+    void undo(SceneDocument& document) override;
+    const char* name() const override { return "Connect Signal"; }
+
+private:
+    SignalConnectionDef def_;
 };
 
 } // namespace ne

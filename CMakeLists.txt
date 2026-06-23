@@ -97,6 +97,11 @@ set(CROSS_PLATFORM_DETERMINISTIC OFF)
 set(DOUBLE_PRECISION OFF)                        # 32-bit positions: smaller/faster, fine for our worlds
 add_subdirectory(third_party/jolt/Build ${CMAKE_BINARY_DIR}/jolt)
 
+# ── LLM-native MCP server (Étape 13) ────────────────────────────────────────
+# In-process MCP server for LLM-driven editing. Compiled into ne_editor only,
+# so the shipped runtime never links it. Set OFF for a pure no-MCP editor.
+option(NE_ENABLE_MCP "Enable the in-process MCP server (Étape 13)" ON)
+
 # ── OpenXR (vendored, loader only) ──────────────────────────────────────────
 # Set NE_ENABLE_XR=OFF to produce a pure-desktop build with no OpenXR dependency.
 option(NE_ENABLE_XR "Enable OpenXR support (Étape 14)" ON)
@@ -370,6 +375,17 @@ add_library(ne_editor STATIC
 target_link_libraries(ne_editor PUBLIC ne_engine)
 target_compile_options(ne_editor PRIVATE -Wall -Wextra)
 
+if(NE_ENABLE_MCP)
+    target_sources(ne_editor PRIVATE
+        src/mcp/McpServer.cpp
+        src/mcp/McpBridge.cpp
+    )
+    target_compile_definitions(ne_editor PUBLIC NE_ENABLE_MCP)
+    if(WIN32)
+        target_link_libraries(ne_editor PUBLIC ws2_32)
+    endif()
+endif()
+
 if (BUILD_TESTING)
     add_executable(ne_core_tests tests/CoreTests.cpp)
     target_include_directories(ne_core_tests PRIVATE src)
@@ -413,6 +429,16 @@ if (BUILD_TESTING)
     target_link_libraries(ne_editor_document_tests PRIVATE ne_editor)
     target_compile_options(ne_editor_document_tests PRIVATE -Wall -Wextra)
     add_test(NAME ne_editor_document_tests COMMAND ne_editor_document_tests)
+
+    if(NE_ENABLE_MCP)
+        add_executable(ne_mcp_server_tests tests/McpServerTests.cpp)
+        target_link_libraries(ne_mcp_server_tests PRIVATE ne_editor)
+        if(WIN32)
+            target_link_libraries(ne_mcp_server_tests PRIVATE ws2_32)
+        endif()
+        target_compile_options(ne_mcp_server_tests PRIVATE -Wall -Wextra)
+        add_test(NAME ne_mcp_server_tests COMMAND ne_mcp_server_tests)
+    endif()
 endif()
 
 # ── Editor executable (the app the Hub launches) ────────────────────────────
