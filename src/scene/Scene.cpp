@@ -131,10 +131,35 @@ void Scene::serialize(nlohmann::json& j, ResourceManager& resources) const {
         {"bloomRadius", settings_.bloomRadius},
         {"changeRenderingAtLoad", settings_.changeRenderingAtLoad}
     };
+
+    if (!connectionDefs_.empty()) {
+        nlohmann::json conns = nlohmann::json::array();
+        for (const auto& c : connectionDefs_)
+            conns.push_back({{"from", c.from}, {"signal", c.signal},
+                             {"to", c.to}, {"slot", c.slot}});
+        j["connections"] = std::move(conns);
+    }
+}
+
+void Scene::readConnections(const nlohmann::json& j) {
+    connectionDefs_.clear();
+    auto it = j.find("connections");
+    if (it == j.end() || !it->is_array()) return;
+    for (const auto& cj : *it) {
+        SignalConnectionDef def;
+        def.from = cj.value("from", kNodeInvalid);
+        def.signal = cj.value("signal", std::string{});
+        def.to = cj.value("to", kNodeInvalid);
+        def.slot = cj.value("slot", std::string{});
+        if (def.from != kNodeInvalid && def.to != kNodeInvalid &&
+            !def.signal.empty() && !def.slot.empty())
+            connectionDefs_.push_back(std::move(def));
+    }
 }
 
 void Scene::deserialize(const nlohmann::json& j, ResourceManager& resources) {
     Node::deserialize(j, resources);
+    readConnections(j);
     if (j.contains("prefabAssetId")) {
         prefabAssetId_ = j["prefabAssetId"].get<AssetID>();
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scene/Behaviour.hpp"
+#include "core/Reflection.hpp"
 
 #include <string>
 
@@ -16,10 +17,7 @@ public:
     void onReady() override;
     void onUpdate(float dt) override;
 
-    // Serialize / Deserialize
-    const char* typeName() const override { return "Character"; }
-    void save(nlohmann::json& j) const override;
-    void load(const nlohmann::json& j) override;
+    NE_REFLECT_BEHAVIOUR(CharacterBehaviour, "Character")
 
     float moveSpeed = 5.0f;
     float sprintMultiplier = 1.8f;  // speed factor while holding Sprint (Shift)

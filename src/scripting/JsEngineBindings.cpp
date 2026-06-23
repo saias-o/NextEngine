@@ -1,6 +1,8 @@
 #include "scripting/JsEngineBindings.hpp"
 
 #include "core/Input.hpp"
+#include "core/Log.hpp"
+#include "core/Reflection.hpp"
 #include "core/Time.hpp"
 #include "scene/Behaviour.hpp"
 #include "scene/Node.hpp"
@@ -8,6 +10,9 @@
 #include "scripting/JsContext.hpp"
 
 #include <quickjs.h>
+
+#include <string>
+#include <vector>
 
 namespace ne {
 
@@ -285,6 +290,100 @@ JSValue jsTreePaused(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     return JS_NewBool(ctx, tree && tree->paused());
 }
 
+// ── reflected signals: node.on(name, fn) / node.emit(name, ...args) ──────────
+struct SignalHit { void* obj = nullptr; const reflect::SignalDesc* desc = nullptr; };
+
+SignalHit findSignalOnNode(Node* node, const std::string& name) {
+    if (!node) return {};
+    auto& reg = reflect::TypeRegistry::instance();
+    if (const auto* d = reg.find(node->typeName()))
+        if (const auto* s = d->findSignal(name)) return {node, s};
+    for (const auto& b : node->behaviours())
+        if (const auto* d = reg.find(b->typeName() ? b->typeName() : ""))
+            if (const auto* s = d->findSignal(name)) return {b.get(), s};
+    return {};
+}
+
+JSValue jsonToJs(JSContext* ctx, const nlohmann::json& v) {
+    if (v.is_boolean()) return JS_NewBool(ctx, v.get<bool>());
+    if (v.is_number_integer()) return JS_NewInt64(ctx, v.get<int64_t>());
+    if (v.is_number()) return JS_NewFloat64(ctx, v.get<double>());
+    if (v.is_string()) return JS_NewString(ctx, v.get<std::string>().c_str());
+    return JS_NULL;
+}
+
+nlohmann::json jsToJson(JSContext* ctx, JSValueConst v) {
+    if (JS_IsBool(v)) return JS_ToBool(ctx, v) != 0;
+    if (JS_IsNumber(v)) { double d = 0.0; JS_ToFloat64(ctx, &d, v); return d; }
+    if (JS_IsString(v)) {
+        const char* s = JS_ToCString(ctx, v);
+        nlohmann::json j = s ? std::string(s) : std::string();
+        JS_FreeCString(ctx, s);
+        return j;
+    }
+    return nullptr;
+}
+
+JSValue jsNodeOn(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    Node* node = nodeFromJs(ctx);
+    JsContext* self = JsContext::fromRaw(ctx);
+    if (!node || !self || argc < 2 || !JS_IsFunction(ctx, argv[1])) return JS_NewBool(ctx, false);
+
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) return JS_NewBool(ctx, false);
+    std::string signalName = name;
+    JS_FreeCString(ctx, name);
+
+    SignalHit hit = findSignalOnNode(node, signalName);
+    if (!hit.desc) {
+        Log::warn("[JS] node.on: no signal '", signalName, "' on node '", node->name(), "'");
+        return JS_NewBool(ctx, false);
+    }
+
+    // Retain one reference to the callback; the subscription frees it on context
+    // teardown (hot-reload/destroy), which also disconnects this handler.
+    JSValue callback = JS_DupValue(ctx, argv[1]);
+    Connection conn = hit.desc->connect(hit.obj, [ctx, callback](const nlohmann::json& args) {
+        std::vector<JSValue> jsArgs;
+        jsArgs.reserve(args.size());
+        for (const auto& a : args) jsArgs.push_back(jsonToJs(ctx, a));
+        JSValue result = JS_Call(ctx, callback, JS_UNDEFINED,
+                                 static_cast<int>(jsArgs.size()), jsArgs.data());
+        if (JS_IsException(result)) {
+            JSValue exc = JS_GetException(ctx);
+            const char* msg = JS_ToCString(ctx, exc);
+            Log::error("[JS] signal handler threw: ", msg ? msg : "unknown");
+            JS_FreeCString(ctx, msg);
+            JS_FreeValue(ctx, exc);
+        }
+        JS_FreeValue(ctx, result);
+        for (JSValue v : jsArgs) JS_FreeValue(ctx, v);
+    });
+    self->retainSignalSubscription(std::move(conn), callback);
+    return JS_NewBool(ctx, true);
+}
+
+JSValue jsNodeEmit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    Node* node = nodeFromJs(ctx);
+    if (!node || argc < 1) return JS_NewBool(ctx, false);
+
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) return JS_NewBool(ctx, false);
+    std::string signalName = name;
+    JS_FreeCString(ctx, name);
+
+    SignalHit hit = findSignalOnNode(node, signalName);
+    if (!hit.desc || !hit.desc->emit) {
+        Log::warn("[JS] node.emit: no signal '", signalName, "' on node '", node->name(), "'");
+        return JS_NewBool(ctx, false);
+    }
+
+    nlohmann::json arr = nlohmann::json::array();
+    for (int i = 1; i < argc; ++i) arr.push_back(jsToJson(ctx, argv[i]));
+    hit.desc->emit(hit.obj, arr);
+    return JS_NewBool(ctx, true);
+}
+
 } // namespace
 
 void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behaviour) {
@@ -304,6 +403,8 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JS_SetPropertyStr(ctx, node, "addToGroup", JS_NewCFunction(ctx, jsNodeAddToGroup, "addToGroup", 1));
     JS_SetPropertyStr(ctx, node, "removeFromGroup", JS_NewCFunction(ctx, jsNodeRemoveFromGroup, "removeFromGroup", 1));
     JS_SetPropertyStr(ctx, node, "isInGroup", JS_NewCFunction(ctx, jsNodeIsInGroup, "isInGroup", 1));
+    JS_SetPropertyStr(ctx, node, "on", JS_NewCFunction(ctx, jsNodeOn, "on", 2));
+    JS_SetPropertyStr(ctx, node, "emit", JS_NewCFunction(ctx, jsNodeEmit, "emit", 1));
     JS_SetPropertyStr(ctx, global, "node", node);
 
     JSValue time = JS_NewObject(ctx);

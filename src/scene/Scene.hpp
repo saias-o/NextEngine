@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scene/Node.hpp"
+#include "scene/SignalWiring.hpp"
 #include "project/AssetRegistry.hpp"
 
 #include <glm/glm.hpp>
@@ -105,10 +106,25 @@ public:
     AssetID prefabAssetId() const { return prefabAssetId_; }
     void setPrefabAssetId(AssetID id) { prefabAssetId_ = id; }
 
+    // Data-driven signal→slot links (serialized in the scene's "connections").
+    std::vector<SignalConnectionDef>& connections() { return connectionDefs_; }
+    const std::vector<SignalConnectionDef>& connections() const { return connectionDefs_; }
+
+    // Wire (or rewire) the declared connections against this scene. Called at Play
+    // when the scene becomes the current sub-scene; a no-op when there are none.
+    void applyConnections() { wiring_.apply(*this, connectionDefs_); }
+    void clearConnections() { wiring_.clear(); }
+
+    // Parse a scene-root JSON's "connections" array into connectionDefs_ (used by
+    // both Scene::deserialize and the SceneSerializer's manual root-load path).
+    void readConnections(const nlohmann::json& j);
+
 private:
     void flattenHierarchy();
 
     SceneSettings settings_;
+    std::vector<SignalConnectionDef> connectionDefs_;
+    SignalWiring wiring_;
     AssetID prefabAssetId_ = kAssetInvalid;
     uint32_t lastHierarchyVersion_ = 0;
 

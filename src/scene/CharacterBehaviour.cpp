@@ -109,28 +109,20 @@ void CharacterBehaviour::updateAnimation(bool onFloor, bool moving) {
         animator_->play(want);  // play() no-ops if it's already the current clip
 }
 
-void CharacterBehaviour::save(nlohmann::json& j) const {
-    j["moveSpeed"] = moveSpeed;
-    j["sprintMultiplier"] = sprintMultiplier;
-    j["jumpForce"] = jumpForce;
-    j["gravity"] = gravity;
-    j["faceMovement"] = faceMovement;
-    j["turnSpeed"] = turnSpeed;
-    j["idleClip"] = idleClip;
-    j["walkClip"] = walkClip;
-    j["jumpClip"] = jumpClip;
-}
-
-void CharacterBehaviour::load(const nlohmann::json& j) {
-    if (j.contains("moveSpeed")) moveSpeed = j["moveSpeed"].get<float>();
-    if (j.contains("sprintMultiplier")) sprintMultiplier = j["sprintMultiplier"].get<float>();
-    if (j.contains("jumpForce")) jumpForce = j["jumpForce"].get<float>();
-    if (j.contains("gravity")) gravity = j["gravity"].get<float>();
-    if (j.contains("faceMovement")) faceMovement = j["faceMovement"].get<bool>();
-    if (j.contains("turnSpeed")) turnSpeed = j["turnSpeed"].get<float>();
-    if (j.contains("idleClip")) idleClip = j["idleClip"].get<std::string>();
-    if (j.contains("walkClip")) walkClip = j["walkClip"].get<std::string>();
-    if (j.contains("jumpClip")) jumpClip = j["jumpClip"].get<std::string>();
+void CharacterBehaviour::describe(reflect::TypeBuilder<CharacterBehaviour>& t) {
+    t.doc("Third-person character controller: WASD relative to the active camera, "
+          "jump, and movement-driven animation. Attach to a CharacterBody node.");
+    t.property("moveSpeed", &CharacterBehaviour::moveSpeed).range(0.0, 50.0);
+    t.property("sprintMultiplier", &CharacterBehaviour::sprintMultiplier).range(1.0, 5.0)
+        .tooltip("speed factor while holding Sprint (Shift)");
+    t.property("jumpForce", &CharacterBehaviour::jumpForce).range(0.0, 30.0);
+    t.property("gravity", &CharacterBehaviour::gravity).range(0.0, 50.0);
+    t.property("faceMovement", &CharacterBehaviour::faceMovement)
+        .tooltip("turn to face the movement direction");
+    t.property("turnSpeed", &CharacterBehaviour::turnSpeed).range(0.0, 50.0);
+    t.property("idleClip", &CharacterBehaviour::idleClip).tooltip("animation clip name");
+    t.property("walkClip", &CharacterBehaviour::walkClip).tooltip("animation clip name");
+    t.property("jumpClip", &CharacterBehaviour::jumpClip).tooltip("animation clip name");
 }
 
 } // namespace ne

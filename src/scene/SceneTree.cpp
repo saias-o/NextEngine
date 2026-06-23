@@ -51,6 +51,10 @@ void SceneTree::loadCurrentScene(std::unique_ptr<Node> sceneNode) {
     Node* raw = world_->addChild(std::move(sceneNode));
     currentScene_ = dynamic_cast<Scene*>(raw);
     applyLevelSettings(currentScene_ ? *currentScene_ : *world_);
+
+    // Wire data-driven signal→slot connections now that the sub-scene is live
+    // (signals only fire during Play, which is exactly when this runs).
+    if (currentScene_) currentScene_->applyConnections();
 }
 
 void SceneTree::applyLevelSettings(Scene& level) {

@@ -481,10 +481,51 @@ Le moteur est construit par étapes numérotées :
             l'interface fichier.
       - [ ] Optimisation future optionnelle : backend GPU/Vulkan pour très gros
             documents animés, sans changer l'API `WebCanvasNode`.
-- [ ] **Étape 13 — Intégration LLM Native.** Support natif d'intelligence artificielle agentique dans le moteur :
-      - World model (compréhension et représentation de l'état du monde par l'IA).
-      - Protocole MCP (Model Context Protocol) pour connecter des outils.
-      - Concept de "skills" (compétences exécutables par l'IA) et d'agents autonomes interagissant directement avec la scène.
+- [~] **Étape 13 — Intégration LLM Native.** Objectif : qu'un LLM local
+      (2027/2028) développe un jeu de A à Z avec le moins de tokens possible et
+      **sans lire le C++** du moteur. Surface d'API minimale, structurée,
+      auto-validée. Pilotage principal via **serveur MCP in-process** ; le LLM
+      écrit en C++ quand la perf compte, en JS sinon. 6 jalons (M1→M6) :
+      - [x] **M1 — Réflexion légère + Manifeste + auto-registration.**
+            `core/Reflection.{hpp,cpp}` : descripteurs via pointeurs-membres
+            (header-only, pas de codegen externe). Une seule déclaration
+            `static describe(TypeBuilder<T>&)` par type → **génère save()/load()**
+            (fin du boilerplate JSON), expose **propriétés** (nom/kind/range/
+            tooltip/enum), **signaux nommés** et **slots invocables**, et produit
+            un **manifeste JSON compact** (`reflect::TypeRegistry::manifest()`,
+            filtrable/sous-ensemblable). Macros `NE_REFLECT_BEHAVIOUR`/
+            `NE_REFLECT_NODE`. Enregistrement centralisé dans
+            `scene/ReflectedTypes.cpp` (évite le dead-strip static-lib, point
+            d'ancrage du futur `write_cpp_behaviour`). Types de référence migrés :
+            `RotatorBehaviour` (+ signal `fullRotation`, slot `reset`),
+            `CharacterBehaviour`, `LightNode`. Rétro-compatible (save/load manuels
+            cohabitent). Test `ne_reflection_tests` (manifeste, round-trip,
+            connect/invoke des descripteurs) ✔, suite complète verte.
+      - [x] **M2 — Signaux data-driven.** Bloc `connections` de scène
+            (`{from, signal, to, slot}`) **câblé au Play** par `scene/SignalWiring`
+            (`Scene::applyConnections`, appelé dans `SceneTree::loadCurrentScene`).
+            Résout signaux/slots **réfléchis** par nom sur un nœud *ou* ses
+            behaviours ; **lifetime-safe** des deux côtés (émetteur = bloc faible
+            du `Signal` ; cible **re-résolue par NodeId à l'émission** → nœud
+            libéré = no-op silencieux). Sérialisé par `Scene::serialize`/
+            `readConnections` (+ chemin manuel `loadIntoScene`).
+            **Bindings JS** : `node.on(signal, fn)` / `node.emit(signal, ...args)`
+            ponts vers les signaux C++ réfléchis (`SignalDesc::emit` ajouté). Les
+            abonnements JS sont **retenus par le `JsContext`** et libérés à sa
+            destruction → un hot-reload déconnecte proprement tous les handlers
+            (`JsContext::retainSignalSubscription`/`fromRaw`). Tests
+            `ne_signal_wiring_tests` + `ne_js_signal_tests` (déclenchement bidi,
+            lecture côté JS, lifetime au teardown, round-trip) ✔. **9/9 verts.**
+      - [ ] **M3 — Serveur MCP** : découverte + édition de scène (Command-backed).
+      - [ ] **M4 — Outils de code + boucle de validation** : `write_script`,
+            `write_cpp_behaviour` (template+build+erreurs), `write_ui`,
+            `run_headless_check`.
+      - [ ] **M5 — Primitives haut niveau** : `StateMachineBehaviour`,
+            `Blackboard` autoload, `ScenarioBehaviour` ; recettes NPC/lumière.
+      - [ ] **M6 — Token-opt** : scène compacte, deltas de manifeste, guide agent
+            généré, `import_model` + autoLOD.
+      - *Cibles transverses* : World model (état du monde pour l'IA), concept de
+        "skills" exécutables et agents autonomes agissant sur la scène.
 - [~] **Étape 14 — XR / OpenXR.** Rendu et interactions XR via OpenXR (Objectif final du moteur).
       Cible : PCVR Quest Link, multiview (1 passe), auto-détection du casque. *Mise en
       route casque = itérative (le rendu/tracking ne se valide que dans le casque).*

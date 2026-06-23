@@ -5,9 +5,19 @@
 
 #include <quickjs.h>
 
+#include <unordered_map>
+
 namespace ne {
 
 namespace {
+// Raw QuickJS context → owning wrapper, so native bindings can reach the wrapper
+// to register signal subscriptions (the QuickJS opaque already holds the
+// Behaviour pointer, so we cannot stash the wrapper there too).
+std::unordered_map<JSContext*, JsContext*>& contextRegistry() {
+    static std::unordered_map<JSContext*, JsContext*> registry;
+    return registry;
+}
+
 JSValue jsConsoleLog(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int magic) {
     std::string out;
     for (int i = 0; i < argc; ++i) {
@@ -26,14 +36,38 @@ JSValue jsConsoleLog(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv,
 
 JsContext::JsContext(JsRuntime& runtime) : runtime_(runtime) {
     ctx_ = JS_NewContext(runtime_.raw());
+    contextRegistry()[ctx_] = this;
     installConsole();
 }
 
 JsContext::~JsContext() {
     if (ctx_) {
+        // Drop signal subscriptions BEFORE freeing the context: disconnect first
+        // (so a pending emit can't reach a freed callback), then release the
+        // retained JS callbacks while the context is still valid.
+        clearSignalSubscriptions();
+        contextRegistry().erase(ctx_);
         JS_FreeValue(ctx_, moduleNamespace_);
         JS_FreeContext(ctx_);
     }
+}
+
+JsContext* JsContext::fromRaw(JSContext* ctx) {
+    auto& reg = contextRegistry();
+    auto it = reg.find(ctx);
+    return it != reg.end() ? it->second : nullptr;
+}
+
+void JsContext::retainSignalSubscription(Connection&& connection, JSValue callback) {
+    signalSubs_.push_back({std::move(connection), callback});
+}
+
+void JsContext::clearSignalSubscriptions() {
+    for (auto& sub : signalSubs_) {
+        sub.connection.disconnect();
+        JS_FreeValue(ctx_, sub.callback);
+    }
+    signalSubs_.clear();
 }
 
 bool JsContext::eval(const std::string& source, const std::string& filename) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scene/Node.hpp"
+#include "core/Reflection.hpp"
 
 #include <glm/glm.hpp>
 
@@ -30,9 +31,7 @@ public:
     explicit LightNode(std::string name, LightType type = LightType::Directional)
         : Node(std::move(name)), type(type) {}
 
-    const char* typeName() const override { return "LightNode"; }
-    void serialize(nlohmann::json& j, ResourceManager& resources) const override;
-    void deserialize(const nlohmann::json& j, ResourceManager& resources) override;
+    NE_REFLECT_NODE(LightNode, "LightNode")
 
     LightNode* asLight() override { return this; }
     const LightNode* asLightConst() const override { return this; }

@@ -38,6 +38,7 @@
 #include "scene/CameraFollowBehaviour.hpp"
 #include "scene/SpawnerBehaviour.hpp"
 #include "scene/RotatorBehaviour.hpp"
+#include "scene/ReflectedTypes.hpp"
 #include "scene/LODGroupBehaviour.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scripting/ScriptBehaviour.hpp"
@@ -114,12 +115,14 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
 
     AudioManager::get().init();
     
-    // Register built-in behaviours
+    // Reflection-described types (manifest + factories), incl. Rotator, Character,
+    // LightNode. Single central list — see scene/ReflectedTypes.cpp.
+    registerReflectedTypes();
+
+    // Register remaining built-in behaviours (not yet migrated to reflection).
     BehaviourRegistry::instance().registerType<AudioSourceBehaviour>("AudioSource");
-    BehaviourRegistry::instance().registerType<CharacterBehaviour>("Character");
     BehaviourRegistry::instance().registerType<CameraFollowBehaviour>("CameraFollow");
     BehaviourRegistry::instance().registerType<SpawnerBehaviour>("Spawner");
-    BehaviourRegistry::instance().registerType<RotatorBehaviour>("Rotator");
     BehaviourRegistry::instance().registerType<Animator>("Animator");
     BehaviourRegistry::instance().registerType<LODGroupBehaviour>("LOD Group");
     BehaviourRegistry::instance().registerType<ScriptBehaviour>("ScriptBehaviour");
@@ -131,7 +134,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     NodeRegistry::instance().registerType<Node>("Node");
     NodeRegistry::instance().registerType<Scene>("Scene");
     NodeRegistry::instance().registerType<MeshNode>("MeshNode");
-    NodeRegistry::instance().registerType<LightNode>("LightNode");
+    // LightNode registered via registerReflectedTypes().
     NodeRegistry::instance().registerType<CameraNode>("Camera");
     NodeRegistry::instance().registerType<WebCanvasNode>("WebCanvasNode");
     NodeRegistry::instance().registerType<UINode>("UINode");

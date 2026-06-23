@@ -178,8 +178,10 @@ add_library(ne_engine STATIC
     src/core/Camera.cpp
     src/core/Input.cpp
     src/core/Paths.cpp
+    src/core/Reflection.cpp
     src/scene/NodeId.cpp
     src/scene/Node.cpp
+    src/scene/ReflectedTypes.cpp
     src/scripting/JsContext.cpp
     src/scripting/JsEngineBindings.cpp
     src/scripting/JsRuntime.cpp
@@ -196,6 +198,7 @@ add_library(ne_engine STATIC
     src/scene/Scene.cpp
     src/scene/SceneTree.cpp
     src/scene/SceneSerializer.cpp
+    src/scene/SignalWiring.cpp
     src/scene/BVHLoader.cpp
     src/scene/BehaviourRegistry.cpp
     src/scene/NodeRegistry.cpp
@@ -377,6 +380,21 @@ if (BUILD_TESTING)
     target_link_libraries(ne_scene_lifecycle_tests PRIVATE ne_engine)
     target_compile_options(ne_scene_lifecycle_tests PRIVATE -Wall -Wextra)
     add_test(NAME ne_scene_lifecycle_tests COMMAND ne_scene_lifecycle_tests)
+
+    add_executable(ne_reflection_tests tests/ReflectionTests.cpp)
+    target_link_libraries(ne_reflection_tests PRIVATE ne_engine)
+    target_compile_options(ne_reflection_tests PRIVATE -Wall -Wextra)
+    add_test(NAME ne_reflection_tests COMMAND ne_reflection_tests)
+
+    add_executable(ne_signal_wiring_tests tests/SignalWiringTests.cpp)
+    target_link_libraries(ne_signal_wiring_tests PRIVATE ne_engine)
+    target_compile_options(ne_signal_wiring_tests PRIVATE -Wall -Wextra)
+    add_test(NAME ne_signal_wiring_tests COMMAND ne_signal_wiring_tests)
+
+    add_executable(ne_js_signal_tests tests/JsSignalBindingTests.cpp)
+    target_link_libraries(ne_js_signal_tests PRIVATE ne_engine)
+    target_compile_options(ne_js_signal_tests PRIVATE -Wall -Wextra)
+    add_test(NAME ne_js_signal_tests COMMAND ne_js_signal_tests)
 
     add_executable(ne_physics_character_tests tests/PhysicsCharacterTest.cpp)
     target_link_libraries(ne_physics_character_tests PRIVATE ne_engine)

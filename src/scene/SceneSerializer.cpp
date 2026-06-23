@@ -285,6 +285,10 @@ bool SceneSerializer::loadIntoScene(Scene& scene, ResourceManager& resources,
             }
         }
 
+        // Scene-level data-driven signal connections (loadIntoScene parses the
+        // root manually, so read them here in addition to Scene::deserialize).
+        scene.readConnections(root);
+
         ensureUniqueIds(scene);
 
         Log::info("loaded scene from ", path);

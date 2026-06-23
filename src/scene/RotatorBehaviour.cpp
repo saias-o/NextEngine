@@ -2,10 +2,18 @@
 
 #include "scene/Node.hpp"
 
-#include <nlohmann/json.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <cmath>
 
 namespace ne {
+
+void RotatorBehaviour::describe(reflect::TypeBuilder<RotatorBehaviour>& t) {
+    t.doc("Spins its node continuously around a local axis.");
+    t.property("axis", &RotatorBehaviour::axis).tooltip("local rotation axis");
+    t.property("speed", &RotatorBehaviour::speed).range(-720.0, 720.0).tooltip("degrees per second");
+    t.signal("fullRotation", &RotatorBehaviour::fullRotation);
+    t.slot("reset", &RotatorBehaviour::reset);
+}
 
 void RotatorBehaviour::onUpdate(float dt) {
     if (speed == 0.0f) return;
@@ -15,20 +23,17 @@ void RotatorBehaviour::onUpdate(float dt) {
     const glm::quat delta = glm::angleAxis(glm::radians(speed) * dt, a);
     Transform& t = node()->transform();
     t.rotation = glm::normalize(delta * t.rotation);
-}
 
-void RotatorBehaviour::save(nlohmann::json& json) const {
-    json["axis"] = {axis.x, axis.y, axis.z};
-    json["speed"] = speed;
-}
-
-void RotatorBehaviour::load(const nlohmann::json& json) {
-    if (json.contains("axis") && json["axis"].is_array() && json["axis"].size() == 3) {
-        axis = {json["axis"][0].get<float>(),
-                json["axis"][1].get<float>(),
-                json["axis"][2].get<float>()};
+    accumDegrees_ += std::abs(speed) * dt;
+    if (accumDegrees_ >= 360.0f) {
+        accumDegrees_ -= 360.0f;
+        fullRotation.emit();
     }
-    if (json.contains("speed")) speed = json["speed"].get<float>();
+}
+
+void RotatorBehaviour::reset() {
+    if (Node* n = node()) n->transform().rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    accumDegrees_ = 0.0f;
 }
 
 } // namespace ne
