@@ -1,0 +1,110 @@
+// Locks in M5: the data-driven gameplay primitives (Blackboard, StateMachine,
+// Scenario) behave correctly when authored purely by data (load()) and driven
+// frame by frame — the path the LLM uses via configure_behaviour.
+
+#include "scene/Blackboard.hpp"
+#include "scene/Node.hpp"
+#include "scene/ReflectedTypes.hpp"
+#include "scene/ScenarioBehaviour.hpp"
+#include "scene/StateMachineBehaviour.hpp"
+
+#include "nlohmann/json.hpp"
+
+#include <cassert>
+#include <string>
+
+using json = nlohmann::json;
+
+static void testBlackboard() {
+    ne::Blackboard bb;
+    std::string lastKey;
+    auto conn = bb.changed.connect([&](std::string k) { lastKey = k; });
+
+    bb.setNumber("health", 80);
+    assert(lastKey == "health");
+    bb.setBool("alert", true);
+    assert(bb.number("health") == 80.0);
+    assert(bb.boolean("alert"));
+    assert(bb.number("alert") == 1.0);  // bool coerces to number
+
+    // Round-trip through save/load.
+    json saved;
+    bb.save(saved);
+    ne::Blackboard restored;
+    restored.load(saved);
+    assert(restored.number("health") == 80.0);
+    assert(restored.boolean("alert"));
+}
+
+static void testStateMachinePredicateAndTimeout() {
+    ne::Node npc("NPC");
+    auto* bb = npc.addBehaviour<ne::Blackboard>();
+    auto* sm = npc.addBehaviour<ne::StateMachineBehaviour>();
+
+    json cfg = {
+        {"initialState", "patrol"},
+        {"states", {"patrol", "chase", "flee"}},
+        {"transitions", json::array({
+            {{"from", "patrol"}, {"to", "chase"}, {"when", {{"key", "sawPlayer"}, {"op", "=="}, {"value", 1}}}},
+            {{"from", "chase"}, {"to", "flee"}, {"after", 0.5}}})}};
+    sm->load(cfg);
+
+    std::string state;
+    auto conn = sm->stateChanged.connect([&](std::string s) { state = s; });
+
+    sm->onReady();
+    assert(state == "patrol");
+
+    sm->onUpdate(0.1f);  // predicate not yet true
+    assert(sm->currentState() == "patrol");
+
+    bb->setNumber("sawPlayer", 1);
+    sm->onUpdate(0.1f);  // predicate holds -> chase
+    assert(sm->currentState() == "chase");
+
+    sm->onUpdate(0.4f);  // 0.4 < 0.5 timeout
+    assert(sm->currentState() == "chase");
+    sm->onUpdate(0.2f);  // 0.6 >= 0.5 -> flee
+    assert(sm->currentState() == "flee");
+}
+
+static void testStateMachineTrigger() {
+    ne::Node n("G");
+    auto* sm = n.addBehaviour<ne::StateMachineBehaviour>();
+    sm->load({{"initialState", "idle"},
+              {"states", {"idle", "go"}},
+              {"transitions", json::array({{{"from", "idle"}, {"to", "go"}, {"trigger", "jump"}}})}});
+    sm->onReady();
+    sm->onUpdate(0.1f);
+    assert(sm->currentState() == "idle");  // no trigger yet
+    sm->fire("jump");
+    sm->onUpdate(0.1f);
+    assert(sm->currentState() == "go");
+}
+
+static void testScenario() {
+    ne::Node s("S");
+    auto* bb = s.addBehaviour<ne::Blackboard>();
+    auto* sc = s.addBehaviour<ne::ScenarioBehaviour>();
+    sc->load({{"autoStart", true},
+              {"steps", json::array({{{"wait", 0.5}}, {{"set", {{"key", "door"}, {"value", 1}}}}})}});
+
+    int finished = 0;
+    auto conn = sc->finished.connect([&] { ++finished; });
+
+    sc->onReady();        // starts; enters the wait step
+    sc->onUpdate(0.2f);   // waitLeft 0.3
+    assert(bb->number("door") == 0.0);
+    sc->onUpdate(0.4f);   // wait elapses -> set door=1 -> end -> finished
+    assert(bb->number("door") == 1.0);
+    assert(finished == 1);
+}
+
+int main() {
+    ne::registerReflectedTypes();
+    testBlackboard();
+    testStateMachinePredicateAndTimeout();
+    testStateMachineTrigger();
+    testScenario();
+    return 0;
+}

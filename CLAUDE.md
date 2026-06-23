@@ -542,8 +542,20 @@ Le moteur est construit par étapes numérotées :
             `JsContext::compileCheck`, sans GPU → erreurs par script), `read_logs`
             (ring buffer ajouté à `core/Log`). Chemin scaffold→build vérifié
             end-to-end (le glob auto-détecte, compile et linke). Suite 10/10 verte.
-      - [ ] **M5 — Primitives haut niveau** : `StateMachineBehaviour`,
-            `Blackboard` autoload, `ScenarioBehaviour` ; recettes NPC/lumière.
+      - [x] **M5 — Primitives haut niveau** (data-driven, réfléchies) :
+            `Blackboard` (store typé partagé number/bool/string, signal `changed`,
+            slots `setNumber/Bool/String` ; autoload ou groupe `blackboard`),
+            `StateMachineBehaviour` (FSM data-driven : états + transitions sur
+            trigger / prédicat blackboard / timeout ; signal `stateChanged`, slots
+            `fire`/`goTo`), `ScenarioBehaviour` (timeline wait/set/goto pilotant le
+            Blackboard ; signaux `stepReached`/`finished`, slots `start`/`stop`).
+            Lookup blackboard : nœud propre → autoload → groupe `blackboard`.
+            Outil MCP **`configure_behaviour`** (pousse un config JSON complet via
+            `load()`, undoable) = comment le LLM autore FSM/Scénario/Blackboard
+            sans toucher au C++. Outil **`list_recipes`** (recettes de composition
+            NPC patrol↔chase, lumière déclenchée, séquence scriptée). NPC =
+            CharacterBody + Character + StateMachine + Area + Blackboard.
+            Vérifié headless (`ne_gameplay_primitive_tests`). Suite 11/11 verte.
       - [ ] **M6 — Token-opt** : scène compacte, deltas de manifeste, guide agent
             généré, `import_model` + autoLOD.
       - *Cibles transverses* : World model (état du monde pour l'IA), concept de

@@ -566,6 +566,64 @@ json toolReadLogs(const ToolCtx&, const json& args) {
     return Log::recent(count);
 }
 
+// Push an arbitrary serialized config into a behaviour via its load() hook. This
+// is how nested, data-driven behaviours (StateMachine, Scenario, Blackboard,
+// ScriptBehaviour properties) are authored in one call. Undoable.
+json toolConfigureBehaviour(const ToolCtx& ctx, const json& args) {
+    requireEdit(ctx);
+    Node* node = requireNode(ctx, args);
+    if (!args.contains("behaviour") || !args.contains("data")) fail("missing 'behaviour'/'data'");
+    std::string behType = args["behaviour"].get<std::string>();
+    json newData = args["data"];
+
+    json oldData;
+    bool found = false;
+    for (const auto& b : node->behaviours())
+        if (b->typeName() && behType == b->typeName()) { b->save(oldData); found = true; break; }
+    if (!found) fail("node has no behaviour of type '" + behType + "'");
+
+    auto applyData = [behType](Node& n, const json& d) {
+        for (const auto& b : n.behaviours())
+            if (b->typeName() && behType == b->typeName()) { b->load(d); return; }
+    };
+    ctx.exec(std::make_unique<SetPropertyCommand>(
+        node->id(), "Configure " + behType,
+        [applyData, oldData](Node& n) { applyData(n, oldData); },
+        [applyData, newData](Node& n) { applyData(n, newData); }));
+    return {{"ok", true}};
+}
+
+// Curated composition recipes for the "complex things" — the LLM reads these
+// instead of guessing how primitives fit together. Pure data; no engine state.
+json toolListRecipes(const ToolCtx&, const json&) {
+    return json::array({
+        {{"name", "npc_patrol_chase"},
+         {"summary", "An NPC that patrols, sees the player via a trigger volume, and chases."},
+         {"steps", json::array({
+             "create_node CharacterBody 'NPC'",
+             "add_behaviour Character on the NPC (movement)",
+             "create_node Area 'Vision' as a child (perception volume) + a CollisionShape child",
+             "add_behaviour StateMachine on the NPC",
+             "configure_behaviour StateMachine {initialState:'patrol', states:['patrol','chase'], transitions:[{from:'patrol',to:'chase',when:{key:'sawPlayer',op:'==',value:1}},{from:'chase',to:'patrol',after:3}]}",
+             "create a Blackboard node, add it to group 'blackboard'",
+             "connect_signal Vision.bodyEntered -> (a script slot or set blackboard sawPlayer=1)"})}},
+        {{"name", "trigger_light"},
+         {"summary", "A light that turns on when the player enters an area."},
+         {"steps", json::array({
+             "create_node LightNode 'Lamp' (set intensity 0 via set_property)",
+             "create_node Area 'Switch' + CollisionShape child",
+             "write_script a small JS that listens and sets the light intensity, attachTo the Area",
+             "or connect_signal Switch.bodyEntered -> a behaviour slot that enables the light"})}},
+        {{"name", "scripted_sequence"},
+         {"summary", "A timed cutscene that flips blackboard flags an FSM reacts to."},
+         {"steps", json::array({
+             "create a Blackboard node in group 'blackboard'",
+             "add_behaviour Scenario on a node",
+             "configure_behaviour Scenario {autoStart:true, steps:[{wait:2},{set:{key:'doorOpen',value:1}},{wait:1},{set:{key:'lightsOn',value:1}}]}",
+             "add a StateMachine elsewhere that transitions on those blackboard keys"})}}
+    });
+}
+
 // ── tool schema list (kept concise; descriptions guide the LLM) ──────────────
 json tool(const char* name, const char* desc, json schema) {
     return {{"name", name}, {"description", desc}, {"inputSchema", std::move(schema)}};
@@ -619,6 +677,11 @@ json toolList() {
         "Validate the current scene: compile every attached script (no GPU). Returns ok + per-script errors.", obj({})));
     tools.push_back(tool("read_logs",
         "Recent engine log lines (newest last).", obj({{"count", json{{"type", "number"}}}})));
+    tools.push_back(tool("configure_behaviour",
+        "Push a full serialized config into a behaviour (StateMachine/Scenario/Blackboard/ScriptBehaviour). {id, behaviour:'<TypeName>', data:{...}}.",
+        obj({{"id", str()}, {"behaviour", str()}, {"data", json{{"type", "object"}}}}, {"id", "behaviour", "data"})));
+    tools.push_back(tool("list_recipes",
+        "Curated composition recipes for complex things (NPC, trigger light, scripted sequence).", obj({})));
     return tools;
 }
 
@@ -687,6 +750,8 @@ json McpBridge::callTool(EditorUI& ui, const std::string& name, const json& args
     if (name == "build") return toolBuild(ctx, args);
     if (name == "run_headless_check") return toolHeadlessCheck(ctx, args);
     if (name == "read_logs") return toolReadLogs(ctx, args);
+    if (name == "configure_behaviour") return toolConfigureBehaviour(ctx, args);
+    if (name == "list_recipes") return toolListRecipes(ctx, args);
     throw std::runtime_error("unknown tool '" + name + "'");
 }
 
