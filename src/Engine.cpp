@@ -37,6 +37,7 @@
 #include "scene/CharacterBehaviour.hpp"
 #include "scene/CameraFollowBehaviour.hpp"
 #include "scene/SpawnerBehaviour.hpp"
+#include "scene/RotatorBehaviour.hpp"
 #include "scene/LODGroupBehaviour.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scripting/ScriptBehaviour.hpp"
@@ -118,6 +119,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     BehaviourRegistry::instance().registerType<CharacterBehaviour>("Character");
     BehaviourRegistry::instance().registerType<CameraFollowBehaviour>("CameraFollow");
     BehaviourRegistry::instance().registerType<SpawnerBehaviour>("Spawner");
+    BehaviourRegistry::instance().registerType<RotatorBehaviour>("Rotator");
     BehaviourRegistry::instance().registerType<Animator>("Animator");
     BehaviourRegistry::instance().registerType<LODGroupBehaviour>("LOD Group");
     BehaviourRegistry::instance().registerType<ScriptBehaviour>("ScriptBehaviour");

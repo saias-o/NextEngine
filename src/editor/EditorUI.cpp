@@ -4,6 +4,7 @@
 #include "core/Paths.hpp"
 #include "core/Time.hpp"
 #include "editor/Command.hpp"
+#include "editor/BuildExporter.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Texture.hpp"
 #include "project/Project.hpp"
@@ -659,15 +660,41 @@ void EditorUI::drawAboutWindow() {
 // Build Settings dialog (modal popup)
 // ─────────────────────────────────────────────────────────────────────────────
 
+void EditorUI::refreshBuildScenes_(Project* project) {
+    buildScenes_.clear();
+    if (!project || !project->isLoaded()) return;
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path scenesDir = project->scenesDir();
+    if (fs::exists(scenesDir, ec)) {
+        for (const auto& entry : fs::directory_iterator(scenesDir, ec)) {
+            if (!entry.is_regular_file()) continue;
+            if (entry.path().extension() == ".scene")
+                buildScenes_.push_back("scenes/" + entry.path().filename().string());
+        }
+        std::sort(buildScenes_.begin(), buildScenes_.end());
+    }
+    // Default selection: prefer scenes/main.scene, else first scene.
+    buildMainSceneIndex_ = 0;
+    for (size_t i = 0; i < buildScenes_.size(); ++i) {
+        if (buildScenes_[i] == "scenes/main.scene") {
+            buildMainSceneIndex_ = static_cast<int>(i);
+            break;
+        }
+    }
+}
+
 void EditorUI::drawBuildWindow(Project* project) {
     if (showBuildWindow_) {
         ImGui::OpenPopup("Build Settings");
         showBuildWindow_ = false;
+        buildHasResult_ = false;
+        refreshBuildScenes_(project);
     }
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(680, 500), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(680, 560), ImGuiCond_Appearing);
 
     if (ImGui::BeginPopupModal("Build Settings", nullptr, ImGuiWindowFlags_None)) {
         if (project && project->isLoaded()) {
@@ -678,8 +705,15 @@ void EditorUI::drawBuildWindow(Project* project) {
         ImGui::Separator();
         ImGui::Spacing();
 
+        // Reserve vertical space at the bottom for the footer (one button row)
+        // plus the result panel when a build has run, so the columns shrink and
+        // nothing overflows the modal.
+        float bottomReserve = ImGui::GetFrameHeightWithSpacing() + 10.0f;
+        if (buildHasResult_)
+            bottomReserve += 90.0f + ImGui::GetFrameHeightWithSpacing() * 2.0f + 16.0f;
+
         // Left Column: Platform List Sidebar
-        ImGui::BeginChild("##PlatformList", ImVec2(200, -ImGui::GetFrameHeightWithSpacing() - 10), ImGuiChildFlags_Borders);
+        ImGui::BeginChild("##PlatformList", ImVec2(200, -bottomReserve), ImGuiChildFlags_Borders);
         {
             const char* platforms[] = { "Windows (Direct3D/Vulkan)", "Meta Quest (XR SDK)", "Linux (Vulkan)", "WebGL (WebAssembly)" };
             for (int i = 0; i < 4; ++i) {
@@ -704,12 +738,30 @@ void EditorUI::drawBuildWindow(Project* project) {
         ImGui::SameLine();
 
         // Right Column: Dynamic Settings Pane
-        ImGui::BeginChild("##PlatformSettings", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 10), ImGuiChildFlags_Borders);
+        ImGui::BeginChild("##PlatformSettings", ImVec2(0, -bottomReserve), ImGuiChildFlags_Borders);
         {
-            // ── Scenes in Build ──────────────────────────────────────────────
-            ImGui::SeparatorText("Scenes in Build");
-            ImGui::Checkbox("scenes/main.scene (Default Startup)", &buildSceneMainChecked_);
-            ImGui::Checkbox("scenes/demo_physics.scene", &buildSceneDemoChecked_);
+            // ── Main scene (startup) ─────────────────────────────────────────
+            ImGui::SeparatorText("Startup Scene");
+            if (buildScenes_.empty()) {
+                ImGui::TextColored(ImVec4(0.85f, 0.55f, 0.20f, 1.0f),
+                    "No .scene files found under scenes/. Save a scene first.");
+            } else {
+                if (buildMainSceneIndex_ < 0 ||
+                    buildMainSceneIndex_ >= static_cast<int>(buildScenes_.size()))
+                    buildMainSceneIndex_ = 0;
+                ImGui::Text("Scene launched when the game starts:");
+                ImGui::SetNextItemWidth(-1);
+                const char* preview = buildScenes_[buildMainSceneIndex_].c_str();
+                if (ImGui::BeginCombo("##MainScene", preview)) {
+                    for (int i = 0; i < static_cast<int>(buildScenes_.size()); ++i) {
+                        bool sel = (i == buildMainSceneIndex_);
+                        if (ImGui::Selectable(buildScenes_[i].c_str(), sel))
+                            buildMainSceneIndex_ = i;
+                        if (sel) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+            }
             ImGui::Spacing();
             ImGui::Separator();
 
@@ -809,17 +861,62 @@ void EditorUI::drawBuildWindow(Project* project) {
         ImGui::Separator();
         ImGui::Spacing();
 
-        // Footer buttons: Build, Build & Run, Cancel
-        if (ImGui::Button("Build", ImVec2(100, 0))) {
-            ImGui::CloseCurrentPopup();
+        // ── Last build result (status + scrollable log + actions) ────────────
+        if (buildHasResult_) {
+            if (buildLastSuccess_) {
+                ImGui::TextColored(ImVec4(0.40f, 0.80f, 0.40f, 1.0f),
+                    "Build succeeded: %s", buildLastExe_.c_str());
+                if (ImGui::Button("Open Folder")) {
+                    BuildExporter::openInExplorer(buildLastOutputDir_);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Run Game")) {
+                    BuildExporter::launch(buildLastExe_);
+                }
+            } else {
+                ImGui::TextColored(ImVec4(0.90f, 0.40f, 0.40f, 1.0f),
+                    "Build failed: %s", buildLastError_.c_str());
+            }
+            ImGui::BeginChild("##BuildLog", ImVec2(0, 90), ImGuiChildFlags_Borders);
+            ImGui::TextUnformatted(buildLastLog_.c_str());
+            ImGui::EndChild();
+            ImGui::Spacing();
         }
+
+        // ── Footer buttons ───────────────────────────────────────────────────
+        const bool isWindows = (selectedBuildPlatform_ == BuildPlatform::Windows);
+        const bool canBuild =
+            isWindows && project && project->isLoaded() && !buildScenes_.empty();
+
+        if (!isWindows) {
+            ImGui::TextDisabled("This platform is not available yet — Windows only.");
+        }
+
+        ImGui::BeginDisabled(!canBuild);
+        auto runBuild = [&](bool andRun) {
+            BuildExporter::Options opt;
+            opt.outputDir = buildOutputPath_;
+            opt.mainScene = buildScenes_.empty()
+                ? std::string("scenes/main.scene")
+                : buildScenes_[buildMainSceneIndex_];
+            opt.launchAfterBuild = andRun;
+            BuildExporter::Result res =
+                BuildExporter::exportWindowsBuild(*project, opt);
+            buildHasResult_      = true;
+            buildLastSuccess_    = res.success;
+            buildLastError_      = res.error;
+            buildLastLog_        = res.log;
+            buildLastOutputDir_  = res.outputDir;
+            buildLastExe_        = res.gameExe;
+        };
+        if (ImGui::Button("Build", ImVec2(100, 0))) runBuild(false);
         ImGui::SameLine();
-        if (ImGui::Button("Build & Run", ImVec2(120, 0))) {
-            ImGui::CloseCurrentPopup();
-        }
+        if (ImGui::Button("Build & Run", ImVec2(120, 0))) runBuild(true);
+        ImGui::EndDisabled();
+
         ImGui::SameLine();
         ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 116.0f);
-        if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+        if (ImGui::Button("Close", ImVec2(100, 0))) {
             ImGui::CloseCurrentPopup();
         }
 

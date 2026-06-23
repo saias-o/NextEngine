@@ -575,10 +575,31 @@ Le moteur est construit par étapes numérotées :
               (action sets OpenXR, ci-dessus) → tout le toolkit est « vivant ».
               *Restant (optionnel, casque)* : backend d'anchors réel
               (`XRAnchors::setBackend` sur une extension), hand tracking skeletal.
-- [ ] **Étape 15 — Build & Release Windows.** Gestion de la release finale du jeu :
-      - Pipeline de build autonome d'un projet (packaging des assets et shaders sans dépendances de développement).
-      - Gestion des versions, métadonnées de l'exécutable, et icône du jeu.
-      - Optimisation finale de build (Link-Time Optimization, suppression des traces de debug/ImGui si nécessaire).
+- [~] **Étape 15 — Build & Release Windows.** Gestion de la release finale du jeu :
+      - [x] **Pipeline de build autonome d'un projet** (packaging assets + shaders
+            sans dépendances de dev), modèle *export-template* façon Godot/Unity :
+            on **copie** un binaire runtime pré-compilé + on empaquette les données
+            à côté (pas de recompilation par export → instantané, robuste, évite le
+            bug `ld` MSYS2).
+            - **Runtime dédié sans éditeur** : target `NextEngineRuntime`
+              (`src/runtime/main.cpp`) linke `ne_engine` seul (pas `ne_editor`/ImGui).
+              Reproduit le chemin standalone (load projet+scène → `mountWorld` → `run`).
+              Lit un manifeste de boot `game.ne` (`project=`, `main_scene=`).
+            - **Résolution de chemins relative à l'exe** : `setRuntimeRoot()` dans
+              `core/Paths.{hpp,cpp}` → `assetPath`/`shaderPath` résolvent sous le
+              dossier du jeu livré quand la racine runtime est fixée (sinon chemins
+              dev bakés inchangés). Zéro changement aux ~30 sites d'appel.
+            - **Packager** : `editor/BuildExporter` (dans `ne_editor`) copie
+              `NextEngineRuntime.exe`→`<Game>.exe`, `glfw3.dll`, `build/shaders/`,
+              les données projet (`assets/`, `scenes/`, `scripts/`, `.neproj`,
+              `asset_registry.json`) en layout plat, et écrit `game.ne`.
+            - **UI Build Settings réelle** : boutons **Build** / **Build & Run**
+              câblés (sélecteur de scène principale, statut + log + Open Folder /
+              Run Game). Plateformes Quest/Linux/WebGL grisées (« à venir »).
+            - *Validé* : jeu lancé depuis un dossier totalement séparé, GPU + scène
+              OK, aucun shader/asset manquant.
+      - [ ] Gestion des versions, métadonnées de l'exécutable, et icône du jeu.
+      - [ ] Optimisation finale de build (Link-Time Optimization, suppression des traces de debug/ImGui si nécessaire).
 
 Quand une étape est finie : cocher ici et compiler pour vérifier.
 

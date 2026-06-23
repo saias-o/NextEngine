@@ -160,11 +160,23 @@ private:
     // Build settings state
     BuildPlatform selectedBuildPlatform_ = BuildPlatform::Windows;
     BuildConfig buildConfiguration_ = BuildConfig::Release;
-    char buildOutputPath_[512] = "build/bin";
+    char buildOutputPath_[512] = "build/export";
     bool buildCopyAssets_ = true;
     bool buildEnableLto_ = false;
     bool buildSceneMainChecked_ = true;
     bool buildSceneDemoChecked_ = false;
+
+    // Main scene selection (populated from the project's scenes/ when the dialog
+    // opens) and the result of the last export, shown in the dialog.
+    std::vector<std::string> buildScenes_;       // project-relative, e.g. "scenes/main.scene"
+    int buildMainSceneIndex_ = 0;
+    bool buildHasResult_ = false;
+    bool buildLastSuccess_ = false;
+    std::string buildLastError_;
+    std::string buildLastLog_;
+    std::string buildLastOutputDir_;
+    std::string buildLastExe_;
+    void refreshBuildScenes_(Project* project);
 
     // Deferred operations for C++ memory safety & avoiding iterator invalidation
     Node* nodeToDelete_ = nullptr;

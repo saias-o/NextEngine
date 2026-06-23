@@ -177,6 +177,7 @@ add_library(ne_engine STATIC
     src/core/Window.cpp
     src/core/Camera.cpp
     src/core/Input.cpp
+    src/core/Paths.cpp
     src/scene/NodeId.cpp
     src/scene/Node.cpp
     src/scripting/JsContext.cpp
@@ -250,6 +251,7 @@ add_library(ne_engine STATIC
     src/audio/AudioSourceBehaviour.cpp
     src/scene/CharacterBehaviour.cpp
     src/scene/SpawnerBehaviour.cpp
+    src/scene/RotatorBehaviour.cpp
     src/physics/PhysicsWorld.cpp
     src/physics/CollisionShapeNode.cpp
     src/physics/CollisionObjectNode.cpp
@@ -349,6 +351,7 @@ endif()
 add_library(ne_editor STATIC
     src/editor/EditorApp.cpp
     src/editor/EditorUI.cpp
+    src/editor/BuildExporter.cpp
     src/editor/SceneDocument.cpp
     src/editor/Command.cpp
     src/editor/CommandHistory.cpp
@@ -412,6 +415,29 @@ if (WIN32)
         "$<TARGET_FILE_DIR:NextEngine>"
     )
 endif()
+
+# ── Standalone game runtime (export template) ───────────────────────────────
+# Editor-less player: links ne_engine only (no ImGui/editor). The editor's Build
+# step copies this exe next to the packaged game data; it reads game.ne at
+# startup and runs the project's main scene. Built once with the engine.
+add_executable(NextEngineRuntime
+    src/runtime/main.cpp
+)
+target_link_libraries(NextEngineRuntime PRIVATE ne_engine)
+target_compile_options(NextEngineRuntime PRIVATE -Wall -Wextra)
+add_dependencies(NextEngineRuntime Shaders)
+
+if (WIN32)
+    add_custom_command(TARGET NextEngineRuntime POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:glfw>"
+        "$<TARGET_FILE_DIR:NextEngineRuntime>"
+    )
+endif()
+
+# Building the editor also builds the runtime template, so the Build button
+# always has a fresh NextEngineRuntime.exe to package.
+add_dependencies(NextEngine NextEngineRuntime)
 
 # ── Hub executable ──────────────────────────────────────────────────────────
 add_executable(NextEngineHub
