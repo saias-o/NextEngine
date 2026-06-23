@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 
@@ -268,6 +269,10 @@ void collectGroup(Node& n, const std::string& g, std::vector<Node*>& out) {
     if (n.isInGroup(g)) out.push_back(&n);
     for (const auto& c : n.children()) collectGroup(*c, g, out);
 }
+void collectAll(Node& n, std::vector<Node*>& out) {
+    out.push_back(&n);
+    for (const auto& c : n.children()) collectAll(*c, out);
+}
 Node* firstInGroupRec(Node& n, const std::string& g) {
     if (n.isInGroup(g)) return &n;
     for (const auto& c : n.children())
@@ -284,6 +289,57 @@ const std::vector<Node*>& SceneTree::group(const std::string& name) {
 
 Node* SceneTree::firstInGroup(const std::string& name) {
     return world_ ? firstInGroupRec(*world_, name) : nullptr;
+}
+
+// ── Spatial queries ──────────────────────────────────────────────────────────
+
+std::vector<Node*> SceneTree::overlapSphere(const glm::vec3& center, float radius,
+                                            const std::string& group) {
+    std::vector<Node*> candidates, result;
+    if (!world_) return result;
+    if (group.empty()) collectAll(*world_, candidates);
+    else collectGroup(*world_, group, candidates);
+
+    const float r2 = radius * radius;
+    for (Node* n : candidates) {
+        glm::vec3 d = glm::vec3(n->worldTransform()[3]) - center;
+        if (glm::dot(d, d) <= r2) result.push_back(n);
+    }
+    return result;
+}
+
+SceneTree::NodeRayHit SceneTree::raycastNodes(const glm::vec3& origin,
+                                              const glm::vec3& direction,
+                                              float maxDistance, float nodeRadius,
+                                              const std::string& group) {
+    NodeRayHit best;
+    if (!world_) return best;
+
+    float len2 = glm::dot(direction, direction);
+    if (len2 < 1e-12f) return best;
+    glm::vec3 dir = direction / std::sqrt(len2);
+
+    std::vector<Node*> candidates;
+    if (group.empty()) collectAll(*world_, candidates);
+    else collectGroup(*world_, group, candidates);
+
+    float bestT = maxDistance;
+    for (Node* n : candidates) {
+        glm::vec3 oc = origin - glm::vec3(n->worldTransform()[3]);
+        float b = glm::dot(dir, oc);
+        float c = glm::dot(oc, oc) - nodeRadius * nodeRadius;
+        float disc = b * b - c;
+        if (disc < 0.0f) continue;
+        float s = std::sqrt(disc);
+        float t = -b - s;
+        if (t < 0.0f) t = -b + s;        // origin inside the sphere → use far root
+        if (t < 0.0f || t > bestT) continue;
+        bestT = t;
+        best.node = n;
+        best.distance = t;
+        best.point = origin + dir * t;
+    }
+    return best;
 }
 
 } // namespace ne

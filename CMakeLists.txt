@@ -258,6 +258,7 @@ add_library(ne_engine STATIC
     src/audio/AudioUsage.cpp
     src/audio/AudioSourceBehaviour.cpp
     src/scene/CharacterBehaviour.cpp
+    src/scene/HealthBehaviour.cpp
     src/scene/SpawnerBehaviour.cpp
     src/scene/RotatorBehaviour.cpp
     src/scene/Blackboard.cpp

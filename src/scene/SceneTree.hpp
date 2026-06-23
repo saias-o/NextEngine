@@ -103,6 +103,30 @@ public:
     const std::vector<Node*>& group(const std::string& name);
     Node* firstInGroup(const std::string& name);
 
+    // ── Spatial queries ───────────────────────────────────────────────────────
+    // Character bodies (CharacterVirtual: player, NPCs, cars) are NOT visible to
+    // PhysicsWorld::raycast, so gameplay (weapons, AoE, aggro, pickups, run-overs)
+    // would otherwise re-implement the same manual loops. These node-level queries
+    // close that gap: each node is approximated by a sphere at its world origin.
+    // Pass a non-empty `group` to restrict candidates (cheap and usually what you
+    // want); empty scans the whole tree.
+
+    struct NodeRayHit {
+        Node* node = nullptr;   // null when nothing was hit
+        float distance = 0.0f;  // along the ray
+        glm::vec3 point{0.0f};
+    };
+
+    // Nodes whose world origin lies within `radius` of `center`.
+    std::vector<Node*> overlapSphere(const glm::vec3& center, float radius,
+                                     const std::string& group = "");
+
+    // Nearest node along the ray, each treated as a sphere of `nodeRadius` about
+    // its world origin. Returns {nullptr} when nothing is in range.
+    NodeRayHit raycastNodes(const glm::vec3& origin, const glm::vec3& direction,
+                            float maxDistance, float nodeRadius,
+                            const std::string& group = "");
+
 private:
     using AutoloadFactory = std::function<std::unique_ptr<Node>()>;
     void setAutoloadDef(const std::string& name, AutoloadFactory factory);  // dedup by name

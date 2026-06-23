@@ -7,10 +7,14 @@
 // Reflected types (each declares a static describe() and the NE_REFLECT_* macro).
 #include "scene/Blackboard.hpp"
 #include "scene/CharacterBehaviour.hpp"
+#include "scene/HealthBehaviour.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/RotatorBehaviour.hpp"
 #include "scene/ScenarioBehaviour.hpp"
 #include "scene/StateMachineBehaviour.hpp"
+#include "generated/VehicleBehaviour.hpp"
+#include "generated/NpcWanderBehaviour.hpp"
+#include "generated/GunBehaviour.hpp"
 // <<NE_MCP_INCLUDES>>  (write_cpp_behaviour inserts generated #includes above this line)
 
 namespace ne {
@@ -42,10 +46,15 @@ void registerReflectedTypes() {
     // ── behaviours ──
     registerBehaviour<RotatorBehaviour>();
     registerBehaviour<CharacterBehaviour>();
+    registerBehaviour<HealthBehaviour>();  // core gameplay component
     // High-level gameplay primitives (M5).
     registerBehaviour<Blackboard>();
     registerBehaviour<StateMachineBehaviour>();
     registerBehaviour<ScenarioBehaviour>();
+    // GTA-clone gameplay (drivable cars + wandering NPCs).
+    registerBehaviour<VehicleBehaviour>();
+    registerBehaviour<NpcWanderBehaviour>();
+    registerBehaviour<GunBehaviour>();
 
     // ── nodes ──
     registerNode<LightNode>();

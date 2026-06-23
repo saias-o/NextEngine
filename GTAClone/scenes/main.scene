@@ -1,0 +1,3064 @@
+{
+  "version": 1,
+  "scene": {
+    "type": "Scene",
+    "name": "main",
+    "enabled": true,
+    "behaviours": [],
+    "transform": {
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "settings": {
+      "ambient": [
+        0.3,
+        0.31,
+        0.36
+      ],
+      "clearColor": [
+        0.52,
+        0.66,
+        0.84
+      ],
+      "postProcessing": true,
+      "lightingMode": 0,
+      "giEnabled": true,
+      "giIntensity": 1.0,
+      "skyboxTexture": 0,
+      "skyboxExposure": 1.0,
+      "skyboxRotation": 0.0,
+      "iblEnabled": true,
+      "aoEnabled": true,
+      "fogEnabled": false,
+      "bloomEnabled": true,
+      "changeRenderingAtLoad": true
+    },
+    "children": [
+      {
+        "type": "LightNode",
+        "name": "Sun",
+        "enabled": true,
+        "behaviours": [],
+        "lightType": 0,
+        "color": [
+          1.0,
+          0.96,
+          0.88
+        ],
+        "intensity": 2.4,
+        "direction": [
+          -0.4,
+          -0.85,
+          -0.35
+        ],
+        "range": 10.0,
+        "spotInnerAngle": 25.0,
+        "spotOuterAngle": 35.0,
+        "castShadows": true,
+        "bakeMode": 0,
+        "transform": {
+          "position": [
+            0.0,
+            30.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      {
+        "type": "StaticBody",
+        "name": "Ground",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.95,
+        "restitution": 0.0,
+        "transform": {
+          "position": [
+            0.0,
+            -0.5,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "GroundMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.22,
+              0.23,
+              0.26
+            ],
+            "meshEnabled": true,
+            "castShadows": false,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                140.0,
+                1.0,
+                140.0
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [
+              70.0,
+              0.5,
+              70.0
+            ],
+            "radius": 0.5,
+            "height": 1.0,
+            "axis": 1,
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "MeshNode",
+        "name": "RoadX",
+        "enabled": true,
+        "behaviours": [],
+        "mesh": "cube",
+        "baseColor": [
+          0.12,
+          0.12,
+          0.14
+        ],
+        "meshEnabled": true,
+        "castShadows": false,
+        "includeInLightBaking": false,
+        "transform": {
+          "position": [
+            0.0,
+            0.02,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            140.0,
+            0.04,
+            10.0
+          ]
+        }
+      },
+      {
+        "type": "MeshNode",
+        "name": "RoadZ",
+        "enabled": true,
+        "behaviours": [],
+        "mesh": "cube",
+        "baseColor": [
+          0.12,
+          0.12,
+          0.14
+        ],
+        "meshEnabled": true,
+        "castShadows": false,
+        "includeInLightBaking": false,
+        "transform": {
+          "position": [
+            0.0,
+            0.02,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            10.0,
+            0.04,
+            140.0
+          ]
+        }
+      },
+      {
+        "type": "StaticBody",
+        "name": "Tower_NW",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [
+            -26.0,
+            6.0,
+            -26.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Tower_NWMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.45,
+              0.42,
+              0.4
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                18.0,
+                12.0,
+                18.0
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [
+              9.0,
+              6.0,
+              9.0
+            ],
+            "radius": 0.5,
+            "height": 1.0,
+            "axis": 1,
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "StaticBody",
+        "name": "Tower_NE",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [
+            26.0,
+            10.0,
+            -26.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Tower_NEMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.4,
+              0.44,
+              0.5
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                18.0,
+                20.0,
+                18.0
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [
+              9.0,
+              10.0,
+              9.0
+            ],
+            "radius": 0.5,
+            "height": 1.0,
+            "axis": 1,
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "StaticBody",
+        "name": "Tower_SW",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [
+            -26.0,
+            4.5,
+            26.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Tower_SWMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.5,
+              0.4,
+              0.38
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                18.0,
+                9.0,
+                18.0
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [
+              9.0,
+              4.5,
+              9.0
+            ],
+            "radius": 0.5,
+            "height": 1.0,
+            "axis": 1,
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "StaticBody",
+        "name": "Tower_SE",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [
+            26.0,
+            8.0,
+            26.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Tower_SEMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.38,
+              0.46,
+              0.44
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                18.0,
+                16.0,
+                18.0
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [
+              9.0,
+              8.0,
+              9.0
+            ],
+            "radius": 0.5,
+            "height": 1.0,
+            "axis": 1,
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "StaticBody",
+        "name": "Shop_N",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [
+            0.0,
+            3.5,
+            -34.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Shop_NMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.55,
+              0.48,
+              0.35
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                12.0,
+                7.0,
+                8.0
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [
+              6.0,
+              3.5,
+              4.0
+            ],
+            "radius": 0.5,
+            "height": 1.0,
+            "axis": 1,
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "StaticBody",
+        "name": "Shop_S",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [
+            0.0,
+            3.5,
+            34.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Shop_SMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.48,
+              0.5,
+              0.4
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                12.0,
+                7.0,
+                8.0
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [
+              6.0,
+              3.5,
+              4.0
+            ],
+            "radius": 0.5,
+            "height": 1.0,
+            "axis": 1,
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "StaticBody",
+        "name": "Block_W",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [
+            -38.0,
+            5.5,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Block_WMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.42,
+              0.42,
+              0.48
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                8.0,
+                11.0,
+                14.0
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [
+              4.0,
+              5.5,
+              7.0
+            ],
+            "radius": 0.5,
+            "height": 1.0,
+            "axis": 1,
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "StaticBody",
+        "name": "Block_E",
+        "enabled": true,
+        "behaviours": [],
+        "friction": 0.8,
+        "restitution": 0.0,
+        "transform": {
+          "position": [
+            38.0,
+            6.5,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Block_EMesh",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.46,
+              0.43,
+              0.41
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                8.0,
+                13.0,
+                14.0
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [
+              4.0,
+              6.5,
+              7.0
+            ],
+            "radius": 0.5,
+            "height": 1.0,
+            "axis": 1,
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "CharacterBody",
+        "name": "Player",
+        "enabled": true,
+        "groups": [
+          "driver",
+          "player"
+        ],
+        "mass": 70.0,
+        "maxSlopeAngle": 50.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "behaviours": [
+          {
+            "type": "Character",
+            "enabled": true,
+            "moveSpeed": 6.0,
+            "sprintMultiplier": 1.8,
+            "jumpForce": 6.0,
+            "gravity": 18.0,
+            "faceMovement": true,
+            "turnSpeed": 14.0
+          },
+          {
+            "type": "Gun",
+            "enabled": true,
+            "damage": 60.0,
+            "range": 120.0,
+            "cooldown": 0.2,
+            "hitRadius": 0.7,
+            "targetGroup": "npc"
+          }
+        ],
+        "transform": {
+          "position": [
+            0.0,
+            2.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Body",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.2,
+              0.55,
+              0.85
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.8,
+                1.8,
+                0.8
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Head",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.95,
+              0.8,
+              0.65
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                1.15,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.5,
+                0.5,
+                0.5
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "FacingNub",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              1.0,
+              0.85,
+              0.1
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.4,
+                -0.5
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.22,
+                0.22,
+                0.4
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Gun",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.1,
+              0.1,
+              0.12
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.45,
+                0.45,
+                -0.45
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.18,
+                0.18,
+                0.7
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 3,
+            "halfExtents": [
+              0.4,
+              0.9,
+              0.4
+            ],
+            "radius": 0.4,
+            "height": 1.8,
+            "axis": 1,
+            "offset": [
+              0,
+              0,
+              0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "CharacterBody",
+        "name": "Sedan",
+        "enabled": true,
+        "groups": [
+          "vehicle"
+        ],
+        "mass": 400.0,
+        "maxSlopeAngle": 55.0,
+        "friction": 0.6,
+        "restitution": 0.0,
+        "behaviours": [
+          {
+            "type": "Vehicle",
+            "enabled": true,
+            "maxSpeed": 16.0,
+            "reverseSpeed": 6.0,
+            "accel": 14.0,
+            "brakeDecel": 26.0,
+            "turnRate": 120.0,
+            "gravity": 22.0,
+            "enterRadius": 4.0,
+            "exitDistance": 2.2,
+            "driverGroup": "driver",
+            "cameraGroup": "player",
+            "killSpeed": 4.0,
+            "runOverRadius": 2.6,
+            "runOverDamage": 1000.0,
+            "npcGroup": "npc"
+          }
+        ],
+        "transform": {
+          "position": [
+            5.5,
+            1.2,
+            -6.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Chassis",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.75,
+              0.18,
+              0.18
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                2.0,
+                0.8,
+                4.0
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Cabin",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.5249999999999999,
+              0.126,
+              0.126
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.7,
+                -0.1
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.6,
+                0.7,
+                1.9
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Hood",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.6375,
+              0.153,
+              0.153
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.2,
+                -1.3
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.7,
+                0.3,
+                1.2
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Headlight",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              1.0,
+              0.95,
+              0.6
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.1,
+                -1.95
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.5,
+                0.2,
+                0.2
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [
+              1.0,
+              0.6,
+              2.0
+            ],
+            "radius": 0.5,
+            "height": 1.0,
+            "axis": 1,
+            "offset": [
+              0.0,
+              0.2,
+              0.0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "CharacterBody",
+        "name": "Coupe",
+        "enabled": true,
+        "groups": [
+          "vehicle"
+        ],
+        "mass": 400.0,
+        "maxSlopeAngle": 55.0,
+        "friction": 0.6,
+        "restitution": 0.0,
+        "behaviours": [
+          {
+            "type": "Vehicle",
+            "enabled": true,
+            "maxSpeed": 16.0,
+            "reverseSpeed": 6.0,
+            "accel": 14.0,
+            "brakeDecel": 26.0,
+            "turnRate": 120.0,
+            "gravity": 22.0,
+            "enterRadius": 4.0,
+            "exitDistance": 2.2,
+            "driverGroup": "driver",
+            "cameraGroup": "player",
+            "killSpeed": 4.0,
+            "runOverRadius": 2.6,
+            "runOverDamage": 1000.0,
+            "npcGroup": "npc"
+          }
+        ],
+        "transform": {
+          "position": [
+            -5.5,
+            1.2,
+            9.0
+          ],
+          "rotation": [
+            0.0,
+            1.0,
+            0.0,
+            6.123233995736766e-17
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Chassis",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.18,
+              0.35,
+              0.72
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                2.0,
+                0.8,
+                4.0
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Cabin",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.126,
+              0.24499999999999997,
+              0.504
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.7,
+                -0.1
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.6,
+                0.7,
+                1.9
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Hood",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.153,
+              0.2975,
+              0.612
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.2,
+                -1.3
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.7,
+                0.3,
+                1.2
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Headlight",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              1.0,
+              0.95,
+              0.6
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.1,
+                -1.95
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.5,
+                0.2,
+                0.2
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [
+              1.0,
+              0.6,
+              2.0
+            ],
+            "radius": 0.5,
+            "height": 1.0,
+            "axis": 1,
+            "offset": [
+              0.0,
+              0.2,
+              0.0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "CharacterBody",
+        "name": "Taxi",
+        "enabled": true,
+        "groups": [
+          "vehicle"
+        ],
+        "mass": 400.0,
+        "maxSlopeAngle": 55.0,
+        "friction": 0.6,
+        "restitution": 0.0,
+        "behaviours": [
+          {
+            "type": "Vehicle",
+            "enabled": true,
+            "maxSpeed": 16.0,
+            "reverseSpeed": 6.0,
+            "accel": 14.0,
+            "brakeDecel": 26.0,
+            "turnRate": 120.0,
+            "gravity": 22.0,
+            "enterRadius": 4.0,
+            "exitDistance": 2.2,
+            "driverGroup": "driver",
+            "cameraGroup": "player",
+            "killSpeed": 4.0,
+            "runOverRadius": 2.6,
+            "runOverDamage": 1000.0,
+            "npcGroup": "npc"
+          }
+        ],
+        "transform": {
+          "position": [
+            8.0,
+            1.2,
+            14.0
+          ],
+          "rotation": [
+            0.0,
+            0.7071067811865476,
+            0.0,
+            0.7071067811865476
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Chassis",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.85,
+              0.7,
+              0.1
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                2.0,
+                0.8,
+                4.0
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Cabin",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.595,
+              0.48999999999999994,
+              0.06999999999999999
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.7,
+                -0.1
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.6,
+                0.7,
+                1.9
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Hood",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.7224999999999999,
+              0.595,
+              0.085
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.2,
+                -1.3
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.7,
+                0.3,
+                1.2
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Headlight",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              1.0,
+              0.95,
+              0.6
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.1,
+                -1.95
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.5,
+                0.2,
+                0.2
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 1,
+            "halfExtents": [
+              1.0,
+              0.6,
+              2.0
+            ],
+            "radius": 0.5,
+            "height": 1.0,
+            "axis": 1,
+            "offset": [
+              0.0,
+              0.2,
+              0.0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "CharacterBody",
+        "name": "NPC_1",
+        "enabled": true,
+        "groups": [
+          "npc"
+        ],
+        "mass": 65.0,
+        "maxSlopeAngle": 50.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "behaviours": [
+          {
+            "type": "NpcWander",
+            "enabled": true,
+            "speed": 1.6,
+            "changeInterval": 3.0,
+            "turnSpeed": 6.0,
+            "leashRadius": 14.0,
+            "gravity": 22.0
+          },
+          {
+            "type": "Health",
+            "enabled": true,
+            "maxHealth": 100.0,
+            "deathDelay": 4.0,
+            "tipOverOnDeath": true
+          }
+        ],
+        "transform": {
+          "position": [
+            3.0,
+            1.5,
+            -12.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Body",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.7,
+              0.3,
+              0.3
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.6,
+                1.5,
+                0.4
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Head",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.9,
+              0.75,
+              0.6
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.45,
+                0.45,
+                0.45
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 3,
+            "halfExtents": [
+              0.35,
+              0.75,
+              0.35
+            ],
+            "radius": 0.35,
+            "height": 1.5,
+            "axis": 1,
+            "offset": [
+              0,
+              0,
+              0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "CharacterBody",
+        "name": "NPC_2",
+        "enabled": true,
+        "groups": [
+          "npc"
+        ],
+        "mass": 65.0,
+        "maxSlopeAngle": 50.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "behaviours": [
+          {
+            "type": "NpcWander",
+            "enabled": true,
+            "speed": 1.6,
+            "changeInterval": 3.0,
+            "turnSpeed": 6.0,
+            "leashRadius": 14.0,
+            "gravity": 22.0
+          },
+          {
+            "type": "Health",
+            "enabled": true,
+            "maxHealth": 100.0,
+            "deathDelay": 4.0,
+            "tipOverOnDeath": true
+          }
+        ],
+        "transform": {
+          "position": [
+            -4.0,
+            1.5,
+            -8.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Body",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.3,
+              0.55,
+              0.4
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.6,
+                1.5,
+                0.4
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Head",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.9,
+              0.75,
+              0.6
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.45,
+                0.45,
+                0.45
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 3,
+            "halfExtents": [
+              0.35,
+              0.75,
+              0.35
+            ],
+            "radius": 0.35,
+            "height": 1.5,
+            "axis": 1,
+            "offset": [
+              0,
+              0,
+              0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "CharacterBody",
+        "name": "NPC_3",
+        "enabled": true,
+        "groups": [
+          "npc"
+        ],
+        "mass": 65.0,
+        "maxSlopeAngle": 50.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "behaviours": [
+          {
+            "type": "NpcWander",
+            "enabled": true,
+            "speed": 1.6,
+            "changeInterval": 3.0,
+            "turnSpeed": 6.0,
+            "leashRadius": 14.0,
+            "gravity": 22.0
+          },
+          {
+            "type": "Health",
+            "enabled": true,
+            "maxHealth": 100.0,
+            "deathDelay": 4.0,
+            "tipOverOnDeath": true
+          }
+        ],
+        "transform": {
+          "position": [
+            6.0,
+            1.5,
+            7.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Body",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.35,
+              0.4,
+              0.65
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.6,
+                1.5,
+                0.4
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Head",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.9,
+              0.75,
+              0.6
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.45,
+                0.45,
+                0.45
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 3,
+            "halfExtents": [
+              0.35,
+              0.75,
+              0.35
+            ],
+            "radius": 0.35,
+            "height": 1.5,
+            "axis": 1,
+            "offset": [
+              0,
+              0,
+              0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "CharacterBody",
+        "name": "NPC_4",
+        "enabled": true,
+        "groups": [
+          "npc"
+        ],
+        "mass": 65.0,
+        "maxSlopeAngle": 50.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "behaviours": [
+          {
+            "type": "NpcWander",
+            "enabled": true,
+            "speed": 1.6,
+            "changeInterval": 3.0,
+            "turnSpeed": 6.0,
+            "leashRadius": 14.0,
+            "gravity": 22.0
+          },
+          {
+            "type": "Health",
+            "enabled": true,
+            "maxHealth": 100.0,
+            "deathDelay": 4.0,
+            "tipOverOnDeath": true
+          }
+        ],
+        "transform": {
+          "position": [
+            -7.0,
+            1.5,
+            4.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Body",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.6,
+              0.55,
+              0.3
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.6,
+                1.5,
+                0.4
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Head",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.9,
+              0.75,
+              0.6
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.45,
+                0.45,
+                0.45
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 3,
+            "halfExtents": [
+              0.35,
+              0.75,
+              0.35
+            ],
+            "radius": 0.35,
+            "height": 1.5,
+            "axis": 1,
+            "offset": [
+              0,
+              0,
+              0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "CharacterBody",
+        "name": "NPC_5",
+        "enabled": true,
+        "groups": [
+          "npc"
+        ],
+        "mass": 65.0,
+        "maxSlopeAngle": 50.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "behaviours": [
+          {
+            "type": "NpcWander",
+            "enabled": true,
+            "speed": 1.6,
+            "changeInterval": 3.0,
+            "turnSpeed": 6.0,
+            "leashRadius": 14.0,
+            "gravity": 22.0
+          },
+          {
+            "type": "Health",
+            "enabled": true,
+            "maxHealth": 100.0,
+            "deathDelay": 4.0,
+            "tipOverOnDeath": true
+          }
+        ],
+        "transform": {
+          "position": [
+            12.0,
+            1.5,
+            -3.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Body",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.5,
+              0.35,
+              0.55
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.6,
+                1.5,
+                0.4
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Head",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.9,
+              0.75,
+              0.6
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.45,
+                0.45,
+                0.45
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 3,
+            "halfExtents": [
+              0.35,
+              0.75,
+              0.35
+            ],
+            "radius": 0.35,
+            "height": 1.5,
+            "axis": 1,
+            "offset": [
+              0,
+              0,
+              0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "CharacterBody",
+        "name": "NPC_6",
+        "enabled": true,
+        "groups": [
+          "npc"
+        ],
+        "mass": 65.0,
+        "maxSlopeAngle": 50.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "behaviours": [
+          {
+            "type": "NpcWander",
+            "enabled": true,
+            "speed": 1.6,
+            "changeInterval": 3.0,
+            "turnSpeed": 6.0,
+            "leashRadius": 14.0,
+            "gravity": 22.0
+          },
+          {
+            "type": "Health",
+            "enabled": true,
+            "maxHealth": 100.0,
+            "deathDelay": 4.0,
+            "tipOverOnDeath": true
+          }
+        ],
+        "transform": {
+          "position": [
+            -12.0,
+            1.5,
+            -2.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Body",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.3,
+              0.5,
+              0.55
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.6,
+                1.5,
+                0.4
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Head",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.9,
+              0.75,
+              0.6
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.45,
+                0.45,
+                0.45
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 3,
+            "halfExtents": [
+              0.35,
+              0.75,
+              0.35
+            ],
+            "radius": 0.35,
+            "height": 1.5,
+            "axis": 1,
+            "offset": [
+              0,
+              0,
+              0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "CharacterBody",
+        "name": "NPC_7",
+        "enabled": true,
+        "groups": [
+          "npc"
+        ],
+        "mass": 65.0,
+        "maxSlopeAngle": 50.0,
+        "friction": 0.5,
+        "restitution": 0.0,
+        "behaviours": [
+          {
+            "type": "NpcWander",
+            "enabled": true,
+            "speed": 1.6,
+            "changeInterval": 3.0,
+            "turnSpeed": 6.0,
+            "leashRadius": 14.0,
+            "gravity": 22.0
+          },
+          {
+            "type": "Health",
+            "enabled": true,
+            "maxHealth": 100.0,
+            "deathDelay": 4.0,
+            "tipOverOnDeath": true
+          }
+        ],
+        "transform": {
+          "position": [
+            2.0,
+            1.5,
+            16.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "children": [
+          {
+            "type": "MeshNode",
+            "name": "Body",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.65,
+              0.45,
+              0.35
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.6,
+                1.5,
+                0.4
+              ]
+            }
+          },
+          {
+            "type": "MeshNode",
+            "name": "Head",
+            "enabled": true,
+            "behaviours": [],
+            "mesh": "cube",
+            "baseColor": [
+              0.9,
+              0.75,
+              0.6
+            ],
+            "meshEnabled": true,
+            "castShadows": true,
+            "includeInLightBaking": false,
+            "transform": {
+              "position": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                0.45,
+                0.45,
+                0.45
+              ]
+            }
+          },
+          {
+            "type": "CollisionShape",
+            "name": "CollisionShape",
+            "enabled": true,
+            "behaviours": [],
+            "shapeType": 3,
+            "halfExtents": [
+              0.35,
+              0.75,
+              0.35
+            ],
+            "radius": 0.35,
+            "height": 1.5,
+            "axis": 1,
+            "offset": [
+              0,
+              0,
+              0
+            ],
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "Camera",
+        "name": "Follow Camera",
+        "enabled": true,
+        "fovDegrees": 60.0,
+        "nearZ": 0.1,
+        "farZ": 400.0,
+        "priority": 10,
+        "active": true,
+        "behaviours": [
+          {
+            "type": "CameraFollow",
+            "enabled": true,
+            "targetGroup": "player",
+            "distance": 7.0,
+            "height": 1.8,
+            "shoulderOffset": 0.0,
+            "yawSensitivity": 0.18,
+            "pitchSensitivity": 0.16,
+            "minPitch": -25.0,
+            "maxPitch": 65.0,
+            "positionDamping": 12.0,
+            "collisionMargin": 0.3,
+            "minDistance": 1.0
+          }
+        ],
+        "transform": {
+          "position": [
+            0.0,
+            5.0,
+            12.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      }
+    ]
+  }
+}
