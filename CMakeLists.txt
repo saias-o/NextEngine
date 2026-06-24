@@ -19,6 +19,7 @@ file(MAKE_DIRECTORY ${SHADER_OUT_DIR})
 set(SHADERS
     ${SHADER_DIR}/shader.vert
     ${SHADER_DIR}/shader.frag
+    ${SHADER_DIR}/unlit.frag
     ${SHADER_DIR}/shadow.vert
     ${SHADER_DIR}/bake.vert
     ${SHADER_DIR}/bake.frag

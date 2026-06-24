@@ -20,6 +20,20 @@ class Buffer;
 // owned by the ResourceManager; nodes reference them.
 class ResourceManager;
 
+// Which shading model a material uses. Selects the scene pipeline at draw time
+// (see Renderer::scenePipelineFor) — Unlit and Lit share the exact same vertex
+// shader, descriptor-set layout and push constants, only the fragment differs.
+//   Lit   = full PBR + lighting + shadows + IBL + GI (shader.frag).
+//   Unlit = albedo * baseColor + emissive, no lighting (unlit.frag). Cheaper —
+//           ideal for UI, holograms, stylized art, particles, skybox-like quads.
+// To add a shading model: add a value here, a fragment shader, and one pipeline
+// in the Renderer (createPipeline / createXrPipelines). Nothing else changes.
+enum class MaterialType : uint32_t {
+    Lit = 0,
+    Unlit = 1,
+    Count,
+};
+
 struct MaterialDesc {
     AssetID albedoId = kAssetInvalid;
     AssetID normalId = kAssetInvalid;
@@ -31,13 +45,14 @@ struct MaterialDesc {
     float roughness = 0.5f;
     float ao = 1.0f;
     bool doubleSided = false;
+    MaterialType type = MaterialType::Lit;
 
     bool operator==(const MaterialDesc& o) const {
         return albedoId == o.albedoId && normalId == o.normalId &&
                metallicRoughnessId == o.metallicRoughnessId && emissiveId == o.emissiveId &&
                baseColor == o.baseColor && emissiveColor == o.emissiveColor &&
                metallic == o.metallic && roughness == o.roughness && ao == o.ao &&
-               doubleSided == o.doubleSided;
+               doubleSided == o.doubleSided && type == o.type;
     }
 };
 
@@ -54,6 +69,7 @@ struct hash<ne::MaterialDesc> {
         combine(std::hash<float>()(d.baseColor.b)); combine(std::hash<float>()(d.baseColor.a));
         combine(std::hash<float>()(d.metallic)); combine(std::hash<float>()(d.roughness));
         combine(std::hash<bool>()(d.doubleSided));
+        combine(std::hash<uint32_t>()(static_cast<uint32_t>(d.type)));
         return h;
     }
 };

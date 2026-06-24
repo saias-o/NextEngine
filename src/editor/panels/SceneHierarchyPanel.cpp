@@ -47,6 +47,13 @@ static std::string toLower(const std::string& str) {
 static std::unique_ptr<Node> makeNodeOfType(CreateNodeType type, Mesh* defaultMesh,
                                             Material* defaultMaterial, ResourceManager* resources,
                                             bool bodyWithCube) {
+    // Fall back to engine defaults when the scene has no mesh to copy from (e.g. a
+    // blank scene). Without this, the first created mesh carries a null material —
+    // which is invisible to the inspector and is dropped on save → can't be edited.
+    if (resources) {
+        if (!defaultMesh) defaultMesh = resources->getMesh(kAssetBuiltinCube);
+        if (!defaultMaterial) defaultMaterial = resources->getMaterial(MaterialDesc{});
+    }
     switch (type) {
         case CreateNodeType::Node:
             return std::make_unique<Node>("Node");

@@ -1,6 +1,7 @@
 #include "editor/EditorUI.hpp"
 
 #include "core/Camera.hpp"
+#include "core/Log.hpp"
 #include "core/Paths.hpp"
 #include "core/Time.hpp"
 #include "editor/Command.hpp"
@@ -40,6 +41,7 @@
 #include "editor/EditorApp.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -69,6 +71,10 @@ EditorUI::EditorUI() : history_(document_) {
     std::strncpy(newProjectPath_, NE_PROJECT_ROOT, sizeof(newProjectPath_) - 1);
     newProjectPath_[sizeof(newProjectPath_) - 1] = '\0';
     openBrowsePath_ = std::string(NE_PROJECT_ROOT);
+
+    // Warm the project list in the background so the "Open Project" dialog is
+    // instant on first open (no disk walk on the UI thread).
+    startProjectScan(openBrowsePath_);
 
 #ifdef NE_ENABLE_MCP
     // Start the in-process MCP server (LLM-driven editing). Port overridable via
@@ -191,6 +197,9 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
         document_.clearSelection();
         propEditId_ = 0;
         propEditOld_.reset();
+
+        // Auto-load the project's entry-point scene (sets currentScenePath_).
+        loadProjectMainScene(project, scene, resources);
     }
 
     selectedNode_ = document_.selectedNode();
@@ -478,88 +487,198 @@ void EditorUI::drawNewProjectDialog(Project* project) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Open Project dialog (modal popup with integrated file browser)
+// Project scene resolution
 // ─────────────────────────────────────────────────────────────────────────────
+
+void EditorUI::loadProjectMainScene(Project* project, Scene* scene, ResourceManager* resources) {
+    if (!project || !scene || !resources) return;
+
+    namespace fs = std::filesystem;
+
+    auto tryLoad = [&](const std::string& path) -> bool {
+        if (fs::exists(path)) {
+            loadScene(scene, resources, path);
+            return true;
+        }
+        return false;
+    };
+
+    // 1. Explicit main_scene declared in the .neproj (project-relative path).
+    if (!project->mainScene().empty()) {
+        if (tryLoad(project->rootPath() + "/" + project->mainScene()))
+            return;
+        Log::warn("Project '", project->name(), "': declared main_scene '",
+                  project->mainScene(), "' not found, falling back.");
+    }
+
+    // 2. Convention: scenes/main.scene.
+    if (tryLoad(project->scenesDir() + "/main.scene"))
+        return;
+
+    // 3. First .scene file found anywhere under scenes/, sorted for determinism.
+    fs::path scenesDir(project->scenesDir());
+    if (fs::exists(scenesDir)) {
+        std::vector<fs::path> found;
+        try {
+            for (auto& entry : fs::recursive_directory_iterator(
+                     scenesDir, fs::directory_options::skip_permission_denied)) {
+                if (entry.path().extension() == ".scene")
+                    found.push_back(entry.path());
+            }
+        } catch (const fs::filesystem_error& e) {
+            Log::warn("loadProjectMainScene: scene scan failed: ", e.what());
+        }
+        std::sort(found.begin(), found.end());
+        if (!found.empty()) {
+            loadScene(scene, resources, found.front().string());
+            return;
+        }
+    }
+
+    Log::info("Project '", project->name(), "': no scene found, starting with empty scene.");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Open Project dialog (modal popup — background recursive .neproj scan)
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+// Directory names never worth descending into when hunting for projects: build
+// artifacts, vendored deps and VCS metadata. Pruning these (and hidden dirs)
+// turns a multi-second walk of the repo into a few milliseconds.
+bool isPrunedScanDir(const std::string& name) {
+    return name == "build" || name == "third_party" || name == ".git" ||
+           name == "node_modules" || (!name.empty() && name[0] == '.');
+}
+
+// Recursively collect every .neproj path under `root`, skipping pruned subtrees.
+// Pure (no shared state) so it can run on a background thread.
+std::vector<std::string> scanProjectFiles(std::string root) {
+    namespace fs = std::filesystem;
+    std::vector<std::string> out;
+    std::error_code ec;
+
+    fs::recursive_directory_iterator it(
+        root, fs::directory_options::skip_permission_denied, ec);
+    const fs::recursive_directory_iterator end;
+    for (; !ec && it != end; it.increment(ec)) {
+        const fs::path& p = it->path();
+        if (it->is_directory(ec)) {
+            if (isPrunedScanDir(p.filename().string()))
+                it.disable_recursion_pending();
+            continue;
+        }
+        if (p.extension() == ".neproj") {
+            const std::string name = p.filename().string();
+            if (!name.empty() && name[0] != '.')
+                out.push_back(p.string());
+        }
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+} // namespace
+
+void EditorUI::startProjectScan(const std::string& root) {
+    // Skip if a scan of nothing-changed is already in flight; the running one
+    // already covers this root (callers only change root via the Scan button).
+    openScanFuture_ = std::async(std::launch::async, scanProjectFiles, root);
+}
 
 void EditorUI::drawOpenProjectDialog(Project* project) {
     if (showOpenProjectDialog_) {
         ImGui::OpenPopup("Open Project");
         showOpenProjectDialog_ = false;
+        // Refresh in the background to pick up newly created projects; the cached
+        // list stays visible and clickable until the fresh scan lands.
+        if (!openScanFuture_.valid())
+            startProjectScan(openBrowsePath_);
+    }
+
+    // Collect a finished background scan (cheap poll; runs every frame the popup
+    // is open). Never blocks: we only swap in the result once it is ready.
+    if (openScanFuture_.valid() &&
+        openScanFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        openProjCache_ = openScanFuture_.get();
+        openScanDone_ = true;
     }
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(600, 420), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(620, 460), ImGuiCond_Appearing);
 
-    if (ImGui::BeginPopupModal("Open Project", nullptr, ImGuiWindowFlags_None)) {
-        ImGui::Text("Select a .neproj file:");
-        ImGui::Separator();
+    if (!ImGui::BeginPopupModal("Open Project", nullptr, ImGuiWindowFlags_None))
+        return;
 
-        namespace fs = std::filesystem;
-        fs::path browsePath(openBrowsePath_);
+    namespace fs = std::filesystem;
 
-        // Current path.
-        ImGui::TextDisabled("Path: %s", browsePath.string().c_str());
-        ImGui::Separator();
-
-        // ".." to go up.
-        if (browsePath.has_parent_path() && browsePath.parent_path() != browsePath) {
-            if (ImGui::Selectable("[D] .."))
-                openBrowsePath_ = browsePath.parent_path().string();
-        }
-
-        // List entries in a scrollable region.
-        ImGui::BeginChild("##OpenBrowse", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 4), ImGuiChildFlags_Borders);
-        try {
-            std::vector<fs::directory_entry> dirs;
-            std::vector<fs::directory_entry> projFiles;
-
-            for (auto& entry : fs::directory_iterator(browsePath)) {
-                auto name = entry.path().filename().string();
-                if (name.empty() || name[0] == '.') continue;
-
-                if (entry.is_directory())
-                    dirs.push_back(entry);
-                else if (entry.path().extension() == ".neproj")
-                    projFiles.push_back(entry);
-            }
-
-            auto cmp = [](const fs::directory_entry& a, const fs::directory_entry& b) {
-                return a.path().filename() < b.path().filename();
-            };
-            std::sort(dirs.begin(), dirs.end(), cmp);
-            std::sort(projFiles.begin(), projFiles.end(), cmp);
-
-            char buffer[256];
-            for (auto& d : dirs) {
-                std::snprintf(buffer, sizeof(buffer), "[D] %s", d.path().filename().string().c_str());
-                if (ImGui::Selectable(buffer, false, ImGuiSelectableFlags_AllowDoubleClick)) {
-                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-                        openBrowsePath_ = d.path().string();
-                }
-            }
-            for (auto& f : projFiles) {
-                std::snprintf(buffer, sizeof(buffer), "[Proj] %s", f.path().filename().string().c_str());
-                if (ImGui::Selectable(buffer, false, ImGuiSelectableFlags_AllowDoubleClick)) {
-                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                        if (project) {
-                            project->load(f.path().string());
-                            currentBrowsePath_ = project->rootPath();
-                        }
-                        ImGui::CloseCurrentPopup();
-                    }
-                }
-            }
-        } catch (const fs::filesystem_error&) {
-            ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "Error reading directory");
-        }
-        ImGui::EndChild();
-
-        if (ImGui::Button("Cancel", ImVec2(120, 0)))
-            ImGui::CloseCurrentPopup();
-
-        ImGui::EndPopup();
+    // ── Root path row ────────────────────────────────────────────────────────
+    ImGui::Text("Search root:");
+    ImGui::SameLine();
+    char rootBuf[512];
+    std::strncpy(rootBuf, openBrowsePath_.c_str(), sizeof(rootBuf) - 1);
+    rootBuf[sizeof(rootBuf) - 1] = '\0';
+    ImGui::SetNextItemWidth(-80.0f);
+    bool rescan = false;
+    if (ImGui::InputText("##RootPath", rootBuf, sizeof(rootBuf), ImGuiInputTextFlags_EnterReturnsTrue)) {
+        openBrowsePath_ = rootBuf;
+        rescan = true;
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Scan")) {
+        openBrowsePath_ = rootBuf;
+        rescan = true;
+    }
+    if (rescan)
+        startProjectScan(openBrowsePath_);
+
+    ImGui::Separator();
+
+    // ── Header ───────────────────────────────────────────────────────────────
+    const bool scanning = openScanFuture_.valid();
+    if (!openScanDone_ && scanning) {
+        ImGui::TextDisabled("Scanning for projects…");
+    } else if (openProjCache_.empty()) {
+        ImGui::TextDisabled("No .neproj files found under this directory.");
+    } else {
+        ImGui::Text("%zu project(s) found — double-click to open:%s",
+                    openProjCache_.size(), scanning ? "  (refreshing…)" : "");
+    }
+
+    // ── Project list ─────────────────────────────────────────────────────────
+    ImGui::BeginChild("##OpenBrowse", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 4),
+                      ImGuiChildFlags_Borders);
+    for (const auto& projPath : openProjCache_) {
+        // Show path relative to scan root for readability.
+        std::string label;
+        try {
+            label = fs::relative(projPath, openBrowsePath_).string();
+        } catch (...) {
+            label = projPath;
+        }
+        // Normalise separators so it looks the same on all platforms.
+        for (char& ch : label) { if (ch == '\\') ch = '/'; }
+
+        if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                if (project) {
+                    project->load(projPath);
+                    currentBrowsePath_ = project->rootPath();
+                }
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", projPath.c_str());
+    }
+    ImGui::EndChild();
+
+    if (ImGui::Button("Cancel", ImVec2(120, 0)))
+        ImGui::CloseCurrentPopup();
+
+    ImGui::EndPopup();
 }
 
 void EditorUI::drawSaveSceneAsDialog(Project* project, Scene* scene, ResourceManager* resources) {

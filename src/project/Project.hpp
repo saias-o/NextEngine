@@ -43,6 +43,11 @@ public:
     const std::string& filePath() const { return filePath_; }     // .neproj file
     const std::string& engineVersion() const { return engineVersion_; }
 
+    // Project-relative path to the scene loaded at startup (e.g. "scenes/main.scene").
+    // Empty means "auto-detect" (first scene found under scenes/).
+    const std::string& mainScene() const { return mainScene_; }
+    void setMainScene(const std::string& rel) { mainScene_ = rel; }
+
     AssetRegistry& assetRegistry() { return assetRegistry_; }
     const AssetRegistry& assetRegistry() const { return assetRegistry_; }
 
@@ -96,6 +101,7 @@ private:
     std::string rootPath_;
     std::string filePath_;
     std::string engineVersion_ = "0.1.0";
+    std::string mainScene_;
     int maxFps_ = kDefaultMaxFps; // 0 means unlimited
     int shadowResolution_ = kDefaultShadowResolution;
     float shadowDistance_ = kDefaultShadowDistance;

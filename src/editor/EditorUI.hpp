@@ -6,6 +6,7 @@
 #include "editor/ThumbnailCache.hpp"
 
 #include <any>
+#include <future>
 #include <string>
 #include <vector>
 #include <glm/glm.hpp>
@@ -157,7 +158,19 @@ private:
 
     std::string resolveScenePath(Project* project) const;
 
-    std::string openBrowsePath_;  // for the open-project file browser
+    // Scans the project's scenes/ directory and loads the appropriate entry-point
+    // scene: explicit main_scene from .neproj → scenes/main.scene → first found.
+    void loadProjectMainScene(Project* project, Scene* scene, ResourceManager* resources);
+
+    // Kick off a background recursive scan of `root` for .neproj files. The result
+    // is collected (into openProjCache_) on the main thread once ready, so opening
+    // the dialog never blocks on the disk walk.
+    void startProjectScan(const std::string& root);
+
+    std::string openBrowsePath_;                          // root for the .neproj scan
+    std::vector<std::string> openProjCache_;              // last scan result (absolute, sorted)
+    std::future<std::vector<std::string>> openScanFuture_; // in-flight background scan
+    bool openScanDone_ = false;                           // ≥1 scan has completed
 
     // Build settings state
     BuildPlatform selectedBuildPlatform_ = BuildPlatform::Windows;

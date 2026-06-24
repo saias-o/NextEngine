@@ -879,12 +879,35 @@ void InspectorPanel::drawMaterial(Material* material, MeshNode* meshNode, Editor
         ImGui::EndDragDropTarget();
     }
 
-    if (material && res) {
+    // Editable even when the mesh has no material yet: the MS setter starts from a
+    // default MaterialDesc and interns a real material on the first edit, so a
+    // null-material mesh becomes editable instead of being stuck.
+    if (res) {
+        // Shading model (Unity Lit / Unlit). Switching re-interns the material with
+        // the new MaterialType; the renderer picks the matching pipeline per draw.
+        static const char* const kShaderItems[] = {"Lit (PBR)", "Unlit"};
+        pe.combo("Shader",
+            [](Node& n) {
+                Material* mat = static_cast<MeshNode&>(n).material();
+                return static_cast<int>(mat ? mat->desc().type : MaterialType::Lit);
+            },
+            [res](Node& n, int v) {
+                auto& mn = static_cast<MeshNode&>(n);
+                MaterialDesc d = mn.material() ? mn.material()->desc() : MaterialDesc{};
+                d.type = static_cast<MaterialType>(v);
+                if (Material* nm = res->getMaterial(d)) mn.setMaterial(nm);
+            },
+            kShaderItems, 2);
+
+        const bool unlit = material && material->desc().type == MaterialType::Unlit;
         pe.colorEdit4("Base Color", MG(&MaterialDesc::baseColor), MS(&MaterialDesc::baseColor));
-        pe.sliderFloat("Metallic", MG(&MaterialDesc::metallic), MS(&MaterialDesc::metallic), 0.0f, 1.0f);
-        pe.sliderFloat("Roughness", MG(&MaterialDesc::roughness), MS(&MaterialDesc::roughness), 0.0f, 1.0f);
         pe.colorEdit4("Emissive", MG(&MaterialDesc::emissiveColor), MS(&MaterialDesc::emissiveColor));
-        pe.sliderFloat("Ambient Occlusion", MG(&MaterialDesc::ao), MS(&MaterialDesc::ao), 0.0f, 1.0f);
+        // Lighting-only parameters — irrelevant to the unlit model, so hidden there.
+        if (!unlit) {
+            pe.sliderFloat("Metallic", MG(&MaterialDesc::metallic), MS(&MaterialDesc::metallic), 0.0f, 1.0f);
+            pe.sliderFloat("Roughness", MG(&MaterialDesc::roughness), MS(&MaterialDesc::roughness), 0.0f, 1.0f);
+            pe.sliderFloat("Ambient Occlusion", MG(&MaterialDesc::ao), MS(&MaterialDesc::ao), 0.0f, 1.0f);
+        }
     }
 }
 

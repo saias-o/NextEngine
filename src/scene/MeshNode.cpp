@@ -53,9 +53,14 @@ void MeshNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
     Node::serialize(j, resources);
     j["mesh"] = resources.meshId(mesh_);
     if (material_) {
-        j["texture"] = material_->desc().albedoId;
-        j["baseColor"] = {material_->desc().baseColor.r, material_->desc().baseColor.g,
-                          material_->desc().baseColor.b, material_->desc().baseColor.a};
+        const MaterialDesc& d = material_->desc();
+        j["texture"] = d.albedoId;
+        j["baseColor"] = {d.baseColor.r, d.baseColor.g, d.baseColor.b, d.baseColor.a};
+        j["metallic"] = d.metallic;
+        j["roughness"] = d.roughness;
+        j["ao"] = d.ao;
+        j["emissive"] = {d.emissiveColor.r, d.emissiveColor.g, d.emissiveColor.b, d.emissiveColor.a};
+        j["shader"] = (d.type == MaterialType::Unlit) ? "unlit" : "lit";
     }
     j["castShadows"] = castShadows_;
     j["includeInLightBaking"] = includeInLightBaking_;
@@ -105,6 +110,16 @@ void MeshNode::deserialize(const nlohmann::json& j, ResourceManager& resources) 
             desc.baseColor = {j["baseColor"][0].get<float>(), j["baseColor"][1].get<float>(),
                               j["baseColor"][2].get<float>(), j["baseColor"][3].get<float>()};
         }
+        if (j.contains("metallic")) desc.metallic = j["metallic"].get<float>();
+        if (j.contains("roughness")) desc.roughness = j["roughness"].get<float>();
+        if (j.contains("ao")) desc.ao = j["ao"].get<float>();
+        if (j.contains("emissive") && j["emissive"].is_array() && j["emissive"].size() == 4) {
+            desc.emissiveColor = {j["emissive"][0].get<float>(), j["emissive"][1].get<float>(),
+                                  j["emissive"][2].get<float>(), j["emissive"][3].get<float>()};
+        }
+        if (j.contains("shader"))
+            desc.type = (j["shader"].get<std::string>() == "unlit") ? MaterialType::Unlit
+                                                                    : MaterialType::Lit;
         material_ = resources.getMaterial(desc);
     }
     if (j.contains("castShadows")) castShadows_ = j["castShadows"].get<bool>();

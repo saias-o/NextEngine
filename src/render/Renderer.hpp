@@ -10,6 +10,7 @@
 
 #include "core/Camera.hpp"
 #include "project/AssetRegistry.hpp"
+#include "graphics/Material.hpp"     // MaterialType
 #include "render/RenderFeature.hpp"  // EyeRenderInfo, RenderContext, FrameContext, ScenePassFeature
 
 namespace ne {
@@ -86,8 +87,12 @@ struct DrawCmd {
     bool useLightmap;            // sample the baked lightmap instead of live lighting
     VkDescriptorSet lightmapSet; // set 2 (baked lightmap, or default white)
     int32_t boneOffset;          // offset in global BoneMatricesBuffer, or -1
+    MaterialType materialType;   // selects the scene pipeline (Lit / Unlit / …)
 
+    // Sort by shading model first (so each pipeline is bound at most once), then
+    // by material to batch descriptor-set binds within a pipeline.
     bool operator<(const DrawCmd& other) const {
+        if (materialType != other.materialType) return materialType < other.materialType;
         return material < other.material;
     }
 };
@@ -146,6 +151,13 @@ private:
                                               const glm::mat4& projection) const;
     void createGlobalSetLayout();
     void createPipeline(VkDescriptorSetLayout materialSetLayout);
+    // The scene pipeline for a material's shading model (desktop / XR). Both
+    // variants share an identical descriptor-set + push-constant layout, so the
+    // draw loop can swap between them and keep its bound sets (layout-compatible).
+    Pipeline* scenePipelineFor(MaterialType type) const {
+        return (type == MaterialType::Unlit && unlitPipeline_) ? unlitPipeline_.get()
+                                                               : pipeline_.get();
+    }
     void createHdrResources();
     void cleanupHdrResources();
     void createTonemapPipeline();
@@ -173,7 +185,8 @@ private:
     ResourceManager& resources_;
     ImGuiLayer* imgui_ = nullptr;     // null in XR mode (no debug overlay yet)
 
-    std::unique_ptr<Pipeline> pipeline_;
+    std::unique_ptr<Pipeline> pipeline_;        // scene pipeline: MaterialType::Lit
+    std::unique_ptr<Pipeline> unlitPipeline_;   // scene pipeline: MaterialType::Unlit
     std::unique_ptr<ShadowMap> shadowMap_;
     std::unique_ptr<LightBaker> lightBaker_;
     std::unique_ptr<UIRenderer> uiRenderer_;
@@ -268,9 +281,16 @@ private:
     void recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
                          const std::vector<EyeRenderInfo>& eyes);
 
-    std::unique_ptr<Pipeline> xrScenePipeline_;    // multiview scene
+    std::unique_ptr<Pipeline> xrScenePipeline_;    // multiview scene: MaterialType::Lit
+    std::unique_ptr<Pipeline> xrUnlitPipeline_;    // multiview scene: MaterialType::Unlit
     std::unique_ptr<Pipeline> xrTonemapPipeline_;  // per-eye tonemap → XR image
     // Skybox/water in XR are scene-pass features (see features_), shared with desktop.
+
+    // XR counterpart of scenePipelineFor (multiview pipelines).
+    Pipeline* xrScenePipelineFor(MaterialType type) const {
+        return (type == MaterialType::Unlit && xrUnlitPipeline_) ? xrUnlitPipeline_.get()
+                                                                 : xrScenePipeline_.get();
+    }
 
     // 2-layer HDR color + depth (one layer per eye).
     VkImage xrHdrImage_ = VK_NULL_HANDLE;

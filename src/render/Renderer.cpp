@@ -266,6 +266,16 @@ void Renderer::createPipeline(VkDescriptorSetLayout materialSetLayout) {
     pipeline_ = std::make_unique<Pipeline>(device_, shaderPath(vertShader),
         shaderPath(fragShader), colorFormats, swapchain_->depthFormat(), setLayouts,
         swapchain_->samples());
+
+    // Unlit variant: same vertex shader + identical set 0/1/2 and push-constant
+    // layout as Lit, only the fragment differs → the draw loop swaps pipelines
+    // per material with no other change. Always built against the classic
+    // (non-bindless) 3-set layout used by the per-object draw path.
+    std::vector<VkDescriptorSetLayout> classicLayouts = {
+        globalSetLayout_, materialSetLayout, lightBaker_->setLayout()};
+    unlitPipeline_ = std::make_unique<Pipeline>(device_, shaderPath("shader.vert.spv"),
+        shaderPath("unlit.frag.spv"), colorFormats, swapchain_->depthFormat(), classicLayouts,
+        swapchain_->samples());
 }
 
 void Renderer::createUniformBuffers() {
@@ -894,7 +904,8 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
                         }
 
                         currentDraws_.push_back(DrawCmd{drawMesh, drawMat, world, node->castShadows(),
-                                                        baked, lightBaker_->lightmapSet(node), boneOffset});
+                                                        baked, lightBaker_->lightmapSet(node), boneOffset,
+                                                        drawMat->desc().type});
                     }
                 }
             }
@@ -1439,25 +1450,39 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
             }
         }
     } else {
-        // Render all visible meshes from the collected RenderView
+        // Render all visible meshes from the collected RenderView. Draws are sorted
+        // by shading model (Lit/Unlit), so the scene pipeline is bound at most once
+        // per model; set 0 (global) was bound above and survives the swap since the
+        // pipelines are layout-compatible (we rebind it on swap to stay explicit).
         Material* lastMaterial = nullptr;
-        
+        Pipeline* activePipeline = pipeline_.get();  // Lit, already bound above
+
         static int cpuDrawLog = 0;
         if (cpuDrawLog < 5) {
             Log::info("Executing ", currentDraws_.size(), " draw commands.");
         }
-        
+
         for (const auto& cmdDraw : currentDraws_) {
+            Pipeline* want = scenePipelineFor(cmdDraw.materialType);
+            if (want != activePipeline) {
+                want->bind(cmd);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, want->layout(),
+                                        0, 1, &globalSets_[currentFrame_], 0, nullptr);
+                activePipeline = want;
+                lastMaterial = nullptr;  // re-bind sets 1/2 under the new layout
+            }
+            VkPipelineLayout activeLayout = activePipeline->layout();
+
             if (cmdDraw.material != lastMaterial) {
                 VkDescriptorSet matSet = cmdDraw.material->descriptorSet();
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout(),
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activeLayout,
                                         1, 1, &matSet, 0, nullptr);
                 lastMaterial = cmdDraw.material;
             }
 
             // Set 2: this node's baked lightmap (or the default when not baked).
             VkDescriptorSet lmSet = cmdDraw.lightmapSet;
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout(),
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activeLayout,
                                     2, 1, &lmSet, 0, nullptr);
 
             PushConstants pc{};
@@ -1467,7 +1492,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
             // params.y = boneOffset.
             pc.params = glm::vec4(cmdDraw.useLightmap ? 1.0f : 0.0f,
                                   static_cast<float>(cmdDraw.boneOffset), 0.0f, 0.0f);
-            vkCmdPushConstants(cmd, pipeline_->layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            vkCmdPushConstants(cmd, activeLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                0, sizeof(PushConstants), &pc);
 
             cmdDraw.mesh->bind(cmd);
@@ -1692,6 +1717,14 @@ void Renderer::createXrPipelines() {
         true, true, 0, true, VK_COMPARE_OP_LESS, VK_CULL_MODE_BACK_BIT, false,
         VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, viewMask);
 
+    // Unlit multiview variant — same vertex shader + layout as the lit scene
+    // pipeline, only the fragment differs (no per-eye data, so no MULTIVIEW frag).
+    xrUnlitPipeline_ = std::make_unique<Pipeline>(device_,
+        shaderPath("multiview.shader.vert.spv"), shaderPath("unlit.frag.spv"),
+        hdrColor, depthFormat, sceneLayouts, VK_SAMPLE_COUNT_1_BIT,
+        true, true, 0, true, VK_COMPARE_OP_LESS, VK_CULL_MODE_BACK_BIT, false,
+        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, viewMask);
+
     // ── Scene-pass features (skybox, water, …) — multiview variants ──
     // Same registry as desktop; each feature builds its stereo pipeline from the
     // viewMask. The Renderer stays ignorant of which effects exist.
@@ -1864,13 +1897,23 @@ void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
     vkCmdSetScissor(cmd, 0, 1, &sc);
 
     // Opaque scene (same draw list / material binding model as the desktop path).
-    xrScenePipeline_->bind(cmd);
-    VkPipelineLayout layout = xrScenePipeline_->layout();
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
+    // Draws are sorted by shading model, so each multiview pipeline binds once.
+    Pipeline* activePipeline = xrScenePipeline_.get();
+    activePipeline->bind(cmd);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline->layout(),
         0, 1, &globalSets_[currentFrame_], 0, nullptr);
 
     Material* lastMaterial = nullptr;
     for (const auto& d : currentDraws_) {
+        Pipeline* want = xrScenePipelineFor(d.materialType);
+        if (want != activePipeline) {
+            want->bind(cmd);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, want->layout(),
+                0, 1, &globalSets_[currentFrame_], 0, nullptr);
+            activePipeline = want;
+            lastMaterial = nullptr;
+        }
+        VkPipelineLayout layout = activePipeline->layout();
         if (d.material != lastMaterial) {
             VkDescriptorSet matSet = d.material->descriptorSet();
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &matSet, 0, nullptr);
