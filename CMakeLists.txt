@@ -27,6 +27,8 @@ set(SHADERS
     ${SHADER_DIR}/tonemap.frag
     ${SHADER_DIR}/skybox.vert
     ${SHADER_DIR}/skybox.frag
+    ${SHADER_DIR}/water.vert
+    ${SHADER_DIR}/water.frag
     ${SHADER_DIR}/ui.vert
     ${SHADER_DIR}/ui.frag
     ${SHADER_DIR}/voxelize.vert
@@ -69,7 +71,8 @@ foreach(SHADER ${SHADERS})
     # Multiview (XR stereo, 1 pass / 2 layers): shaders that read per-eye data via
     # gl_ViewIndex get a -DMULTIVIEW variant. The scene vertex picks per-eye
     # camera matrices; the skybox fragment picks per-eye inverse view-proj.
-    if(SHADER_NAME STREQUAL "shader.vert" OR SHADER_NAME STREQUAL "skybox.frag")
+    if(SHADER_NAME STREQUAL "shader.vert" OR SHADER_NAME STREQUAL "skybox.frag"
+       OR SHADER_NAME STREQUAL "water.vert")
         set(MULTIVIEW_OUTPUT ${SHADER_OUT_DIR}/multiview.${SHADER_NAME}.spv)
         add_custom_command(
             OUTPUT ${MULTIVIEW_OUTPUT}
@@ -245,6 +248,10 @@ add_library(ne_engine STATIC
     src/graphics/Texture.cpp
     src/graphics/ResourceManager.cpp
     src/render/Renderer.cpp
+    src/render/RenderFeatureRegistry.cpp
+    src/render/features/WaterFeature.cpp
+    src/render/features/SkyboxFeature.cpp
+    src/render/features/DebugLinesFeature.cpp
     src/render/LightBaker.cpp
     src/render/GIVolume.cpp
     # XR sources are added conditionally below via target_sources (NE_ENABLE_XR)
@@ -259,6 +266,7 @@ add_library(ne_engine STATIC
     src/audio/AudioSourceBehaviour.cpp
     src/scene/CharacterBehaviour.cpp
     src/scene/HealthBehaviour.cpp
+    src/scene/WaterNode.cpp
     src/scene/SpawnerBehaviour.cpp
     src/scene/RotatorBehaviour.cpp
     src/scene/Blackboard.cpp

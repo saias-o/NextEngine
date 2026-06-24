@@ -49,13 +49,34 @@ def capsule_shape(radius, height):
 
 
 def ground():
+    # A dry island the city sits on; water surrounds it beyond the edges.
     return {
         "type": "StaticBody", "name": "Ground", "enabled": True, "behaviours": [],
         "friction": 0.95, "restitution": 0.0, "transform": xform((0, -0.5, 0)),
         "children": [
-            mesh_node("GroundMesh", (0.22, 0.23, 0.26), (140, 1, 140), shadows=False),
-            box_shape((70, 0.5, 70)),
+            mesh_node("GroundMesh", (0.22, 0.23, 0.26), (100, 1, 100), shadows=False),
+            box_shape((50, 0.5, 50)),
         ],
+    }
+
+
+def invisible_wall(name, pos, half):
+    # A StaticBody collider with NO mesh: blocks the player/cars without being seen.
+    return {
+        "type": "StaticBody", "name": name, "enabled": True, "behaviours": [],
+        "friction": 0.4, "restitution": 0.0, "transform": xform(pos),
+        "children": [box_shape(half)],
+    }
+
+
+def water():
+    # NextEngine's default animated water. Surrounds the island; sits just below the
+    # shore. Procedural waves + sky reflection — fully parameterized (see WaterNode).
+    # Look/feel comes entirely from the WaterNode defaults (single source of truth);
+    # the scene only places the plane. Tweak in the inspector, or edit the defaults.
+    return {
+        "type": "Water", "name": "Ocean", "enabled": True, "behaviours": [],
+        "transform": xform((0.0, -0.5, 0.0)),
     }
 
 
@@ -194,9 +215,17 @@ def camera():
 def main():
     children = [sun(), ground()]
 
+    # Water all around the island + an invisible wall ring so you can't reach it yet.
+    children.append(water())
+    wall_half_long = 50.0
+    children.append(invisible_wall("Wall +X", (49.0, 3.0, 0.0), (0.5, 3.0, wall_half_long)))
+    children.append(invisible_wall("Wall -X", (-49.0, 3.0, 0.0), (0.5, 3.0, wall_half_long)))
+    children.append(invisible_wall("Wall +Z", (0.0, 3.0, 49.0), (wall_half_long, 3.0, 0.5)))
+    children.append(invisible_wall("Wall -Z", (0.0, 3.0, -49.0), (wall_half_long, 3.0, 0.5)))
+
     # Cosmetic cross roads through the middle (dark strips on the ground).
-    children.append(road_strip("RoadX", (0, 0.02, 0), (140, 0.04, 10)))
-    children.append(road_strip("RoadZ", (0, 0.02, 0), (10, 0.04, 140)))
+    children.append(road_strip("RoadX", (0, 0.02, 0), (100, 0.04, 10)))
+    children.append(road_strip("RoadZ", (0, 0.02, 0), (10, 0.04, 100)))
 
     # City blocks (leave ~10-wide streets along the axes).
     buildings = [

@@ -10,6 +10,7 @@
 
 #include "core/Camera.hpp"
 #include "project/AssetRegistry.hpp"
+#include "render/RenderFeature.hpp"  // EyeRenderInfo, RenderContext, FrameContext, ScenePassFeature
 
 namespace ne {
 
@@ -32,17 +33,6 @@ class LightBaker;
 class UIRenderer;
 class GIVolume;
 struct SceneSettings;
-
-// Everything one eye/view needs for stereo/multiview rendering and tonemapping.
-// This decouples the core rendering pipeline from the OpenXR structures.
-struct EyeRenderInfo {
-    VkImage image = VK_NULL_HANDLE;
-    VkImageView imageView = VK_NULL_HANDLE;
-    VkExtent2D extent{};
-    glm::mat4 view{1.0f};
-    glm::mat4 projection{1.0f};
-    glm::vec3 eyePosition{0.0f};
-};
 
 // Camera block shared by the desktop (mono) and XR (stereo multiview) paths:
 // view/proj are arrays of 2 (left/right eye). Mono fills/uses index 0; the
@@ -208,29 +198,13 @@ private:
     VkSampler tonemapSampler_ = VK_NULL_HANDLE;
     float exposure_ = 1.0f;
 
-    // Skybox pipeline
-    std::unique_ptr<Pipeline> skyboxPipeline_;
-    VkDescriptorSetLayout skyboxSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool skyboxPool_ = VK_NULL_HANDLE;
-    VkDescriptorSet skyboxSet_ = VK_NULL_HANDLE;
-    AssetID currentSkyboxTexture_ = kAssetInvalid;
-    
-    struct SkyboxPushConstants {
-        glm::mat4 invViewProj;
-        float exposure;
-        float rotation;
-    };
-    
-    void createSkyboxPipeline();
-    void recordSkyboxPass(VkCommandBuffer cmd, Scene& scene, const Camera& camera);
-
-    // Debug skeleton lines (editor tool, desktop only): a LINE_LIST pipeline + a
-    // per-frame dynamic vertex buffer of bone segments built from scene Animators.
-    void createDebugLinePipeline();
-    void recordDebugLines(VkCommandBuffer cmd, Scene& scene);
-    std::unique_ptr<Pipeline> debugLinePipeline_;
-    std::vector<std::unique_ptr<Buffer>> debugLineBuffers_;
-    static constexpr uint32_t kMaxDebugLineVerts = 16384;
+    // Scene-pass features (skybox, water, debug lines, …). The Renderer builds them
+    // once and iterates them after the opaque draws — adding/removing an effect is a
+    // new ScenePassFeature, never an edit here. Order = draw order.
+    std::vector<std::unique_ptr<ScenePassFeature>> features_;
+    void buildFeatures(uint32_t viewMask, VkFormat depthFormat,
+                       VkSampleCountFlagBits samples);
+    void recordFeatures(const FrameContext& fc);
 
     VkDescriptorSetLayout globalSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool globalPool_ = VK_NULL_HANDLE;
@@ -295,8 +269,8 @@ private:
                          const std::vector<EyeRenderInfo>& eyes);
 
     std::unique_ptr<Pipeline> xrScenePipeline_;    // multiview scene
-    std::unique_ptr<Pipeline> xrSkyboxPipeline_;   // multiview skybox
     std::unique_ptr<Pipeline> xrTonemapPipeline_;  // per-eye tonemap → XR image
+    // Skybox/water in XR are scene-pass features (see features_), shared with desktop.
 
     // 2-layer HDR color + depth (one layer per eye).
     VkImage xrHdrImage_ = VK_NULL_HANDLE;
@@ -310,13 +284,6 @@ private:
 
     VkDescriptorPool xrTonemapPool_ = VK_NULL_HANDLE;
     std::array<VkDescriptorSet, 2> xrTonemapSets_{};   // one per eye layer
-
-    // Per-eye skybox push constant (mirrors the multiview skybox.frag).
-    struct XrSkyboxPush {
-        glm::mat4 invViewProj[2];
-        float exposure;
-        float rotation;
-    };
 #else
     bool xrMode_ = false; // fallback for non-XR builds
 #endif

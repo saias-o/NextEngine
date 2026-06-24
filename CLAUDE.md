@@ -503,6 +503,15 @@ Le moteur est construit par étapes numérotées :
             `CharacterBehaviour`, `LightNode`. Rétro-compatible (save/load manuels
             cohabitent). Test `ne_reflection_tests` (manifeste, round-trip,
             connect/invoke des descripteurs) ✔, suite complète verte.
+            - **Inspecteur générique réflexion (éditeur)** : `InspectorPanel`
+              dessine automatiquement les propriétés de tout **nœud** réfléchi
+              depuis le manifeste (`drawReflectedProperties`) — un nouveau nœud
+              réfléchi (ex. `WaterNode`) obtient une UI complète, éditable et
+              annulable, sans code éditeur. **TODO** : étendre ce repli générique
+              aux **behaviours** réfléchis (Health, Vehicle, NpcWander, Gun,
+              StateMachine…), qui n'affichent aujourd'hui leurs champs que via un
+              drawer manuel `InspectorRegistry`. Nécessite des commandes d'undo
+              **adressées par behaviour** (et non par nœud) dans `PropertyEditor`.
       - [x] **M2 — Signaux data-driven.** Bloc `connections` de scène
             (`{from, signal, to, slot}`) **câblé au Play** par `scene/SignalWiring`
             (`Scene::applyConnections`, appelé dans `SceneTree::loadCurrentScene`).

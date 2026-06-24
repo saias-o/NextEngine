@@ -39,6 +39,7 @@
 #include "scene/SpawnerBehaviour.hpp"
 #include "scene/RotatorBehaviour.hpp"
 #include "scene/ReflectedTypes.hpp"
+#include "render/RenderFeatureRegistry.hpp"
 #include "scene/LODGroupBehaviour.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scripting/ScriptBehaviour.hpp"
@@ -118,6 +119,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     // Reflection-described types (manifest + factories), incl. Rotator, Character,
     // LightNode. Single central list — see scene/ReflectedTypes.cpp.
     registerReflectedTypes();
+    registerBuiltinRenderFeatures();  // water/skybox/debug-lines plug into the Renderer
 
     // Register remaining built-in behaviours (not yet migrated to reflection).
     BehaviourRegistry::instance().registerType<AudioSourceBehaviour>("AudioSource");

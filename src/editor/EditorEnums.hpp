@@ -23,7 +23,8 @@ enum class CreateNodeType {
     RigidBody,
     CharacterBody,
     Area,
-    CollisionShape
+    CollisionShape,
+    Water
 };
 
 enum class GizmoMode {

@@ -5,6 +5,7 @@
 #include "scene/MeshNode.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/CameraNode.hpp"
+#include "scene/WaterNode.hpp"
 #include "physics/StaticBodyNode.hpp"
 #include "physics/RigidBodyNode.hpp"
 #include "physics/AreaNode.hpp"
@@ -59,6 +60,8 @@ static std::unique_ptr<Node> makeNodeOfType(CreateNodeType type, Mesh* defaultMe
             return std::make_unique<LightNode>("Spot Light", LightType::Spot);
         case CreateNodeType::Camera:
             return std::make_unique<CameraNode>("Camera");
+        case CreateNodeType::Water:
+            return std::make_unique<WaterNode>();
         case CreateNodeType::UICanvas: {
             auto n = std::make_unique<UICanvasNode>(); n->setName("UICanvas"); return n;
         }
@@ -212,6 +215,10 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
                 if (ImGui::MenuItem("Camera")) {
                     editor->nodeToCreateChildUnder_ = scene;
                     editor->createType_ = CreateNodeType::Camera;
+                }
+                if (ImGui::MenuItem("Water")) {
+                    editor->nodeToCreateChildUnder_ = scene;
+                    editor->createType_ = CreateNodeType::Water;
                 }
                 ImGui::Separator();
                 if (ImGui::BeginMenu("UI Nodes")) {
@@ -553,6 +560,10 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
             if (ImGui::MenuItem("Camera")) {
                 editor->nodeToCreateChildUnder_ = node;
                 editor->createType_ = CreateNodeType::Camera;
+            }
+            if (ImGui::MenuItem("Water")) {
+                editor->nodeToCreateChildUnder_ = node;
+                editor->createType_ = CreateNodeType::Water;
             }
             ImGui::Separator();
             if (ImGui::BeginMenu("UI Nodes")) {

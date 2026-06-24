@@ -9,6 +9,7 @@
 #include "scene/CharacterBehaviour.hpp"
 #include "scene/HealthBehaviour.hpp"
 #include "scene/LightNode.hpp"
+#include "scene/WaterNode.hpp"
 #include "scene/RotatorBehaviour.hpp"
 #include "scene/ScenarioBehaviour.hpp"
 #include "scene/StateMachineBehaviour.hpp"
@@ -58,6 +59,7 @@ void registerReflectedTypes() {
 
     // ── nodes ──
     registerNode<LightNode>();
+    registerNode<WaterNode>();
     // <<NE_MCP_REGISTER>>  (write_cpp_behaviour inserts registerBehaviour<T>() calls above this line)
 }
 

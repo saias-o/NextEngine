@@ -20,6 +20,8 @@
 #include "scene/LightNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
+#include "core/Time.hpp"
+#include "render/RenderFeatureRegistry.hpp"
 #include "core/Log.hpp"
 
 #include "scene/LightNode.hpp"
@@ -113,8 +115,7 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
     createHdrResources();
     createPipeline(resources_.materialSetLayout());
     createTonemapPipeline();
-    createSkyboxPipeline();
-    createDebugLinePipeline();
+    buildFeatures(0, swapchain_->depthFormat(), swapchain_->samples());
     createUniformBuffers();
     shadowMap_ = std::make_unique<ShadowMap>(device_);
     gi_ = std::make_unique<GIVolume>(device_, giDescForTier(device_.capabilities().tier),
@@ -153,6 +154,7 @@ Renderer::Renderer(VulkanDevice& device, Window& window, ResourceManager& resour
 
 Renderer::~Renderer() {
     vkDeviceWaitIdle(device_.device());
+    features_.clear();  // destroy feature pipelines/descriptors while the device is valid
     // Desktop-only present sync (not created in XR mode).
     for (size_t i = 0; i < inFlightFences_.size(); i++) {
         vkDestroySemaphore(device_.device(), imageAvailableSemaphores_[i], nullptr);
@@ -171,9 +173,6 @@ Renderer::~Renderer() {
     if (tonemapPool_) vkDestroyDescriptorPool(device_.device(), tonemapPool_, nullptr);
     if (tonemapSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), tonemapSetLayout_, nullptr);
     
-    if (skyboxPool_) vkDestroyDescriptorPool(device_.device(), skyboxPool_, nullptr);
-    if (skyboxSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), skyboxSetLayout_, nullptr);
-
     if (cullingSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), cullingSetLayout_, nullptr);
     if (cullingPool_) vkDestroyDescriptorPool(device_.device(), cullingPool_, nullptr);
     // pipeline_ and the buffers are torn down by their destructors.
@@ -1153,148 +1152,20 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
     vkCmdEndRendering(cmd);
 }
 
-void Renderer::createSkyboxPipeline() {
-    VkDescriptorSetLayoutBinding samplerBinding{};
-    samplerBinding.binding = 0;
-    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerBinding.descriptorCount = 1;
-    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &samplerBinding;
-
-    if (vkCreateDescriptorSetLayout(device_.device(), &layoutInfo, nullptr, &skyboxSetLayout_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create skybox descriptor set layout");
-
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 1;
-
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 1;
-
-    if (vkCreateDescriptorPool(device_.device(), &poolInfo, nullptr, &skyboxPool_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create skybox descriptor pool");
-
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = skyboxPool_;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &skyboxSetLayout_;
-
-    if (vkAllocateDescriptorSets(device_.device(), &allocInfo, &skyboxSet_) != VK_SUCCESS)
-        throw std::runtime_error("failed to allocate skybox descriptor set");
-
-    std::vector<VkDescriptorSetLayout> setLayouts = {skyboxSetLayout_};
-    std::vector<VkFormat> colorFormats = {VK_FORMAT_R16G16B16A16_SFLOAT};
-    
-    // Disable depth write, but keep depth test (LESS_OR_EQUAL since Z=1.0)
-    skyboxPipeline_ = std::make_unique<Pipeline>(device_, shaderPath("skybox.vert.spv"),
-        shaderPath("skybox.frag.spv"), colorFormats, swapchain_->depthFormat(), setLayouts,
-        swapchain_->samples(), false, true, sizeof(SkyboxPushConstants),
-        false, VK_COMPARE_OP_LESS_OR_EQUAL, VK_CULL_MODE_NONE);
+void Renderer::buildFeatures(uint32_t viewMask, VkFormat depthFormat,
+                            VkSampleCountFlagBits samples) {
+    // The Renderer knows ONLY the ScenePassFeature interface. Concrete effects
+    // (water, skybox, debug lines, …) plug in through the registry, so this never
+    // names or includes a concrete effect — adding one touches no Renderer code.
+    features_ = RenderFeatureRegistry::instance().build();
+    RenderContext ctx{device_, resources_, globalSetLayout_,
+                      VK_FORMAT_R16G16B16A16_SFLOAT, depthFormat, samples,
+                      viewMask, static_cast<uint32_t>(kMaxFramesInFlight)};
+    for (auto& f : features_) f->createPipelines(ctx);
 }
 
-void Renderer::recordSkyboxPass(VkCommandBuffer cmd, Scene& scene, const Camera& camera) {
-    if (scene.settings().skyboxTexture == kAssetInvalid) return;
-    
-    Texture* tex = resources_.getTexture(scene.settings().skyboxTexture);
-    if (!tex) return;
-
-    if (scene.settings().skyboxTexture != currentSkyboxTexture_) {
-        // Update descriptor set with the texture
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = tex->imageView();
-        imageInfo.sampler = tex->sampler();
-
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = skyboxSet_;
-        write.dstBinding = 0;
-        write.dstArrayElement = 0;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
-        
-        currentSkyboxTexture_ = scene.settings().skyboxTexture;
-    }
-
-    skyboxPipeline_->bind(cmd);
-
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipeline_->layout(),
-        0, 1, &skyboxSet_, 0, nullptr);
-
-    SkyboxPushConstants pc{};
-    glm::mat4 view = camera.view();
-    view[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f); // remove translation
-    pc.invViewProj = glm::inverse(camera.projection() * view);
-    pc.exposure = scene.settings().skyboxExposure;
-    pc.rotation = scene.settings().skyboxRotation;
-
-    vkCmdPushConstants(cmd, skyboxPipeline_->layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SkyboxPushConstants), &pc);
-
-    // Draw full screen triangle
-    vkCmdDraw(cmd, 3, 1, 0, 0);
-}
-
-void Renderer::createDebugLinePipeline() {
-    std::vector<VkDescriptorSetLayout> setLayouts = {globalSetLayout_};
-    std::vector<VkFormat> colorFormats = {VK_FORMAT_R16G16B16A16_SFLOAT};
-    // Lines drawn into the HDR scene target; depth test off so the skeleton shows
-    // through the mesh (debug aid). Reuses set 0 (camera) + the standard Vertex.
-    debugLinePipeline_ = std::make_unique<Pipeline>(device_,
-        shaderPath("debug_line.vert.spv"), shaderPath("debug_line.frag.spv"),
-        colorFormats, swapchain_->depthFormat(), setLayouts, swapchain_->samples(),
-        true, false, 0, false, VK_COMPARE_OP_LESS, VK_CULL_MODE_NONE, false,
-        VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
-
-    debugLineBuffers_.reserve(kMaxFramesInFlight);
-    for (int i = 0; i < kMaxFramesInFlight; ++i)
-        debugLineBuffers_.push_back(std::make_unique<Buffer>(device_,
-            kMaxDebugLineVerts * sizeof(Vertex),
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, MemoryUsage::HostVisible));
-}
-
-void Renderer::recordDebugLines(VkCommandBuffer cmd, Scene& scene) {
-    if (!scene.settings().showSkeletons || !debugLinePipeline_) return;
-
-    // Build bone segments (parent→child) in world space from every Animator.
-    std::vector<Vertex> verts;
-    const glm::vec3 boneColor(0.1f, 1.0f, 0.2f);
-    scene.traverse([&](Node& node, const glm::mat4& world) {
-        Animator* anim = node.getBehaviour<Animator>();
-        if (!anim || !anim->rig()) return;
-        const GlobalPose& gp = anim->globalPose();
-        const auto& bones = anim->rig()->bones();
-        const size_t n = std::min(bones.size(), gp.globalMatrices.size());
-        for (size_t i = 0; i < n && verts.size() < kMaxDebugLineVerts; ++i) {
-            int parent = bones[i].parentIndex;
-            if (parent < 0 || static_cast<size_t>(parent) >= n) continue;
-            Vertex a{}; a.pos = glm::vec3(world * gp.globalMatrices[parent][3]); a.color = boneColor;
-            Vertex b{}; b.pos = glm::vec3(world * gp.globalMatrices[i][3]);      b.color = boneColor;
-            verts.push_back(a);
-            verts.push_back(b);
-        }
-    });
-    if (verts.empty()) return;
-
-    const uint32_t count = std::min<uint32_t>(static_cast<uint32_t>(verts.size()), kMaxDebugLineVerts);
-    debugLineBuffers_[currentFrame_]->write(verts.data(), count * sizeof(Vertex));
-
-    debugLinePipeline_->bind(cmd);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, debugLinePipeline_->layout(),
-        0, 1, &globalSets_[currentFrame_], 0, nullptr);
-    VkBuffer vb = debugLineBuffers_[currentFrame_]->handle();
-    VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(cmd, 0, 1, &vb, &offset);
-    vkCmdDraw(cmd, count, 1, 0, 0);
+void Renderer::recordFeatures(const FrameContext& fc) {
+    for (auto& f : features_) f->record(fc);
 }
 
 void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera, Project* project) {
@@ -1605,8 +1476,11 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
         if (cpuDrawLog < 5) cpuDrawLog++;
     }
 
-    recordSkyboxPass(cmd, scene, camera);
-    recordDebugLines(cmd, scene);  // skeleton bones (no-op unless showSkeletons)
+    // Scene-pass features (water, skybox, debug lines) — registered once, iterated
+    // here. Adding an effect never touches this function.
+    FrameContext fc{cmd, currentFrame_, globalSets_[currentFrame_], scene,
+                    Time::elapsed(), false, &camera, nullptr, false};
+    recordFeatures(fc);
 
     vkCmdEndRendering(cmd);
 
@@ -1818,44 +1692,10 @@ void Renderer::createXrPipelines() {
         true, true, 0, true, VK_COMPARE_OP_LESS, VK_CULL_MODE_BACK_BIT, false,
         VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, viewMask);
 
-    // ── Skybox descriptor set (texture) + multiview pipeline ──
-    {
-        VkDescriptorSetLayoutBinding skyboxBinding{};
-        skyboxBinding.binding = 0;
-        skyboxBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        skyboxBinding.descriptorCount = 1;
-        skyboxBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        VkDescriptorSetLayoutCreateInfo lci{};
-        lci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        lci.bindingCount = 1;
-        lci.pBindings = &skyboxBinding;
-        if (vkCreateDescriptorSetLayout(device_.device(), &lci, nullptr, &skyboxSetLayout_) != VK_SUCCESS)
-            throw std::runtime_error("XR: failed to create skybox set layout");
-
-        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
-        VkDescriptorPoolCreateInfo pci{};
-        pci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        pci.poolSizeCount = 1;
-        pci.pPoolSizes = &ps;
-        pci.maxSets = 1;
-        if (vkCreateDescriptorPool(device_.device(), &pci, nullptr, &skyboxPool_) != VK_SUCCESS)
-            throw std::runtime_error("XR: failed to create skybox pool");
-
-        VkDescriptorSetAllocateInfo asi{};
-        asi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        asi.descriptorPool = skyboxPool_;
-        asi.descriptorSetCount = 1;
-        asi.pSetLayouts = &skyboxSetLayout_;
-        if (vkAllocateDescriptorSets(device_.device(), &asi, &skyboxSet_) != VK_SUCCESS)
-            throw std::runtime_error("XR: failed to allocate skybox set");
-
-        std::vector<VkDescriptorSetLayout> skyLayouts = {skyboxSetLayout_};
-        xrSkyboxPipeline_ = std::make_unique<Pipeline>(device_,
-            shaderPath("skybox.vert.spv"), shaderPath("multiview.skybox.frag.spv"),
-            hdrColor, depthFormat, skyLayouts, VK_SAMPLE_COUNT_1_BIT,
-            false, true, sizeof(XrSkyboxPush), false, VK_COMPARE_OP_LESS_OR_EQUAL,
-            VK_CULL_MODE_NONE, false, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, viewMask);
-    }
+    // ── Scene-pass features (skybox, water, …) — multiview variants ──
+    // Same registry as desktop; each feature builds its stereo pipeline from the
+    // viewMask. The Renderer stays ignorant of which effects exist.
+    buildFeatures(viewMask, depthFormat, VK_SAMPLE_COUNT_1_BIT);
 
     // ── Tonemap set layout + sampler + per-eye sets + (mono) pipeline ──
     {
@@ -2046,44 +1886,11 @@ void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
         d.mesh->draw(cmd);
     }
 
-    // Skybox (multiview): per-eye inverse view-proj picked by gl_ViewIndex.
-    // Skipped in passthrough — an opaque sky would hide the real world.
-    if (!passthrough && settings.skyboxTexture != kAssetInvalid) {
-        if (Texture* tex = resources_.getTexture(settings.skyboxTexture)) {
-            if (settings.skyboxTexture != currentSkyboxTexture_) {
-                VkDescriptorImageInfo ii{};
-                ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                ii.imageView = tex->imageView();
-                ii.sampler = tex->sampler();
-                VkWriteDescriptorSet w{};
-                w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                w.dstSet = skyboxSet_;
-                w.dstBinding = 0;
-                w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                w.descriptorCount = 1;
-                w.pImageInfo = &ii;
-                vkUpdateDescriptorSets(device_.device(), 1, &w, 0, nullptr);
-                currentSkyboxTexture_ = settings.skyboxTexture;
-            }
-            xrSkyboxPipeline_->bind(cmd);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                xrSkyboxPipeline_->layout(), 0, 1, &skyboxSet_, 0, nullptr);
-            XrSkyboxPush push{};
-            const uint32_t n = std::min<uint32_t>(static_cast<uint32_t>(eyes.size()), 2);
-            for (uint32_t i = 0; i < n; ++i) {
-                glm::mat4 view = eyes[i].view;
-                view[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);  // strip translation
-                push.invViewProj[i] = glm::inverse(eyes[i].projection * view);
-            }
-            if (n == 1) push.invViewProj[1] = push.invViewProj[0];
-            push.exposure = settings.skyboxExposure;
-            push.rotation = settings.skyboxRotation;
-            vkCmdPushConstants(cmd, xrSkyboxPipeline_->layout(),
-                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                0, sizeof(XrSkyboxPush), &push);
-            vkCmdDraw(cmd, 3, 1, 0, 0);
-        }
-    }
+    // Scene-pass features (water, skybox, …), stereo. Same registry as desktop;
+    // passthrough is forwarded so the skybox skips itself.
+    FrameContext fc{cmd, currentFrame_, globalSets_[currentFrame_], scene,
+                    Time::elapsed(), true, nullptr, &eyes, passthrough};
+    recordFeatures(fc);
 
     vkCmdEndRendering(cmd);
 }

@@ -2,6 +2,7 @@
 #include "editor/EditorUI.hpp"
 #include "editor/InspectorRegistry.hpp"
 #include "editor/PropertyEditor.hpp"
+#include "core/Reflection.hpp"
 #include "scene/Scene.hpp"
 #include "scene/Node.hpp"
 #include "scene/MeshNode.hpp"
@@ -50,6 +51,51 @@ namespace {
             }
         }
         return "Assigned";
+    }
+
+    // Generic inspector for any reflected node/behaviour: draws one widget per
+    // reflected property straight from the manifest, so a new reflected type
+    // (e.g. WaterNode) gets a full inspector with ZERO editor code. Reads/writes
+    // go through the property's get/set (JSON), and edits are undoable via
+    // PropertyEditor. The PropertyDesc lives in the global TypeRegistry, so
+    // capturing it by pointer is safe for the program's lifetime.
+    void drawReflectedProperties(const reflect::TypeDesc& td, Node* node, EditorUI* editor) {
+        if (td.properties.empty()) return;
+        PropertyEditor pe(*editor, node);
+        for (const reflect::PropertyDesc& p : td.properties) {
+            const reflect::PropertyDesc* pd = &p;
+            const char* label = p.name.c_str();
+            const bool hasRange = p.hasRange;
+            const float mn = static_cast<float>(p.min), mx = static_cast<float>(p.max);
+
+            if (p.kind == "float") {
+                auto get = [pd](Node& n) { nlohmann::json j; pd->get(&n, j); return j.is_number() ? j.get<float>() : 0.0f; };
+                auto set = [pd](Node& n, float v) { nlohmann::json j = v; pd->set(&n, j); };
+                if (hasRange) pe.sliderFloat(label, get, set, mn, mx);
+                else pe.dragFloat(label, get, set, 0.05f);
+            } else if (p.kind == "int") {
+                auto get = [pd](Node& n) { nlohmann::json j; pd->get(&n, j); return j.is_number() ? j.get<int>() : 0; };
+                auto set = [pd](Node& n, int v) { nlohmann::json j = v; pd->set(&n, j); };
+                pe.dragInt(label, get, set, 1.0f, hasRange ? static_cast<int>(mn) : 0, hasRange ? static_cast<int>(mx) : 0);
+            } else if (p.kind == "bool") {
+                pe.checkbox(label,
+                    [pd](Node& n) { nlohmann::json j; pd->get(&n, j); return j.is_boolean() && j.get<bool>(); },
+                    [pd](Node& n, bool v) { nlohmann::json j = v; pd->set(&n, j); });
+            } else if (p.kind == "vec3") {
+                auto get = [pd](Node& n) { nlohmann::json j; pd->get(&n, j); glm::vec3 v(0.0f);
+                    if (j.is_array() && j.size() >= 3) { v.x = j[0]; v.y = j[1]; v.z = j[2]; } return v; };
+                auto set = [pd](Node& n, glm::vec3 v) { pd->set(&n, nlohmann::json::array({v.x, v.y, v.z})); };
+                const bool isColor = p.name.find("olor") != std::string::npos;  // "color"/"Color"
+                if (isColor) pe.colorEdit3(label, get, set);
+                else pe.dragFloat3(label, get, set, 0.05f);
+            } else if (p.kind == "string") {
+                pe.inputText(label,
+                    [pd](Node& n) { nlohmann::json j; pd->get(&n, j); return j.is_string() ? j.get<std::string>() : std::string(); },
+                    [pd](Node& n, std::string v) { nlohmann::json j = v; pd->set(&n, j); });
+            }
+            if (!p.tooltip.empty() && ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", p.tooltip.c_str());
+        }
     }
 }
 
@@ -389,6 +435,16 @@ void InspectorPanel::draw(EditorUI* editor) {
                      [](Node& n) { return static_cast<CameraNode&>(n).farZ; },
                      [](Node& n, float v) { static_cast<CameraNode&>(n).farZ = v; }, 1.0f, 1.0f, 10000.0f);
         ImGui::TextDisabled("Highest priority active camera is live (Play).");
+    }
+
+    // Generic fallback: any reflected node type (e.g. WaterNode) gets a full
+    // inspector from its manifest, no per-type editor code. Skip LightNode, which
+    // has a tailored UI above.
+    if (!node->asLight()) {
+        if (const reflect::TypeDesc* td = reflect::TypeRegistry::instance().find(node->typeName())) {
+            ImGui::SeparatorText(node->typeName());
+            drawReflectedProperties(*td, node, editor);
+        }
     }
 
     if (auto* body = node->asCollisionObject())
