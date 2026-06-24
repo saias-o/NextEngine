@@ -7,6 +7,10 @@
 // like horizontal "choppiness" sharpens the crests. Produces the position, an
 // analytic normal, and a crest factor (for foam) for the fragment stage.
 //
+// When the WaterNode has a shore (beach/lake), the wave displacement is FADED OUT in
+// shallow water so the surface meets the sand cleanly at the waterline (depth 0) and
+// big swells never poke through the beach — the shore seam relies on this.
+//
 // Per-eye camera matrices come from the shared global camera UBO (set 0, binding
 // 0); the MULTIVIEW variant indexes them by gl_ViewIndex, so the same water works
 // for desktop (mono) and XR (stereo) through the engine's one pipeline.
@@ -20,16 +24,7 @@ layout(set = 0, binding = 0) uniform CameraUBO {
     mat4 proj[2];
 } cam;
 
-layout(push_constant) uniform WaterPush {
-    vec4 area;     // x=centerX, y=height, z=centerZ, w=halfSize
-    vec4 deep;     // rgb water color, w=roughness
-    vec4 shallow;  // rgb foam color, w=reflectivity
-    vec4 waveA;    // x=amplitude, y=wavelength, z=speed, w=choppiness
-    vec4 detail1;  // x=scale, y=speed, z=strength, w=angleDeg
-    vec4 detail2;  // x=scale, y=speed, z=strength, w=angleDeg
-    vec4 look;     // x=fresnelPower, y=specularPower, z=specularIntensity, w=foamThreshold
-    vec4 misc;     // x=time, y=warpAmount, z=detailFadeDistance, w=foamIntensity
-} push;
+#include "water_common.glsl"
 
 layout(location = 0) out vec3 fragWorldPos;
 layout(location = 1) out vec3 fragNormal;
@@ -38,6 +33,8 @@ layout(location = 2) out float fragCrest;
 const int RES = 128;  // grid resolution per side; must match kGridRes in the renderer
 
 void main() {
+    GpuWater w = waters.items[push.index];
+
     // Procedural grid: 6 vertices per quad, RES*RES quads, two triangles each.
     int quad = gl_VertexIndex / 6;
     int corner = gl_VertexIndex % 6;
@@ -47,38 +44,54 @@ void main() {
         vec2(0, 0), vec2(1, 0), vec2(1, 1),
         vec2(0, 0), vec2(1, 1), vec2(0, 1));
     vec2 cell = (vec2(float(qx), float(qz)) + OFF[corner]) / float(RES);  // [0,1]
-    vec2 xz = push.area.xz + (cell - 0.5) * 2.0 * push.area.w;
+    vec2 xz = w.area.xz + (cell - 0.5) * 2.0 * w.area.w;
 
-    float t = push.misc.x;
-    float wavelength = max(push.waveA.y, 0.01);
-    float speed = push.waveA.z;
-    float chop = push.waveA.w;
+    float t = push.time;
+    float wavelength = max(w.waveA.y, 0.01);
+    float speed = w.waveA.z;
+    float chop = w.waveA.w;
 
-    // Multi-octave swell. Rotating the direction by a non-aligned matrix and scaling
-    // the frequency by a non-integer factor each octave kills the grid look.
-    const mat2 ROT = mat2(0.80, -0.60, 0.60, 0.80);  // ~37°, not axis-aligned
+    // Waves flatten as the bottom rises: 1 in open/deep water, 0 at (and past) the
+    // waterline. Keeps crests from clipping the beach and lands the surface exactly
+    // on the sand so the fragment alpha edge lines up.
+    float depth = waterDepthAt(xz, w);
+    float shallow = (int(w.shoreMode.x + 0.5) == 0)
+        ? 1.0
+        : smoothstep(0.0, max(w.shoreTune.w, 0.01), depth);
+
+    // Multi-octave swell, AIMED AT THE SHORE. The base heading is the shoreward wave
+    // direction (waveDirAt); octaves fan out only slightly around it so the crests
+    // stay parallel to the shore and roll straight in, while a non-harmonic frequency
+    // growth still kills the grid look. With no shore, octaves keep the original wide
+    // spread (~37°/octave) so endless ocean water is unchanged.
+    int waveMode = int(w.shoreMode.x + 0.5);
+    vec2 baseDir = waveDirAt(xz, w);
+    const float FAN[5] = float[5](0.0, 13.0, -10.0, 18.0, -6.0);  // shoreward spread (deg)
     float h = 0.0, dhdx = 0.0, dhdz = 0.0;
     vec2 disp = vec2(0.0);            // horizontal Gerstner-like pull (choppiness)
-    vec2 dir = normalize(vec2(0.9, 0.35));
-    float a = push.waveA.x;
-    float w = 6.2831853 / wavelength;
+    float a = w.waveA.x;
+    float wn = 6.2831853 / wavelength;
     for (int i = 0; i < 5; ++i) {
-        float ang = dot(dir, xz) * w + t * speed * w;
+        float offDeg = (waveMode == 0) ? 36.87 * float(i) : FAN[i];
+        vec2 dir = rotate2(baseDir, radians(offDeg));
+        float ang = dot(dir, xz) * wn + t * speed * wn;
         float s = sin(ang), c = cos(ang);
         h    += a * s;
-        dhdx += a * w * dir.x * c;
-        dhdz += a * w * dir.y * c;
+        dhdx += a * wn * dir.x * c;
+        dhdz += a * wn * dir.y * c;
         disp -= dir * (a * chop * c);   // pull vertices toward crests
         a *= 0.62;                       // amplitude falloff
-        w *= 1.87;                       // non-harmonic frequency growth
-        dir = ROT * dir;                 // rotate so octaves don't align
+        wn *= 1.87;                      // non-harmonic frequency growth
     }
 
+    // Fade the whole displacement toward the shore.
+    h *= shallow; dhdx *= shallow; dhdz *= shallow; disp *= shallow;
+
     vec2 xzC = xz + disp;
-    vec3 pos = vec3(xzC.x, push.area.y + h, xzC.y);
+    vec3 pos = vec3(xzC.x, w.area.y + h, xzC.y);
     fragWorldPos = pos;
     fragNormal = normalize(vec3(-dhdx, 1.0, -dhdz));
-    fragCrest = clamp(h / max(push.waveA.x, 0.001) * 0.5 + 0.5, 0.0, 1.0);
+    fragCrest = clamp(h / max(w.waveA.x, 0.001) * 0.5 + 0.5, 0.0, 1.0);
 
 #ifdef MULTIVIEW
     int vi = gl_ViewIndex;

@@ -1,0 +1,17 @@
+{
+    "11074124625600234662": {
+        "hash": 14941686314681587696,
+        "path": "scenes/beach.scene",
+        "type": "Scene"
+    },
+    "12246554237784339958": {
+        "hash": 11746319502404893978,
+        "path": "assets/skies/sunset.png",
+        "type": "Texture"
+    },
+    "4242424242": {
+        "hash": 0,
+        "path": "C:/Users/evand/Documents/NextEngine/BeachDemo/assets/skies/sunset.png",
+        "type": "Texture"
+    }
+}

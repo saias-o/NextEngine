@@ -43,6 +43,35 @@ void WaterNode::describe(reflect::TypeBuilder<WaterNode>& t) {
         .tooltip("domain warp that breaks large-scale tiling");
     t.property("detailFadeDistance", &WaterNode::detailFadeDistance).range(10.0, 2000.0)
         .tooltip("ripples calm down past this distance");
+
+    // ── Shore (beach / lake) ──
+    t.property("shoreMode", &WaterNode::shoreMode)
+        .enumValues({"None", "Beach", "Lake"})
+        .tooltip("None = endless water; Beach = straight shoreline; Lake = round pond");
+    t.property("shallowColor", &WaterNode::shallowColor)
+        .tooltip("water tint at the waterline (deepens to deepColor)");
+    t.property("depthColorFalloff", &WaterNode::depthColorFalloff).range(0.1, 50.0)
+        .tooltip("depth (m) to reach the full deep colour");
+    t.property("edgeFade", &WaterNode::edgeFade).range(0.02, 5.0)
+        .tooltip("depth (m) over which the shoreline edge fades in");
+    t.property("shoreSlope", &WaterNode::shoreSlope).range(0.005, 2.0)
+        .tooltip("seabed steepness: depth gained per metre from the waterline");
+    t.property("shoreAngle", &WaterNode::shoreAngle).range(0.0, 360.0)
+        .tooltip("beach: inland direction (deg)");
+    t.property("shoreWaterline", &WaterNode::shoreWaterline).range(-5000.0, 5000.0)
+        .tooltip("beach: waterline distance from the node centre (m)");
+    t.property("lakeRadius", &WaterNode::lakeRadius).range(1.0, 5000.0)
+        .tooltip("lake: water radius from the node centre (m)");
+    t.property("shoreFoam", &WaterNode::shoreFoam).range(0.0, 1.0)
+        .tooltip("shoreline foam intensity");
+    t.property("foamWidth", &WaterNode::foamWidth).range(0.0, 5.0)
+        .tooltip("base width of the wet foam band (depth m)");
+    t.property("swashSpeed", &WaterNode::swashSpeed).range(0.0, 10.0)
+        .tooltip("how fast the wash runs up and back");
+    t.property("swashAmount", &WaterNode::swashAmount).range(0.0, 5.0)
+        .tooltip("extra run-up reach per wash (depth m)");
+    t.property("waveFlatten", &WaterNode::waveFlatten).range(0.05, 10.0)
+        .tooltip("waves flatten below this depth so they don't clip the sand");
 }
 
 } // namespace ne

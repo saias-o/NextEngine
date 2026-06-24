@@ -35,6 +35,8 @@ public:
     float yaw = -90.0f;        // degrees; -90 looks toward -Z
     float pitch = 0.0f;        // degrees
     float fovDegrees = 45.0f;  // vertical field of view (driven per-camera)
+    float nearZ = 0.1f;        // near clip plane (m)   — driven per-camera
+    float farZ = 1000.0f;      // far clip plane (m) / view distance — driven per-camera
 
 private:
     glm::mat4 projection_{1.0f};

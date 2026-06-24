@@ -52,6 +52,8 @@ bool CameraDirector::update(Scene& scene, Camera& out, float dt) {
     State target;
     poseFromWorld(liveWorld, target.position, target.rotation);
     target.fov = live->fovDegrees;
+    target.nearZ = live->nearZ;
+    target.farZ = live->farZ;
 
     if (!hasCurrent_) {
         // First camera: snap (no blend from nothing).
@@ -75,6 +77,8 @@ bool CameraDirector::update(Scene& scene, Camera& out, float dt) {
         current_.position = glm::mix(blendFrom_.position, target.position, e);
         current_.rotation = glm::slerp(blendFrom_.rotation, target.rotation, e);
         current_.fov = glm::mix(blendFrom_.fov, target.fov, e);
+        current_.nearZ = glm::mix(blendFrom_.nearZ, target.nearZ, e);
+        current_.farZ = glm::mix(blendFrom_.farZ, target.farZ, e);
     } else {
         // Track the live camera directly (it may be moving, e.g. a follow cam).
         current_ = target;
@@ -87,6 +91,8 @@ bool CameraDirector::update(Scene& scene, Camera& out, float dt) {
 void CameraDirector::applyTo(const State& s, Camera& out) {
     out.position = s.position;
     out.fovDegrees = s.fov;
+    out.nearZ = s.nearZ;
+    out.farZ = s.farZ;
     // Camera is yaw/pitch (no roll): point it along the state's forward (-Z).
     glm::vec3 forward = s.rotation * glm::vec3(0.0f, 0.0f, -1.0f);
     out.lookAt(s.position + forward);

@@ -35,6 +35,8 @@ private:
         glm::vec3 position{0.0f};
         glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
         float fov = 60.0f;
+        float nearZ = 0.1f;
+        float farZ = 1000.0f;
     };
 
     static void applyTo(const State& s, Camera& out);

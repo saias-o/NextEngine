@@ -1180,7 +1180,8 @@ void Renderer::recordFeatures(const FrameContext& fc) {
 }
 
 void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera, Project* project) {
-    camera.setPerspective(glm::radians(camera.fovDegrees), swapchain_->aspectRatio(), 0.1f, 100.0f);
+    camera.setPerspective(glm::radians(camera.fovDegrees), swapchain_->aspectRatio(),
+                          camera.nearZ, camera.farZ);
     
     // Store camera frustum for culling compute shader
     cameraFrustum_ = camera.getFrustum();

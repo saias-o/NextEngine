@@ -21,6 +21,14 @@ public:
 
     NE_REFLECT_NODE(WaterNode, "Water")
 
+    // How (and whether) the water has a shore. None = an endless deep surface (the
+    // original behaviour). Beach = a straight shoreline you walk up to; the seabed
+    // deepens away from it. Lake = a round pond, deepening toward its centre. Both
+    // are analytic (a couple of numbers), so a beach or lake is pure data — no
+    // textures, no terrain sampling. Place matching sand/ground; the water fades and
+    // foams where it meets it.
+    enum class ShoreMode { None = 0, Beach = 1, Lake = 2 };
+
     // Defaults are the values tuned by eye in the GTAClone scene, rounded to clean
     // numbers — except the speeds, kept at their earlier (better) values.
     float size = 300.0f;          // half-extent of the plane (m)
@@ -58,6 +66,31 @@ public:
 
     float warpAmount = 0.1f;       // domain-warp that breaks large-scale regularity
     float detailFadeDistance = 200.0f;  // ripples calm down past this (anti-shimmer)
+
+    // ── Shore (beach / lake) ─────────────────────────────────────────────────────
+    // Default None → identical to the classic endless water (existing scenes unchanged).
+    ShoreMode shoreMode = ShoreMode::None;
+
+    glm::vec3 shallowColor{0.20f, 0.58f, 0.62f};  // water tint at the waterline (sandy turquoise)
+    float depthColorFalloff = 6.0f;  // metres of depth to reach the full deep colour
+    float edgeFade = 0.6f;           // metres of depth over which the edge fades from sand to water
+    float shoreSlope = 0.10f;        // seabed steepness: depth gained per metre away from the waterline
+
+    // Beach mode: a straight shoreline. `shoreAngle` is the inland direction (deg,
+    // around +Y); `shoreWaterline` is how far (m) the waterline sits from the node
+    // centre along that direction (raise it to push the sea out, lower to flood in).
+    float shoreAngle = 0.0f;
+    float shoreWaterline = 0.0f;
+
+    // Lake mode: a round pond centred on the node; water out to this radius (m).
+    float lakeRadius = 50.0f;
+
+    // Swash (the wave run-up at the shoreline) + its foam.
+    float shoreFoam = 0.8f;        // shoreline foam intensity (0 = none)
+    float foamWidth = 0.5f;        // base width of the wet foam band (depth metres)
+    float swashSpeed = 1.2f;       // how fast the wash runs up and back
+    float swashAmount = 0.4f;      // extra run-up reach added by each wash (depth metres)
+    float waveFlatten = 1.5f;      // waves flatten below this depth (m) so they don't clip the sand
 };
 
 } // namespace ne

@@ -8,20 +8,15 @@
 // non-integer lacunarity, and the sample domain is warped, so there is no visible
 // tiling on large expanses. Ripples fade with distance to kill shimmer. Shading is
 // Fresnel reflection (environment map if present, else a cheap procedural sky), a
-// sun sparkle, a tinted refracted body, and crest foam — every knob parameterized.
+// sun sparkle, a depth-tinted refracted body, and crest foam — every knob parameterized.
+//
+// SHORE (beach/lake): from the analytic water depth we get, for free, the three
+// things that sell a real waterline — a shallow→deep colour gradient, a foam band
+// that runs up and back with the swash, and a soft alpha fade so the water dissolves
+// into the wet sand instead of cutting a hard line. All depth-driven, no extra maps.
 
 #include "lighting.glsl"
-
-layout(push_constant) uniform WaterPush {
-    vec4 area;     // x=centerX, y=height, z=centerZ, w=halfSize
-    vec4 deep;     // rgb water color, w=roughness
-    vec4 shallow;  // rgb foam color, w=reflectivity
-    vec4 waveA;    // x=amplitude, y=wavelength, z=speed, w=choppiness
-    vec4 detail1;  // x=scale, y=speed, z=strength, w=angleDeg
-    vec4 detail2;  // x=scale, y=speed, z=strength, w=angleDeg
-    vec4 look;     // x=fresnelPower, y=specularPower, z=specularIntensity, w=foamThreshold
-    vec4 misc;     // x=time, y=warpAmount, z=detailFadeDistance, w=foamIntensity
-} push;
+#include "water_common.glsl"
 
 layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
@@ -91,21 +86,29 @@ vec3 proceduralSky(vec3 dir, vec3 sunDir, vec3 sunCol) {
 }
 
 void main() {
+    GpuWater w = waters.items[push.index];
+    int mode = int(w.shoreMode.x + 0.5);
+
+    // Local water depth drives the whole shore look. On dry land (depth < 0) there is
+    // no water at all — discard so we never blend or write depth over the beach.
+    float depth = waterDepthAt(fragWorldPos.xz, w);
+    if (mode != 0 && depth < 0.0) discard;
+
     vec3 camPos = lights.cameraPos.xyz;
     vec3 V = normalize(camPos - fragWorldPos);
 
     // Distance fade: calmer ripples far away (anti-shimmer + hides any repetition).
     float dist = length(camPos - fragWorldPos);
-    float fade = clamp(1.0 - dist / max(push.misc.z, 1.0), 0.15, 1.0);
+    float fade = clamp(1.0 - dist / max(w.misc.y, 1.0), 0.15, 1.0);
 
     // Low-frequency domain warp breaks up large-scale regularity before sampling.
     vec2 wp = fragWorldPos.xz;
-    vec2 warp = push.misc.y * fbmGrad(wp * 0.03, vec2(0.05, 0.03), push.misc.x * 0.2);
+    vec2 warp = w.misc.x * fbmGrad(wp * 0.03, vec2(0.05, 0.03), push.time * 0.2);
     vec2 wpW = wp + warp;
 
     // Two procedural normal layers (different scale / speed / direction), blended.
-    vec2 g1 = fbmGrad(wpW * push.detail1.x, dirFromAngle(push.detail1.w) * push.detail1.y, push.misc.x) * push.detail1.z;
-    vec2 g2 = fbmGrad(wpW * push.detail2.x, dirFromAngle(push.detail2.w) * push.detail2.y, push.misc.x) * push.detail2.z;
+    vec2 g1 = fbmGrad(wpW * w.detail1.x, dirFromAngle(w.detail1.w) * w.detail1.y, push.time) * w.detail1.z;
+    vec2 g2 = fbmGrad(wpW * w.detail2.x, dirFromAngle(w.detail2.w) * w.detail2.y, push.time) * w.detail2.z;
     vec2 grad = (g1 + g2) * fade;
 
     vec3 N = normalize(fragNormal + vec3(-grad.x, 0.0, -grad.y));
@@ -123,13 +126,19 @@ void main() {
     }
 
     bool hasEnv = lights.environmentParams.x > 0.5;
-    float rough = clamp(push.deep.w, 0.02, 0.4);
+    float rough = clamp(w.deep.w, 0.02, 0.4);
 
-    // Refracted body colour: deep tint lifted by ambient / sky irradiance.
+    // Refracted body colour: shallow water reads as the sandy/turquoise `shoreColor`
+    // and deepens to `deep` over `depthColorFalloff` metres (the classic beach
+    // gradient). With no shore, it is the deep colour everywhere as before.
+    vec3 shallowCol = (mode != 0) ? w.shoreColor.rgb : w.deep.rgb;
+    float dt = clamp(depth / max(w.misc.w, 0.01), 0.0, 1.0);
+    vec3 bodyTint = mix(shallowCol, w.deep.rgb, dt);
+
     vec3 ambient = hasEnv
         ? sampleEnvironmentLod(vec3(0.0, 1.0, 0.0), environmentMaxLod()) * lights.environmentParams.y
         : lights.ambient.rgb;
-    vec3 body = push.deep.rgb * (0.25 + 0.75 * ambient);
+    vec3 body = bodyTint * (0.25 + 0.75 * ambient);
 
     // Reflection: real environment if available, else the procedural sky.
     vec3 R = reflect(-V, N);
@@ -139,16 +148,36 @@ void main() {
         : proceduralSky(R, sunDir, sunCol);
 
     // Fresnel blends body -> reflection toward grazing angles.
-    float F = 0.02 + 0.98 * pow(1.0 - NdotV, push.look.x);
-    vec3 color = mix(body, refl, clamp(F * push.shallow.w, 0.0, 1.0));
+    float F = 0.02 + 0.98 * pow(1.0 - NdotV, w.look.x);
+    vec3 color = mix(body, refl, clamp(F * w.foam.w, 0.0, 1.0));
 
     // Sun sparkle (Blinn-Phong).
     vec3 H = normalize(-sunDir + V);
-    color += sunCol * pow(max(dot(N, H), 0.0), push.look.y) * push.look.z;
+    color += sunCol * pow(max(dot(N, H), 0.0), w.look.y) * w.look.z;
 
-    // Foam on wave crests.
-    float foam = smoothstep(push.look.w, 1.0, fragCrest) * push.misc.w;
-    color = mix(color, push.shallow.rgb, clamp(foam, 0.0, 1.0));
+    // Foam: wave crests everywhere, plus a shoreline band that runs up and back with
+    // the swash. The run-up reach oscillates in time (offset along the shore so it is
+    // not a uniform pulse); a brighter "lace" tracks the leading edge of each wash.
+    float foam = smoothstep(w.look.w, 1.0, fragCrest) * w.misc.z;
+    if (mode != 0) {
+        // Swash phase varies only WEAKLY along the shoreline (waves arrive nearly
+        // together); the run-up itself is the in/out band motion below. So the foam
+        // washes toward the beach instead of sliding sideways.
+        vec2 wd = waveDirAt(fragWorldPos.xz, w);
+        vec2 alongShore = vec2(-wd.y, wd.x);
+        float alongCoord = dot(fragWorldPos.xz, alongShore);
+        float swash = w.shoreTune.z * (0.5 + 0.5 * sin(push.time * w.shoreTune.y
+                      + alongCoord * 0.04));
+        float band = w.shoreTune.x + swash;                 // current wet reach (depth units)
+        float wet  = smoothstep(band, band * 0.2, depth);   // broad foam near the waterline
+        float lace = smoothstep(0.06, 0.0, abs(depth - band));  // bright leading edge
+        float shoreFoam = clamp(max(wet * 0.7, lace), 0.0, 1.0) * w.shoreMode.y;
+        foam = max(foam, shoreFoam);
+    }
+    color = mix(color, w.foam.rgb, clamp(foam, 0.0, 1.0));
 
-    outColor = vec4(color, 1.0);
+    // Soft edge: fade to transparent at the waterline so the water dissolves into the
+    // wet sand instead of cutting a hard line. Opaque (alpha 1) in deeper water.
+    float alpha = (mode != 0) ? smoothstep(0.0, max(w.shoreColor.w, 0.01), depth) : 1.0;
+    outColor = vec4(color, alpha);
 }
