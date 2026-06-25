@@ -7,14 +7,7 @@
 namespace ne {
 
 bool UIInteractionSystem::update(Scene& scene, const glm::vec2& mousePos, bool isLeftDown, bool isLeftJustPressed, bool isLeftJustReleased) {
-    // 1. Chercher le Canvas
-    UICanvasNode* canvas = nullptr;
-    scene.traverse([&](Node& n, const glm::mat4&) {
-        if (!canvas && dynamic_cast<UICanvasNode*>(&n)) {
-            canvas = static_cast<UICanvasNode*>(&n);
-        }
-    });
-
+    UICanvasNode* canvas = scene.uiCanvas();
     if (!canvas || !canvas->isActiveInHierarchy()) {
         if (hoveredNode_) {
             hoveredNode_->onHoverExit();
@@ -80,14 +73,7 @@ bool UIInteractionSystem::update(Scene& scene, const glm::vec2& mousePos, bool i
     }
     
     // 4. WebCanvasNode Updates & Inputs
-    std::vector<WebCanvasNode*> webNodes;
-    scene.traverse([&](Node& n, const glm::mat4&) {
-        if (auto* wcn = dynamic_cast<WebCanvasNode*>(&n)) {
-            webNodes.push_back(wcn);
-        }
-    });
-
-    for (auto* wcn : webNodes) {
+    for (auto* wcn : scene.webCanvases()) {
         if (!wcn->isActiveInHierarchy()) continue;
         
         if (wcn->mode() == WebCanvasNode::Mode::ScreenSpace) {

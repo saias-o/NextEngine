@@ -1,4 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
+
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING
+        "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel"
+        FORCE)
+endif()
+
 project(NextEngine LANGUAGES C CXX)
 
 include(CTest)

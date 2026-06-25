@@ -603,16 +603,25 @@ void Renderer::updateGlobalShadowDescriptor() {
 
 void Renderer::updateGIDescriptors() {
     // After GIVolume::beginFrame() the "current" atlas (sampled by the lighting
-    // pass) has changed; re-point set 0 bindings 4/5 for this frame's set. Safe:
-    // drawFrame already waited on this frame's fence.
+    // pass) can change; re-point set 0 bindings 4/5 only when this frame slot is
+    // stale. Safe: drawFrame already waited on this frame's fence.
+    VkImageView irrView = gi_->irradianceView();
+    VkImageView visView = gi_->visibilityView();
+    VkSampler sampler = gi_->sampler();
+    if (cachedGiIrradianceView_[currentFrame_] == irrView &&
+        cachedGiVisibilityView_[currentFrame_] == visView &&
+        cachedGiSampler_[currentFrame_] == sampler) {
+        return;
+    }
+
     VkDescriptorImageInfo irr{};
     irr.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-    irr.imageView = gi_->irradianceView();
-    irr.sampler = gi_->sampler();
+    irr.imageView = irrView;
+    irr.sampler = sampler;
     VkDescriptorImageInfo vis{};
     vis.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-    vis.imageView = gi_->visibilityView();
-    vis.sampler = gi_->sampler();
+    vis.imageView = visView;
+    vis.sampler = sampler;
 
     std::array<VkWriteDescriptorSet, 2> writes{};
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -628,6 +637,10 @@ void Renderer::updateGIDescriptors() {
     writes[1].descriptorCount = 1;
     writes[1].pImageInfo = &vis;
     vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
+    cachedGiIrradianceView_[currentFrame_] = irrView;
+    cachedGiVisibilityView_[currentFrame_] = visView;
+    cachedGiSampler_[currentFrame_] = sampler;
 }
 
 void Renderer::updateEnvironmentDescriptor(Scene& scene) {
@@ -643,6 +656,11 @@ void Renderer::updateEnvironmentDescriptor(Scene& scene) {
     imageInfo.imageView = environment->imageView();
     imageInfo.sampler = environment->sampler();
 
+    if (cachedEnvironmentView_[currentFrame_] == imageInfo.imageView &&
+        cachedEnvironmentSampler_[currentFrame_] == imageInfo.sampler) {
+        return;
+    }
+
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = globalSets_[currentFrame_];
@@ -651,6 +669,30 @@ void Renderer::updateEnvironmentDescriptor(Scene& scene) {
     write.descriptorCount = 1;
     write.pImageInfo = &imageInfo;
     vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
+
+    cachedEnvironmentView_[currentFrame_] = imageInfo.imageView;
+    cachedEnvironmentSampler_[currentFrame_] = imageInfo.sampler;
+}
+
+bool Renderer::shouldUpdateRealtimeGI() const {
+    int cadence = 16;
+    switch (device_.capabilities().tier) {
+        case QualityTier::Ultra:
+        case QualityTier::High:
+            cadence = 8;
+            break;
+        case QualityTier::Medium:
+            cadence = 12;
+            break;
+        case QualityTier::Low:
+        default:
+            cadence = 16;
+            break;
+    }
+
+    if (giRealtimeWarmupRemaining_ > 0) return true;
+    if (Node::g_hierarchyVersion != giLastHierarchyVersion_) return true;
+    return (giFrameCounter_ % static_cast<uint64_t>(cadence)) == 0;
 }
 
 Renderer::TonemapPushConstants Renderer::tonemapPushConstants(
@@ -785,6 +827,21 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
     uint32_t currentBoneCount = 0;
     glm::mat4* boneData = static_cast<glm::mat4*>(boneMatricesBuffers_[currentFrame_]->mapped());
 
+    shadowDraws_.clear();
+    if (shadowCount_ > 0) {
+        for (MeshNode* node : scene.meshes()) {
+            if (!node->castShadows()) continue;
+            Mesh* mesh = node->mesh();
+            if (!mesh) continue;
+            const glm::mat4& world = node->worldTransform();
+            if (node->hasLods() && lodMatricesValid_) {
+                const float coverage = computeScreenCoverage(world, mesh->bounds(), lodView_, lodProj_);
+                mesh = node->meshForLod(node->selectLodIndex(coverage));
+            }
+            if (mesh) shadowDraws_.push_back(ShadowDraw{mesh, world});
+        }
+    }
+
     bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
     if (useGpuDriven) {
         InstanceData* instanceData = static_cast<InstanceData*>(instanceBuffers_[currentFrame_]->mapped());
@@ -844,9 +901,13 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
         
         currentInstanceCount_ = instanceCount;
         
-        instanceBuffers_[currentFrame_]->flush(instanceCount * sizeof(InstanceData));
-        originalDrawCommandBuffers_[currentFrame_]->flush(instanceCount * sizeof(VkDrawIndexedIndirectCommand));
-        boneMatricesBuffers_[currentFrame_]->flush(currentBoneCount * sizeof(glm::mat4));
+        if (instanceCount > 0) {
+            instanceBuffers_[currentFrame_]->flush(instanceCount * sizeof(InstanceData));
+            originalDrawCommandBuffers_[currentFrame_]->flush(instanceCount * sizeof(VkDrawIndexedIndirectCommand));
+        }
+        if (currentBoneCount > 0) {
+            boneMatricesBuffers_[currentFrame_]->flush(currentBoneCount * sizeof(glm::mat4));
+        }
         
         // Clear countBuffer to 0 using CPU map (since it's HostVisible? Wait, countBuffers_ is MemoryUsage::GpuOnly!  
         // We must use vkCmdFillBuffer or similar in the command buffer!)
@@ -911,22 +972,12 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
             }
         }
 
-        boneMatricesBuffers_[currentFrame_]->flush(currentBoneCount * sizeof(glm::mat4));
+        if (currentBoneCount > 0) {
+            boneMatricesBuffers_[currentFrame_]->flush(currentBoneCount * sizeof(glm::mat4));
+        }
 
         // Sort draws by material to minimize Vulkan pipeline descriptor set binds
         std::sort(currentDraws_.begin(), currentDraws_.end());
-
-        static int cpuLog = 0;
-        if (cpuLog < 5) {
-            Log::info("--- CPU Path Frame ", cpuLog, " ---");
-            Log::info("Number of meshes to draw: ", currentDraws_.size());
-            for(size_t i=0; i < currentDraws_.size(); ++i) {
-                Log::info("  Draw ", i, " has mat baseColor=(", 
-                          currentDraws_[i].material->desc().baseColor.r, ", ",
-                          currentDraws_[i].material->desc().baseColor.g, ")");
-            }
-            cpuLog++;
-        }
     }
 }
 
@@ -1284,23 +1335,15 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     }
 
     // Shadow passes: render scene depth from each caster's POV before the main
-    // pass. Iterate the full mesh list (not the camera-culled draws) so casters
-    // outside the camera frustum still cast into view.
+    // pass. The caster list is not camera-culled, so off-camera casters still
+    // cast into view; each shadow layer just reuses it.
     shadowMap_->record(cmd, shadowCount_,
-        [this, &scene](VkCommandBuffer c, VkPipelineLayout layout, int layer) {
-            for (MeshNode* node : scene.meshes()) {
-                Mesh* mesh = node->mesh();
-                if (!mesh || !node->castShadows()) continue;
-                if (node->hasLods() && lodMatricesValid_) {
-                    const glm::mat4& world = node->worldTransform();
-                    const float coverage = computeScreenCoverage(world, mesh->bounds(), lodView_, lodProj_);
-                    mesh = node->meshForLod(node->selectLodIndex(coverage));
-                }
-                if (!mesh) continue;
-                glm::mat4 mvp = shadowMatrices_[layer] * node->worldTransform();
+        [this](VkCommandBuffer c, VkPipelineLayout layout, int layer) {
+            for (const ShadowDraw& draw : shadowDraws_) {
+                glm::mat4 mvp = shadowMatrices_[layer] * draw.world;
                 vkCmdPushConstants(c, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
-                mesh->bind(c);
-                mesh->draw(c);
+                draw.mesh->bind(c);
+                draw.mesh->draw(c);
             }
         });
 
@@ -1458,11 +1501,6 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
         Material* lastMaterial = nullptr;
         Pipeline* activePipeline = pipeline_.get();  // Lit, already bound above
 
-        static int cpuDrawLog = 0;
-        if (cpuDrawLog < 5) {
-            Log::info("Executing ", currentDraws_.size(), " draw commands.");
-        }
-
         for (const auto& cmdDraw : currentDraws_) {
             Pipeline* want = scenePipelineFor(cmdDraw.materialType);
             if (want != activePipeline) {
@@ -1499,7 +1537,6 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
             cmdDraw.mesh->bind(cmd);
             cmdDraw.mesh->draw(cmd);
         }
-        if (cpuDrawLog < 5) cpuDrawLog++;
     }
 
     // Scene-pass features (water, skybox, debug lines) — registered once, iterated
@@ -1550,13 +1587,32 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
 
     auto& settings = scene.settings();
 
-    // Decide whether the DDGI volume updates this frame. Realtime: every frame.
+    const int lightingMode = static_cast<int>(settings.lightingMode);
+    const int giMode = static_cast<int>(settings.giMode);
+    const bool giModeChanged = giMode != giLastMode_;
+    const bool lightingModeChanged = lightingMode != giLastLightingMode_;
+    const bool giEnabledChanged = settings.giEnabled != giWasEnabled_;
+    const bool giHierarchyChanged = Node::g_hierarchyVersion != giLastHierarchyVersion_;
+    if (giModeChanged || lightingModeChanged || giEnabledChanged || giHierarchyChanged) {
+        giRealtimeWarmupRemaining_ = kGIRealtimeWarmupFrames;
+        giLastMode_ = giMode;
+        giLastLightingMode_ = lightingMode;
+        giWasEnabled_ = settings.giEnabled;
+    }
+
+    // Decide whether the DDGI volume updates this frame. Full realtime updates
+    // every frame; amortized realtime warms up then updates on a cadence.
     // Baked: a bake request runs the update for kGIBakeFrames frames to converge
     // the volume, then freezes it (direct lighting + shadows stay live in both
     // modes; only the indirect volume is frozen).
     if (settings.lightingMode == LightingMode::Realtime) {
         settings.bakeRequested = false;  // bake only applies in baked mode
-        giUpdateThisFrame_ = settings.giEnabled;
+        giUpdateThisFrame_ = settings.giEnabled &&
+            (settings.giMode == GIMode::FullRealtime || shouldUpdateRealtimeGI());
+        if (giUpdateThisFrame_ && settings.giMode == GIMode::AmortizedRealtime &&
+            giRealtimeWarmupRemaining_ > 0) {
+            --giRealtimeWarmupRemaining_;
+        }
     } else {  // Baked
         if (settings.bakeRequested) {
             settings.bakeRequested = false;
@@ -1570,6 +1626,10 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
             settings.baked = true;
         }
     }
+    if (giUpdateThisFrame_ || !settings.giEnabled) {
+        giLastHierarchyVersion_ = Node::g_hierarchyVersion;
+    }
+    ++giFrameCounter_;
 
     // Swap the DDGI ping-pong (only when updating, so the frozen atlas is kept)
     // and re-point this frame's set 0 at the current atlas (safe: fence waited).
@@ -2008,9 +2068,27 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
     if (eyes.empty()) return;
     auto& settings = scene.settings();
 
+    const int lightingMode = static_cast<int>(settings.lightingMode);
+    const int giMode = static_cast<int>(settings.giMode);
+    const bool giModeChanged = giMode != giLastMode_;
+    const bool lightingModeChanged = lightingMode != giLastLightingMode_;
+    const bool giEnabledChanged = settings.giEnabled != giWasEnabled_;
+    const bool giHierarchyChanged = Node::g_hierarchyVersion != giLastHierarchyVersion_;
+    if (giModeChanged || lightingModeChanged || giEnabledChanged || giHierarchyChanged) {
+        giRealtimeWarmupRemaining_ = kGIRealtimeWarmupFrames;
+        giLastMode_ = giMode;
+        giLastLightingMode_ = lightingMode;
+        giWasEnabled_ = settings.giEnabled;
+    }
+
     // GI update cadence (mirrors drawFrame; no editor bake UI in XR yet).
     if (settings.lightingMode == LightingMode::Realtime) {
-        giUpdateThisFrame_ = settings.giEnabled;
+        giUpdateThisFrame_ = settings.giEnabled &&
+            (settings.giMode == GIMode::FullRealtime || shouldUpdateRealtimeGI());
+        if (giUpdateThisFrame_ && settings.giMode == GIMode::AmortizedRealtime &&
+            giRealtimeWarmupRemaining_ > 0) {
+            --giRealtimeWarmupRemaining_;
+        }
     } else {
         if (settings.bakeRequested) {
             settings.bakeRequested = false;
@@ -2021,6 +2099,10 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
         if (giUpdateThisFrame_ && --giBakeFramesRemaining_ == 0)
             settings.baked = true;
     }
+    if (giUpdateThisFrame_ || !settings.giEnabled) {
+        giLastHierarchyVersion_ = Node::g_hierarchyVersion;
+    }
+    ++giFrameCounter_;
 
     if (giUpdateThisFrame_) gi_->beginFrame();
     updateGIDescriptors();

@@ -2,6 +2,9 @@
 #include "scene/Behaviour.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/LightNode.hpp"
+#include "scene/UICanvasNode.hpp"
+#include "scene/WebCanvasNode.hpp"
+#include "scene/WaterNode.hpp"
 #include "scene/SerializationHelpers.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "physics/PhysicsWorld.hpp"
@@ -75,6 +78,9 @@ void Scene::update(float dt) {
 void Scene::flattenHierarchy() {
     meshes_.clear();
     lights_.clear();
+    uiCanvas_ = nullptr;
+    webCanvases_.clear();
+    waterNodes_.clear();
     flatBehaviours_.clear();
     bodies_.clear();
 
@@ -88,6 +94,17 @@ void Scene::flattenHierarchy() {
         }
         if (n.asLight()) {
             lights_.push_back(static_cast<LightNode*>(&n));
+        }
+        if (!uiCanvas_) {
+            if (auto* canvas = dynamic_cast<UICanvasNode*>(&n)) {
+                uiCanvas_ = canvas;
+            }
+        }
+        if (auto* webCanvas = dynamic_cast<WebCanvasNode*>(&n)) {
+            webCanvases_.push_back(webCanvas);
+        }
+        if (auto* water = dynamic_cast<WaterNode*>(&n)) {
+            waterNodes_.push_back(water);
         }
         if (CollisionObjectNode* co = n.asCollisionObject()) {
             bodies_.push_back(co);
@@ -110,6 +127,7 @@ void Scene::serialize(nlohmann::json& j, ResourceManager& resources) const {
         {"postProcessing", settings_.enablePostProcessing},
         {"lightingMode", static_cast<int>(settings_.lightingMode)},
         {"giEnabled", settings_.giEnabled},
+        {"giMode", static_cast<int>(settings_.giMode)},
         {"giIntensity", settings_.giIntensity},
         {"skyboxTexture", settings_.skyboxTexture},
         {"skyboxExposure", settings_.skyboxExposure},
@@ -170,6 +188,7 @@ void Scene::deserialize(const nlohmann::json& j, ResourceManager& resources) {
         if (js.contains("postProcessing")) settings_.enablePostProcessing = js["postProcessing"].get<bool>();
         if (js.contains("lightingMode")) settings_.lightingMode = static_cast<LightingMode>(js["lightingMode"].get<int>());
         if (js.contains("giEnabled")) settings_.giEnabled = js["giEnabled"].get<bool>();
+        if (js.contains("giMode")) settings_.giMode = static_cast<GIMode>(js["giMode"].get<int>());
         if (js.contains("giIntensity")) settings_.giIntensity = js["giIntensity"].get<float>();
         if (js.contains("skyboxTexture")) {
             if (js["skyboxTexture"].is_number_integer()) {

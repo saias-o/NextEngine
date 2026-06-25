@@ -147,6 +147,7 @@ private:
     void updateGlobalShadowDescriptor();
     void updateGIDescriptors();  // re-point set 0 bindings 4/5 at the current GI atlas
     void updateEnvironmentDescriptor(Scene& scene);
+    bool shouldUpdateRealtimeGI() const;
     TonemapPushConstants tonemapPushConstants(const SceneSettings& settings,
                                               const glm::mat4& projection) const;
     void createGlobalSetLayout();
@@ -246,6 +247,11 @@ private:
     uint32_t currentFrame_ = 0;
     
     std::vector<DrawCmd> currentDraws_;
+    struct ShadowDraw {
+        Mesh* mesh = nullptr;
+        glm::mat4 world{1.0f};
+    };
+    std::vector<ShadowDraw> shadowDraws_;
 
     // Shadow casters collected this frame: light-space view-proj matrices and
     // their count, consumed by the shadow passes recorded before the main pass.
@@ -254,12 +260,23 @@ private:
 
     bool doBake_ = false;  // run the bake passes this frame (set from bakeRequested)
 
-    // DDGI update control. Realtime: updated every frame. Baked: the update runs
-    // for kGIBakeFrames frames to converge the volume, then freezes (dynamic
-    // objects still sample the frozen volume).
+    // DDGI update control. Full realtime updates every frame; amortized realtime
+    // warms up then updates on a cadence. Baked mode converges then freezes.
     static constexpr int kGIBakeFrames = 256;
+    static constexpr int kGIRealtimeWarmupFrames = 8;
     int giBakeFramesRemaining_ = 0;
+    int giRealtimeWarmupRemaining_ = kGIRealtimeWarmupFrames;
+    uint64_t giFrameCounter_ = 0;
+    uint32_t giLastHierarchyVersion_ = 0;
+    bool giWasEnabled_ = true;
+    int giLastLightingMode_ = 0;
+    int giLastMode_ = 0;
     bool giUpdateThisFrame_ = true;
+    std::array<VkImageView, 2> cachedGiIrradianceView_{};
+    std::array<VkImageView, 2> cachedGiVisibilityView_{};
+    std::array<VkSampler, 2> cachedGiSampler_{};
+    std::array<VkImageView, 2> cachedEnvironmentView_{};
+    std::array<VkSampler, 2> cachedEnvironmentSampler_{};
 
 #ifdef NE_ENABLE_XR
     // ── XR / multiview (stereo) ────────────────────────────────────────────────

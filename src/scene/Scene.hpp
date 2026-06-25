@@ -20,6 +20,11 @@ enum class LightingMode {
     Baked,     // static contribution precomputed via "Generate Bake"
 };
 
+enum class GIMode {
+    FullRealtime,       // DDGI updates every frame; best responsiveness.
+    AmortizedRealtime,  // DDGI warms up, then updates on a cadence; better FPS.
+};
+
 struct SceneSettings {
     glm::vec4 ambientLight{0.1f, 0.1f, 0.1f, 1.0f};
     glm::vec4 clearColor{0.0f, 0.0f, 0.0f, 1.0f};
@@ -31,6 +36,7 @@ struct SceneSettings {
 
     // Global illumination (DDGI irradiance volume — the single GI primitive).
     bool giEnabled = true;       // sample the irradiance volume for indirect diffuse
+    GIMode giMode = GIMode::FullRealtime;
     bool giDebugVoxels = false;  // debug: visualize the voxelized scene albedo
     float giIntensity = 1.0f;    // indirect diffuse multiplier (boost to make GI visible)
 
@@ -73,6 +79,9 @@ struct SceneSettings {
 
 class MeshNode;
 class LightNode;
+class UICanvasNode;
+class WebCanvasNode;
+class WaterNode;
 class SceneTree;
 
 // A Scene is simply the root Node of a tree (cf. Godot: a scene is a node).
@@ -94,6 +103,9 @@ public:
 
     const std::vector<MeshNode*>& meshes() const { return meshes_; }
     const std::vector<LightNode*>& lights() const { return lights_; }
+    UICanvasNode* uiCanvas() const { return uiCanvas_; }
+    const std::vector<WebCanvasNode*>& webCanvases() const { return webCanvases_; }
+    const std::vector<WaterNode*>& waterNodes() const { return waterNodes_; }
 
     // The per-scene physics world (created lazily once a body exists; null until then).
     PhysicsWorld* physics() const { return physics_.get(); }
@@ -130,6 +142,9 @@ private:
 
     std::vector<MeshNode*> meshes_;
     std::vector<LightNode*> lights_;
+    UICanvasNode* uiCanvas_ = nullptr;
+    std::vector<WebCanvasNode*> webCanvases_;
+    std::vector<WaterNode*> waterNodes_;
     std::vector<Behaviour*> flatBehaviours_;
     std::vector<CollisionObjectNode*> bodies_;
 

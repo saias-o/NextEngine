@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <sstream>
 #include <utility>
@@ -20,6 +21,12 @@ namespace ne {
 namespace {
 
 constexpr float kHotReloadCheckIntervalSeconds = 0.5f;
+
+float hotReloadPhase(const std::string& key) {
+    if (key.empty()) return 0.0f;
+    size_t bucket = std::hash<std::string>{}(key) % 1000u;
+    return (static_cast<float>(bucket) / 1000.0f) * kHotReloadCheckIntervalSeconds;
+}
 
 class JsModuleDependencyCapture {
 public:
@@ -90,6 +97,7 @@ ScriptBehaviour::~ScriptBehaviour() = default;
 
 void ScriptBehaviour::setScriptPath(std::string path) {
     scriptPath_ = std::move(path);
+    hotReloadTimer_ = hotReloadPhase(scriptPath_);
     loaded_ = false;
     scriptWatcher_.clear();
     moduleWatchers_.clear();
@@ -275,6 +283,7 @@ void ScriptBehaviour::save(nlohmann::json& j) const {
 
 void ScriptBehaviour::load(const nlohmann::json& j) {
     scriptPath_ = j.value("script", "");
+    hotReloadTimer_ = hotReloadPhase(scriptPath_);
     hotReloadEnabled_ = j.value("hotReload", true);
     properties_.clear();
     if (!j.contains("properties") || !j["properties"].is_object()) return;

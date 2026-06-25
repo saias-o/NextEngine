@@ -225,6 +225,7 @@ bool SceneSerializer::loadIntoScene(Scene& scene, ResourceManager& resources,
             scene.settings().enablePostProcessing = it->value("postProcessing", true);
             scene.settings().lightingMode = static_cast<LightingMode>(it->value("lightingMode", 0));
             scene.settings().giEnabled = it->value("giEnabled", true);
+            scene.settings().giMode = static_cast<GIMode>(it->value("giMode", 0));
             scene.settings().giIntensity = it->value("giIntensity", 1.0f);
             scene.settings().skyboxTexture = it->value("skyboxTexture", kAssetInvalid);
             scene.settings().skyboxExposure = it->value("skyboxExposure", 1.0f);

@@ -320,6 +320,17 @@ void InspectorPanel::draw(EditorUI* editor) {
 
         ImGui::SeparatorText("Global Illumination");
         pe.checkbox("Enable GI (indirect diffuse)", G(&SceneSettings::giEnabled), S(&SceneSettings::giEnabled));
+        int giMode = static_cast<int>(s.giMode);
+        auto giModeGet = [](Node& n) { return static_cast<int>(static_cast<Scene&>(n).settings().giMode); };
+        auto giModeSet = [](Node& n, int v) { static_cast<Scene&>(n).settings().giMode = static_cast<GIMode>(v); };
+        if (ImGui::RadioButton("Full realtime GI", &giMode, static_cast<int>(GIMode::FullRealtime)))
+            pe.push<int>("GI Mode", giModeGet, giModeSet, static_cast<int>(GIMode::FullRealtime));
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Amortized GI", &giMode, static_cast<int>(GIMode::AmortizedRealtime)))
+            pe.push<int>("GI Mode", giModeGet, giModeSet, static_cast<int>(GIMode::AmortizedRealtime));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Updates DDGI every frame during warm-up, then on a cadence.\n"
+                              "Higher FPS, but indirect lighting reacts less immediately.");
         pe.sliderFloat("GI Intensity", G(&SceneSettings::giIntensity), S(&SceneSettings::giIntensity), 0.0f, 8.0f);
         pe.checkbox("Debug: show voxel grid", G(&SceneSettings::giDebugVoxels), S(&SceneSettings::giDebugVoxels));
 

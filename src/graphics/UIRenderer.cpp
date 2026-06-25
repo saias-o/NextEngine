@@ -64,32 +64,23 @@ void UIRenderer::gatherUI(Scene& scene) {
     drawCmds_.clear();
     webNodesToUpdate_.clear();
     
-    // Cherche un UICanvasNode et les WebCanvasNode
-    UICanvasNode* canvas = nullptr;
-    scene.traverse([&](Node& n, const glm::mat4&) {
-        if (!canvas && dynamic_cast<UICanvasNode*>(&n)) {
-            canvas = static_cast<UICanvasNode*>(&n);
-        }
-        
-        // Render ScreenSpace WebCanvasNodes
-        if (auto* wcn = dynamic_cast<WebCanvasNode*>(&n)) {
-            if (wcn->isActiveInHierarchy()) {
-                webNodesToUpdate_.push_back(wcn);
-                if (wcn->mode() == WebCanvasNode::Mode::ScreenSpace && wcn->texture()) {
-                    UIDrawCmd cmd{};
-                    cmd.position = {0.0f, 0.0f}; // Drawn at top-left
-                    cmd.size = {static_cast<float>(wcn->width()), static_cast<float>(wcn->height())};
-                    cmd.color = glm::vec4(1.0f);
-                    if (wcn->texture()->bindlessIndex() == ~0u) {
-                        wcn->texture()->setBindlessIndex(resources_.getBindlessTextureIndex(wcn->texture()));
-                    }
-                    cmd.textureId = wcn->texture()->bindlessIndex();
-                    cmd.hasTexture = 1;
-                    drawCmds_.push_back(cmd);
-                }
+    UICanvasNode* canvas = scene.uiCanvas();
+    for (WebCanvasNode* wcn : scene.webCanvases()) {
+        if (!wcn->isActiveInHierarchy()) continue;
+        webNodesToUpdate_.push_back(wcn);
+        if (wcn->mode() == WebCanvasNode::Mode::ScreenSpace && wcn->texture()) {
+            UIDrawCmd cmd{};
+            cmd.position = {0.0f, 0.0f}; // Drawn at top-left
+            cmd.size = {static_cast<float>(wcn->width()), static_cast<float>(wcn->height())};
+            cmd.color = glm::vec4(1.0f);
+            if (wcn->texture()->bindlessIndex() == ~0u) {
+                wcn->texture()->setBindlessIndex(resources_.getBindlessTextureIndex(wcn->texture()));
             }
+            cmd.textureId = wcn->texture()->bindlessIndex();
+            cmd.hasTexture = 1;
+            drawCmds_.push_back(cmd);
         }
-    });
+    }
 
     if (canvas && canvas->isActiveInHierarchy()) {
         // Traverse recursivement les UINodes

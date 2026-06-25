@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <atomic>
 #include <filesystem>
+#include <functional>
 #include <sstream>
 #include <vector>
 
@@ -30,6 +31,12 @@ namespace ne {
 namespace {
 std::atomic<uint64_t> gNextWebCanvasId{1};
 constexpr float kHotReloadCheckIntervalSeconds = 0.5f;
+
+float hotReloadPhase(const std::string& key) {
+    if (key.empty()) return 0.0f;
+    size_t bucket = std::hash<std::string>{}(key) % 1000u;
+    return (static_cast<float>(bucket) / 1000.0f) * kHotReloadCheckIntervalSeconds;
+}
 
 class RmlDependencyCapture {
 public:
@@ -132,6 +139,7 @@ void WebCanvasNode::loadHTML(const std::string& html) {
 
 void WebCanvasNode::loadURL(const std::string& url) {
     url_ = url;
+    hotReloadTimer_ = hotReloadPhase(url_);
     html_.clear();
     documentWatchers_.clear();
     ensureRmlContext();
@@ -243,6 +251,7 @@ void WebCanvasNode::deserialize(const nlohmann::json& j, ResourceManager& resour
     height_ = j.value("height", 600u);
     mode_ = static_cast<Mode>(j.value("mode", static_cast<int>(Mode::ScreenSpace)));
     url_ = j.value("url", "");
+    hotReloadTimer_ = hotReloadPhase(url_);
     html_ = j.value("html", "");
     hotReloadEnabled_ = j.value("hotReload", true);
     if (j.contains("startupScripts")) {

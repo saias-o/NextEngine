@@ -10,6 +10,7 @@
 #include <glm/gtc/constants.hpp>
 
 #include <algorithm>
+#include <array>
 #include <stdexcept>
 #include <vector>
 
@@ -94,20 +95,16 @@ void WaterFeature::createPipelines(const RenderContext& ctx) {
 }
 
 void WaterFeature::record(const FrameContext& fc) {
-    std::vector<WaterNode*> waters;
-    fc.scene.traverse([&](Node& n, const glm::mat4&) {
-        if (auto* w = dynamic_cast<WaterNode*>(&n))
-            if (n.isActiveInHierarchy()) waters.push_back(w);
-    });
-    if (waters.empty()) return;
-    if (waters.size() > kMaxWaters) waters.resize(kMaxWaters);  // hard cap (UBO array size)
+    std::array<GpuWater, kMaxWaters> packed{};
+    uint32_t waterCount = 0;
 
     // Pack every water node into this frame's UBO array.
-    std::vector<GpuWater> packed(waters.size());
-    for (size_t i = 0; i < waters.size(); ++i) {
-        WaterNode* w = waters[i];
+    for (WaterNode* w : fc.scene.waterNodes()) {
+        if (!w->isActiveInHierarchy()) continue;
+        if (waterCount >= kMaxWaters) break;  // hard cap (UBO array size)
+
         glm::vec3 c = glm::vec3(w->worldTransform()[3]);
-        GpuWater& g = packed[i];
+        GpuWater& g = packed[waterCount++];
         g.area = glm::vec4(c.x, c.y, c.z, w->size);
         g.deep = glm::vec4(w->deepColor, w->roughness);
         g.foam = glm::vec4(w->foamColor, w->reflectivity);
@@ -128,17 +125,18 @@ void WaterFeature::record(const FrameContext& fc) {
         g.shoreTune = glm::vec4(w->foamWidth, w->swashSpeed, w->swashAmount, w->waveFlatten);
         g.shoreMode = glm::vec4(static_cast<float>(mode), w->shoreFoam, 0.0f, 0.0f);
     }
+    if (waterCount == 0) return;
 
     const uint32_t frame = std::min<uint32_t>(fc.frameIndex,
                                               static_cast<uint32_t>(ubos_.size()) - 1);
-    ubos_[frame]->write(packed.data(), sizeof(GpuWater) * packed.size());
+    ubos_[frame]->write(packed.data(), sizeof(GpuWater) * waterCount);
 
     pipeline_->bind(fc.cmd);
     VkDescriptorSet bound[2] = {fc.globalSet, sets_[frame]};
     vkCmdBindDescriptorSets(fc.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout(),
         0, 2, bound, 0, nullptr);
 
-    for (uint32_t i = 0; i < waters.size(); ++i) {
+    for (uint32_t i = 0; i < waterCount; ++i) {
         Push pc{i, fc.time};
         vkCmdPushConstants(fc.cmd, pipeline_->layout(),
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
