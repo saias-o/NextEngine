@@ -964,9 +964,9 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
                             }
                         }
 
-                        currentDraws_.push_back(DrawCmd{drawMesh, drawMat, world, node->castShadows(),
-                                                        baked, lightBaker_->lightmapSet(node), boneOffset,
-                                                        drawMat->desc().type});
+                        currentDraws_.push_back(SceneDraw{drawMesh, drawMat, node, world, node->castShadows(),
+                                                          baked, lightBaker_->lightmapSet(node), boneOffset,
+                                                          drawMat->desc().type});
                     }
                 }
             }
@@ -977,7 +977,11 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
         }
 
         // Sort draws by material to minimize Vulkan pipeline descriptor set binds
-        std::sort(currentDraws_.begin(), currentDraws_.end());
+        std::sort(currentDraws_.begin(), currentDraws_.end(),
+                  [](const SceneDraw& a, const SceneDraw& b) {
+                      if (a.materialType != b.materialType) return a.materialType < b.materialType;
+                      return a.material < b.material;
+                  });
     }
 }
 
@@ -1230,6 +1234,68 @@ void Renderer::recordFeatures(const FrameContext& fc) {
     for (auto& f : features_) f->record(fc);
 }
 
+void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, bool xrMultiview) {
+    if (!firstPipeline) return;
+
+    Material* lastMaterial = nullptr;
+    Pipeline* activePipeline = firstPipeline;
+    activePipeline->bind(cmd);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline->layout(),
+                            0, 1, &globalSets_[currentFrame_], 0, nullptr);
+
+    for (const auto& draw : currentDraws_) {
+        Pipeline* want = scenePipelineFor(draw.materialType);
+#ifdef NE_ENABLE_XR
+        if (xrMultiview)
+            want = xrScenePipelineFor(draw.materialType);
+#else
+        (void)xrMultiview;
+#endif
+
+        if (want != activePipeline) {
+            want->bind(cmd);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, want->layout(),
+                                    0, 1, &globalSets_[currentFrame_], 0, nullptr);
+            activePipeline = want;
+            lastMaterial = nullptr;
+        }
+
+        VkPipelineLayout layout = activePipeline->layout();
+        if (draw.material != lastMaterial) {
+            VkDescriptorSet matSet = draw.material->descriptorSet();
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
+                                    1, 1, &matSet, 0, nullptr);
+            lastMaterial = draw.material;
+        }
+
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
+                                2, 1, &draw.lightmapSet, 0, nullptr);
+
+        PushConstants pc{};
+        pc.model = draw.world;
+        // params.y: offset into the global bone matrix buffer, or -1.
+        pc.params = glm::vec4(draw.useLightmap ? 1.0f : 0.0f,
+                              static_cast<float>(draw.boneOffset), 0.0f, 0.0f);
+        vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(PushConstants), &pc);
+
+        draw.mesh->bind(cmd);
+        draw.mesh->draw(cmd);
+    }
+}
+
+void Renderer::recordShadowPasses(VkCommandBuffer cmd) {
+    shadowMap_->record(cmd, shadowCount_,
+        [this](VkCommandBuffer c, VkPipelineLayout layout, int layer) {
+            for (const ShadowDraw& draw : shadowDraws_) {
+                glm::mat4 mvp = shadowMatrices_[layer] * draw.world;
+                vkCmdPushConstants(c, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
+                draw.mesh->bind(c);
+                draw.mesh->draw(c);
+            }
+        });
+}
+
 void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera, Project* project) {
     camera.setPerspective(glm::radians(camera.fovDegrees), swapchain_->aspectRatio(),
                           camera.nearZ, camera.farZ);
@@ -1337,15 +1403,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     // Shadow passes: render scene depth from each caster's POV before the main
     // pass. The caster list is not camera-culled, so off-camera casters still
     // cast into view; each shadow layer just reuses it.
-    shadowMap_->record(cmd, shadowCount_,
-        [this](VkCommandBuffer c, VkPipelineLayout layout, int layer) {
-            for (const ShadowDraw& draw : shadowDraws_) {
-                glm::mat4 mvp = shadowMatrices_[layer] * draw.world;
-                vkCmdPushConstants(c, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
-                draw.mesh->bind(c);
-                draw.mesh->draw(c);
-            }
-        });
+    recordShadowPasses(cmd);
 
     // Lightmap bake (one-shot, requested via the editor): render each included
     // mesh into its lightmap using the freshly-rendered shadow maps + lights.
@@ -1423,7 +1481,6 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     renderingInfo.pDepthAttachment = &depthAttach;
 
     vkCmdBeginRendering(cmd, &renderingInfo);
-    pipeline_->bind(cmd);
 
     VkViewport viewport{};
     viewport.x = 0.0f;
@@ -1441,11 +1498,12 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
 
     VkPipelineLayout layout = pipeline_->layout();
 
-    // Set 0: per-frame global data (camera + lighting), shared by every object.
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
-        0, 1, &globalSets_[currentFrame_], 0, nullptr);
-
     if (useGpuDriven) {
+        pipeline_->bind(cmd);
+        // Set 0: per-frame global data (camera + lighting), shared by every object.
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
+            0, 1, &globalSets_[currentFrame_], 0, nullptr);
+
         // Set 1: Bindless Textures + MaterialData SSBO
         VkDescriptorSet globalMaterialSet = resources_.globalMaterialSet();
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
@@ -1494,55 +1552,13 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
             }
         }
     } else {
-        // Render all visible meshes from the collected RenderView. Draws are sorted
-        // by shading model (Lit/Unlit), so the scene pipeline is bound at most once
-        // per model; set 0 (global) was bound above and survives the swap since the
-        // pipelines are layout-compatible (we rebind it on swap to stay explicit).
-        Material* lastMaterial = nullptr;
-        Pipeline* activePipeline = pipeline_.get();  // Lit, already bound above
-
-        for (const auto& cmdDraw : currentDraws_) {
-            Pipeline* want = scenePipelineFor(cmdDraw.materialType);
-            if (want != activePipeline) {
-                want->bind(cmd);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, want->layout(),
-                                        0, 1, &globalSets_[currentFrame_], 0, nullptr);
-                activePipeline = want;
-                lastMaterial = nullptr;  // re-bind sets 1/2 under the new layout
-            }
-            VkPipelineLayout activeLayout = activePipeline->layout();
-
-            if (cmdDraw.material != lastMaterial) {
-                VkDescriptorSet matSet = cmdDraw.material->descriptorSet();
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activeLayout,
-                                        1, 1, &matSet, 0, nullptr);
-                lastMaterial = cmdDraw.material;
-            }
-
-            // Set 2: this node's baked lightmap (or the default when not baked).
-            VkDescriptorSet lmSet = cmdDraw.lightmapSet;
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activeLayout,
-                                    2, 1, &lmSet, 0, nullptr);
-
-            PushConstants pc{};
-            pc.model = cmdDraw.world;
-            // params.x > 0.5: this is a baked static mesh → use its frozen lightmap
-            // diffuse + live specular. Otherwise: full live lighting + DDGI indirect.
-            // params.y = boneOffset.
-            pc.params = glm::vec4(cmdDraw.useLightmap ? 1.0f : 0.0f,
-                                  static_cast<float>(cmdDraw.boneOffset), 0.0f, 0.0f);
-            vkCmdPushConstants(cmd, activeLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(PushConstants), &pc);
-
-            cmdDraw.mesh->bind(cmd);
-            cmdDraw.mesh->draw(cmd);
-        }
+        recordMeshDraws(cmd, pipeline_.get(), false);
     }
 
-    // Scene-pass features (water, skybox, debug lines) — registered once, iterated
-    // here. Adding an effect never touches this function.
+    // Scene-pass features are recorded after opaque meshes.
     FrameContext fc{cmd, currentFrame_, globalSets_[currentFrame_], scene,
-                    Time::elapsed(), false, &camera, nullptr, false};
+                    Time::elapsed(), false, &camera, nullptr, false, extent,
+                    currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
     recordFeatures(fc);
 
     vkCmdEndRendering(cmd);
@@ -1786,7 +1802,6 @@ void Renderer::createXrPipelines() {
         true, true, 0, true, VK_COMPARE_OP_LESS, VK_CULL_MODE_BACK_BIT, false,
         VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, viewMask);
 
-    // ── Scene-pass features (skybox, water, …) — multiview variants ──
     // Same registry as desktop; each feature builds its stereo pipeline from the
     // viewMask. The Renderer stays ignorant of which effects exist.
     buildFeatures(viewMask, depthFormat, VK_SAMPLE_COUNT_1_BIT);
@@ -1957,43 +1972,12 @@ void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
     sc.extent = xrExtent_;
     vkCmdSetScissor(cmd, 0, 1, &sc);
 
-    // Opaque scene (same draw list / material binding model as the desktop path).
-    // Draws are sorted by shading model, so each multiview pipeline binds once.
-    Pipeline* activePipeline = xrScenePipeline_.get();
-    activePipeline->bind(cmd);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline->layout(),
-        0, 1, &globalSets_[currentFrame_], 0, nullptr);
+    recordMeshDraws(cmd, xrScenePipeline_.get(), true);
 
-    Material* lastMaterial = nullptr;
-    for (const auto& d : currentDraws_) {
-        Pipeline* want = xrScenePipelineFor(d.materialType);
-        if (want != activePipeline) {
-            want->bind(cmd);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, want->layout(),
-                0, 1, &globalSets_[currentFrame_], 0, nullptr);
-            activePipeline = want;
-            lastMaterial = nullptr;
-        }
-        VkPipelineLayout layout = activePipeline->layout();
-        if (d.material != lastMaterial) {
-            VkDescriptorSet matSet = d.material->descriptorSet();
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &matSet, 0, nullptr);
-            lastMaterial = d.material;
-        }
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 2, 1, &d.lightmapSet, 0, nullptr);
-        PushConstants pc{};
-        pc.model = d.world;
-        pc.params = glm::vec4(d.useLightmap ? 1.0f : 0.0f, static_cast<float>(d.boneOffset), 0.0f, 0.0f);
-        vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(PushConstants), &pc);
-        d.mesh->bind(cmd);
-        d.mesh->draw(cmd);
-    }
-
-    // Scene-pass features (water, skybox, …), stereo. Same registry as desktop;
     // passthrough is forwarded so the skybox skips itself.
     FrameContext fc{cmd, currentFrame_, globalSets_[currentFrame_], scene,
-                    Time::elapsed(), true, nullptr, &eyes, passthrough};
+                    Time::elapsed(), true, nullptr, &eyes, passthrough, xrExtent_,
+                    currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
     recordFeatures(fc);
 
     vkCmdEndRendering(cmd);
@@ -2116,23 +2100,7 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
         gi_->voxelize(cmd, scene);
         gi_->update(cmd, globalSets_[currentFrame_]);
     }
-    shadowMap_->record(cmd, shadowCount_,
-        [this, &scene](VkCommandBuffer c, VkPipelineLayout layout, int layer) {
-            for (MeshNode* node : scene.meshes()) {
-                Mesh* mesh = node->mesh();
-                if (!mesh || !node->castShadows()) continue;
-                if (node->hasLods() && lodMatricesValid_) {
-                    const glm::mat4& world = node->worldTransform();
-                    const float coverage = computeScreenCoverage(world, mesh->bounds(), lodView_, lodProj_);
-                    mesh = node->meshForLod(node->selectLodIndex(coverage));
-                }
-                if (!mesh) continue;
-                glm::mat4 mvp = shadowMatrices_[layer] * node->worldTransform();
-                vkCmdPushConstants(c, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
-                mesh->bind(c);
-                mesh->draw(c);
-            }
-        });
+    recordShadowPasses(cmd);
 
     recordXrScenePass(cmd, scene, eyes);
     recordXrTonemap(cmd, scene, eyes);

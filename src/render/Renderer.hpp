@@ -79,24 +79,6 @@ struct LightingUBO {
     glm::vec4 environmentParams{0.0f}; // x enabled, y diffuse, z specular, w rotation
 };
 
-struct DrawCmd {
-    Mesh* mesh;
-    Material* material;
-    glm::mat4 world;
-    bool castShadows;
-    bool useLightmap;            // sample the baked lightmap instead of live lighting
-    VkDescriptorSet lightmapSet; // set 2 (baked lightmap, or default white)
-    int32_t boneOffset;          // offset in global BoneMatricesBuffer, or -1
-    MaterialType materialType;   // selects the scene pipeline (Lit / Unlit / …)
-
-    // Sort by shading model first (so each pipeline is bound at most once), then
-    // by material to batch descriptor-set binds within a pipeline.
-    bool operator<(const DrawCmd& other) const {
-        if (materialType != other.materialType) return materialType < other.materialType;
-        return material < other.material;
-    }
-};
-
 struct InstanceData {
     glm::mat4 model;
     glm::vec4 boundingSphere; // xyz = center, w = radius
@@ -178,6 +160,11 @@ private:
     void gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& cameraPos,
                      const Frustum* cullFrustum, Project* project,
                      const glm::mat4* view = nullptr, const glm::mat4* proj = nullptr);
+    // Records the sorted CPU mesh draw list for both desktop and XR. The caller
+    // chooses the first pipeline for the active render target; this method handles
+    // pipeline switches, material/lightmap binds, push constants and mesh draws.
+    void recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, bool xrMultiview);
+    void recordShadowPasses(VkCommandBuffer cmd);
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Scene& scene, const Camera& camera);
 
     VulkanDevice& device_;
@@ -246,7 +233,7 @@ private:
     std::vector<VkFence> inFlightFences_;
     uint32_t currentFrame_ = 0;
     
-    std::vector<DrawCmd> currentDraws_;
+    std::vector<SceneDraw> currentDraws_;
     struct ShadowDraw {
         Mesh* mesh = nullptr;
         glm::mat4 world{1.0f};

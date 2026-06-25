@@ -86,8 +86,10 @@ Re-running the two commands is safe after source or CMake changes.
 
 Successful builds produce:
 
-- `build/NextEngine.exe` — engine and demo game;
-- `build/NextEngineHub.exe` — project hub;
+- `build/bin/NextEngine.exe` — engine and demo game;
+- `build/bin/NextEngineHub.exe` — project hub;
+- `build/bin/NextEngineRuntime.exe` — standalone runtime template;
+- `build/tests/*.exe` — test binaries;
 - `build/libne_engine.a` — static engine library.
 
 Shaders are compiled to `build/shaders/` by `glslc`. Asset and shader paths
@@ -100,7 +102,7 @@ working directory.
 launch it normally:
 
 ```sh
-./build/NextEngine.exe
+./build/bin/NextEngine.exe
 ```
 
 For a Debug build with Vulkan validation layers, launch it through:

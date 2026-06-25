@@ -51,6 +51,13 @@ public:
     bool& includeInLightBaking() { return includeInLightBaking_; }
     bool includeInLightBaking() const { return includeInLightBaking_; }
 
+    bool outlineEnabled() const { return outlineEnabled_; }
+    void setOutlineEnabled(bool enabled) { outlineEnabled_ = enabled; }
+    glm::vec4& outlineColor() { return outlineColor_; }
+    const glm::vec4& outlineColor() const { return outlineColor_; }
+    float& outlineWidth() { return outlineWidth_; }
+    float outlineWidth() const { return outlineWidth_; }
+
     bool meshEnabled() const { return meshEnabled_; }
     void setMeshEnabled(bool enabled) {
         if (meshEnabled_ != enabled) {
@@ -66,6 +73,9 @@ private:
     mutable int activeLodIndex_ = 0;
     bool castShadows_ = true;
     bool includeInLightBaking_ = false;
+    bool outlineEnabled_ = false;
+    glm::vec4 outlineColor_{0.02f, 0.02f, 0.02f, 1.0f};
+    float outlineWidth_ = 3.0f;  // screen pixels
     bool meshEnabled_ = true;
 };
 

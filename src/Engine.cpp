@@ -203,7 +203,7 @@ bool Engine::launchExternalPreviewIfNeeded() {
     }
 
     const std::filesystem::path executable =
-        std::filesystem::path(NE_BINARY_DIR) / "NextEngine.exe";
+        std::filesystem::path(NE_RUNTIME_DIR) / "NextEngine.exe";
     if (!std::filesystem::exists(executable)) {
         Log::error("XR Preview executable not found: ", executable.string());
         return true;

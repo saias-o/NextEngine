@@ -65,6 +65,9 @@ void MeshNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
     j["castShadows"] = castShadows_;
     j["includeInLightBaking"] = includeInLightBaking_;
     j["meshEnabled"] = meshEnabled_;
+    j["outlineEnabled"] = outlineEnabled_;
+    j["outlineColor"] = {outlineColor_.r, outlineColor_.g, outlineColor_.b, outlineColor_.a};
+    j["outlineWidth"] = outlineWidth_;
     if (lods_.size() > 1) {
         nlohmann::json arr = nlohmann::json::array();
         for (const MeshLodLevel& lvl : lods_) {
@@ -125,6 +128,12 @@ void MeshNode::deserialize(const nlohmann::json& j, ResourceManager& resources) 
     if (j.contains("castShadows")) castShadows_ = j["castShadows"].get<bool>();
     if (j.contains("includeInLightBaking")) includeInLightBaking_ = j["includeInLightBaking"].get<bool>();
     if (j.contains("meshEnabled")) meshEnabled_ = j["meshEnabled"].get<bool>();
+    if (j.contains("outlineEnabled")) outlineEnabled_ = j["outlineEnabled"].get<bool>();
+    if (j.contains("outlineColor") && j["outlineColor"].is_array() && j["outlineColor"].size() == 4) {
+        outlineColor_ = {j["outlineColor"][0].get<float>(), j["outlineColor"][1].get<float>(),
+                         j["outlineColor"][2].get<float>(), j["outlineColor"][3].get<float>()};
+    }
+    if (j.contains("outlineWidth")) outlineWidth_ = j["outlineWidth"].get<float>();
     if (j.contains("lods") && j["lods"].is_array()) {
         std::vector<MeshLodLevel> levels;
         for (const auto& entry : j["lods"]) {

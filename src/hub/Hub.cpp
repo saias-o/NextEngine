@@ -130,22 +130,20 @@ void Hub::saveProjects() {
 }
 
 void Hub::launchProject(const std::string& path) {
-    std::string exePath = (fs::current_path() / "build" / "NextEngine.exe").string();
-    if (!fs::exists(exePath)) {
-        exePath = (fs::current_path() / "NextEngine.exe").string();
-    }
+    fs::path exePath = fs::current_path() / "build" / "bin" / "NextEngine.exe";
+    if (!fs::exists(exePath)) exePath = fs::current_path() / "bin" / "NextEngine.exe";
+    if (!fs::exists(exePath)) exePath = fs::current_path() / "NextEngine.exe";
     
-    std::string cmd = "start \"\" \"" + exePath + "\" --project \"" + path + "\"";
+    std::string cmd = "start \"\" \"" + exePath.string() + "\" --project \"" + path + "\"";
     std::system(cmd.c_str());
     shouldClose_ = true;
 }
 
 void Hub::launchTemplate() {
-    std::string exePath = (fs::current_path() / "build" / "NextEngine.exe").string();
-    if (!fs::exists(exePath)) {
-        exePath = (fs::current_path() / "NextEngine.exe").string();
-    }
-    std::string cmd = "start \"\" \"" + exePath + "\"";
+    fs::path exePath = fs::current_path() / "build" / "bin" / "NextEngine.exe";
+    if (!fs::exists(exePath)) exePath = fs::current_path() / "bin" / "NextEngine.exe";
+    if (!fs::exists(exePath)) exePath = fs::current_path() / "NextEngine.exe";
+    std::string cmd = "start \"\" \"" + exePath.string() + "\"";
     std::system(cmd.c_str());
     shouldClose_ = true;
 }

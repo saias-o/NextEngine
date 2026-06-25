@@ -13,6 +13,21 @@ include(CTest)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(NE_APP_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin)
+set(NE_TEST_OUTPUT_DIR ${CMAKE_BINARY_DIR}/tests)
+
+function(ne_app_target target)
+    set_target_properties(${target} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${NE_APP_OUTPUT_DIR}
+    )
+endfunction()
+
+function(ne_test_target target)
+    set_target_properties(${target} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${NE_TEST_OUTPUT_DIR}
+    )
+endfunction()
+
 find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(glm REQUIRED)
@@ -37,6 +52,8 @@ set(SHADERS
     ${SHADER_DIR}/skybox.frag
     ${SHADER_DIR}/water.vert
     ${SHADER_DIR}/water.frag
+    ${SHADER_DIR}/outline.vert
+    ${SHADER_DIR}/outline.frag
     ${SHADER_DIR}/ui.vert
     ${SHADER_DIR}/ui.frag
     ${SHADER_DIR}/voxelize.vert
@@ -80,7 +97,7 @@ foreach(SHADER ${SHADERS})
     # gl_ViewIndex get a -DMULTIVIEW variant. The scene vertex picks per-eye
     # camera matrices; the skybox fragment picks per-eye inverse view-proj.
     if(SHADER_NAME STREQUAL "shader.vert" OR SHADER_NAME STREQUAL "skybox.frag"
-       OR SHADER_NAME STREQUAL "water.vert")
+       OR SHADER_NAME STREQUAL "water.vert" OR SHADER_NAME STREQUAL "outline.vert")
         set(MULTIVIEW_OUTPUT ${SHADER_OUT_DIR}/multiview.${SHADER_NAME}.spv)
         add_custom_command(
             OUTPUT ${MULTIVIEW_OUTPUT}
@@ -258,6 +275,7 @@ add_library(ne_engine STATIC
     src/render/Renderer.cpp
     src/render/RenderFeatureRegistry.cpp
     src/render/features/WaterFeature.cpp
+    src/render/features/OutlineFeature.cpp
     src/render/features/SkyboxFeature.cpp
     src/render/features/DebugLinesFeature.cpp
     src/render/LightBaker.cpp
@@ -349,6 +367,7 @@ add_dependencies(ne_engine Shaders)
 target_compile_definitions(ne_engine PUBLIC
     NE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
     NE_BINARY_DIR="${CMAKE_BINARY_DIR}"
+    NE_RUNTIME_DIR="${NE_APP_OUTPUT_DIR}"
     NE_SHADER_DIR="${SHADER_OUT_DIR}"
     GLM_FORCE_RADIANS
     GLM_FORCE_DEPTH_ZERO_TO_ONE)
@@ -416,61 +435,72 @@ endif()
 
 if (BUILD_TESTING)
     add_executable(ne_core_tests tests/CoreTests.cpp)
+    ne_test_target(ne_core_tests)
     target_include_directories(ne_core_tests PRIVATE src)
     target_compile_options(ne_core_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_core_tests COMMAND ne_core_tests)
+    add_test(NAME ne_core_tests COMMAND $<TARGET_FILE:ne_core_tests>)
 
     add_executable(ne_scene_lifecycle_tests tests/SceneLifecycleTests.cpp)
+    ne_test_target(ne_scene_lifecycle_tests)
     target_link_libraries(ne_scene_lifecycle_tests PRIVATE ne_engine)
     target_compile_options(ne_scene_lifecycle_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_scene_lifecycle_tests COMMAND ne_scene_lifecycle_tests)
+    add_test(NAME ne_scene_lifecycle_tests COMMAND $<TARGET_FILE:ne_scene_lifecycle_tests>)
 
     add_executable(ne_reflection_tests tests/ReflectionTests.cpp)
+    ne_test_target(ne_reflection_tests)
     target_link_libraries(ne_reflection_tests PRIVATE ne_engine)
     target_compile_options(ne_reflection_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_reflection_tests COMMAND ne_reflection_tests)
+    add_test(NAME ne_reflection_tests COMMAND $<TARGET_FILE:ne_reflection_tests>)
 
     add_executable(ne_signal_wiring_tests tests/SignalWiringTests.cpp)
+    ne_test_target(ne_signal_wiring_tests)
     target_link_libraries(ne_signal_wiring_tests PRIVATE ne_engine)
     target_compile_options(ne_signal_wiring_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_signal_wiring_tests COMMAND ne_signal_wiring_tests)
+    add_test(NAME ne_signal_wiring_tests COMMAND $<TARGET_FILE:ne_signal_wiring_tests>)
 
     add_executable(ne_js_signal_tests tests/JsSignalBindingTests.cpp)
+    ne_test_target(ne_js_signal_tests)
     target_link_libraries(ne_js_signal_tests PRIVATE ne_engine)
     target_compile_options(ne_js_signal_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_js_signal_tests COMMAND ne_js_signal_tests)
+    add_test(NAME ne_js_signal_tests COMMAND $<TARGET_FILE:ne_js_signal_tests>)
 
     add_executable(ne_gameplay_primitive_tests tests/GameplayPrimitiveTests.cpp)
+    ne_test_target(ne_gameplay_primitive_tests)
     target_link_libraries(ne_gameplay_primitive_tests PRIVATE ne_engine)
     target_compile_options(ne_gameplay_primitive_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_gameplay_primitive_tests COMMAND ne_gameplay_primitive_tests)
+    add_test(NAME ne_gameplay_primitive_tests COMMAND $<TARGET_FILE:ne_gameplay_primitive_tests>)
 
     add_executable(ne_physics_character_tests tests/PhysicsCharacterTest.cpp)
+    ne_test_target(ne_physics_character_tests)
     target_link_libraries(ne_physics_character_tests PRIVATE ne_engine)
-    add_test(NAME ne_physics_character_tests COMMAND ne_physics_character_tests)
+    add_test(NAME ne_physics_character_tests COMMAND $<TARGET_FILE:ne_physics_character_tests>)
 
     add_executable(ne_collision_auto_tests tests/CollisionAutoShapeTest.cpp)
+    ne_test_target(ne_collision_auto_tests)
     target_link_libraries(ne_collision_auto_tests PRIVATE ne_engine)
-    add_test(NAME ne_collision_auto_tests COMMAND ne_collision_auto_tests)
+    add_test(NAME ne_collision_auto_tests COMMAND $<TARGET_FILE:ne_collision_auto_tests>)
 
     add_executable(ne_editor_command_tests tests/EditorCommandTests.cpp)
+    ne_test_target(ne_editor_command_tests)
     target_link_libraries(ne_editor_command_tests PRIVATE ne_editor)
     target_compile_options(ne_editor_command_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_editor_command_tests COMMAND ne_editor_command_tests)
+    add_test(NAME ne_editor_command_tests COMMAND $<TARGET_FILE:ne_editor_command_tests>)
 
     add_executable(ne_editor_document_tests tests/EditorDocumentTests.cpp)
+    ne_test_target(ne_editor_document_tests)
     target_link_libraries(ne_editor_document_tests PRIVATE ne_editor)
     target_compile_options(ne_editor_document_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_editor_document_tests COMMAND ne_editor_document_tests)
+    add_test(NAME ne_editor_document_tests COMMAND $<TARGET_FILE:ne_editor_document_tests>)
 
     if(NE_ENABLE_MCP)
         add_executable(ne_mcp_server_tests tests/McpServerTests.cpp)
+        ne_test_target(ne_mcp_server_tests)
         target_link_libraries(ne_mcp_server_tests PRIVATE ne_editor)
         if(WIN32)
             target_link_libraries(ne_mcp_server_tests PRIVATE ws2_32)
         endif()
         target_compile_options(ne_mcp_server_tests PRIVATE -Wall -Wextra)
-        add_test(NAME ne_mcp_server_tests COMMAND ne_mcp_server_tests)
+        add_test(NAME ne_mcp_server_tests COMMAND $<TARGET_FILE:ne_mcp_server_tests>)
     endif()
 endif()
 
@@ -480,6 +510,7 @@ endif()
 add_executable(NextEngine
     src/main.cpp
 )
+ne_app_target(NextEngine)
 target_link_libraries(NextEngine PRIVATE ne_editor)
 target_compile_options(NextEngine PRIVATE -Wall -Wextra)
 add_dependencies(NextEngine Shaders)
@@ -500,6 +531,7 @@ endif()
 add_executable(NextEngineRuntime
     src/runtime/main.cpp
 )
+ne_app_target(NextEngineRuntime)
 target_link_libraries(NextEngineRuntime PRIVATE ne_engine)
 target_compile_options(NextEngineRuntime PRIVATE -Wall -Wextra)
 add_dependencies(NextEngineRuntime Shaders)
@@ -521,6 +553,7 @@ add_executable(NextEngineHub
     src/hub/main.cpp
     src/hub/Hub.cpp
 )
+ne_app_target(NextEngineHub)
 target_link_libraries(NextEngineHub PRIVATE ne_engine)
 target_compile_options(NextEngineHub PRIVATE -Wall -Wextra)
 

@@ -716,6 +716,18 @@ void InspectorPanel::drawMeshRenderer(MeshNode* meshNode, EditorUI* editor) {
     pe.checkbox("Include to light baking",
                 [](Node& n) { return static_cast<MeshNode&>(n).includeInLightBaking(); },
                 [](Node& n, bool v) { static_cast<MeshNode&>(n).includeInLightBaking() = v; });
+    pe.checkbox("Outline",
+                [](Node& n) { return static_cast<MeshNode&>(n).outlineEnabled(); },
+                [](Node& n, bool v) { static_cast<MeshNode&>(n).setOutlineEnabled(v); });
+    if (meshNode->outlineEnabled()) {
+        pe.colorEdit4("Outline Color",
+                      [](Node& n) { return static_cast<MeshNode&>(n).outlineColor(); },
+                      [](Node& n, glm::vec4 v) { static_cast<MeshNode&>(n).outlineColor() = v; });
+        pe.sliderFloat("Outline Width",
+                       [](Node& n) { return static_cast<MeshNode&>(n).outlineWidth(); },
+                       [](Node& n, float v) { static_cast<MeshNode&>(n).outlineWidth() = v; },
+                       0.0f, 12.0f);
+    }
 
     if (!meshNode->getBehaviour<LODGroupBehaviour>()) {
         if (ImGui::Button("Add LOD Group", ImVec2(-FLT_MIN, 0.0f))) {

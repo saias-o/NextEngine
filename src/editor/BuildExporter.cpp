@@ -84,7 +84,7 @@ BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
     r.log += "Output: " + outDir.string() + "\n";
 
     // ── Locate the pre-built runtime template + its runtime DLLs ──────────────
-    const fs::path binDir = fs::path(NE_BINARY_DIR);
+    const fs::path binDir = fs::path(NE_RUNTIME_DIR);
     const fs::path runtimeExe = binDir / "NextEngineRuntime.exe";
     if (!fs::exists(runtimeExe))
         return fail("runtime template not found — build the NextEngineRuntime "

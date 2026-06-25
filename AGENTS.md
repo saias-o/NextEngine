@@ -67,7 +67,7 @@ Les chemins d'assets et de shaders sont **absolus** (bakés par CMake :
 répertoire** :
 
 ```sh
-./build/NextEngine.exe
+./build/bin/NextEngine.exe
 ```
 
 Pour lancer **avec les validation layers Vulkan** : `./run.sh` (depuis la racine).

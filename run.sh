@@ -12,5 +12,5 @@ ucrt_bin="$(dirname "$(command -v gcc)")"
 export PATH="$ucrt_bin:$PATH"
 export VK_LAYER_PATH="$(cygpath -w "$ucrt_bin")"
 
-cd "$(dirname "$0")/build"
+cd "$(dirname "$0")/build/bin"
 exec ./NextEngine.exe "$@"

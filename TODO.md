@@ -29,7 +29,7 @@
 ---
 
 ## Étape 14 — XR / OpenXR
-- [ ] Découplage Renderer : extraire méthode commune `recordMeshDraws()`
+- [x] Découplage Renderer : extraire méthode commune `recordMeshDraws()`
 - [ ] Hand tracking skeletal (`XR_EXT_hand_tracking`)
 - [ ] MSAA multiview + resolve par layer
 - [ ] ImGui overlay en XR
@@ -56,7 +56,7 @@
 
 **TERMINÉ** : Optimisation performances
 **TRÈS HAUTE** : Particules, Outline, Fresnel
-**HAUTE** : Découplage Renderer, Gouttes de pluie, Inspecteur behaviours
+**HAUTE** : Gouttes de pluie, Inspecteur behaviours
 **MOYENNE** : XR handtracking/MSAA/ImGui, Versions, World model, Skills
 **BASSE** : Culling stéréo, anchors backend, LTO, GPU RmlUi, Agents
 **FUTURE** : Radiance Cascades, recherche avancée
