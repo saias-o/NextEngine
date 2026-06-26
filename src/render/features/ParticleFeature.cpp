@@ -85,7 +85,12 @@ glm::vec3 spawnOffset(ParticleSystemNode& emitter, uint32_t& seed) {
     }
     if (emitter.shape == ParticleSystemNode::Shape::Disc ||
         emitter.shape == ParticleSystemNode::Shape::Cone) {
-        return randomDisc(emitter.radius, seed);
+        glm::vec3 p = randomDisc(emitter.radius, seed);
+        if (emitter.effectClass == ParticleSystemNode::EffectClass::Rain ||
+            emitter.effectClass == ParticleSystemNode::EffectClass::Snow) {
+            p.y = emitter.radius * 0.5f;
+        }
+        return p;
     }
     if (emitter.shape == ParticleSystemNode::Shape::Box) {
         return glm::vec3(nextSigned(seed) * emitter.boxExtents.x,
@@ -119,7 +124,7 @@ float classSizeMultiplier(ParticleSystemNode::EffectClass effect, uint32_t& seed
     float jitter = 0.75f + next01(seed) * 0.5f;
     if (effect == ParticleSystemNode::EffectClass::Smoke) return jitter * 1.8f;
     if (effect == ParticleSystemNode::EffectClass::Explosion) return jitter * 1.5f;
-    if (effect == ParticleSystemNode::EffectClass::Rain) return jitter * 0.35f;
+    if (effect == ParticleSystemNode::EffectClass::Rain) return jitter;
     if (effect == ParticleSystemNode::EffectClass::Snow) return jitter * 0.65f;
     return jitter;
 }
@@ -316,6 +321,11 @@ void ParticleFeature::record(const FrameContext& fc) {
 
         EmitterState& state = states_[emitter];
         state.lastSeenSerial = recordSerial_;
+        if (state.effectRevision != emitter->effectRevision()) {
+            state = EmitterState{};
+            state.lastSeenSerial = recordSerial_;
+            state.effectRevision = emitter->effectRevision();
+        }
         if (state.seed == 1) state.seed = hashPtr(emitter);
         state.visibleThisFrame = true;
 

@@ -83,6 +83,7 @@ void ParticleSystemNode::burst() {
 
 void ParticleSystemNode::applyEffectPreset() {
     ParticlePresetLibrary::apply(*this, effectClass);
+    ++effectRevision_;
 }
 
 void ParticleSystemNode::loadEffect() {
@@ -91,6 +92,8 @@ void ParticleSystemNode::loadEffect() {
         ParticleEffect effect = ParticleEffect::loadFromFile(effectPath);
         if (!effect.applyTo(*this)) {
             Log::warn("ParticleSystemNode: effect has no emitter: ", effectPath);
+        } else {
+            ++effectRevision_;
         }
     } catch (const std::exception& e) {
         Log::warn("ParticleSystemNode: failed to load effect '", effectPath, "': ", e.what());

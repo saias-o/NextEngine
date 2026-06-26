@@ -54,18 +54,18 @@ ParticlePreset ParticlePresetLibrary::presetFor(ParticleSystemNode::EffectClass 
             break;
         case Effect::Rain:
             p.maxParticles = 1400;
-            p.spawnRate = 560.0f;
-            p.lifetime = 1.1f;
-            p.startSpeed = 10.0f;
-            p.startSize = 0.035f;
-            p.startColor = {0.45f, 0.72f, 1.0f, 0.48f};
-            p.endColor = {0.45f, 0.72f, 1.0f, 0.08f};
-            p.gravity = {0.0f, -18.0f, 0.0f};
+            p.spawnRate = 760.0f;
+            p.lifetime = 1.35f;
+            p.startSpeed = 8.5f;
+            p.startSize = 0.055f;
+            p.startColor = {0.55f, 0.78f, 1.0f, 0.78f};
+            p.endColor = {0.55f, 0.78f, 1.0f, 0.18f};
+            p.gravity = {0.0f, -14.0f, 0.0f};
             p.radius = 8.0f;
             p.shape = Shape::Disc;
-            p.emissive = 0.85f;
+            p.emissive = 1.25f;
             p.endSizeScale = 1.0f;
-            p.stretch = 6.0f;
+            p.stretch = 9.0f;
             p.blendMode = Blend::Alpha;
             break;
         case Effect::Snow:

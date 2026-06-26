@@ -42,6 +42,7 @@ private:
         float updateAccumulator = 0.0f;
         float lastTime = -1.0f;
         uint64_t lastSeenSerial = 0;
+        uint32_t effectRevision = 0;
         uint32_t seed = 1;
         bool emittedFinished = false;
         bool visibleThisFrame = true;

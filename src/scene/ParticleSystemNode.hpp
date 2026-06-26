@@ -78,9 +78,11 @@ public:
     void loadEffect();
 
     uint32_t consumeBurstCount();
+    uint32_t effectRevision() const { return effectRevision_; }
 
 private:
     uint32_t pendingBursts_ = 0;
+    uint32_t effectRevision_ = 1;
 };
 
 } // namespace ne
