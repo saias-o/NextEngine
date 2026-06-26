@@ -495,6 +495,22 @@ void InspectorPanel::draw(EditorUI* editor) {
             }
             ImGui::EndDragDropTarget();
         }
+        const float overdrawEstimate = static_cast<float>(std::max(0, particles->maxParticles)) *
+            particles->startSize * particles->startSize * std::max(1.0f, particles->stretch);
+        ImGui::Text("Budget: %d particles", particles->maxParticles);
+        if (particles->maxParticles > 1024) {
+            ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.25f, 1.0f),
+                "Mobile/XR warning: high particle count");
+        }
+        if (overdrawEstimate > 180.0f) {
+            ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.25f, 1.0f),
+                "Overdraw warning: large dense billboards");
+        }
+        if (particles->blendMode == ParticleSystemNode::BlendMode::Alpha &&
+            particles->maxParticles > 512 && particles->startSize > 0.25f) {
+            ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.25f, 1.0f),
+                "Alpha warning: consider lower spawn/budget for VR");
+        }
         ImGui::TextDisabled("Preset or .nefx fills the editable parameters below.");
     }
 

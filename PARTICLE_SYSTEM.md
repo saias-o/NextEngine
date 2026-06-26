@@ -120,6 +120,7 @@ Fait :
   - stretch
 - Culling frustum desktop + XR stereo par emitter.
 - Templates `.nefx` livres dans `assets/fx/`.
+- Warnings editeur simples : budget mobile/XR, overdraw estime, alpha dense.
 - Tests non-GUI : reflection + particle effect assets.
 
 ## Reste A Faire
@@ -160,7 +161,7 @@ Fait :
 - Preview live.
 - Save/load `.nefx`.
 - Templates rapides : Fire, Magic, Rain, Snow, Smoke, Explosion.
-- Warnings overdraw/budget.
+- Editeur visuel avance des warnings overdraw/budget.
 
 ### 5. Optimisation VR/Mobile
 
