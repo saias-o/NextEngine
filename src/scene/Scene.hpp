@@ -82,6 +82,7 @@ class LightNode;
 class UICanvasNode;
 class WebCanvasNode;
 class WaterNode;
+class ParticleSystemNode;
 class SceneTree;
 
 // A Scene is simply the root Node of a tree (cf. Godot: a scene is a node).
@@ -106,6 +107,7 @@ public:
     UICanvasNode* uiCanvas() const { return uiCanvas_; }
     const std::vector<WebCanvasNode*>& webCanvases() const { return webCanvases_; }
     const std::vector<WaterNode*>& waterNodes() const { return waterNodes_; }
+    const std::vector<ParticleSystemNode*>& particleSystems() const { return particleSystems_; }
 
     // The per-scene physics world (created lazily once a body exists; null until then).
     PhysicsWorld* physics() const { return physics_.get(); }
@@ -145,6 +147,7 @@ private:
     UICanvasNode* uiCanvas_ = nullptr;
     std::vector<WebCanvasNode*> webCanvases_;
     std::vector<WaterNode*> waterNodes_;
+    std::vector<ParticleSystemNode*> particleSystems_;
     std::vector<Behaviour*> flatBehaviours_;
     std::vector<CollisionObjectNode*> bodies_;
 

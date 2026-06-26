@@ -5,6 +5,7 @@
 #include "scene/UICanvasNode.hpp"
 #include "scene/WebCanvasNode.hpp"
 #include "scene/WaterNode.hpp"
+#include "scene/ParticleSystemNode.hpp"
 #include "scene/SerializationHelpers.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "physics/PhysicsWorld.hpp"
@@ -81,6 +82,7 @@ void Scene::flattenHierarchy() {
     uiCanvas_ = nullptr;
     webCanvases_.clear();
     waterNodes_.clear();
+    particleSystems_.clear();
     flatBehaviours_.clear();
     bodies_.clear();
 
@@ -105,6 +107,9 @@ void Scene::flattenHierarchy() {
         }
         if (auto* water = dynamic_cast<WaterNode*>(&n)) {
             waterNodes_.push_back(water);
+        }
+        if (auto* ps = dynamic_cast<ParticleSystemNode*>(&n)) {
+            particleSystems_.push_back(ps);
         }
         if (CollisionObjectNode* co = n.asCollisionObject()) {
             bodies_.push_back(co);

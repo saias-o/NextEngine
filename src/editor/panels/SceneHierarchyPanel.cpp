@@ -6,6 +6,7 @@
 #include "scene/LightNode.hpp"
 #include "scene/CameraNode.hpp"
 #include "scene/WaterNode.hpp"
+#include "scene/ParticleSystemNode.hpp"
 #include "physics/StaticBodyNode.hpp"
 #include "physics/RigidBodyNode.hpp"
 #include "physics/AreaNode.hpp"
@@ -69,6 +70,8 @@ static std::unique_ptr<Node> makeNodeOfType(CreateNodeType type, Mesh* defaultMe
             return std::make_unique<CameraNode>("Camera");
         case CreateNodeType::Water:
             return std::make_unique<WaterNode>();
+        case CreateNodeType::ParticleSystem:
+            return std::make_unique<ParticleSystemNode>();
         case CreateNodeType::UICanvas: {
             auto n = std::make_unique<UICanvasNode>(); n->setName("UICanvas"); return n;
         }
@@ -146,6 +149,7 @@ static bool nodeMatchesSearch(Node* node, const std::string& query) {
     std::string typeLower = "node";
     if (dynamic_cast<MeshNode*>(node)) typeLower = "meshnode";
     else if (dynamic_cast<LightNode*>(node)) typeLower = "lightnode";
+    else if (dynamic_cast<ParticleSystemNode*>(node)) typeLower = "particlesystem";
     else if (dynamic_cast<Scene*>(node)) typeLower = "scene";
 
     if (nameLower.find(query) != std::string::npos || typeLower.find(query) != std::string::npos) {
@@ -161,6 +165,7 @@ static bool nodeMatchesSearch(Node* node, const std::string& query) {
 const char* nodeTypeIcon(const Node* node) {
     if (node->asLightConst())    return "[L]";
     if (node->mesh())            return "[M]";
+    if (dynamic_cast<const ParticleSystemNode*>(node)) return "[FX]";
     return "[N]";
 }
 
@@ -226,6 +231,10 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
                 if (ImGui::MenuItem("Water")) {
                     editor->nodeToCreateChildUnder_ = scene;
                     editor->createType_ = CreateNodeType::Water;
+                }
+                if (ImGui::MenuItem("Particle System")) {
+                    editor->nodeToCreateChildUnder_ = scene;
+                    editor->createType_ = CreateNodeType::ParticleSystem;
                 }
                 ImGui::Separator();
                 if (ImGui::BeginMenu("UI Nodes")) {
@@ -446,6 +455,9 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
         } else if (dynamic_cast<LightNode*>(node)) {
             hasCustomColor = true;
             customColor = ImVec4(0.9f, 0.9f, 0.5f, 1.0f); // Slightly yellow
+        } else if (dynamic_cast<ParticleSystemNode*>(node)) {
+            hasCustomColor = true;
+            customColor = ImVec4(1.0f, 0.55f, 0.25f, 1.0f); // Slightly ember-like
         }
     }
 
@@ -571,6 +583,10 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
             if (ImGui::MenuItem("Water")) {
                 editor->nodeToCreateChildUnder_ = node;
                 editor->createType_ = CreateNodeType::Water;
+            }
+            if (ImGui::MenuItem("Particle System")) {
+                editor->nodeToCreateChildUnder_ = node;
+                editor->createType_ = CreateNodeType::ParticleSystem;
             }
             ImGui::Separator();
             if (ImGui::BeginMenu("UI Nodes")) {

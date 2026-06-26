@@ -5,6 +5,7 @@
 #include "render/features/SkyboxFeature.hpp"
 #include "render/features/DebugLinesFeature.hpp"
 #include "render/features/OutlineFeature.hpp"
+#include "render/features/ParticleFeature.hpp"
 
 #include <algorithm>
 
@@ -38,6 +39,7 @@ void registerBuiltinRenderFeatures() {
     r.add(100, [] { return std::make_unique<WaterFeature>(); });      // before sky: writes depth
     r.add(150, [] { return std::make_unique<OutlineFeature>(); });    // after opaques/water, before sky
     r.add(200, [] { return std::make_unique<SkyboxFeature>(); });     // fills the far plane
+    r.add(250, [] { return std::make_unique<ParticleFeature>(); });   // transparent HDR FX
     r.add(300, [] { return std::make_unique<DebugLinesFeature>(); }); // overlay, no depth
 }
 

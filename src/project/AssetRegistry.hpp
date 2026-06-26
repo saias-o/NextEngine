@@ -21,7 +21,8 @@ enum class AssetType {
     Scene,
     Audio,
     Rig,
-    Animation
+    Animation,
+    Effect
 };
 
 struct AssetMetadata {

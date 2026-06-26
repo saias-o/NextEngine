@@ -30,6 +30,17 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
                    VkSampleCountFlagBits samples, bool useVertexInput, bool useDepth, uint32_t pushConstantSize,
                    bool depthWrite, VkCompareOp depthCompare, VkCullModeFlags cullMode,
                    bool useBlending, VkPrimitiveTopology topology, uint32_t viewMask)
+    : Pipeline(device, vertPath, fragPath, colorFormats, depthFormat, setLayouts, samples,
+               useVertexInput, useDepth, pushConstantSize, depthWrite, depthCompare,
+               cullMode, useBlending ? BlendMode::Alpha : BlendMode::None,
+               topology, viewMask) {}
+
+Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std::string& fragPath,
+                   const std::vector<VkFormat>& colorFormats, VkFormat depthFormat,
+                   const std::vector<VkDescriptorSetLayout>& setLayouts,
+                   VkSampleCountFlagBits samples, bool useVertexInput, bool useDepth, uint32_t pushConstantSize,
+                   bool depthWrite, VkCompareOp depthCompare, VkCullModeFlags cullMode,
+                   BlendMode blendMode, VkPrimitiveTopology topology, uint32_t viewMask)
     : device_(device) {
     auto vertCode = readFile(vertPath);
     auto fragCode = readFile(fragPath);
@@ -98,13 +109,20 @@ Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std:
     VkPipelineColorBlendAttachmentState colorBlendAttach{};
     colorBlendAttach.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
                                     | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttach.blendEnable = useBlending ? VK_TRUE : VK_FALSE;
-    if (useBlending) {
+    colorBlendAttach.blendEnable = blendMode == BlendMode::None ? VK_FALSE : VK_TRUE;
+    if (blendMode == BlendMode::Alpha) {
         colorBlendAttach.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
         colorBlendAttach.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         colorBlendAttach.colorBlendOp = VK_BLEND_OP_ADD;
         colorBlendAttach.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        colorBlendAttach.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttach.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttach.alphaBlendOp = VK_BLEND_OP_ADD;
+    } else if (blendMode == BlendMode::Additive) {
+        colorBlendAttach.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttach.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttach.colorBlendOp = VK_BLEND_OP_ADD;
+        colorBlendAttach.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttach.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
         colorBlendAttach.alphaBlendOp = VK_BLEND_OP_ADD;
     }
 

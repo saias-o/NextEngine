@@ -114,6 +114,13 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("Create FX", hasParent)) {
+                if (ImGui::MenuItem("Particle System")) {
+                    editor->nodeToCreateChildUnder_ = parentNode;
+                    editor->createType_ = CreateNodeType::ParticleSystem;
+                }
+                ImGui::EndMenu();
+            }
             if (ImGui::BeginMenu("Create Light", hasParent)) {
                 if (ImGui::MenuItem("Directional Light")) {
                     editor->nodeToCreateChildUnder_ = parentNode;

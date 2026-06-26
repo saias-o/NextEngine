@@ -24,7 +24,8 @@ enum class CreateNodeType {
     CharacterBody,
     Area,
     CollisionShape,
-    Water
+    Water,
+    ParticleSystem
 };
 
 enum class GizmoMode {

@@ -36,6 +36,7 @@ std::string assetTypeToString(AssetType type) {
         case AssetType::Audio: return "Audio";
         case AssetType::Rig: return "Rig";
         case AssetType::Animation: return "Animation";
+        case AssetType::Effect: return "Effect";
         default: return "Unknown";
     }
 }
@@ -48,6 +49,7 @@ AssetType stringToAssetType(const std::string& str) {
     if (str == "Audio") return AssetType::Audio;
     if (str == "Rig") return AssetType::Rig;
     if (str == "Animation") return AssetType::Animation;
+    if (str == "Effect") return AssetType::Effect;
     return AssetType::Unknown;
 }
 } // namespace
@@ -353,6 +355,7 @@ AssetType AssetRegistry::determineType(const std::filesystem::path& path) const 
     if (ext == ".ogg") return AssetType::Audio;
     if (ext == ".rig") return AssetType::Rig;
     if (ext == ".anim") return AssetType::Animation;
+    if (ext == ".nefx") return AssetType::Effect;
     return AssetType::Unknown;
 }
 

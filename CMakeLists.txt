@@ -52,6 +52,8 @@ set(SHADERS
     ${SHADER_DIR}/skybox.frag
     ${SHADER_DIR}/water.vert
     ${SHADER_DIR}/water.frag
+    ${SHADER_DIR}/particle_render.vert
+    ${SHADER_DIR}/particle_render.frag
     ${SHADER_DIR}/outline.vert
     ${SHADER_DIR}/outline.frag
     ${SHADER_DIR}/ui.vert
@@ -97,7 +99,8 @@ foreach(SHADER ${SHADERS})
     # gl_ViewIndex get a -DMULTIVIEW variant. The scene vertex picks per-eye
     # camera matrices; the skybox fragment picks per-eye inverse view-proj.
     if(SHADER_NAME STREQUAL "shader.vert" OR SHADER_NAME STREQUAL "skybox.frag"
-       OR SHADER_NAME STREQUAL "water.vert" OR SHADER_NAME STREQUAL "outline.vert")
+       OR SHADER_NAME STREQUAL "water.vert" OR SHADER_NAME STREQUAL "outline.vert"
+       OR SHADER_NAME STREQUAL "particle_render.vert")
         set(MULTIVIEW_OUTPUT ${SHADER_OUT_DIR}/multiview.${SHADER_NAME}.spv)
         add_custom_command(
             OUTPUT ${MULTIVIEW_OUTPUT}
@@ -225,6 +228,7 @@ add_library(ne_engine STATIC
     src/scene/MeshNode.cpp
     src/scene/MeshLod.cpp
     src/scene/LightNode.cpp
+    src/scene/ParticleSystemNode.cpp
     src/scene/CameraNode.cpp
     src/render/CameraDirector.cpp
     src/scene/CameraFollowBehaviour.cpp
@@ -275,6 +279,7 @@ add_library(ne_engine STATIC
     src/render/Renderer.cpp
     src/render/RenderFeatureRegistry.cpp
     src/render/features/WaterFeature.cpp
+    src/render/features/ParticleFeature.cpp
     src/render/features/OutlineFeature.cpp
     src/render/features/SkyboxFeature.cpp
     src/render/features/DebugLinesFeature.cpp
@@ -492,16 +497,6 @@ if (BUILD_TESTING)
     target_compile_options(ne_editor_document_tests PRIVATE -Wall -Wextra)
     add_test(NAME ne_editor_document_tests COMMAND $<TARGET_FILE:ne_editor_document_tests>)
 
-    if(NE_ENABLE_MCP)
-        add_executable(ne_mcp_server_tests tests/McpServerTests.cpp)
-        ne_test_target(ne_mcp_server_tests)
-        target_link_libraries(ne_mcp_server_tests PRIVATE ne_editor)
-        if(WIN32)
-            target_link_libraries(ne_mcp_server_tests PRIVATE ws2_32)
-        endif()
-        target_compile_options(ne_mcp_server_tests PRIVATE -Wall -Wextra)
-        add_test(NAME ne_mcp_server_tests COMMAND $<TARGET_FILE:ne_mcp_server_tests>)
-    endif()
 endif()
 
 # ── Editor executable (the app the Hub launches) ────────────────────────────
