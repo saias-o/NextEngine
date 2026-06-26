@@ -15,6 +15,7 @@
 #include "physics/CharacterBodyNode.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "project/Project.hpp"
+#include "scene/ParticleSystemNode.hpp"
 #include "project/AssetRegistry.hpp"
 
 #include "scene/BehaviourRegistry.hpp"
@@ -88,10 +89,28 @@ namespace {
                 const bool isColor = p.name.find("olor") != std::string::npos;  // "color"/"Color"
                 if (isColor) pe.colorEdit3(label, get, set);
                 else pe.dragFloat3(label, get, set, 0.05f);
+            } else if (p.kind == "vec4") {
+                auto get = [pd](Node& n) { nlohmann::json j; pd->get(&n, j); glm::vec4 v(0.0f);
+                    if (j.is_array() && j.size() >= 4) { v.x = j[0]; v.y = j[1]; v.z = j[2]; v.w = j[3]; } return v; };
+                auto set = [pd](Node& n, glm::vec4 v) { pd->set(&n, nlohmann::json::array({v.x, v.y, v.z, v.w})); };
+                const bool isColor = p.name.find("olor") != std::string::npos;
+                if (isColor) pe.colorEdit4(label, get, set);
+                else pe.dragFloat4(label, get, set, 0.05f);
             } else if (p.kind == "string") {
                 pe.inputText(label,
                     [pd](Node& n) { nlohmann::json j; pd->get(&n, j); return j.is_string() ? j.get<std::string>() : std::string(); },
                     [pd](Node& n, std::string v) { nlohmann::json j = v; pd->set(&n, j); });
+            } else if (p.kind == "enum") {
+                auto get = [pd](Node& n) { nlohmann::json j; pd->get(&n, j); return j.is_number_integer() ? j.get<int>() : 0; };
+                auto set = [pd](Node& n, int v) { nlohmann::json j = v; pd->set(&n, j); };
+                if (!p.enumLabels.empty()) {
+                    std::vector<const char*> labels;
+                    labels.reserve(p.enumLabels.size());
+                    for (const std::string& item : p.enumLabels) labels.push_back(item.c_str());
+                    pe.combo(label, get, set, labels.data(), static_cast<int>(labels.size()));
+                } else {
+                    pe.dragInt(label, get, set);
+                }
             }
             if (!p.tooltip.empty() && ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", p.tooltip.c_str());
@@ -446,6 +465,15 @@ void InspectorPanel::draw(EditorUI* editor) {
                      [](Node& n) { return static_cast<CameraNode&>(n).farZ; },
                      [](Node& n, float v) { static_cast<CameraNode&>(n).farZ = v; }, 1.0f, 1.0f, 10000.0f);
         ImGui::TextDisabled("Highest priority active camera is live (Play).");
+    }
+
+    if (auto* particles = dynamic_cast<ParticleSystemNode*>(node)) {
+        ImGui::SeparatorText("NEFX");
+        if (ImGui::Button("Apply Effect Preset", ImVec2(-FLT_MIN, 0.0f))) {
+            particles->applyEffectPreset();
+            editor->markDirty();
+        }
+        ImGui::TextDisabled("Preset fills the editable parameters below.");
     }
 
     // Generic fallback: any reflected node type (e.g. WaterNode) gets a full

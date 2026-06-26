@@ -72,6 +72,13 @@ public:
                         [&](glm::vec3& v) { return ImGui::SliderFloat3(label, &v.x, mn, mx); });
     }
 
+    void dragFloat4(const char* label, std::function<glm::vec4(Node&)> get,
+                    std::function<void(Node&, glm::vec4)> set,
+                    float speed, float mn = 0.0f, float mx = 0.0f) {
+        edit<glm::vec4>(label, std::move(get), std::move(set),
+                        [&](glm::vec4& v) { return ImGui::DragFloat4(label, &v.x, speed, mn, mx); });
+    }
+
     void colorEdit3(const char* label, std::function<glm::vec3(Node&)> get,
                     std::function<void(Node&, glm::vec3)> set) {
         edit<glm::vec3>(label, std::move(get), std::move(set),

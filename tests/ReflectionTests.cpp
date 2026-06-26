@@ -31,9 +31,9 @@ int main() {
 
     // Enum property surfaces labels (LightNode.bakeMode / lightType).
     const ne::reflect::TypeDesc* light = reg.find("LightNode");
-    assert(light && light->category == "node");
-    const auto* lt = light->findProperty("lightType");
-    assert(lt && lt->kind == "enum" && lt->enumLabels.size() == 3);
+    if (!light || light->category != "node") return 1;
+    const auto* lightType = light->findProperty("lightType");
+    if (!lightType || lightType->kind != "enum" || lightType->enumLabels.size() != 3) return 1;
 
     const ne::reflect::TypeDesc* particles = reg.find("ParticleSystem");
     assert(particles && particles->category == "node");
@@ -47,6 +47,7 @@ int main() {
     assert(particles->findSlot("play"));
     assert(particles->findSlot("stop"));
     assert(particles->findSlot("burst"));
+    assert(particles->findSlot("applyEffectPreset"));
     assert(ne::NodeRegistry::instance().create("ParticleSystem") != nullptr);
 
     // Manifest JSON is well-formed and category-filterable.
@@ -115,6 +116,11 @@ int main() {
     assert(!ps.playing);
     particles->findSlot("play")->invoke(&ps, json::array());
     assert(ps.playing);
+    ps.effectClass = ne::ParticleSystemNode::EffectClass::Explosion;
+    particles->findSlot("applyEffectPreset")->invoke(&ps, json::array());
+    assert(ps.effectClass == ne::ParticleSystemNode::EffectClass::Explosion);
+    assert(ps.spawnRate == 0.0f);
+    assert(!ps.looping);
 
     return 0;
 }

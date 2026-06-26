@@ -51,6 +51,7 @@ public:
     void play();
     void stop();
     void burst();
+    void applyEffectPreset();
 
     uint32_t consumeBurstCount();
 

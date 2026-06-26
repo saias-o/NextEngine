@@ -1,5 +1,7 @@
 #include "scene/ParticleSystemNode.hpp"
 
+#include "fx/ParticlePresetLibrary.hpp"
+
 namespace ne {
 
 void ParticleSystemNode::describe(reflect::TypeBuilder<ParticleSystemNode>& t) {
@@ -33,6 +35,7 @@ void ParticleSystemNode::describe(reflect::TypeBuilder<ParticleSystemNode>& t) {
     t.slot("play", &ParticleSystemNode::play);
     t.slot("stop", &ParticleSystemNode::stop);
     t.slot("burst", &ParticleSystemNode::burst);
+    t.slot("applyEffectPreset", &ParticleSystemNode::applyEffectPreset);
 }
 
 void ParticleSystemNode::play() {
@@ -46,6 +49,10 @@ void ParticleSystemNode::stop() {
 void ParticleSystemNode::burst() {
     ++pendingBursts_;
     playing = true;
+}
+
+void ParticleSystemNode::applyEffectPreset() {
+    ParticlePresetLibrary::apply(*this, effectClass);
 }
 
 uint32_t ParticleSystemNode::consumeBurstCount() {

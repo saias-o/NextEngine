@@ -217,6 +217,7 @@ add_library(ne_engine STATIC
     src/core/Input.cpp
     src/core/Paths.cpp
     src/core/Reflection.cpp
+    src/fx/ParticlePresetLibrary.cpp
     src/scene/NodeId.cpp
     src/scene/Node.cpp
     src/scene/ReflectedTypes.cpp
