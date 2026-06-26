@@ -96,6 +96,7 @@ Fait :
 - `ParticlePresetLibrary` pour `Simple`, `Fire`, `Magic`, `Rain`, `Snow`,
   `Smoke`, `Explosion`.
 - Format `.nefx` JSON versionne avec emitters + modules Niagara-like.
+- Validation `.nefx` : version, emitters, modules et params requis.
 - Compilation `.nefx -> ParticleSystemNode` pour le chemin v1.
 - `effectPath` + drop/load `.nefx` dans l'inspector.
 - Budgets NEFX par `QualityTier`.
@@ -136,7 +137,7 @@ Fait :
   - `SizeOverLife`
   - `Attractor`
   - `SubEmitter`
-- Ajouter validation de modules : valeurs manquantes, types invalides, budgets.
+- Ajouter validation de budget plus fine : cout estime, overdraw, limites XR.
 
 ### 3. Rendering Avance
 

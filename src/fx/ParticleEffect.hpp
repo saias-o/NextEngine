@@ -54,6 +54,7 @@ public:
     nlohmann::json toJson() const;
     bool saveToFile(const std::string& path) const;
     bool applyTo(ParticleSystemNode& node, size_t emitterIndex = 0) const;
+    std::vector<std::string> validate() const;
 };
 
 const char* toString(ParticleModuleType type);

@@ -20,6 +20,7 @@ int main() {
     if (!require(fire.emitters.size() == 1)) return 1;
     if (!require(fire.emitters[0].effectClass == ne::ParticleSystemNode::EffectClass::Fire)) return 1;
     if (!require(!fire.emitters[0].modules.empty())) return 1;
+    if (!require(fire.validate().empty())) return 1;
 
     nlohmann::json saved = fire.toJson();
     if (!require(saved["format"].get<std::string>() == "NEFX")) return 1;
@@ -49,6 +50,12 @@ int main() {
     if (!require(compiledExplosion.effectClass == ne::ParticleSystemNode::EffectClass::Explosion)) return 1;
     if (!require(!compiledExplosion.looping)) return 1;
     if (!require(compiledExplosion.spawnRate == 0.0f)) return 1;
+
+    ne::ParticleEffect broken;
+    broken.emitters.push_back({});
+    broken.emitters[0].maxParticles = 0;
+    broken.emitters[0].modules.push_back({ne::ParticleModuleType::SpawnRate, true, nlohmann::json::object()});
+    if (!require(!broken.validate().empty())) return 1;
 
     ne::ParticleQualityBudget low = ne::particleQualityBudget(ne::QualityTier::Low);
     ne::ParticleQualityBudget ultra = ne::particleQualityBudget(ne::QualityTier::Ultra);

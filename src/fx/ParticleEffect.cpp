@@ -314,4 +314,74 @@ bool ParticleEffect::applyTo(ParticleSystemNode& node, size_t emitterIndex) cons
     return true;
 }
 
+std::vector<std::string> ParticleEffect::validate() const {
+    std::vector<std::string> errors;
+    if (version <= 0 || version > kCurrentVersion) {
+        errors.push_back("unsupported NEFX version");
+    }
+    if (emitters.empty()) {
+        errors.push_back("effect has no emitters");
+    }
+
+    for (size_t i = 0; i < emitters.size(); ++i) {
+        const ParticleEmitterDesc& e = emitters[i];
+        const std::string prefix = "emitter[" + std::to_string(i) + "] ";
+        if (e.maxParticles <= 0) {
+            errors.push_back(prefix + "maxParticles must be > 0");
+        }
+        if (e.modules.empty()) {
+            errors.push_back(prefix + "has no modules");
+        }
+        for (size_t mIndex = 0; mIndex < e.modules.size(); ++mIndex) {
+            const ParticleModule& m = e.modules[mIndex];
+            if (!m.enabled) continue;
+            const std::string mp = prefix + "module[" + std::to_string(mIndex) + "] ";
+            if (!m.params.is_object()) {
+                errors.push_back(mp + "params must be an object");
+                continue;
+            }
+            switch (m.type) {
+                case ParticleModuleType::SpawnRate:
+                    if (!m.params.contains("rate")) errors.push_back(mp + "SpawnRate requires rate");
+                    break;
+                case ParticleModuleType::Burst:
+                    if (!m.params.contains("count")) errors.push_back(mp + "Burst requires count");
+                    break;
+                case ParticleModuleType::Shape:
+                    if (!m.params.contains("type")) errors.push_back(mp + "Shape requires type");
+                    if (!m.params.contains("radius")) errors.push_back(mp + "Shape requires radius");
+                    break;
+                case ParticleModuleType::InitialVelocity:
+                    if (!m.params.contains("speed")) errors.push_back(mp + "InitialVelocity requires speed");
+                    break;
+                case ParticleModuleType::Gravity:
+                    if (!m.params.contains("acceleration")) errors.push_back(mp + "Gravity requires acceleration");
+                    break;
+                case ParticleModuleType::ColorOverLife:
+                    if (!m.params.contains("start")) errors.push_back(mp + "ColorOverLife requires start");
+                    if (!m.params.contains("end")) errors.push_back(mp + "ColorOverLife requires end");
+                    break;
+                case ParticleModuleType::SizeOverLife:
+                    if (!m.params.contains("start")) errors.push_back(mp + "SizeOverLife requires start");
+                    break;
+                case ParticleModuleType::Drag:
+                    if (!m.params.contains("linear")) errors.push_back(mp + "Drag requires linear");
+                    break;
+                case ParticleModuleType::Noise:
+                    if (!m.params.contains("strength")) errors.push_back(mp + "Noise requires strength");
+                    if (!m.params.contains("frequency")) errors.push_back(mp + "Noise requires frequency");
+                    break;
+                case ParticleModuleType::Attractor:
+                    if (!m.params.contains("position")) errors.push_back(mp + "Attractor requires position");
+                    if (!m.params.contains("strength")) errors.push_back(mp + "Attractor requires strength");
+                    break;
+                case ParticleModuleType::SubEmitter:
+                    if (!m.params.contains("effect")) errors.push_back(mp + "SubEmitter requires effect");
+                    break;
+            }
+        }
+    }
+    return errors;
+}
+
 } // namespace ne
