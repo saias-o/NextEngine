@@ -65,8 +65,40 @@ glm::vec3 directionFor(ParticleSystemNode::EffectClass effect, uint32_t& seed) {
     return dir;
 }
 
+glm::vec3 randomDisc(float radius, uint32_t& seed) {
+    const float a = next01(seed) * glm::two_pi<float>();
+    const float r = std::sqrt(next01(seed)) * radius;
+    return glm::vec3(std::cos(a) * r, 0.0f, std::sin(a) * r);
+}
+
+glm::vec3 randomConeDirection(float angleDegrees, uint32_t& seed) {
+    const float maxAngle = glm::radians(glm::clamp(angleDegrees, 1.0f, 89.0f));
+    const float cosTheta = glm::mix(std::cos(maxAngle), 1.0f, next01(seed));
+    const float sinTheta = std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
+    const float phi = next01(seed) * glm::two_pi<float>();
+    return glm::normalize(glm::vec3(std::cos(phi) * sinTheta, cosTheta, std::sin(phi) * sinTheta));
+}
+
 glm::vec3 spawnOffset(ParticleSystemNode& emitter, uint32_t& seed) {
-    if (emitter.radius <= 0.0f) return glm::vec3(0.0f);
+    if (emitter.shape == ParticleSystemNode::Shape::Point || emitter.radius <= 0.0f) {
+        return glm::vec3(0.0f);
+    }
+    if (emitter.shape == ParticleSystemNode::Shape::Disc ||
+        emitter.shape == ParticleSystemNode::Shape::Cone) {
+        return randomDisc(emitter.radius, seed);
+    }
+    if (emitter.shape == ParticleSystemNode::Shape::Box) {
+        return glm::vec3(nextSigned(seed) * emitter.boxExtents.x,
+                         nextSigned(seed) * emitter.boxExtents.y,
+                         nextSigned(seed) * emitter.boxExtents.z);
+    }
+    if (emitter.shape == ParticleSystemNode::Shape::Ring) {
+        glm::vec3 p = randomDisc(1.0f, seed);
+        const float len = std::max(glm::length(glm::vec2(p.x, p.z)), 0.0001f);
+        const float r = std::max(0.0f, emitter.radius + nextSigned(seed) * emitter.ringThickness);
+        return glm::vec3(p.x / len * r, 0.0f, p.z / len * r);
+    }
+
     glm::vec3 dir = randomUnit(seed);
     float r = std::cbrt(next01(seed)) * emitter.radius;
     if (emitter.effectClass == ParticleSystemNode::EffectClass::Rain ||
@@ -74,6 +106,13 @@ glm::vec3 spawnOffset(ParticleSystemNode& emitter, uint32_t& seed) {
         return glm::vec3(dir.x * emitter.radius, 0.0f, dir.z * emitter.radius);
     }
     return dir * r;
+}
+
+glm::vec3 initialDirectionFor(ParticleSystemNode& emitter, uint32_t& seed) {
+    if (emitter.shape == ParticleSystemNode::Shape::Cone) {
+        return randomConeDirection(emitter.coneAngle, seed);
+    }
+    return directionFor(emitter.effectClass, seed);
 }
 
 float classSizeMultiplier(ParticleSystemNode::EffectClass effect, uint32_t& seed) {
@@ -85,13 +124,12 @@ float classSizeMultiplier(ParticleSystemNode::EffectClass effect, uint32_t& seed
     return jitter;
 }
 
-float classStretchMultiplier(ParticleSystemNode::EffectClass effect) {
-    switch (effect) {
-        case ParticleSystemNode::EffectClass::Rain: return 5.5f;
-        case ParticleSystemNode::EffectClass::Explosion: return 1.35f;
-        case ParticleSystemNode::EffectClass::Magic: return 1.15f;
-        default: return 1.0f;
-    }
+glm::vec3 turbulence(const glm::vec3& position, float age, float frequency) {
+    const float f = std::max(frequency, 0.001f);
+    const glm::vec3 q = position * f + glm::vec3(age * 0.73f, age * 1.17f, age * 1.91f);
+    return glm::vec3(std::sin(q.y + q.z * 1.37f),
+                     std::sin(q.z + q.x * 1.71f),
+                     std::sin(q.x + q.y * 1.93f));
 }
 
 glm::vec3 cameraPositionFor(const FrameContext& fc) {
@@ -107,10 +145,39 @@ bool sphereInFrustum(const Frustum& frustum, const glm::vec3& center, float radi
     return true;
 }
 
+Frustum frustumFromViewProjection(const glm::mat4& view, const glm::mat4& projection) {
+    Frustum f;
+    glm::mat4 m = projection * view;
+    glm::vec4 row0 = glm::vec4(m[0][0], m[1][0], m[2][0], m[3][0]);
+    glm::vec4 row1 = glm::vec4(m[0][1], m[1][1], m[2][1], m[3][1]);
+    glm::vec4 row2 = glm::vec4(m[0][2], m[1][2], m[2][2], m[3][2]);
+    glm::vec4 row3 = glm::vec4(m[0][3], m[1][3], m[2][3], m[3][3]);
+    f.planes[0] = row3 + row0;
+    f.planes[1] = row3 - row0;
+    f.planes[2] = row3 + row1;
+    f.planes[3] = row3 - row1;
+    f.planes[4] = row2;
+    f.planes[5] = row3 - row2;
+    for (glm::vec4& plane : f.planes) {
+        const float len = glm::length(glm::vec3(plane));
+        if (len > 0.0f) plane /= len;
+    }
+    return f;
+}
+
+bool sphereInAnyFrustum(const std::array<Frustum, 2>& frustums, uint32_t count,
+                        const glm::vec3& center, float radius) {
+    for (uint32_t i = 0; i < count; ++i) {
+        if (sphereInFrustum(frustums[i], center, radius)) return true;
+    }
+    return false;
+}
+
 float emitterCullRadius(const ParticleSystemNode& emitter) {
     const float travel = std::max(0.0f, emitter.startSpeed) * std::max(0.0f, emitter.lifetime);
     const float gravityTravel = 0.5f * glm::length(emitter.gravity) * emitter.lifetime * emitter.lifetime;
-    return std::max(0.1f, emitter.radius + travel + gravityTravel + emitter.startSize * 2.0f);
+    const float shapeRadius = std::max(emitter.radius, glm::length(emitter.boxExtents));
+    return std::max(0.1f, shapeRadius + travel + gravityTravel + emitter.startSize * emitter.stretch * 2.0f);
 }
 
 } // namespace
@@ -157,7 +224,7 @@ void ParticleFeature::spawn(ParticleSystemNode& emitter, EmitterState& state, ui
     for (uint32_t i = 0; i < count && state.particles.size() < capacity; ++i) {
         CpuParticle p;
         p.position = center + spawnOffset(emitter, state.seed);
-        p.velocity = directionFor(emitter.effectClass, state.seed) *
+        p.velocity = initialDirectionFor(emitter, state.seed) *
             (emitter.startSpeed * (0.75f + next01(state.seed) * 0.5f));
         p.startColor = emitter.startColor;
         p.endColor = emitter.endColor;
@@ -173,12 +240,24 @@ void ParticleFeature::simulate(ParticleSystemNode& emitter, EmitterState& state,
     if (dt <= 0.0f) return;
 
     const glm::vec3 acceleration = emitter.gravity;
+    const float dragFactor = emitter.drag > 0.0f ? std::exp(-emitter.drag * dt) : 1.0f;
     size_t write = 0;
     for (size_t read = 0; read < state.particles.size(); ++read) {
         CpuParticle p = state.particles[read];
         p.age += dt;
         if (p.age >= p.lifetime) continue;
-        p.velocity += acceleration * dt;
+        glm::vec3 frameAcceleration = acceleration;
+        if (emitter.noiseStrength > 0.0f) {
+            frameAcceleration += turbulence(p.position, p.age, emitter.noiseFrequency) * emitter.noiseStrength;
+        }
+        if (emitter.attractorStrength != 0.0f) {
+            glm::vec3 toAttractor = emitter.attractorPosition - p.position;
+            float d2 = glm::dot(toAttractor, toAttractor);
+            if (d2 > 0.0001f) {
+                frameAcceleration += glm::normalize(toAttractor) * emitter.attractorStrength;
+            }
+        }
+        p.velocity = (p.velocity + frameAcceleration * dt) * dragFactor;
         p.position += p.velocity * dt;
         p.rotation += p.angularVelocity * dt;
         state.particles[write++] = p;
@@ -203,11 +282,11 @@ uint32_t ParticleFeature::pack(const std::vector<ParticleSystemNode*>& emitters,
             color.r *= emitter->emissive;
             color.g *= emitter->emissive;
             color.b *= emitter->emissive;
-            float size = p.startSize * (1.0f - 0.65f * t);
+            float size = p.startSize * glm::mix(1.0f, std::max(0.0f, emitter->endSizeScale), t);
             out[offset++] = ParticleRuntime::RenderParticle{
                 glm::vec4(p.position, std::max(size, 0.001f)),
                 color,
-                glm::vec4(p.rotation, classStretchMultiplier(emitter->effectClass), 0.0f, 0.0f)};
+                glm::vec4(p.rotation, std::max(1.0f, emitter->stretch), 0.0f, 0.0f)};
         }
     }
     return offset - start;
@@ -219,8 +298,18 @@ void ParticleFeature::record(const FrameContext& fc) {
 
     ++recordSerial_;
     const glm::vec3 cameraPosition = cameraPositionFor(fc);
-    const bool canFrustumCull = !fc.stereo && fc.camera;
-    const Frustum frustum = canFrustumCull ? fc.camera->getFrustum() : Frustum{};
+    std::array<Frustum, 2> frustums{};
+    uint32_t frustumCount = 0;
+    if (!fc.stereo && fc.camera) {
+        frustums[0] = fc.camera->getFrustum();
+        frustumCount = 1;
+    } else if (fc.eyes) {
+        frustumCount = std::min<uint32_t>(2u, static_cast<uint32_t>(fc.eyes->size()));
+        for (uint32_t i = 0; i < frustumCount; ++i) {
+            const EyeRenderInfo& eye = (*fc.eyes)[i];
+            frustums[i] = frustumFromViewProjection(eye.view, eye.projection);
+        }
+    }
 
     for (ParticleSystemNode* emitter : emitters) {
         if (!emitter || !emitter->isActiveInHierarchy()) continue;
@@ -245,7 +334,8 @@ void ParticleFeature::record(const FrameContext& fc) {
         }
 
         const glm::vec3 emitterPosition = glm::vec3(emitter->worldTransform()[3]);
-        if (canFrustumCull && !sphereInFrustum(frustum, emitterPosition, emitterCullRadius(*emitter))) {
+        if (frustumCount > 0 &&
+            !sphereInAnyFrustum(frustums, frustumCount, emitterPosition, emitterCullRadius(*emitter))) {
             state.visibleThisFrame = false;
             continue;
         }
@@ -270,7 +360,8 @@ void ParticleFeature::record(const FrameContext& fc) {
 
         const uint32_t bursts = emitter->consumeBurstCount();
         if (bursts > 0) {
-            const uint32_t burstSize = std::max(1u, capacity / 8u);
+            const uint32_t configuredBurst = static_cast<uint32_t>(std::max(0, emitter->burstCount));
+            const uint32_t burstSize = configuredBurst > 0 ? configuredBurst : std::max(1u, capacity / 8u);
             spawn(*emitter, state, bursts * burstSize, capacity);
             state.emittedFinished = false;
         }

@@ -29,6 +29,29 @@ glm::vec4 vec4FromJson(const json& j, const glm::vec4& fallback) {
     return {j[0].get<float>(), j[1].get<float>(), j[2].get<float>(), j[3].get<float>()};
 }
 
+const char* shapeToString(ParticleSystemNode::Shape shape) {
+    using Shape = ParticleSystemNode::Shape;
+    switch (shape) {
+        case Shape::Point: return "Point";
+        case Shape::Disc: return "Disc";
+        case Shape::Box: return "Box";
+        case Shape::Cone: return "Cone";
+        case Shape::Ring: return "Ring";
+        case Shape::Sphere:
+        default: return "Sphere";
+    }
+}
+
+ParticleSystemNode::Shape shapeFromString(const std::string& text) {
+    using Shape = ParticleSystemNode::Shape;
+    if (text == "Point") return Shape::Point;
+    if (text == "Disc") return Shape::Disc;
+    if (text == "Box") return Shape::Box;
+    if (text == "Cone") return Shape::Cone;
+    if (text == "Ring") return Shape::Ring;
+    return Shape::Sphere;
+}
+
 ParticleModule module(ParticleModuleType type, json params) {
     ParticleModule m;
     m.type = type;
@@ -56,18 +79,16 @@ ParticleEmitterDesc emitterFromPreset(const ParticlePreset& preset) {
 
     if (preset.effectClass == ParticleSystemNode::EffectClass::Explosion) {
         e.modules.push_back(module(ParticleModuleType::Burst, {
-            {"count", std::max(1, preset.maxParticles / 3)}
+            {"count", preset.burstCount > 0 ? preset.burstCount : std::max(1, preset.maxParticles / 3)}
         }));
     }
 
-    const char* shape = "Sphere";
-    if (preset.effectClass == ParticleSystemNode::EffectClass::Rain ||
-        preset.effectClass == ParticleSystemNode::EffectClass::Snow) {
-        shape = "Disc";
-    }
     e.modules.push_back(module(ParticleModuleType::Shape, {
-        {"type", shape},
-        {"radius", preset.radius}
+        {"type", shapeToString(preset.shape)},
+        {"radius", preset.radius},
+        {"boxExtents", vec3Json(preset.boxExtents)},
+        {"coneAngle", preset.coneAngle},
+        {"ringThickness", preset.ringThickness}
     }));
     e.modules.push_back(module(ParticleModuleType::InitialVelocity, {
         {"speed", preset.startSpeed}
@@ -82,26 +103,25 @@ ParticleEmitterDesc emitterFromPreset(const ParticlePreset& preset) {
     }));
     e.modules.push_back(module(ParticleModuleType::SizeOverLife, {
         {"start", preset.startSize},
-        {"endScale", 0.35f}
+        {"endScale", preset.endSizeScale},
+        {"stretch", preset.stretch}
     }));
 
-    if (preset.effectClass == ParticleSystemNode::EffectClass::Smoke) {
+    if (preset.drag > 0.0f) {
         e.modules.push_back(module(ParticleModuleType::Drag, {
-            {"linear", 0.35f}
+            {"linear", preset.drag}
         }));
+    }
+    if (preset.noiseStrength > 0.0f) {
         e.modules.push_back(module(ParticleModuleType::Noise, {
-            {"strength", 0.22f},
-            {"frequency", 1.4f}
+            {"strength", preset.noiseStrength},
+            {"frequency", preset.noiseFrequency}
         }));
-    } else if (preset.effectClass == ParticleSystemNode::EffectClass::Magic) {
-        e.modules.push_back(module(ParticleModuleType::Noise, {
-            {"strength", 0.55f},
-            {"frequency", 2.6f}
-        }));
-    } else if (preset.effectClass == ParticleSystemNode::EffectClass::Snow) {
-        e.modules.push_back(module(ParticleModuleType::Noise, {
-            {"strength", 0.18f},
-            {"frequency", 0.7f}
+    }
+    if (preset.attractorStrength != 0.0f) {
+        e.modules.push_back(module(ParticleModuleType::Attractor, {
+            {"position", vec3Json(preset.attractorPosition)},
+            {"strength", preset.attractorStrength}
         }));
     }
 
@@ -278,11 +298,18 @@ bool ParticleEffect::applyTo(ParticleSystemNode& node, size_t emitterIndex) cons
                 node.spawnRate = p.value("rate", node.spawnRate);
                 break;
             case ParticleModuleType::Burst:
+                node.burstCount = p.value("count", node.burstCount);
                 node.spawnRate = p.value("spawnRate", node.spawnRate);
                 node.looping = p.value("looping", node.looping);
                 break;
             case ParticleModuleType::Shape:
+                node.shape = shapeFromString(p.value("type", std::string("Sphere")));
                 node.radius = p.value("radius", node.radius);
+                if (auto it = p.find("boxExtents"); it != p.end()) {
+                    node.boxExtents = vec3FromJson(*it, node.boxExtents);
+                }
+                node.coneAngle = p.value("coneAngle", node.coneAngle);
+                node.ringThickness = p.value("ringThickness", node.ringThickness);
                 break;
             case ParticleModuleType::InitialVelocity:
                 node.startSpeed = p.value("speed", node.startSpeed);
@@ -303,10 +330,22 @@ bool ParticleEffect::applyTo(ParticleSystemNode& node, size_t emitterIndex) cons
                 break;
             case ParticleModuleType::SizeOverLife:
                 node.startSize = p.value("start", node.startSize);
+                node.endSizeScale = p.value("endScale", node.endSizeScale);
+                node.stretch = p.value("stretch", node.stretch);
                 break;
             case ParticleModuleType::Drag:
+                node.drag = p.value("linear", node.drag);
+                break;
             case ParticleModuleType::Noise:
+                node.noiseStrength = p.value("strength", node.noiseStrength);
+                node.noiseFrequency = p.value("frequency", node.noiseFrequency);
+                break;
             case ParticleModuleType::Attractor:
+                if (auto it = p.find("position"); it != p.end()) {
+                    node.attractorPosition = vec3FromJson(*it, node.attractorPosition);
+                }
+                node.attractorStrength = p.value("strength", node.attractorStrength);
+                break;
             case ParticleModuleType::SubEmitter:
                 break;
         }

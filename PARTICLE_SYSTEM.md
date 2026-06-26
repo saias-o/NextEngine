@@ -110,6 +110,16 @@ Fait :
   - dispatch encapsule emit + sim
   - barriers compute internes
 - Rotation billboard et stretch billboard shader-side pour pluie/sparks/magie.
+- Modules v1 executes sur le chemin CPU :
+  - shape `Point/Sphere/Disc/Box/Cone/Ring`
+  - burst count
+  - drag
+  - noise/turbulence
+  - attractor
+  - size end scale
+  - stretch
+- Culling frustum desktop + XR stereo par emitter.
+- Templates `.nefx` livres dans `assets/fx/`.
 - Tests non-GUI : reflection + particle effect assets.
 
 ## Reste A Faire
@@ -126,16 +136,6 @@ Fait :
 
 - Compiler les modules `.nefx` en structs compactes, pas en JSON runtime.
 - Executer vraiment :
-  - `SpawnRate`
-  - `Burst`
-  - `Shape` sphere/cone/box/ring/disc
-  - `InitialVelocity`
-  - `Gravity`
-  - `Drag`
-  - `Noise/Turbulence`
-  - `ColorOverLife`
-  - `SizeOverLife`
-  - `Attractor`
   - `SubEmitter`
 - Ajouter validation de budget plus fine : cout estime, overdraw, limites XR.
 
@@ -167,7 +167,6 @@ Fait :
 - LOD par distance plus fin que la cadence actuelle.
 - Limites globales par scene et par camera XR.
 - Demi-resolution optionnelle pour fumee dense.
-- Culling XR stereo par frustum d'oeil.
 - Budgets differents desktop / XR / mobile.
 - Stats debug : live particles, spawned/frame, killed/frame, overdraw risk,
   GPU buffer usage.
@@ -181,7 +180,6 @@ Fait :
   - modifier un parametre module
   - sauvegarder `.nefx`
   - appliquer a un `ParticleSystemNode`
-- Assets exemples dans `assets/fx/`.
 - Documentation courte des params par classe d'effet.
 
 ## Prochaine Etape Recommandee

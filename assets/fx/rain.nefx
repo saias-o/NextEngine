@@ -1,0 +1,22 @@
+{
+    "format": "NEFX",
+    "version": 1,
+    "name": "Rain",
+    "emitters": [
+        {
+            "name": "Rain",
+            "effectClass": "Rain",
+            "maxParticles": 1400,
+            "blendMode": "Alpha",
+            "looping": true,
+            "modules": [
+                {"type": "SpawnRate", "enabled": true, "params": {"rate": 560.0}},
+                {"type": "Shape", "enabled": true, "params": {"type": "Disc", "radius": 8.0, "boxExtents": [1.0, 1.0, 1.0], "coneAngle": 30.0, "ringThickness": 0.08}},
+                {"type": "InitialVelocity", "enabled": true, "params": {"speed": 10.0}},
+                {"type": "Gravity", "enabled": true, "params": {"acceleration": [0.0, -18.0, 0.0]}},
+                {"type": "ColorOverLife", "enabled": true, "params": {"start": [0.45, 0.72, 1.0, 0.48], "end": [0.45, 0.72, 1.0, 0.08], "emissive": 0.85}},
+                {"type": "SizeOverLife", "enabled": true, "params": {"start": 0.035, "endScale": 1.0, "stretch": 6.0}}
+            ]
+        }
+    ]
+}

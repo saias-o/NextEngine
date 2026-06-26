@@ -27,9 +27,34 @@ void ParticleSystemNode::describe(reflect::TypeBuilder<ParticleSystemNode>& t) {
     t.property("endColor", &ParticleSystemNode::endColor).tooltip("linear HDR end color");
     t.property("gravity", &ParticleSystemNode::gravity).tooltip("world-space acceleration");
     t.property("radius", &ParticleSystemNode::radius).range(0.0, 1000.0)
-        .tooltip("spawn sphere radius");
+        .tooltip("primary shape radius");
+    t.property("shape", &ParticleSystemNode::shape)
+        .enumValues({"Point", "Sphere", "Disc", "Box", "Cone", "Ring"})
+        .tooltip("emission shape");
+    t.property("boxExtents", &ParticleSystemNode::boxExtents)
+        .tooltip("box emission half-extents");
+    t.property("coneAngle", &ParticleSystemNode::coneAngle).range(1.0, 89.0)
+        .tooltip("cone half-angle in degrees");
+    t.property("ringThickness", &ParticleSystemNode::ringThickness).range(0.0, 100.0)
+        .tooltip("ring radial jitter");
     t.property("emissive", &ParticleSystemNode::emissive).range(0.0, 100.0)
         .tooltip("HDR intensity multiplier");
+    t.property("endSizeScale", &ParticleSystemNode::endSizeScale).range(0.0, 8.0)
+        .tooltip("size multiplier at end of lifetime");
+    t.property("stretch", &ParticleSystemNode::stretch).range(1.0, 32.0)
+        .tooltip("vertical billboard stretch");
+    t.property("drag", &ParticleSystemNode::drag).range(0.0, 32.0)
+        .tooltip("linear velocity damping");
+    t.property("noiseStrength", &ParticleSystemNode::noiseStrength).range(0.0, 100.0)
+        .tooltip("procedural turbulence strength");
+    t.property("noiseFrequency", &ParticleSystemNode::noiseFrequency).range(0.01, 100.0)
+        .tooltip("procedural turbulence frequency");
+    t.property("attractorPosition", &ParticleSystemNode::attractorPosition)
+        .tooltip("world-space attractor position");
+    t.property("attractorStrength", &ParticleSystemNode::attractorStrength).range(-100.0, 100.0)
+        .tooltip("positive pulls toward attractor, negative pushes away");
+    t.property("burstCount", &ParticleSystemNode::burstCount).range(0.0, 20000.0)
+        .tooltip("particles spawned per burst; 0 uses an automatic budgeted count");
     t.property("blendMode", &ParticleSystemNode::blendMode)
         .enumValues({"Alpha", "Additive"})
         .tooltip("particle blending mode");

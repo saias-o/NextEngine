@@ -32,6 +32,15 @@ public:
         Additive,
     };
 
+    enum class Shape {
+        Point = 0,
+        Sphere,
+        Disc,
+        Box,
+        Cone,
+        Ring,
+    };
+
     EffectClass effectClass = EffectClass::Simple;
     std::string effectPath;
     int maxParticles = 256;
@@ -43,7 +52,19 @@ public:
     glm::vec4 endColor{1.0f, 0.15f, 0.02f, 0.0f};
     glm::vec3 gravity{0.0f, -0.3f, 0.0f};
     float radius = 0.25f;
+    Shape shape = Shape::Sphere;
+    glm::vec3 boxExtents{1.0f};
+    float coneAngle = 30.0f;
+    float ringThickness = 0.08f;
     float emissive = 2.0f;
+    float endSizeScale = 0.35f;
+    float stretch = 1.0f;
+    float drag = 0.0f;
+    float noiseStrength = 0.0f;
+    float noiseFrequency = 1.0f;
+    glm::vec3 attractorPosition{0.0f};
+    float attractorStrength = 0.0f;
+    int burstCount = 0;
     BlendMode blendMode = BlendMode::Additive;
     bool looping = true;
     bool playing = true;

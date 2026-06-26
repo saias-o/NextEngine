@@ -43,8 +43,12 @@ int main() {
            particles->findProperty("effectPath")->kind == "string");
     assert(particles->findProperty("blendMode") &&
            particles->findProperty("blendMode")->enumLabels.size() == 2);
+    assert(particles->findProperty("shape") &&
+           particles->findProperty("shape")->enumLabels.size() == 6);
     assert(particles->findProperty("maxParticles") &&
            particles->findProperty("maxParticles")->kind == "int");
+    assert(particles->findProperty("drag") &&
+           particles->findProperty("drag")->kind == "float");
     assert(particles->findSignal("finished") && particles->findSignal("finished")->arity == 0);
     assert(particles->findSlot("play"));
     assert(particles->findSlot("stop"));
@@ -98,18 +102,25 @@ int main() {
     ps.maxParticles = 777;
     ps.effectPath = "assets/fx/test.nefx";
     ps.effectClass = ne::ParticleSystemNode::EffectClass::Magic;
+    ps.shape = ne::ParticleSystemNode::Shape::Ring;
+    ps.noiseStrength = 2.5f;
     json particleSaved;
     particles->saveTo(&ps, particleSaved);
     assert(particleSaved["maxParticles"].get<int>() == 777);
     assert(particleSaved["effectPath"].get<std::string>() == "assets/fx/test.nefx");
     assert(particleSaved["effectClass"].get<int>() ==
            static_cast<int>(ne::ParticleSystemNode::EffectClass::Magic));
+    assert(particleSaved["shape"].get<int>() ==
+           static_cast<int>(ne::ParticleSystemNode::Shape::Ring));
+    assert(particleSaved["noiseStrength"].get<float>() == 2.5f);
 
     ne::ParticleSystemNode loadedPs;
     particles->loadFrom(&loadedPs, particleSaved);
     assert(loadedPs.maxParticles == 777);
     assert(loadedPs.effectPath == "assets/fx/test.nefx");
     assert(loadedPs.effectClass == ne::ParticleSystemNode::EffectClass::Magic);
+    assert(loadedPs.shape == ne::ParticleSystemNode::Shape::Ring);
+    assert(loadedPs.noiseStrength == 2.5f);
 
     bool particleFinished = false;
     {

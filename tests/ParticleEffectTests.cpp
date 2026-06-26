@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -37,6 +38,8 @@ int main() {
     if (!require(compiledFire.spawnRate == 120.0f)) return 1;
     if (!require(compiledFire.radius == 0.18f)) return 1;
     if (!require(compiledFire.emissive == 4.5f)) return 1;
+    if (!require(compiledFire.shape == ne::ParticleSystemNode::Shape::Cone)) return 1;
+    if (!require(compiledFire.drag > 0.0f)) return 1;
 
     ne::ParticleEffect explosion = ne::ParticleEffect::fromPreset(ne::ParticleSystemNode::EffectClass::Explosion);
     if (!require(!explosion.emitters[0].looping)) return 1;
@@ -50,6 +53,7 @@ int main() {
     if (!require(compiledExplosion.effectClass == ne::ParticleSystemNode::EffectClass::Explosion)) return 1;
     if (!require(!compiledExplosion.looping)) return 1;
     if (!require(compiledExplosion.spawnRate == 0.0f)) return 1;
+    if (!require(compiledExplosion.burstCount == 320)) return 1;
 
     ne::ParticleEffect broken;
     broken.emitters.push_back({});
@@ -65,6 +69,17 @@ int main() {
     ne::ParticleSystemNode node;
     node.maxParticles = 999999;
     if (!require(ne::particleEmitterCapacity(node, low) == low.maxParticlesPerEmitter)) return 1;
+
+    const std::vector<std::string> templates = {
+        "fire.nefx", "magic.nefx", "rain.nefx", "snow.nefx", "smoke.nefx", "explosion.nefx"
+    };
+    for (const std::string& name : templates) {
+        ne::ParticleEffect fx = ne::ParticleEffect::loadFromFile(
+            std::string(NE_PROJECT_ROOT) + "/assets/fx/" + name);
+        if (!require(fx.validate().empty())) return 1;
+        ne::ParticleSystemNode templateNode;
+        if (!require(fx.applyTo(templateNode))) return 1;
+    }
 
     return 0;
 }
