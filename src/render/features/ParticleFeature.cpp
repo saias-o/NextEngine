@@ -1,7 +1,6 @@
 #include "render/features/ParticleFeature.hpp"
 
 #include "core/Paths.hpp"
-#include "graphics/Buffer.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "scene/Scene.hpp"
 
@@ -89,67 +88,19 @@ float classSizeMultiplier(ParticleSystemNode::EffectClass effect, uint32_t& seed
 } // namespace
 
 ParticleFeature::~ParticleFeature() {
-    if (!device_) return;
-    if (pool_) vkDestroyDescriptorPool(device_->device(), pool_, nullptr);
-    if (setLayout_) vkDestroyDescriptorSetLayout(device_->device(), setLayout_, nullptr);
+    runtime_.reset();
 }
 
 void ParticleFeature::createPipelines(const RenderContext& ctx) {
     device_ = &ctx.device;
     const uint32_t frames = std::max(ctx.framesInFlight, kFramesInFlightFallback);
+    ParticleRuntime::Desc runtimeDesc{};
+    runtimeDesc.framesInFlight = frames;
+    runtimeDesc.maxParticles = 65536;
+    runtimeDesc.maxEmitters = 256;
+    runtime_ = std::make_unique<ParticleRuntime>(ctx.device, runtimeDesc);
 
-    VkDescriptorSetLayoutBinding particlesBinding{};
-    particlesBinding.binding = 0;
-    particlesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    particlesBinding.descriptorCount = 1;
-    particlesBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &particlesBinding;
-    if (vkCreateDescriptorSetLayout(device_->device(), &layoutInfo, nullptr, &setLayout_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create particle descriptor set layout");
-
-    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, frames};
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = frames;
-    if (vkCreateDescriptorPool(device_->device(), &poolInfo, nullptr, &pool_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create particle descriptor pool");
-
-    particleBuffers_.resize(frames);
-    sets_.resize(frames);
-    const VkDeviceSize bufferSize = sizeof(GpuParticle) * kMaxGpuParticles;
-    for (uint32_t i = 0; i < frames; ++i) {
-        particleBuffers_[i] = std::make_unique<Buffer>(*device_, bufferSize,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::HostVisible);
-
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = pool_;
-        allocInfo.descriptorSetCount = 1;
-        allocInfo.pSetLayouts = &setLayout_;
-        if (vkAllocateDescriptorSets(device_->device(), &allocInfo, &sets_[i]) != VK_SUCCESS)
-            throw std::runtime_error("failed to allocate particle descriptor set");
-
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = particleBuffers_[i]->handle();
-        bufferInfo.offset = 0;
-        bufferInfo.range = bufferSize;
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = sets_[i];
-        write.dstBinding = 0;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        write.descriptorCount = 1;
-        write.pBufferInfo = &bufferInfo;
-        vkUpdateDescriptorSets(device_->device(), 1, &write, 0, nullptr);
-    }
-
-    std::vector<VkDescriptorSetLayout> setLayouts = {ctx.globalSetLayout, setLayout_};
+    std::vector<VkDescriptorSetLayout> setLayouts = {ctx.globalSetLayout, runtime_->renderSetLayout()};
     std::vector<VkFormat> colorFormats = {ctx.colorFormat};
     const char* vert = ctx.stereo() ? "multiview.particle_render.vert.spv" : "particle_render.vert.spv";
 
@@ -204,7 +155,7 @@ void ParticleFeature::simulate(ParticleSystemNode& emitter, EmitterState& state,
 
 uint32_t ParticleFeature::pack(const std::vector<ParticleSystemNode*>& emitters,
                                ParticleSystemNode::BlendMode mode,
-                               GpuParticle* out, uint32_t capacity, uint32_t& offset) {
+                               ParticleRuntime::RenderParticle* out, uint32_t capacity, uint32_t& offset) {
     const uint32_t start = offset;
     for (ParticleSystemNode* emitter : emitters) {
         if (!emitter || emitter->blendMode != mode) continue;
@@ -219,7 +170,7 @@ uint32_t ParticleFeature::pack(const std::vector<ParticleSystemNode*>& emitters,
             color.g *= emitter->emissive;
             color.b *= emitter->emissive;
             float size = p.startSize * (1.0f - 0.65f * t);
-            out[offset++] = GpuParticle{glm::vec4(p.position, std::max(size, 0.001f)), color};
+            out[offset++] = ParticleRuntime::RenderParticle{glm::vec4(p.position, std::max(size, 0.001f)), color};
         }
     }
     return offset - start;
@@ -227,7 +178,7 @@ uint32_t ParticleFeature::pack(const std::vector<ParticleSystemNode*>& emitters,
 
 void ParticleFeature::record(const FrameContext& fc) {
     const auto& emitters = fc.scene.particleSystems();
-    if (emitters.empty() || !alphaPipeline_ || !additivePipeline_) return;
+    if (emitters.empty() || !runtime_ || !alphaPipeline_ || !additivePipeline_) return;
 
     std::unordered_set<ParticleSystemNode*> aliveEmitters;
     aliveEmitters.reserve(emitters.size());
@@ -281,22 +232,22 @@ void ParticleFeature::record(const FrameContext& fc) {
         else ++it;
     }
 
-    const uint32_t frame = std::min<uint32_t>(fc.frameIndex,
-        static_cast<uint32_t>(particleBuffers_.size()) - 1);
-    GpuParticle* gpu = static_cast<GpuParticle*>(particleBuffers_[frame]->mapped());
+    const uint32_t frame = std::min<uint32_t>(fc.frameIndex, runtime_->framesInFlight() - 1);
+    ParticleRuntime::RenderParticle* gpu = runtime_->mappedRenderParticles(frame);
     if (!gpu) return;
 
     uint32_t offset = 0;
     const uint32_t alphaOffset = offset;
     const uint32_t alphaCount = pack(emitters, ParticleSystemNode::BlendMode::Alpha,
-                                     gpu, kMaxGpuParticles, offset);
+                                     gpu, runtime_->maxParticles(), offset);
     const uint32_t additiveOffset = offset;
     const uint32_t additiveCount = pack(emitters, ParticleSystemNode::BlendMode::Additive,
-                                        gpu, kMaxGpuParticles, offset);
+                                        gpu, runtime_->maxParticles(), offset);
     if (offset == 0) return;
-    particleBuffers_[frame]->flush(offset * sizeof(GpuParticle));
+    runtime_->flushRenderParticles(frame, offset);
 
-    VkDescriptorSet bound[2] = {fc.globalSet, sets_[frame]};
+    VkDescriptorSet particleSet = runtime_->renderSet(frame);
+    VkDescriptorSet bound[2] = {fc.globalSet, particleSet};
     auto drawBatch = [&](Pipeline& pipeline, uint32_t batchOffset, uint32_t batchCount) {
         if (batchCount == 0) return;
         pipeline.bind(fc.cmd);

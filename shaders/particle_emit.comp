@@ -1,0 +1,70 @@
+#version 450
+
+layout(local_size_x = 64) in;
+
+struct Particle {
+    vec4 positionAge;
+    vec4 velocityLifetime;
+    vec4 color;
+    vec4 sizeRotation;
+};
+
+struct Emitter {
+    vec4 positionRadius;
+    vec4 gravityLifetime;
+    vec4 colorA;
+    vec4 colorB;
+    vec4 params;
+};
+
+layout(std430, set = 0, binding = 0) buffer ParticleBuffer { Particle particles[]; };
+layout(std430, set = 0, binding = 1) buffer AliveBuffer { uint aliveIndices[]; };
+layout(std430, set = 0, binding = 2) buffer DeadBuffer { uint deadIndices[]; };
+layout(std430, set = 0, binding = 3) buffer CounterBuffer {
+    uint aliveCount;
+    uint deadCount;
+    uint emitCount;
+    uint pad;
+} counters;
+layout(std430, set = 0, binding = 4) readonly buffer EmitterBuffer { Emitter emitters[]; };
+
+layout(push_constant) uniform Push {
+    uint particleCount;
+    uint emitterCount;
+    float dt;
+    float time;
+} push;
+
+uint hash(uint x) {
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+float rand01(uint seed) {
+    return float(hash(seed) & 0x00ffffffu) / 16777215.0;
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= counters.emitCount || push.emitterCount == 0 || push.particleCount == 0) return;
+
+    Emitter e = emitters[id % push.emitterCount];
+    uint particleIndex = id % push.particleCount;
+    float a = rand01(id * 17u + 3u + uint(push.time * 1000.0)) * 6.2831853;
+    float z = rand01(id * 31u + 7u) * 2.0 - 1.0;
+    float r = sqrt(max(0.0, 1.0 - z * z));
+    vec3 dir = vec3(cos(a) * r, z, sin(a) * r);
+    float radius = e.positionRadius.w * rand01(id * 53u + 11u);
+
+    particles[particleIndex].positionAge = vec4(e.positionRadius.xyz + dir * radius, 0.0);
+    particles[particleIndex].velocityLifetime = vec4(dir * e.params.x, max(e.gravityLifetime.w, 0.001));
+    particles[particleIndex].color = e.colorA;
+    particles[particleIndex].sizeRotation = vec4(max(e.params.y, 0.001), 0.0, 0.0, 0.0);
+
+    uint aliveSlot = atomicAdd(counters.aliveCount, 1);
+    if (aliveSlot < push.particleCount) aliveIndices[aliveSlot] = particleIndex;
+}

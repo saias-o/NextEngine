@@ -1,0 +1,62 @@
+#version 450
+
+layout(local_size_x = 64) in;
+
+struct Particle {
+    vec4 positionAge;
+    vec4 velocityLifetime;
+    vec4 color;
+    vec4 sizeRotation;
+};
+
+struct Emitter {
+    vec4 positionRadius;
+    vec4 gravityLifetime;
+    vec4 colorA;
+    vec4 colorB;
+    vec4 params;
+};
+
+layout(std430, set = 0, binding = 0) buffer ParticleBuffer { Particle particles[]; };
+layout(std430, set = 0, binding = 1) buffer AliveBuffer { uint aliveIndices[]; };
+layout(std430, set = 0, binding = 2) buffer DeadBuffer { uint deadIndices[]; };
+layout(std430, set = 0, binding = 3) buffer CounterBuffer {
+    uint aliveCount;
+    uint deadCount;
+    uint emitCount;
+    uint pad;
+} counters;
+layout(std430, set = 0, binding = 4) readonly buffer EmitterBuffer { Emitter emitters[]; };
+
+layout(push_constant) uniform Push {
+    uint particleCount;
+    uint emitterCount;
+    float dt;
+    float time;
+} push;
+
+void main() {
+    uint slot = gl_GlobalInvocationID.x;
+    if (slot >= counters.aliveCount || slot >= push.particleCount) return;
+
+    uint particleIndex = aliveIndices[slot];
+    if (particleIndex >= push.particleCount) return;
+
+    Particle p = particles[particleIndex];
+    p.positionAge.w += push.dt;
+
+    if (p.positionAge.w >= p.velocityLifetime.w) {
+        uint deadSlot = atomicAdd(counters.deadCount, 1);
+        if (deadSlot < push.particleCount) deadIndices[deadSlot] = particleIndex;
+        aliveIndices[slot] = 0xffffffffu;
+        particles[particleIndex] = p;
+        return;
+    }
+
+    vec3 gravity = vec3(0.0, -9.81, 0.0);
+    if (push.emitterCount > 0) gravity = emitters[0].gravityLifetime.xyz;
+
+    p.velocityLifetime.xyz += gravity * push.dt;
+    p.positionAge.xyz += p.velocityLifetime.xyz * push.dt;
+    particles[particleIndex] = p;
+}

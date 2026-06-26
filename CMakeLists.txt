@@ -54,6 +54,8 @@ set(SHADERS
     ${SHADER_DIR}/water.frag
     ${SHADER_DIR}/particle_render.vert
     ${SHADER_DIR}/particle_render.frag
+    ${SHADER_DIR}/particle_emit.comp
+    ${SHADER_DIR}/particle_sim.comp
     ${SHADER_DIR}/outline.vert
     ${SHADER_DIR}/outline.frag
     ${SHADER_DIR}/ui.vert
@@ -278,6 +280,7 @@ add_library(ne_engine STATIC
     src/graphics/ResourceManager.cpp
     src/render/Renderer.cpp
     src/render/RenderFeatureRegistry.cpp
+    src/fx/ParticleRuntime.cpp
     src/render/features/WaterFeature.cpp
     src/render/features/ParticleFeature.cpp
     src/render/features/OutlineFeature.cpp
