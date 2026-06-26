@@ -53,7 +53,11 @@ void main() {
     if (id >= counters.emitCount || push.emitterCount == 0 || push.particleCount == 0) return;
 
     Emitter e = emitters[id % push.emitterCount];
-    uint particleIndex = id % push.particleCount;
+    uint deadSlot = atomicAdd(counters.deadCount, uint(-1));
+    if (deadSlot == 0 || deadSlot > push.particleCount) return;
+    uint particleIndex = deadIndices[deadSlot - 1];
+    if (particleIndex >= push.particleCount) return;
+
     float a = rand01(id * 17u + 3u + uint(push.time * 1000.0)) * 6.2831853;
     float z = rand01(id * 31u + 7u) * 2.0 - 1.0;
     float r = sqrt(max(0.0, 1.0 - z * z));

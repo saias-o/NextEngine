@@ -78,55 +78,122 @@ Comportement v1 :
 - Pas de collision, ribbons, subemitters, soft particles, compute simulation dans
   l'etape 1.
 
-## Etapes Suivantes
+## Etat Actuel
 
-Etape 2 - Runtime GPU :
+Fait :
 
-- Ajouter `src/fx/ParticleRuntime`.
-- Ajouter buffers GPU : particles, alive indices, dead indices, emit requests,
-  indirect draw.
-- Ajouter `particle_emit.comp` et `particle_sim.comp`.
-- Passer a une simulation GPU-first avec budgets par qualite.
+- `ParticleSystemNode` reflechi, serialisable, inspectable.
+- Proprietes v1 : classe d'effet, budget, spawn, lifetime, vitesse, taille,
+  couleurs, gravite, radius, emissive, blend, looping, playing.
+- Slots : `play`, `stop`, `burst`, `applyEffectPreset`, `loadEffect`.
+- Signal : `finished`.
+- `Scene::particleSystems()` collecte les emitters actifs.
+- `ParticleFeature` rend des billboards HDR en alpha/additive.
+- Shaders render desktop + multiview XR.
+- `Pipeline` supporte alpha/additive sans casser l'ancien chemin.
+- `ParticleRuntime` existe avec buffers GPU, descriptor sets, compute pipelines.
+- Shaders compute presents : `particle_emit.comp`, `particle_sim.comp`.
+- `ParticlePresetLibrary` pour `Simple`, `Fire`, `Magic`, `Rain`, `Snow`,
+  `Smoke`, `Explosion`.
+- Format `.nefx` JSON versionne avec emitters + modules Niagara-like.
+- Compilation `.nefx -> ParticleSystemNode` pour le chemin v1.
+- `effectPath` + drop/load `.nefx` dans l'inspector.
+- Budgets NEFX par `QualityTier`.
+- Simulation CPU v1 optimisee : compactage en une passe, reserve par emitter,
+  cadence reduite pour effets lointains.
+- Culling frustum desktop par emitter pour eviter simulation/pack hors camera.
+- Runtime GPU avance :
+  - freelist template `deadIndices`
+  - reset counters par frame
+  - upload emitters host-visible
+  - dispatch encapsule emit + sim
+  - barriers compute internes
+- Tests non-GUI : reflection + particle effect assets.
 
-Etape 3 - Classes D'effets :
+## Reste A Faire
 
-- Ajouter `ParticlePresetLibrary`.
-- Compiler les classes `Fire`, `Magic`, `Rain`, `Snow`, `Smoke`, `Explosion`
-  vers des parametres internes.
-- Garder une interface simple dans l'inspecteur et le manifeste LLM.
+### 1. Simulation GPU Reelle
 
-Etape 4 - Modules Niagara-like :
+- Brancher l'upload emitters depuis `ParticleFeature`.
+- Lire/dessiner depuis les buffers GPU au lieu du buffer CPU-packe.
+- Ajouter draw indirect / indirect count quand disponible.
+- Ajouter buckets GPU par blend mode (`Alpha`, `Additive`).
+- Garder le chemin CPU v1 comme fallback debug/compat.
 
-- Ajouter stack de modules `.nefx` :
-  - Spawn rate / burst
-  - Shape sphere/cone/box/ring
-  - Initial velocity
-  - Gravity / drag
-  - Noise / turbulence
-  - Color over life
-  - Size over life
-  - Attractor
-  - Sub-emitter
-- Serialiser en JSON.
-- Ajouter un mode editeur simple/advanced.
+### 2. Runtime Modules Niagara-like
 
-Etape 5 - VR/Mobile :
+- Compiler les modules `.nefx` en structs compactes, pas en JSON runtime.
+- Executer vraiment :
+  - `SpawnRate`
+  - `Burst`
+  - `Shape` sphere/cone/box/ring/disc
+  - `InitialVelocity`
+  - `Gravity`
+  - `Drag`
+  - `Noise/Turbulence`
+  - `ColorOverLife`
+  - `SizeOverLife`
+  - `Attractor`
+  - `SubEmitter`
+- Ajouter validation de modules : valeurs manquantes, types invalides, budgets.
 
-- Budgets globaux par `QualityTier`.
-- LOD par distance.
-- Update cadence reduite pour effets lointains.
-- Demi-resolution optionnelle pour fumee dense.
-- Overdraw warnings dans l'editeur.
+### 3. Rendering Avance
 
-Etape 6 - FX Avances :
-
+- Rotation billboard visible dans le shader.
+- Stretch billboards pour pluie, sparks, speed lines.
+- Texture atlas / flipbook.
+- Sorting alpha optionnel ou buckets coarse.
+- Soft particles via depth.
 - Ribbons/trails.
 - Mesh particles.
-- Soft particles via depth.
 - Heat distortion.
 - Shockwave.
 - Decal/splash impacts.
 - Light pulses optionnels.
+
+### 4. Editor FX
+
+- Editeur `.nefx` simple/advanced.
+- Liste d'emitters.
+- Ajouter/supprimer/reordonner modules.
+- Edition des params module par module.
+- Preview live.
+- Save/load `.nefx`.
+- Templates rapides : Fire, Magic, Rain, Snow, Smoke, Explosion.
+- Warnings overdraw/budget.
+
+### 5. Optimisation VR/Mobile
+
+- LOD par distance plus fin que la cadence actuelle.
+- Limites globales par scene et par camera XR.
+- Demi-resolution optionnelle pour fumee dense.
+- Culling XR stereo par frustum d'oeil.
+- Budgets differents desktop / XR / mobile.
+- Stats debug : live particles, spawned/frame, killed/frame, overdraw risk,
+  GPU buffer usage.
+
+### 6. Ergonomie Humain + LLM
+
+- Manifeste plus riche pour les modules `.nefx`.
+- Commandes MCP/LLM :
+  - creer un effet preset
+  - ajouter un module
+  - modifier un parametre module
+  - sauvegarder `.nefx`
+  - appliquer a un `ParticleSystemNode`
+- Assets exemples dans `assets/fx/`.
+- Documentation courte des params par classe d'effet.
+
+## Prochaine Etape Recommandee
+
+Faire le vrai chemin GPU :
+
+1. init GPU des freelists/counters ;
+2. upload emitters actifs ;
+3. dispatch emit + sim ;
+4. barriers compute -> vertex ;
+5. draw depuis les buffers GPU ;
+6. fallback CPU conserve.
 
 ## Plan De Test
 

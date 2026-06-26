@@ -44,6 +44,7 @@ private:
         uint64_t lastSeenSerial = 0;
         uint32_t seed = 1;
         bool emittedFinished = false;
+        bool visibleThisFrame = true;
     };
 
     struct Push {

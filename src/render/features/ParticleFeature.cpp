@@ -91,6 +91,19 @@ glm::vec3 cameraPositionFor(const FrameContext& fc) {
     return glm::vec3(0.0f);
 }
 
+bool sphereInFrustum(const Frustum& frustum, const glm::vec3& center, float radius) {
+    for (const glm::vec4& plane : frustum.planes) {
+        if (glm::dot(glm::vec3(plane), center) + plane.w < -radius) return false;
+    }
+    return true;
+}
+
+float emitterCullRadius(const ParticleSystemNode& emitter) {
+    const float travel = std::max(0.0f, emitter.startSpeed) * std::max(0.0f, emitter.lifetime);
+    const float gravityTravel = 0.5f * glm::length(emitter.gravity) * emitter.lifetime * emitter.lifetime;
+    return std::max(0.1f, emitter.radius + travel + gravityTravel + emitter.startSize * 2.0f);
+}
+
 } // namespace
 
 ParticleFeature::~ParticleFeature() {
@@ -172,6 +185,7 @@ uint32_t ParticleFeature::pack(const std::vector<ParticleSystemNode*>& emitters,
         if (!emitter || emitter->blendMode != mode) continue;
         auto it = states_.find(emitter);
         if (it == states_.end()) continue;
+        if (!it->second.visibleThisFrame) continue;
 
         for (const CpuParticle& p : it->second.particles) {
             if (offset >= capacity) return offset - start;
@@ -193,6 +207,8 @@ void ParticleFeature::record(const FrameContext& fc) {
 
     ++recordSerial_;
     const glm::vec3 cameraPosition = cameraPositionFor(fc);
+    const bool canFrustumCull = !fc.stereo && fc.camera;
+    const Frustum frustum = canFrustumCull ? fc.camera->getFrustum() : Frustum{};
 
     for (ParticleSystemNode* emitter : emitters) {
         if (!emitter || !emitter->isActiveInHierarchy()) continue;
@@ -200,6 +216,7 @@ void ParticleFeature::record(const FrameContext& fc) {
         EmitterState& state = states_[emitter];
         state.lastSeenSerial = recordSerial_;
         if (state.seed == 1) state.seed = hashPtr(emitter);
+        state.visibleThisFrame = true;
 
         float dt = 0.0f;
         if (state.lastTime >= 0.0f) {
@@ -215,8 +232,13 @@ void ParticleFeature::record(const FrameContext& fc) {
             state.particles.resize(static_cast<size_t>(capacity));
         }
 
-        float simDt = dt;
         const glm::vec3 emitterPosition = glm::vec3(emitter->worldTransform()[3]);
+        if (canFrustumCull && !sphereInFrustum(frustum, emitterPosition, emitterCullRadius(*emitter))) {
+            state.visibleThisFrame = false;
+            continue;
+        }
+
+        float simDt = dt;
         const glm::vec3 delta = emitterPosition - cameraPosition;
         const float farDistance2 = budget_.farUpdateDistance * budget_.farUpdateDistance;
         const bool farEmitter = glm::dot(delta, delta) > farDistance2;

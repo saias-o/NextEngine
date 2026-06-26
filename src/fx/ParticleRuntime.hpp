@@ -29,6 +29,21 @@ public:
         glm::vec4 color;        // linear HDR
     };
 
+    struct GpuEmitter {
+        glm::vec4 positionRadius;
+        glm::vec4 gravityLifetime;
+        glm::vec4 colorA;
+        glm::vec4 colorB;
+        glm::vec4 params; // x speed, y size, z spawn count, w reserved
+    };
+
+    struct GpuCounters {
+        uint32_t aliveCount = 0;
+        uint32_t deadCount = 0;
+        uint32_t emitCount = 0;
+        uint32_t pad = 0;
+    };
+
     struct ComputePush {
         uint32_t particleCount = 0;
         uint32_t emitterCount = 0;
@@ -53,6 +68,11 @@ public:
     VkDescriptorSet computeSet(uint32_t frame) const;
     ComputePipeline* emitPipeline() const { return emitPipeline_.get(); }
     ComputePipeline* simPipeline() const { return simPipeline_.get(); }
+    GpuEmitter* mappedEmitters(uint32_t frame) const;
+    void flushEmitters(uint32_t frame, uint32_t count);
+    void recordCompute(VkCommandBuffer cmd, uint32_t frame,
+                       uint32_t emitterCount, uint32_t emitCount,
+                       float dt, float time);
 
 private:
     struct SimParticle {
@@ -62,24 +82,14 @@ private:
         glm::vec4 sizeRotation;
     };
 
-    struct GpuEmitter {
-        glm::vec4 positionRadius;
-        glm::vec4 gravityLifetime;
-        glm::vec4 colorA;
-        glm::vec4 colorB;
-        glm::vec4 params;
-    };
-
-    struct GpuCounters {
-        uint32_t aliveCount = 0;
-        uint32_t deadCount = 0;
-        uint32_t emitCount = 0;
-        uint32_t pad = 0;
-    };
-
     uint32_t frameIndex(uint32_t frame) const;
     void createRenderResources();
     void createComputeResources();
+    void createDeadListTemplate();
+    void recordResetGpuFrame(VkCommandBuffer cmd, uint32_t frame, uint32_t emitCount);
+    void recordComputeBarrier(VkCommandBuffer cmd,
+                              VkPipelineStageFlags2 dstStage,
+                              VkAccessFlags2 dstAccess) const;
 
     VulkanDevice& device_;
     Desc desc_;
@@ -97,6 +107,7 @@ private:
     std::vector<std::unique_ptr<Buffer>> counterBuffers_;
     std::vector<std::unique_ptr<Buffer>> emitterBuffers_;
     std::vector<VkDescriptorSet> computeSets_;
+    std::unique_ptr<Buffer> deadListTemplateBuffer_;
 
     std::unique_ptr<ComputePipeline> emitPipeline_;
     std::unique_ptr<ComputePipeline> simPipeline_;
