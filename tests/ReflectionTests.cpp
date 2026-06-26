@@ -39,6 +39,8 @@ int main() {
     assert(particles && particles->category == "node");
     assert(particles->findProperty("effectClass") &&
            particles->findProperty("effectClass")->enumLabels.size() == 7);
+    assert(particles->findProperty("effectPath") &&
+           particles->findProperty("effectPath")->kind == "string");
     assert(particles->findProperty("blendMode") &&
            particles->findProperty("blendMode")->enumLabels.size() == 2);
     assert(particles->findProperty("maxParticles") &&
@@ -48,6 +50,7 @@ int main() {
     assert(particles->findSlot("stop"));
     assert(particles->findSlot("burst"));
     assert(particles->findSlot("applyEffectPreset"));
+    assert(particles->findSlot("loadEffect"));
     assert(ne::NodeRegistry::instance().create("ParticleSystem") != nullptr);
 
     // Manifest JSON is well-formed and category-filterable.
@@ -93,16 +96,19 @@ int main() {
 
     ne::ParticleSystemNode ps;
     ps.maxParticles = 777;
+    ps.effectPath = "assets/fx/test.nefx";
     ps.effectClass = ne::ParticleSystemNode::EffectClass::Magic;
     json particleSaved;
     particles->saveTo(&ps, particleSaved);
     assert(particleSaved["maxParticles"].get<int>() == 777);
+    assert(particleSaved["effectPath"].get<std::string>() == "assets/fx/test.nefx");
     assert(particleSaved["effectClass"].get<int>() ==
            static_cast<int>(ne::ParticleSystemNode::EffectClass::Magic));
 
     ne::ParticleSystemNode loadedPs;
     particles->loadFrom(&loadedPs, particleSaved);
     assert(loadedPs.maxParticles == 777);
+    assert(loadedPs.effectPath == "assets/fx/test.nefx");
     assert(loadedPs.effectClass == ne::ParticleSystemNode::EffectClass::Magic);
 
     bool particleFinished = false;

@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <string>
 
 namespace ne {
 
@@ -32,6 +33,7 @@ public:
     };
 
     EffectClass effectClass = EffectClass::Simple;
+    std::string effectPath;
     int maxParticles = 256;
     float spawnRate = 48.0f;
     float lifetime = 1.5f;
@@ -52,6 +54,7 @@ public:
     void stop();
     void burst();
     void applyEffectPreset();
+    void loadEffect();
 
     uint32_t consumeBurstCount();
 

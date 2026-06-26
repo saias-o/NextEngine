@@ -469,11 +469,33 @@ void InspectorPanel::draw(EditorUI* editor) {
 
     if (auto* particles = dynamic_cast<ParticleSystemNode*>(node)) {
         ImGui::SeparatorText("NEFX");
+        PropertyEditor pe(*editor, node);
         if (ImGui::Button("Apply Effect Preset", ImVec2(-FLT_MIN, 0.0f))) {
             particles->applyEffectPreset();
             editor->markDirty();
         }
-        ImGui::TextDisabled("Preset fills the editable parameters below.");
+        if (ImGui::Button("Load Effect", ImVec2(-FLT_MIN, 0.0f))) {
+            particles->loadEffect();
+            editor->markDirty();
+        }
+        ImGui::Button("Drop .nefx Here", ImVec2(-FLT_MIN, 28.0f));
+        if (editor->ctxProject() && ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_ID")) {
+                AssetID id = *(AssetID*)payload->Data;
+                auto& registry = editor->ctxProject()->assetRegistry();
+                if (registry.getType(id) == AssetType::Effect) {
+                    std::string path = registry.getAbsolutePath(id);
+                    pe.push<std::string>("Effect Path",
+                        [](Node& n) { return static_cast<ParticleSystemNode&>(n).effectPath; },
+                        [](Node& n, std::string v) { static_cast<ParticleSystemNode&>(n).effectPath = std::move(v); },
+                        path);
+                    particles->loadEffect();
+                    editor->markDirty();
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+        ImGui::TextDisabled("Preset or .nefx fills the editable parameters below.");
     }
 
     // Generic fallback: any reflected node type (e.g. WaterNode) gets a full

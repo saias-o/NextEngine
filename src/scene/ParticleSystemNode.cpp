@@ -1,5 +1,7 @@
 #include "scene/ParticleSystemNode.hpp"
 
+#include "core/Log.hpp"
+#include "fx/ParticleEffect.hpp"
 #include "fx/ParticlePresetLibrary.hpp"
 
 namespace ne {
@@ -9,6 +11,8 @@ void ParticleSystemNode::describe(reflect::TypeBuilder<ParticleSystemNode>& t) {
     t.property("effectClass", &ParticleSystemNode::effectClass)
         .enumValues({"Simple", "Fire", "Magic", "Rain", "Snow", "Smoke", "Explosion"})
         .tooltip("high-level preset family");
+    t.property("effectPath", &ParticleSystemNode::effectPath)
+        .tooltip("absolute or project-resolved .nefx path to load through loadEffect");
     t.property("maxParticles", &ParticleSystemNode::maxParticles).range(1.0, 20000.0)
         .tooltip("maximum live particles for this emitter");
     t.property("spawnRate", &ParticleSystemNode::spawnRate).range(0.0, 5000.0)
@@ -36,6 +40,7 @@ void ParticleSystemNode::describe(reflect::TypeBuilder<ParticleSystemNode>& t) {
     t.slot("stop", &ParticleSystemNode::stop);
     t.slot("burst", &ParticleSystemNode::burst);
     t.slot("applyEffectPreset", &ParticleSystemNode::applyEffectPreset);
+    t.slot("loadEffect", &ParticleSystemNode::loadEffect);
 }
 
 void ParticleSystemNode::play() {
@@ -53,6 +58,18 @@ void ParticleSystemNode::burst() {
 
 void ParticleSystemNode::applyEffectPreset() {
     ParticlePresetLibrary::apply(*this, effectClass);
+}
+
+void ParticleSystemNode::loadEffect() {
+    if (effectPath.empty()) return;
+    try {
+        ParticleEffect effect = ParticleEffect::loadFromFile(effectPath);
+        if (!effect.applyTo(*this)) {
+            Log::warn("ParticleSystemNode: effect has no emitter: ", effectPath);
+        }
+    } catch (const std::exception& e) {
+        Log::warn("ParticleSystemNode: failed to load effect '", effectPath, "': ", e.what());
+    }
 }
 
 uint32_t ParticleSystemNode::consumeBurstCount() {
