@@ -1,5 +1,6 @@
 #include "render/features/ParticleFeature.hpp"
 
+#include "core/Camera.hpp"
 #include "core/Paths.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "scene/Scene.hpp"
@@ -85,6 +86,12 @@ float classSizeMultiplier(ParticleSystemNode::EffectClass effect, uint32_t& seed
     return jitter;
 }
 
+glm::vec3 cameraPositionFor(const FrameContext& fc) {
+    if (!fc.stereo && fc.camera) return fc.camera->position;
+    if (fc.eyes && !fc.eyes->empty()) return (*fc.eyes)[0].eyePosition;
+    return glm::vec3(0.0f);
+}
+
 } // namespace
 
 ParticleFeature::~ParticleFeature() {
@@ -93,11 +100,12 @@ ParticleFeature::~ParticleFeature() {
 
 void ParticleFeature::createPipelines(const RenderContext& ctx) {
     device_ = &ctx.device;
+    budget_ = particleQualityBudget(ctx.device.capabilities().tier);
     const uint32_t frames = std::max(ctx.framesInFlight, kFramesInFlightFallback);
     ParticleRuntime::Desc runtimeDesc{};
     runtimeDesc.framesInFlight = frames;
-    runtimeDesc.maxParticles = 65536;
-    runtimeDesc.maxEmitters = 256;
+    runtimeDesc.maxParticles = budget_.maxGpuParticles;
+    runtimeDesc.maxEmitters = budget_.maxEmitters;
     runtime_ = std::make_unique<ParticleRuntime>(ctx.device, runtimeDesc);
 
     std::vector<VkDescriptorSetLayout> setLayouts = {ctx.globalSetLayout, runtime_->renderSetLayout()};
@@ -117,12 +125,11 @@ void ParticleFeature::createPipelines(const RenderContext& ctx) {
         BlendMode::Additive, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, ctx.viewMask);
 }
 
-void ParticleFeature::spawn(ParticleSystemNode& emitter, EmitterState& state, uint32_t count) {
-    if (emitter.maxParticles <= 0 || emitter.lifetime <= 0.0f) return;
+void ParticleFeature::spawn(ParticleSystemNode& emitter, EmitterState& state, uint32_t count, uint32_t capacity) {
+    if (capacity == 0 || emitter.lifetime <= 0.0f) return;
 
     if (state.seed == 1) state.seed = hashPtr(&emitter);
-    const uint32_t maxCount = static_cast<uint32_t>(std::max(0, emitter.maxParticles));
-    for (uint32_t i = 0; i < count && state.particles.size() < maxCount; ++i) {
+    for (uint32_t i = 0; i < count && state.particles.size() < capacity; ++i) {
         CpuParticle p;
         const glm::vec3 center = glm::vec3(emitter.worldTransform()[3]);
         p.position = center + spawnOffset(emitter, state.seed);
@@ -182,6 +189,7 @@ void ParticleFeature::record(const FrameContext& fc) {
 
     std::unordered_set<ParticleSystemNode*> aliveEmitters;
     aliveEmitters.reserve(emitters.size());
+    const glm::vec3 cameraPosition = cameraPositionFor(fc);
 
     for (ParticleSystemNode* emitter : emitters) {
         if (!emitter || !emitter->isActiveInHierarchy()) continue;
@@ -199,25 +207,42 @@ void ParticleFeature::record(const FrameContext& fc) {
             state.emittedFinished = false;
         }
 
-        if (emitter->maxParticles >= 0 &&
-            state.particles.size() > static_cast<size_t>(emitter->maxParticles)) {
-            state.particles.resize(static_cast<size_t>(emitter->maxParticles));
+        const uint32_t capacity = particleEmitterCapacity(*emitter, budget_);
+        if (state.particles.size() > static_cast<size_t>(capacity)) {
+            state.particles.resize(static_cast<size_t>(capacity));
         }
 
-        simulate(*emitter, state, dt);
+        float simDt = dt;
+        const glm::vec3 emitterPosition = glm::vec3(emitter->worldTransform()[3]);
+        const glm::vec3 delta = emitterPosition - cameraPosition;
+        const float farDistance2 = budget_.farUpdateDistance * budget_.farUpdateDistance;
+        const bool farEmitter = glm::dot(delta, delta) > farDistance2;
+        if (farEmitter && budget_.farUpdateInterval > 0.0f && dt > 0.0f) {
+            state.updateAccumulator += dt;
+            if (state.updateAccumulator < budget_.farUpdateInterval) {
+                simDt = 0.0f;
+            } else {
+                simDt = glm::clamp(state.updateAccumulator, 0.0f, 0.25f);
+                state.updateAccumulator = 0.0f;
+            }
+        } else {
+            state.updateAccumulator = 0.0f;
+        }
+
+        simulate(*emitter, state, simDt);
 
         const uint32_t bursts = emitter->consumeBurstCount();
         if (bursts > 0) {
-            const uint32_t burstSize = std::max(1, emitter->maxParticles / 8);
-            spawn(*emitter, state, bursts * burstSize);
+            const uint32_t burstSize = std::max(1u, capacity / 8u);
+            spawn(*emitter, state, bursts * burstSize, capacity);
             state.emittedFinished = false;
         }
 
-        if (emitter->playing && emitter->looping && emitter->spawnRate > 0.0f && dt > 0.0f) {
-            state.spawnAccumulator += emitter->spawnRate * dt;
+        if (emitter->playing && emitter->looping && emitter->spawnRate > 0.0f && simDt > 0.0f) {
+            state.spawnAccumulator += emitter->spawnRate * simDt;
             uint32_t toSpawn = static_cast<uint32_t>(std::floor(state.spawnAccumulator));
             state.spawnAccumulator -= static_cast<float>(toSpawn);
-            spawn(*emitter, state, toSpawn);
+            spawn(*emitter, state, toSpawn, capacity);
             if (toSpawn > 0) state.emittedFinished = false;
         }
 

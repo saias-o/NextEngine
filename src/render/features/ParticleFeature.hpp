@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fx/ParticleQuality.hpp"
 #include "fx/ParticleRuntime.hpp"
 #include "graphics/Pipeline.hpp"
 #include "render/RenderFeature.hpp"
@@ -37,6 +38,7 @@ private:
     struct EmitterState {
         std::vector<CpuParticle> particles;
         float spawnAccumulator = 0.0f;
+        float updateAccumulator = 0.0f;
         float lastTime = -1.0f;
         uint32_t seed = 1;
         bool emittedFinished = false;
@@ -51,12 +53,13 @@ private:
     static constexpr uint32_t kVertsPerParticle = 6;
 
     VulkanDevice* device_ = nullptr;
+    ParticleQualityBudget budget_;
     std::unique_ptr<Pipeline> alphaPipeline_;
     std::unique_ptr<Pipeline> additivePipeline_;
     std::unique_ptr<ParticleRuntime> runtime_;
     std::unordered_map<ParticleSystemNode*, EmitterState> states_;
 
-    void spawn(ParticleSystemNode& emitter, EmitterState& state, uint32_t count);
+    void spawn(ParticleSystemNode& emitter, EmitterState& state, uint32_t count, uint32_t capacity);
     void simulate(ParticleSystemNode& emitter, EmitterState& state, float dt);
     uint32_t pack(const std::vector<ParticleSystemNode*>& emitters,
                   ParticleSystemNode::BlendMode mode,

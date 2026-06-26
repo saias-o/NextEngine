@@ -219,6 +219,7 @@ add_library(ne_engine STATIC
     src/core/Reflection.cpp
     src/fx/ParticleEffect.cpp
     src/fx/ParticlePresetLibrary.cpp
+    src/fx/ParticleQuality.cpp
     src/scene/NodeId.cpp
     src/scene/Node.cpp
     src/scene/ReflectedTypes.cpp

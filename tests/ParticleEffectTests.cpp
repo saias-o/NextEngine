@@ -1,4 +1,6 @@
 #include "fx/ParticleEffect.hpp"
+#include "fx/ParticleQuality.hpp"
+#include "scene/ParticleSystemNode.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -36,6 +38,15 @@ int main() {
         hasBurst = hasBurst || m.type == ne::ParticleModuleType::Burst;
     }
     if (!require(hasBurst)) return 1;
+
+    ne::ParticleQualityBudget low = ne::particleQualityBudget(ne::QualityTier::Low);
+    ne::ParticleQualityBudget ultra = ne::particleQualityBudget(ne::QualityTier::Ultra);
+    if (!require(low.maxGpuParticles < ultra.maxGpuParticles)) return 1;
+    if (!require(low.farUpdateInterval > ultra.farUpdateInterval)) return 1;
+
+    ne::ParticleSystemNode node;
+    node.maxParticles = 999999;
+    if (!require(ne::particleEmitterCapacity(node, low) == low.maxParticlesPerEmitter)) return 1;
 
     return 0;
 }
