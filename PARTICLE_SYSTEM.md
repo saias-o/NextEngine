@@ -108,6 +108,7 @@ Fait :
   - upload emitters host-visible
   - dispatch encapsule emit + sim
   - barriers compute internes
+- Rotation billboard et stretch billboard shader-side pour pluie/sparks/magie.
 - Tests non-GUI : reflection + particle effect assets.
 
 ## Reste A Faire
@@ -139,8 +140,6 @@ Fait :
 
 ### 3. Rendering Avance
 
-- Rotation billboard visible dans le shader.
-- Stretch billboards pour pluie, sparks, speed lines.
 - Texture atlas / flipbook.
 - Sorting alpha optionnel ou buckets coarse.
 - Soft particles via depth.

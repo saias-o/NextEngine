@@ -85,6 +85,15 @@ float classSizeMultiplier(ParticleSystemNode::EffectClass effect, uint32_t& seed
     return jitter;
 }
 
+float classStretchMultiplier(ParticleSystemNode::EffectClass effect) {
+    switch (effect) {
+        case ParticleSystemNode::EffectClass::Rain: return 5.5f;
+        case ParticleSystemNode::EffectClass::Explosion: return 1.35f;
+        case ParticleSystemNode::EffectClass::Magic: return 1.15f;
+        default: return 1.0f;
+    }
+}
+
 glm::vec3 cameraPositionFor(const FrameContext& fc) {
     if (!fc.stereo && fc.camera) return fc.camera->position;
     if (fc.eyes && !fc.eyes->empty()) return (*fc.eyes)[0].eyePosition;
@@ -195,7 +204,10 @@ uint32_t ParticleFeature::pack(const std::vector<ParticleSystemNode*>& emitters,
             color.g *= emitter->emissive;
             color.b *= emitter->emissive;
             float size = p.startSize * (1.0f - 0.65f * t);
-            out[offset++] = ParticleRuntime::RenderParticle{glm::vec4(p.position, std::max(size, 0.001f)), color};
+            out[offset++] = ParticleRuntime::RenderParticle{
+                glm::vec4(p.position, std::max(size, 0.001f)),
+                color,
+                glm::vec4(p.rotation, classStretchMultiplier(emitter->effectClass), 0.0f, 0.0f)};
         }
     }
     return offset - start;

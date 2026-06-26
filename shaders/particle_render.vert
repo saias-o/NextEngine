@@ -12,6 +12,7 @@ layout(set = 0, binding = 0) uniform CameraUBO {
 struct Particle {
     vec4 positionSize;
     vec4 color;
+    vec4 rotationStretch;
 };
 
 layout(std430, set = 1, binding = 0) readonly buffer ParticleBuffer {
@@ -46,7 +47,13 @@ void main() {
     vec3 up = normalize(invViewRot[1]);
 
     vec2 corner = CORNERS[cornerIndex];
-    vec3 world = p.positionSize.xyz + (right * corner.x + up * corner.y) * p.positionSize.w;
+    float rotation = p.rotationStretch.x;
+    float stretchY = max(p.rotationStretch.y, 1.0);
+    float c = cos(rotation);
+    float s = sin(rotation);
+    vec2 local = vec2(corner.x, corner.y * stretchY);
+    local = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
+    vec3 world = p.positionSize.xyz + (right * local.x + up * local.y) * p.positionSize.w;
     gl_Position = cam.proj[viewIndex] * cam.view[viewIndex] * vec4(world, 1.0);
 
     fragColor = p.color;
