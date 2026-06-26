@@ -217,6 +217,7 @@ add_library(ne_engine STATIC
     src/core/Input.cpp
     src/core/Paths.cpp
     src/core/Reflection.cpp
+    src/fx/ParticleEffect.cpp
     src/fx/ParticlePresetLibrary.cpp
     src/scene/NodeId.cpp
     src/scene/Node.cpp
@@ -460,6 +461,12 @@ if (BUILD_TESTING)
     target_link_libraries(ne_reflection_tests PRIVATE ne_engine)
     target_compile_options(ne_reflection_tests PRIVATE -Wall -Wextra)
     add_test(NAME ne_reflection_tests COMMAND $<TARGET_FILE:ne_reflection_tests>)
+
+    add_executable(ne_particle_effect_tests tests/ParticleEffectTests.cpp)
+    ne_test_target(ne_particle_effect_tests)
+    target_link_libraries(ne_particle_effect_tests PRIVATE ne_engine)
+    target_compile_options(ne_particle_effect_tests PRIVATE -Wall -Wextra)
+    add_test(NAME ne_particle_effect_tests COMMAND $<TARGET_FILE:ne_particle_effect_tests>)
 
     add_executable(ne_signal_wiring_tests tests/SignalWiringTests.cpp)
     ne_test_target(ne_signal_wiring_tests)
