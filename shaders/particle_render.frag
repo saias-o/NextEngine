@@ -10,6 +10,8 @@ void main() {
     float r2 = dot(d, d);
     if (r2 > 1.0) discard;
 
-    float feather = smoothstep(1.0, 0.65, r2);
-    outColor = vec4(fragColor.rgb, fragColor.a * feather);
+    float feather = 1.0 - smoothstep(0.64, 1.0, r2);
+    float core = 1.0 - smoothstep(0.0, 0.18, r2);
+    vec3 color = fragColor.rgb * (0.85 + core * 0.35);
+    outColor = vec4(color, fragColor.a * feather);
 }
