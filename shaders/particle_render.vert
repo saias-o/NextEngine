@@ -49,6 +49,17 @@ void main() {
     vec2 corner = CORNERS[cornerIndex];
     float rotation = p.rotationStretch.x;
     float stretchY = max(p.rotationStretch.y, 1.0);
+    if (p.rotationStretch.z > 0.5) {
+        vec3 fallDir = vec3(0.0, -1.0, 0.0);
+        vec2 projectedFall = vec2(dot(fallDir, right), dot(fallDir, up));
+        float projectedLen = length(projectedFall);
+        if (projectedLen > 0.0001) {
+            projectedFall /= projectedLen;
+            rotation = atan(-projectedFall.x, projectedFall.y);
+        } else {
+            rotation = 0.0;
+        }
+    }
     float c = cos(rotation);
     float s = sin(rotation);
     vec2 local = vec2(corner.x, corner.y * stretchY);

@@ -237,6 +237,10 @@ void ParticleFeature::spawn(ParticleSystemNode& emitter, EmitterState& state, ui
         p.startSize = std::max(0.001f, emitter.startSize * classSizeMultiplier(emitter.effectClass, state.seed));
         p.rotation = next01(state.seed) * glm::two_pi<float>();
         p.angularVelocity = nextSigned(state.seed) * 1.5f;
+        if (emitter.effectClass == ParticleSystemNode::EffectClass::Rain) {
+            p.rotation = 0.0f;
+            p.angularVelocity = 0.0f;
+        }
         state.particles.push_back(p);
     }
 }
@@ -288,10 +292,12 @@ uint32_t ParticleFeature::pack(const std::vector<ParticleSystemNode*>& emitters,
             color.g *= emitter->emissive;
             color.b *= emitter->emissive;
             float size = p.startSize * glm::mix(1.0f, std::max(0.0f, emitter->endSizeScale), t);
+            const float alignToWorldDown =
+                emitter->effectClass == ParticleSystemNode::EffectClass::Rain ? 1.0f : 0.0f;
             out[offset++] = ParticleRuntime::RenderParticle{
                 glm::vec4(p.position, std::max(size, 0.001f)),
                 color,
-                glm::vec4(p.rotation, std::max(1.0f, emitter->stretch), 0.0f, 0.0f)};
+                glm::vec4(p.rotation, std::max(1.0f, emitter->stretch), alignToWorldDown, 0.0f)};
         }
     }
     return offset - start;

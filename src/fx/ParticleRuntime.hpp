@@ -27,7 +27,7 @@ public:
     struct RenderParticle {
         glm::vec4 positionSize; // xyz world position, w billboard size
         glm::vec4 color;        // linear HDR
-        glm::vec4 rotationStretch; // x radians, y vertical stretch, zw reserved
+        glm::vec4 rotationStretch; // x radians, y vertical stretch, z align-to-world-down, w reserved
     };
 
     struct GpuEmitter {
