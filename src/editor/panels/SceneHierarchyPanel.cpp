@@ -180,6 +180,14 @@ bool isDescendantOf(const Node* potentialDescendant, const Node* potentialAncest
     return false;
 }
 
+size_t childIndex(const Node& parent, const Node* child) {
+    const auto& children = parent.children();
+    for (size_t i = 0; i < children.size(); ++i) {
+        if (children[i].get() == child) return i;
+    }
+    return children.size();
+}
+
 } // namespace
 
 void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
@@ -312,6 +320,7 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
         editor->nodeToDelete_ = nullptr;
         editor->nodeToReparent_ = nullptr;
         editor->newParent_ = nullptr;
+        editor->newChildIndex_ = static_cast<size_t>(-1);
         editor->nodeToCreateChildUnder_ = nullptr;
         editor->createType_ = CreateNodeType::None;
         editor->nodeToCreateParentFor_ = nullptr;
@@ -332,9 +341,10 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
     if (editor->nodeToReparent_ && editor->newParent_) {
         if (editor->nodeToReparent_->parent() && !isDescendantOf(editor->newParent_, editor->nodeToReparent_))
             editor->execute(std::make_unique<ReparentNodeCommand>(
-                editor->nodeToReparent_->id(), editor->newParent_->id()));
+                editor->nodeToReparent_->id(), editor->newParent_->id(), editor->newChildIndex_));
         editor->nodeToReparent_ = nullptr;
         editor->newParent_ = nullptr;
+        editor->newChildIndex_ = static_cast<size_t>(-1);
     }
 
     if (editor->nodeToCreateChildUnder_ && editor->createType_ != CreateNodeType::None) {
@@ -500,11 +510,31 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
     }
 
     if (ImGui::BeginDragDropTarget()) {
+        const ImVec2 itemMin = ImGui::GetItemRectMin();
+        const ImVec2 itemMax = ImGui::GetItemRectMax();
+        const ImVec2 mouse = ImGui::GetMousePos();
+        const float itemHeight = itemMax.y - itemMin.y;
+        const float topBand = itemMin.y + itemHeight * 0.25f;
+        const float bottomBand = itemMin.y + itemHeight * 0.75f;
+        const bool beforeItem = mouse.y < topBand;
+        const bool afterItem = mouse.y > bottomBand;
+
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("SCENE_NODE")) {
             Node* draggedNode = *(Node**)payload->Data;
             if (draggedNode != node && draggedNode->parent() != node && !isDescendantOf(node, draggedNode)) {
-                editor->nodeToReparent_ = draggedNode;
-                editor->newParent_ = node;
+                if ((beforeItem || afterItem) && node->parent()) {
+                    Node* parent = node->parent();
+                    if (parent && !isDescendantOf(parent, draggedNode)) {
+                        editor->nodeToReparent_ = draggedNode;
+                        editor->newParent_ = parent;
+                        const size_t index = childIndex(*parent, node);
+                        editor->newChildIndex_ = beforeItem ? index : index + 1;
+                    }
+                } else {
+                    editor->nodeToReparent_ = draggedNode;
+                    editor->newParent_ = node;
+                    editor->newChildIndex_ = static_cast<size_t>(-1);
+                }
             }
         }
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_SCENE")) {

@@ -6,6 +6,7 @@
 #include "editor/ThumbnailCache.hpp"
 
 #include <any>
+#include <cstddef>
 #include <future>
 #include <string>
 #include <vector>
@@ -203,6 +204,7 @@ private:
 
     Node* nodeToReparent_ = nullptr;
     Node* newParent_ = nullptr;
+    size_t newChildIndex_ = static_cast<size_t>(-1);
 
     // Renaming state
     Node* nodeToRename_ = nullptr;

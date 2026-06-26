@@ -97,7 +97,8 @@ void ReparentNodeCommand::execute(SceneDocument& document) {
     if (!initialized_) {
         oldParentId_ = node->parent()->id();
         oldIndex_ = childIndex(*node->parent(), node);
-        newIndex_ = newParent->children().size();
+        if (newIndex_ == static_cast<size_t>(-1))
+            newIndex_ = newParent->children().size();
         oldLocal_ = node->transform();
         newLocal_ = transformFromMatrix(glm::inverse(newParent->worldTransform()) * node->worldTransform());
         initialized_ = true;

@@ -71,8 +71,8 @@ private:
 
 class ReparentNodeCommand : public Command {
 public:
-    ReparentNodeCommand(NodeId node, NodeId newParent)
-        : nodeId_(node), newParentId_(newParent) {}
+    ReparentNodeCommand(NodeId node, NodeId newParent, size_t newIndex = static_cast<size_t>(-1))
+        : nodeId_(node), newParentId_(newParent), newIndex_(newIndex) {}
     void execute(SceneDocument& document) override;
     void undo(SceneDocument& document) override;
     const char* name() const override { return "Reparent Node"; }
