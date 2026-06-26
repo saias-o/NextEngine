@@ -107,7 +107,10 @@ void ReparentNodeCommand::execute(SceneDocument& document) {
     auto owned = node->parent()->detachChild(node);
     if (!owned) return;
     owned->transform() = newLocal_;
-    newParent->addChildAt(std::move(owned), newIndex_);
+    size_t insertIndex = newIndex_;
+    if (oldParentId_ == newParentId_ && oldIndex_ < insertIndex)
+        --insertIndex;
+    newParent->addChildAt(std::move(owned), insertIndex);
     document.markDirty();
 }
 

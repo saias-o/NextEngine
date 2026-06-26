@@ -26,6 +26,7 @@
 #include "scene/WebCanvasNode.hpp"
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <filesystem>
 #include <cstring>
 #include <cctype>
@@ -186,6 +187,69 @@ size_t childIndex(const Node& parent, const Node* child) {
         if (children[i].get() == child) return i;
     }
     return children.size();
+}
+
+bool canInsertNode(Node* draggedNode, Node* parent, size_t index) {
+    if (!draggedNode || !draggedNode->parent() || !parent) return false;
+    if (draggedNode == parent || isDescendantOf(parent, draggedNode)) return false;
+
+    if (draggedNode->parent() == parent) {
+        const size_t oldIndex = childIndex(*parent, draggedNode);
+        if (index == oldIndex || index == oldIndex + 1) return false;
+    }
+    return true;
+}
+
+void drawInsertLine(const ImRect& rect) {
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const ImU32 color = ImGui::GetColorU32(ImGuiCol_DragDropTarget);
+    const float y = rect.GetCenter().y;
+    drawList->AddLine(ImVec2(rect.Min.x, y), ImVec2(rect.Max.x, y), color, 2.0f);
+    drawList->AddCircleFilled(ImVec2(rect.Min.x, y), 3.0f, color);
+    drawList->AddCircleFilled(ImVec2(rect.Max.x, y), 3.0f, color);
+}
+
+bool drawInsertionDropTarget(Node* parent, size_t index, Node*& outDraggedNode) {
+    outDraggedNode = nullptr;
+
+    const ImGuiPayload* activePayload = ImGui::GetDragDropPayload();
+    if (!activePayload || !activePayload->IsDataType("SCENE_NODE")) return false;
+
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (!window || window->SkipItems) return false;
+
+    constexpr float kDropZoneHalfHeight = 4.0f;
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    const float width = std::max(16.0f, ImGui::GetContentRegionAvail().x);
+    ImRect rect(ImVec2(cursor.x, cursor.y - kDropZoneHalfHeight),
+                ImVec2(cursor.x + width, cursor.y + kDropZoneHalfHeight));
+
+    ImGui::PushID(parent);
+    ImGui::PushID(static_cast<int>(index));
+    const ImGuiID id = ImGui::GetID("node_insert_drop");
+
+    bool drawFeedback = false;
+    bool delivered = false;
+    if (ImGui::BeginDragDropTargetCustom(rect, id)) {
+        const ImGuiDragDropFlags flags = ImGuiDragDropFlags_AcceptBeforeDelivery |
+                                         ImGuiDragDropFlags_AcceptNoDrawDefaultRect;
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("SCENE_NODE", flags)) {
+            Node* draggedNode = *(Node**)payload->Data;
+            if (canInsertNode(draggedNode, parent, index)) {
+                drawFeedback = true;
+                if (payload->IsDelivery()) {
+                    outDraggedNode = draggedNode;
+                    delivered = true;
+                }
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
+
+    if (drawFeedback) drawInsertLine(rect);
+    ImGui::PopID();
+    ImGui::PopID();
+    return delivered;
 }
 
 } // namespace
@@ -510,31 +574,12 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
     }
 
     if (ImGui::BeginDragDropTarget()) {
-        const ImVec2 itemMin = ImGui::GetItemRectMin();
-        const ImVec2 itemMax = ImGui::GetItemRectMax();
-        const ImVec2 mouse = ImGui::GetMousePos();
-        const float itemHeight = itemMax.y - itemMin.y;
-        const float topBand = itemMin.y + itemHeight * 0.25f;
-        const float bottomBand = itemMin.y + itemHeight * 0.75f;
-        const bool beforeItem = mouse.y < topBand;
-        const bool afterItem = mouse.y > bottomBand;
-
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("SCENE_NODE")) {
             Node* draggedNode = *(Node**)payload->Data;
             if (draggedNode != node && draggedNode->parent() != node && !isDescendantOf(node, draggedNode)) {
-                if ((beforeItem || afterItem) && node->parent()) {
-                    Node* parent = node->parent();
-                    if (parent && !isDescendantOf(parent, draggedNode)) {
-                        editor->nodeToReparent_ = draggedNode;
-                        editor->newParent_ = parent;
-                        const size_t index = childIndex(*parent, node);
-                        editor->newChildIndex_ = beforeItem ? index : index + 1;
-                    }
-                } else {
-                    editor->nodeToReparent_ = draggedNode;
-                    editor->newParent_ = node;
-                    editor->newChildIndex_ = static_cast<size_t>(-1);
-                }
+                editor->nodeToReparent_ = draggedNode;
+                editor->newParent_ = node;
+                editor->newChildIndex_ = static_cast<size_t>(-1);
             }
         }
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("FILE_SCENE")) {
@@ -731,8 +776,23 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
 
     if (open) {
         if (!isLeaf) {
+            const bool allowInsertionTargets = query.empty();
+            size_t index = 0;
             for (auto& child : node->children()) {
+                Node* draggedNode = nullptr;
+                if (allowInsertionTargets && drawInsertionDropTarget(node, index, draggedNode)) {
+                    editor->nodeToReparent_ = draggedNode;
+                    editor->newParent_ = node;
+                    editor->newChildIndex_ = index;
+                }
                 drawSceneTreeNode(editor, child.get());
+                ++index;
+            }
+            Node* draggedNode = nullptr;
+            if (allowInsertionTargets && drawInsertionDropTarget(node, index, draggedNode)) {
+                editor->nodeToReparent_ = draggedNode;
+                editor->newParent_ = node;
+                editor->newChildIndex_ = index;
             }
             ImGui::TreePop();
         }
