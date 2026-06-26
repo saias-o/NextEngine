@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -52,6 +53,7 @@ public:
 
     nlohmann::json toJson() const;
     bool saveToFile(const std::string& path) const;
+    bool applyTo(ParticleSystemNode& node, size_t emitterIndex = 0) const;
 };
 
 const char* toString(ParticleModuleType type);

@@ -8,6 +8,7 @@
 
 #include <glm/glm.hpp>
 
+#include <cstdint>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -40,6 +41,7 @@ private:
         float spawnAccumulator = 0.0f;
         float updateAccumulator = 0.0f;
         float lastTime = -1.0f;
+        uint64_t lastSeenSerial = 0;
         uint32_t seed = 1;
         bool emittedFinished = false;
     };
@@ -54,6 +56,7 @@ private:
 
     VulkanDevice* device_ = nullptr;
     ParticleQualityBudget budget_;
+    uint64_t recordSerial_ = 0;
     std::unique_ptr<Pipeline> alphaPipeline_;
     std::unique_ptr<Pipeline> additivePipeline_;
     std::unique_ptr<ParticleRuntime> runtime_;

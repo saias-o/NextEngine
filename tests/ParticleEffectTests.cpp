@@ -30,6 +30,12 @@ int main() {
     if (!require(loaded.emitters.size() == fire.emitters.size())) return 1;
     if (!require(loaded.emitters[0].modules.size() == fire.emitters[0].modules.size())) return 1;
     if (!require(loaded.emitters[0].blendMode == ne::ParticleSystemNode::BlendMode::Additive)) return 1;
+    ne::ParticleSystemNode compiledFire;
+    if (!require(loaded.applyTo(compiledFire))) return 1;
+    if (!require(compiledFire.effectClass == ne::ParticleSystemNode::EffectClass::Fire)) return 1;
+    if (!require(compiledFire.spawnRate == 120.0f)) return 1;
+    if (!require(compiledFire.radius == 0.18f)) return 1;
+    if (!require(compiledFire.emissive == 4.5f)) return 1;
 
     ne::ParticleEffect explosion = ne::ParticleEffect::fromPreset(ne::ParticleSystemNode::EffectClass::Explosion);
     if (!require(!explosion.emitters[0].looping)) return 1;
@@ -38,6 +44,11 @@ int main() {
         hasBurst = hasBurst || m.type == ne::ParticleModuleType::Burst;
     }
     if (!require(hasBurst)) return 1;
+    ne::ParticleSystemNode compiledExplosion;
+    if (!require(explosion.applyTo(compiledExplosion))) return 1;
+    if (!require(compiledExplosion.effectClass == ne::ParticleSystemNode::EffectClass::Explosion)) return 1;
+    if (!require(!compiledExplosion.looping)) return 1;
+    if (!require(compiledExplosion.spawnRate == 0.0f)) return 1;
 
     ne::ParticleQualityBudget low = ne::particleQualityBudget(ne::QualityTier::Low);
     ne::ParticleQualityBudget ultra = ne::particleQualityBudget(ne::QualityTier::Ultra);

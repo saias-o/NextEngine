@@ -2,6 +2,7 @@
 
 #include "fx/ParticlePresetLibrary.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <stdexcept>
 
@@ -16,6 +17,16 @@ json vec3Json(const glm::vec3& v) {
 
 json vec4Json(const glm::vec4& v) {
     return json::array({v.x, v.y, v.z, v.w});
+}
+
+glm::vec3 vec3FromJson(const json& j, const glm::vec3& fallback) {
+    if (!j.is_array() || j.size() < 3) return fallback;
+    return {j[0].get<float>(), j[1].get<float>(), j[2].get<float>()};
+}
+
+glm::vec4 vec4FromJson(const json& j, const glm::vec4& fallback) {
+    if (!j.is_array() || j.size() < 4) return fallback;
+    return {j[0].get<float>(), j[1].get<float>(), j[2].get<float>(), j[3].get<float>()};
 }
 
 ParticleModule module(ParticleModuleType type, json params) {
@@ -246,6 +257,60 @@ bool ParticleEffect::saveToFile(const std::string& path) const {
     std::ofstream file(path);
     if (!file.is_open()) return false;
     file << toJson().dump(4);
+    return true;
+}
+
+bool ParticleEffect::applyTo(ParticleSystemNode& node, size_t emitterIndex) const {
+    if (emitterIndex >= emitters.size()) return false;
+
+    const ParticleEmitterDesc& emitter = emitters[emitterIndex];
+    ParticlePresetLibrary::apply(node, emitter.effectClass);
+    node.effectClass = emitter.effectClass;
+    node.maxParticles = std::max(1, emitter.maxParticles);
+    node.blendMode = emitter.blendMode;
+    node.looping = emitter.looping;
+
+    for (const ParticleModule& module : emitter.modules) {
+        if (!module.enabled || !module.params.is_object()) continue;
+        const json& p = module.params;
+        switch (module.type) {
+            case ParticleModuleType::SpawnRate:
+                node.spawnRate = p.value("rate", node.spawnRate);
+                break;
+            case ParticleModuleType::Burst:
+                node.spawnRate = p.value("spawnRate", node.spawnRate);
+                node.looping = p.value("looping", node.looping);
+                break;
+            case ParticleModuleType::Shape:
+                node.radius = p.value("radius", node.radius);
+                break;
+            case ParticleModuleType::InitialVelocity:
+                node.startSpeed = p.value("speed", node.startSpeed);
+                break;
+            case ParticleModuleType::Gravity:
+                if (auto it = p.find("acceleration"); it != p.end()) {
+                    node.gravity = vec3FromJson(*it, node.gravity);
+                }
+                break;
+            case ParticleModuleType::ColorOverLife:
+                if (auto it = p.find("start"); it != p.end()) {
+                    node.startColor = vec4FromJson(*it, node.startColor);
+                }
+                if (auto it = p.find("end"); it != p.end()) {
+                    node.endColor = vec4FromJson(*it, node.endColor);
+                }
+                node.emissive = p.value("emissive", node.emissive);
+                break;
+            case ParticleModuleType::SizeOverLife:
+                node.startSize = p.value("start", node.startSize);
+                break;
+            case ParticleModuleType::Drag:
+            case ParticleModuleType::Noise:
+            case ParticleModuleType::Attractor:
+            case ParticleModuleType::SubEmitter:
+                break;
+        }
+    }
     return true;
 }
 

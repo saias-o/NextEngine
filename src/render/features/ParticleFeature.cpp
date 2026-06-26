@@ -11,7 +11,6 @@
 #include <array>
 #include <cmath>
 #include <stdexcept>
-#include <unordered_set>
 
 namespace ne {
 
@@ -129,9 +128,12 @@ void ParticleFeature::spawn(ParticleSystemNode& emitter, EmitterState& state, ui
     if (capacity == 0 || emitter.lifetime <= 0.0f) return;
 
     if (state.seed == 1) state.seed = hashPtr(&emitter);
+    if (state.particles.capacity() < capacity) {
+        state.particles.reserve(capacity);
+    }
+    const glm::vec3 center = glm::vec3(emitter.worldTransform()[3]);
     for (uint32_t i = 0; i < count && state.particles.size() < capacity; ++i) {
         CpuParticle p;
-        const glm::vec3 center = glm::vec3(emitter.worldTransform()[3]);
         p.position = center + spawnOffset(emitter, state.seed);
         p.velocity = directionFor(emitter.effectClass, state.seed) *
             (emitter.startSpeed * (0.75f + next01(state.seed) * 0.5f));
@@ -149,15 +151,17 @@ void ParticleFeature::simulate(ParticleSystemNode& emitter, EmitterState& state,
     if (dt <= 0.0f) return;
 
     const glm::vec3 acceleration = emitter.gravity;
-    for (CpuParticle& p : state.particles) {
+    size_t write = 0;
+    for (size_t read = 0; read < state.particles.size(); ++read) {
+        CpuParticle p = state.particles[read];
         p.age += dt;
+        if (p.age >= p.lifetime) continue;
         p.velocity += acceleration * dt;
         p.position += p.velocity * dt;
         p.rotation += p.angularVelocity * dt;
+        state.particles[write++] = p;
     }
-
-    state.particles.erase(std::remove_if(state.particles.begin(), state.particles.end(),
-        [](const CpuParticle& p) { return p.age >= p.lifetime; }), state.particles.end());
+    state.particles.resize(write);
 }
 
 uint32_t ParticleFeature::pack(const std::vector<ParticleSystemNode*>& emitters,
@@ -187,15 +191,14 @@ void ParticleFeature::record(const FrameContext& fc) {
     const auto& emitters = fc.scene.particleSystems();
     if (emitters.empty() || !runtime_ || !alphaPipeline_ || !additivePipeline_) return;
 
-    std::unordered_set<ParticleSystemNode*> aliveEmitters;
-    aliveEmitters.reserve(emitters.size());
+    ++recordSerial_;
     const glm::vec3 cameraPosition = cameraPositionFor(fc);
 
     for (ParticleSystemNode* emitter : emitters) {
         if (!emitter || !emitter->isActiveInHierarchy()) continue;
-        aliveEmitters.insert(emitter);
 
         EmitterState& state = states_[emitter];
+        state.lastSeenSerial = recordSerial_;
         if (state.seed == 1) state.seed = hashPtr(emitter);
 
         float dt = 0.0f;
@@ -253,7 +256,7 @@ void ParticleFeature::record(const FrameContext& fc) {
     }
 
     for (auto it = states_.begin(); it != states_.end();) {
-        if (aliveEmitters.find(it->first) == aliveEmitters.end()) it = states_.erase(it);
+        if (it->second.lastSeenSerial != recordSerial_) it = states_.erase(it);
         else ++it;
     }
 
