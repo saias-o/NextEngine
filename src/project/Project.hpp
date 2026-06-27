@@ -83,6 +83,9 @@ public:
     bool autoMeshLods() const { return autoMeshLods_; }
     void setAutoMeshLods(bool enabled) { autoMeshLods_ = enabled; }
 
+    bool showColliders() const { return showColliders_; }
+    void setShowColliders(bool enabled) { showColliders_ = enabled; }
+
     const std::unordered_map<std::string, std::string>& audioAliases() const { return audioAliases_; }
     void setAudioAlias(const std::string& name, const std::string& path);
     void removeAudioAlias(const std::string& name);
@@ -110,6 +113,7 @@ private:
     float masterVolume_ = 1.0f;
     AudioSettings defaultAudioSettings_;
     bool autoMeshLods_ = false;
+    bool showColliders_ = true;
     std::unordered_map<std::string, std::string> audioAliases_;
     std::unordered_map<std::string, std::string> autoloads_;
 

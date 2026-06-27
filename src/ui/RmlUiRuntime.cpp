@@ -7,12 +7,17 @@
 
 #include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/FileInterface.h>
+#include <RmlUi/Core/StyleTypes.h>
 #include <RmlUi/Core/SystemInterface.h>
 
 #include <cstdio>
 #include <algorithm>
+#include <cctype>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <memory>
+#include <sstream>
 
 namespace ne {
 
@@ -63,37 +68,131 @@ class NextRmlFileInterface final : public Rml::FileInterface {
 public:
     Rml::FileHandle Open(const Rml::String& path) override {
         std::filesystem::path resolved = resolve(path);
+        if (isStylesheet(resolved)) {
+            std::ifstream in(resolved, std::ios::binary);
+            if (!in) return 0;
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            auto* handle = new FileHandle;
+            handle->data = sanitizeStylesheet(ss.str());
+            recordDependencyPath(resolved);
+            return reinterpret_cast<Rml::FileHandle>(handle);
+        }
+
         std::FILE* file = std::fopen(resolved.string().c_str(), "rb");
-        if (file) recordDependencyPath(resolved);
-        return reinterpret_cast<Rml::FileHandle>(file);
+        if (!file) return 0;
+        auto* handle = new FileHandle;
+        handle->file = file;
+        recordDependencyPath(resolved);
+        return reinterpret_cast<Rml::FileHandle>(handle);
     }
 
     void Close(Rml::FileHandle file) override {
         if (auto* handle = asFile(file)) {
-            std::fclose(handle);
+            if (handle->file) std::fclose(handle->file);
+            delete handle;
         }
     }
 
     size_t Read(void* buffer, size_t size, Rml::FileHandle file) override {
         auto* handle = asFile(file);
-        return handle ? std::fread(buffer, 1, size, handle) : 0;
+        if (!handle) return 0;
+        if (handle->file) return std::fread(buffer, 1, size, handle->file);
+        const size_t remaining = handle->position < handle->data.size() ? handle->data.size() - handle->position : 0;
+        const size_t bytes = std::min(size, remaining);
+        if (bytes > 0) {
+            std::memcpy(buffer, handle->data.data() + handle->position, bytes);
+            handle->position += bytes;
+        }
+        return bytes;
     }
 
     bool Seek(Rml::FileHandle file, long offset, int origin) override {
         auto* handle = asFile(file);
-        return handle && std::fseek(handle, offset, origin) == 0;
+        if (!handle) return false;
+        if (handle->file) return std::fseek(handle->file, offset, origin) == 0;
+
+        long base = 0;
+        if (origin == SEEK_CUR) base = static_cast<long>(handle->position);
+        else if (origin == SEEK_END) base = static_cast<long>(handle->data.size());
+        long next = base + offset;
+        if (next < 0) return false;
+        handle->position = std::min(static_cast<size_t>(next), handle->data.size());
+        return true;
     }
 
     size_t Tell(Rml::FileHandle file) override {
         auto* handle = asFile(file);
         if (!handle) return 0;
-        long pos = std::ftell(handle);
+        if (!handle->file) return handle->position;
+        long pos = std::ftell(handle->file);
         return pos < 0 ? 0 : static_cast<size_t>(pos);
     }
 
 private:
-    static std::FILE* asFile(Rml::FileHandle file) {
-        return reinterpret_cast<std::FILE*>(file);
+    struct FileHandle {
+        std::FILE* file = nullptr;
+        std::string data;
+        size_t position = 0;
+    };
+
+    static FileHandle* asFile(Rml::FileHandle file) {
+        return reinterpret_cast<FileHandle*>(file);
+    }
+
+    static bool isStylesheet(const std::filesystem::path& path) {
+        std::string ext = path.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return ext == ".rcss" || ext == ".css";
+    }
+
+    static std::string trim(std::string value) {
+        auto notSpace = [](unsigned char c) { return !std::isspace(c); };
+        value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
+        value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
+        return value;
+    }
+
+    static bool isIgnoredCompatibilityProperty(std::string name) {
+        std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        name = trim(std::move(name));
+        return name == "text-shadow"
+            || name == "font-smoothing"
+            || name == "-webkit-font-smoothing"
+            || name == "-moz-osx-font-smoothing";
+    }
+
+    static std::string sanitizeStylesheet(const std::string& css) {
+        std::string out;
+        out.reserve(css.size());
+        size_t start = 0;
+        while (start < css.size()) {
+            size_t end = css.find(';', start);
+            size_t tokenEnd = end == std::string::npos ? css.size() : end + 1;
+            std::string token = css.substr(start, tokenEnd - start);
+            size_t colon = token.find(':');
+            size_t openBrace = token.find('{');
+            if (colon != std::string::npos && (openBrace == std::string::npos || openBrace < colon)) {
+                std::string name = token.substr(openBrace == std::string::npos ? 0 : openBrace + 1,
+                                                colon - (openBrace == std::string::npos ? 0 : openBrace + 1));
+                if (isIgnoredCompatibilityProperty(name)) {
+                    out += "/* ignored unsupported web css: ";
+                    out += trim(token);
+                    out += " */";
+                } else {
+                    out += token;
+                }
+            } else {
+                out += token;
+            }
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+        return out;
     }
 
     static std::filesystem::path resolve(const Rml::String& path) {
@@ -119,6 +218,41 @@ std::unique_ptr<NextRmlSystemInterface> gSystemInterface;
 std::unique_ptr<NextRmlFileInterface> gFileInterface;
 std::unique_ptr<RmlUiRenderInterface> gRenderInterface;
 
+void loadFontIfPresent(const std::string& path, bool fallback, Rml::Style::FontWeight weight = Rml::Style::FontWeight::Auto) {
+    if (!std::filesystem::exists(path)) return;
+    if (!Rml::LoadFontFace(path, fallback, weight)) {
+        Log::warn("[RmlUi] failed to load font: ", path);
+    }
+}
+
+void loadFontAliasIfPresent(const std::string& path, const std::string& family,
+                            Rml::Style::FontWeight weight, bool fallback = false) {
+    if (!std::filesystem::exists(path)) return;
+    if (!Rml::LoadFontFace(path, family, Rml::Style::FontStyle::Normal, weight, fallback)) {
+        Log::warn("[RmlUi] failed to load font alias ", family, ": ", path);
+    }
+}
+
+void loadDefaultFonts() {
+    loadFontIfPresent(assetPath("assets/fonts/NextSans-Regular.ttf"), true, Rml::Style::FontWeight::Normal);
+    loadFontIfPresent(assetPath("assets/fonts/NextSans-Bold.ttf"), false, Rml::Style::FontWeight::Bold);
+
+    const std::string sampleFonts = assetPath("third_party/rmlui/Samples/assets/");
+    const std::string latoRegular = sampleFonts + "LatoLatin-Regular.ttf";
+    const std::string latoBold = sampleFonts + "LatoLatin-Bold.ttf";
+    const std::string monoRegular = sampleFonts + "RobotoMono-Regular.ttf";
+    loadFontIfPresent(latoRegular, true, Rml::Style::FontWeight::Normal);
+    loadFontIfPresent(latoBold, false, Rml::Style::FontWeight::Bold);
+    loadFontIfPresent(monoRegular, false, Rml::Style::FontWeight::Normal);
+    loadFontIfPresent(sampleFonts + "NotoEmoji-Regular.ttf", true, Rml::Style::FontWeight::Normal);
+
+    for (const char* family : {"NextSans", "Arial", "Helvetica", "sans-serif"}) {
+        loadFontAliasIfPresent(latoRegular, family, Rml::Style::FontWeight::Normal, family == std::string("sans-serif"));
+        loadFontAliasIfPresent(latoBold, family, Rml::Style::FontWeight::Bold);
+    }
+    loadFontAliasIfPresent(monoRegular, "monospace", Rml::Style::FontWeight::Normal);
+}
+
 } // namespace
 
 bool RmlUiRuntime::initialized_ = false;
@@ -140,6 +274,8 @@ bool RmlUiRuntime::ensureInitialized() {
         gRenderInterface.reset();
         gFileInterface.reset();
         gSystemInterface.reset();
+    } else {
+        loadDefaultFonts();
     }
     return initialized_;
 }

@@ -43,8 +43,6 @@ set(SHADERS
     ${SHADER_DIR}/shader.frag
     ${SHADER_DIR}/unlit.frag
     ${SHADER_DIR}/shadow.vert
-    ${SHADER_DIR}/bake.vert
-    ${SHADER_DIR}/bake.frag
     ${SHADER_DIR}/culling.comp
     ${SHADER_DIR}/tonemap.vert
     ${SHADER_DIR}/tonemap.frag
@@ -60,6 +58,8 @@ set(SHADERS
     ${SHADER_DIR}/outline.frag
     ${SHADER_DIR}/ui.vert
     ${SHADER_DIR}/ui.frag
+    ${SHADER_DIR}/web_canvas_world.vert
+    ${SHADER_DIR}/web_canvas_world.frag
     ${SHADER_DIR}/voxelize.vert
     ${SHADER_DIR}/voxelize.frag
     ${SHADER_DIR}/ddgi_trace.comp
@@ -67,7 +67,6 @@ set(SHADERS
     ${SHADER_DIR}/ddgi_borders.comp
     ${SHADER_DIR}/debug_line.vert
     ${SHADER_DIR}/debug_line.frag
-    ${SHADER_DIR}/lightmap_dilate.frag
 )
 
 # GLSL headers #included by the shaders above. Listed as a dependency so editing
@@ -289,7 +288,6 @@ add_library(ne_engine STATIC
     src/render/features/OutlineFeature.cpp
     src/render/features/SkyboxFeature.cpp
     src/render/features/DebugLinesFeature.cpp
-    src/render/LightBaker.cpp
     src/render/GIVolume.cpp
     # XR sources are added conditionally below via target_sources (NE_ENABLE_XR)
     src/project/Project.cpp

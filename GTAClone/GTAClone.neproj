@@ -12,3 +12,4 @@ audio_default_spatial=0
 audio_default_min_dist=1
 audio_default_max_dist=100
 auto_mesh_lods=1
+show_colliders=1

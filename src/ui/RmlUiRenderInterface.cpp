@@ -53,6 +53,8 @@ void RmlUiRenderInterface::beginFrame(uint32_t width, uint32_t height) {
     outputPixels_.assign(byteCount, kTransparent);
     scissorEnabled_ = false;
     scissorRegion_ = Rml::Rectanglei::MakeInvalid();
+    transformEnabled_ = false;
+    transform_ = Rml::Matrix4f::Identity();
     rendering_ = true;
 }
 
@@ -148,6 +150,11 @@ void RmlUiRenderInterface::SetScissorRegion(Rml::Rectanglei region) {
     scissorRegion_ = region;
 }
 
+void RmlUiRenderInterface::SetTransform(const Rml::Matrix4f* transform) {
+    transformEnabled_ = transform != nullptr;
+    transform_ = transform ? *transform : Rml::Matrix4f::Identity();
+}
+
 RmlUiRenderInterface::Pixel RmlUiRenderInterface::sampleTexture(Rml::TextureHandle texture, float u, float v) const {
     if (texture == 0) return {kOpaque, kOpaque, kOpaque, kOpaque};
 
@@ -180,11 +187,21 @@ RmlUiRenderInterface::Pixel RmlUiRenderInterface::sampleTexture(Rml::TextureHand
     return out;
 }
 
+Rml::Vector2f RmlUiRenderInterface::transformPoint(Rml::Vector2f point) const {
+    if (!transformEnabled_) return point;
+    Rml::Vector4f p(point.x, point.y, 0.0f, 1.0f);
+    Rml::Vector4f out = transform_ * p;
+    if (std::abs(out.w) > 0.0001f) {
+        return {out.x / out.w, out.y / out.w};
+    }
+    return {out.x, out.y};
+}
+
 void RmlUiRenderInterface::drawTriangle(const Rml::Vertex& a, const Rml::Vertex& b, const Rml::Vertex& c,
                                         Rml::Vector2f translation, Rml::TextureHandle texture) {
-    Rml::Vector2f p0 = translated(a, translation);
-    Rml::Vector2f p1 = translated(b, translation);
-    Rml::Vector2f p2 = translated(c, translation);
+    Rml::Vector2f p0 = transformPoint(translated(a, translation));
+    Rml::Vector2f p1 = transformPoint(translated(b, translation));
+    Rml::Vector2f p2 = transformPoint(translated(c, translation));
 
     float area = edge(p0, p1, p2);
     if (std::abs(area) < 0.0001f) return;
@@ -228,10 +245,10 @@ void RmlUiRenderInterface::drawTriangle(const Rml::Vertex& a, const Rml::Vertex&
             color.a = clampByte(a.colour.alpha * w0 + b.colour.alpha * w1 + c.colour.alpha * w2);
 
             Pixel src;
-            src.r = static_cast<uint8_t>((static_cast<uint16_t>(texel.r) * color.r) / 255u);
-            src.g = static_cast<uint8_t>((static_cast<uint16_t>(texel.g) * color.g) / 255u);
-            src.b = static_cast<uint8_t>((static_cast<uint16_t>(texel.b) * color.b) / 255u);
             src.a = static_cast<uint8_t>((static_cast<uint16_t>(texel.a) * color.a) / 255u);
+            src.r = static_cast<uint8_t>((static_cast<uint32_t>(texel.r) * color.r * color.a) / (255u * 255u));
+            src.g = static_cast<uint8_t>((static_cast<uint32_t>(texel.g) * color.g * color.a) / (255u * 255u));
+            src.b = static_cast<uint8_t>((static_cast<uint32_t>(texel.b) * color.b * color.a) / (255u * 255u));
             blendPixel(x, y, src);
         }
     }

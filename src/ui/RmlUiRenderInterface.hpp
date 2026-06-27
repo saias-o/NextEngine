@@ -27,6 +27,7 @@ public:
 
     void EnableScissorRegion(bool enable) override;
     void SetScissorRegion(Rml::Rectanglei region) override;
+    void SetTransform(const Rml::Matrix4f* transform) override;
 
 private:
     struct Geometry {
@@ -47,6 +48,7 @@ private:
     };
 
     Pixel sampleTexture(Rml::TextureHandle texture, float u, float v) const;
+    Rml::Vector2f transformPoint(Rml::Vector2f point) const;
     void drawTriangle(const Rml::Vertex& a, const Rml::Vertex& b, const Rml::Vertex& c,
                       Rml::Vector2f translation, Rml::TextureHandle texture);
     void blendPixel(int x, int y, Pixel src);
@@ -59,6 +61,8 @@ private:
 
     bool scissorEnabled_ = false;
     Rml::Rectanglei scissorRegion_;
+    bool transformEnabled_ = false;
+    Rml::Matrix4f transform_;
     bool rendering_ = false;
 
     uintptr_t nextHandle_ = 1;

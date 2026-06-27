@@ -66,6 +66,8 @@ public:
         return mx >= viewportPos_.x && mx <= viewportPos_.x + viewportSize_.x &&
                my >= viewportPos_.y && my <= viewportPos_.y + viewportSize_.y;
     }
+    glm::vec2 viewportPosition() const { return viewportPos_; }
+    glm::vec2 viewportSize() const { return viewportSize_; }
 
     void openModelImporter(const std::string& path, ResourceManager* resources);
     void closeModelImporter();
@@ -102,9 +104,8 @@ private:
     void renderGizmoRotationRings(ImDrawList* drawList, Camera* camera, const glm::mat4& viewProj, int hoveredAxis);
     void renderGizmoTranslateScale(ImDrawList* drawList, int hoveredAxis);
 
-    // Draws collision-shape wireframes (box/sphere/capsule) over the viewport.
+    // Draws collision-shape wireframes (box/sphere/capsule) over the editor viewport.
     void drawColliderGizmos(Camera* camera, Scene* scene);
-    bool showColliders_ = true;
     
     void drawAboutWindow();
     void drawBuildWindow(Project* project);

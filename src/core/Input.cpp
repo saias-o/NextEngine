@@ -15,6 +15,11 @@ bool g_mouseCurr[GLFW_MOUSE_BUTTON_LAST + 1] = {};
 bool g_mousePrev[GLFW_MOUSE_BUTTON_LAST + 1] = {};
 glm::vec2 g_mouseDelta{0.0f};
 glm::vec2 g_mousePos{0.0f};
+glm::vec2 g_scrollDelta{0.0f};
+std::vector<uint32_t> g_textInput;
+std::vector<TouchPoint> g_touches;
+std::vector<TouchPoint> g_pendingTouches;
+std::unordered_map<uint64_t, glm::vec2> g_lastTouchPositions;
 bool g_uiCapturesKeyboard = false;
 bool g_uiCapturesMouse = false;
 
@@ -185,6 +190,13 @@ void Input::newFrame() {
     g_window->consumeMouseDelta(dx, dy);
     g_mouseDelta = {static_cast<float>(dx), static_cast<float>(dy)};
 
+    double sx, sy;
+    g_window->consumeScrollDelta(sx, sy);
+    g_scrollDelta = {static_cast<float>(sx), static_cast<float>(sy)};
+    g_textInput = g_window->consumeTextInput();
+    g_touches = std::move(g_pendingTouches);
+    g_pendingTouches.clear();
+
     double mx, my;
     glfwGetCursorPos(w, &mx, &my);
     g_mousePos = {static_cast<float>(mx), static_cast<float>(my)};
@@ -338,6 +350,15 @@ bool Input::isKeyPressed(KeyCode key) {
     return false;
 }
 
+bool Input::isKeyReleased(KeyCode key) {
+    if (!g_window) return false;
+    int glfwKey = glfwKeyFromKeyCode(key);
+    if (glfwKey >= 0 && glfwKey <= GLFW_KEY_LAST) {
+        return !g_keyCurr[glfwKey] && g_keyPrev[glfwKey];
+    }
+    return false;
+}
+
 bool Input::isMouseButtonDown(MouseButton btn) {
     if (!g_window) return false;
     int glfwBtn = glfwMouseFromMouseButton(btn);
@@ -356,8 +377,33 @@ bool Input::isMouseButtonPressed(MouseButton btn) {
     return false;
 }
 
+bool Input::isMouseButtonReleased(MouseButton btn) {
+    if (!g_window) return false;
+    int glfwBtn = glfwMouseFromMouseButton(btn);
+    if (glfwBtn >= 0 && glfwBtn <= GLFW_MOUSE_BUTTON_LAST) {
+        return !g_mouseCurr[glfwBtn] && g_mousePrev[glfwBtn];
+    }
+    return false;
+}
+
 glm::vec2 Input::mouseDelta() { return g_mouseDelta; }
 glm::vec2 Input::mousePosition() { return g_mousePos; }
+glm::vec2 Input::scrollDelta() { return g_scrollDelta; }
+const std::vector<uint32_t>& Input::textInputCodepoints() { return g_textInput; }
+const std::vector<TouchPoint>& Input::touches() { return g_touches; }
+
+void Input::submitTouch(uint64_t id, glm::vec2 position, TouchPhase phase) {
+    glm::vec2 previous = position;
+    if (auto it = g_lastTouchPositions.find(id); it != g_lastTouchPositions.end()) {
+        previous = it->second;
+    }
+    g_pendingTouches.push_back({id, position, previous, phase});
+    if (phase == TouchPhase::Ended || phase == TouchPhase::Cancelled) {
+        g_lastTouchPositions.erase(id);
+    } else {
+        g_lastTouchPositions[id] = position;
+    }
+}
 
 void Input::consumeMouse() {
     for (int b = 0; b <= GLFW_MOUSE_BUTTON_LAST; ++b) {
@@ -365,6 +411,10 @@ void Input::consumeMouse() {
         g_mousePrev[b] = false;
     }
     g_mouseDelta = {0.0f, 0.0f};
+    g_scrollDelta = {0.0f, 0.0f};
+    g_touches.clear();
+    g_pendingTouches.clear();
+    g_lastTouchPositions.clear();
     
     // Also clear bindings that are mouse-based
     for (auto& binding : g_bindings) {
@@ -380,6 +430,7 @@ void Input::consumeKeyboard() {
         g_keyCurr[k] = false;
         g_keyPrev[k] = false;
     }
+    g_textInput.clear();
     
     // Also clear bindings that are key-based
     for (auto& binding : g_bindings) {

@@ -23,11 +23,9 @@ enum class MaterialType : uint32_t;
 struct SceneDraw {
     SceneDraw() = default;
     SceneDraw(Mesh* mesh, Material* material, MeshNode* node, const glm::mat4& world,
-              bool castShadows, bool useLightmap, VkDescriptorSet lightmapSet,
-              int32_t boneOffset, MaterialType materialType)
+              bool castShadows, int32_t boneOffset, MaterialType materialType)
         : mesh(mesh), material(material), node(node), world(world),
-          castShadows(castShadows), useLightmap(useLightmap),
-          lightmapSet(lightmapSet), boneOffset(boneOffset),
+          castShadows(castShadows), boneOffset(boneOffset),
           materialType(materialType) {}
 
     Mesh* mesh = nullptr;
@@ -35,8 +33,6 @@ struct SceneDraw {
     MeshNode* node = nullptr;
     glm::mat4 world{1.0f};
     bool castShadows = false;
-    bool useLightmap = false;
-    VkDescriptorSet lightmapSet = VK_NULL_HANDLE;
     int32_t boneOffset = -1;
     MaterialType materialType;
 };

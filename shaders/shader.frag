@@ -45,12 +45,9 @@ layout(set = 1, binding = 4) uniform sampler2D texEmissive;
 
 #endif
 
-// Set 2: per-object baked lightmap (default 1x1 white when not baked).
-layout(set = 2, binding = 0) uniform sampler2D lightmap;
-
 layout(push_constant) uniform PushConstants {
     mat4 model;
-    vec4 params;  // x = useLightmap (>0.5 → sample baked diffuse)
+    vec4 params;
 } push;
 
 layout(location = 0) in vec3 fragWorldPos;

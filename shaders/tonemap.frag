@@ -14,6 +14,7 @@ layout(push_constant) uniform PushConstants {
     vec4 fogColor;        // rgb = linear HDR fog color
     vec4 fogParams;       // x enabled, y start, z density, w exposure
     vec4 bloomParams;     // x enabled, y threshold, z intensity, w radius px
+    vec4 sourceRect;      // xy = source UV origin, zw = source UV size
 } push;
 
 layout(location = 0) in vec2 fragUV;
@@ -25,6 +26,23 @@ const float AO_BIAS = 0.03;
 const float AO_NORMAL_EPSILON = 1e-4;
 const int BLOOM_SAMPLE_COUNT = 12;
 const float BLOOM_SOFT_KNEE = 0.35;
+
+vec2 sourceUV(vec2 viewportUV) {
+    return push.sourceRect.xy + clamp(viewportUV, vec2(0.0), vec2(1.0)) * push.sourceRect.zw;
+}
+
+vec4 sampleHdr(vec2 viewportUV) {
+    return texture(hdrInput, sourceUV(viewportUV));
+}
+
+float sampleDepth(vec2 viewportUV) {
+    return texture(depthInput, sourceUV(viewportUV)).r;
+}
+
+vec2 viewportTexel() {
+    vec2 sourcePixels = vec2(textureSize(hdrInput, 0)) * max(push.sourceRect.zw, vec2(1e-6));
+    return 1.0 / max(sourcePixels, vec2(1.0));
+}
 
 // ACES filmic tonemap — Krzysztof Narkowicz's 2015 fit.
 // Maps [0,∞) HDR values to [0,1] with a pleasant S-curve that keeps blacks
@@ -45,9 +63,9 @@ vec3 reconstructViewPosition(vec2 uv, float depth) {
 }
 
 vec3 viewNormalFromDepth(vec2 uv, vec3 center) {
-    vec2 texel = 1.0 / vec2(textureSize(depthInput, 0));
-    float depthX = texture(depthInput, uv + vec2(texel.x, 0.0)).r;
-    float depthY = texture(depthInput, uv + vec2(0.0, texel.y)).r;
+    vec2 texel = viewportTexel();
+    float depthX = sampleDepth(uv + vec2(texel.x, 0.0));
+    float depthY = sampleDepth(uv + vec2(0.0, texel.y));
     vec3 px = reconstructViewPosition(uv + vec2(texel.x, 0.0), depthX);
     vec3 py = reconstructViewPosition(uv + vec2(0.0, texel.y), depthY);
     vec3 n = normalize(cross(py - center, px - center));
@@ -60,7 +78,7 @@ vec3 viewNormalFromDepth(vec2 uv, vec3 center) {
 float ambientOcclusion(vec2 uv) {
     if (push.aoParams.x < 0.5) return 1.0;
 
-    float centerDepth = texture(depthInput, uv).r;
+    float centerDepth = sampleDepth(uv);
     if (centerDepth >= 0.9999) return 1.0;
 
     vec3 center = reconstructViewPosition(uv, centerDepth);
@@ -80,10 +98,10 @@ float ambientOcclusion(vec2 uv) {
             if (any(lessThan(sampleUV, vec2(0.0))) || any(greaterThan(sampleUV, vec2(1.0))))
                 continue;
 
-            float sampleDepth = texture(depthInput, sampleUV).r;
-            if (sampleDepth >= 0.9999) continue;
+            float depthSample = sampleDepth(sampleUV);
+            if (depthSample >= 0.9999) continue;
 
-            vec3 samplePos = reconstructViewPosition(sampleUV, sampleDepth);
+            vec3 samplePos = reconstructViewPosition(sampleUV, depthSample);
             vec3 delta = samplePos - center;
             float dist = length(delta);
             if (dist <= AO_NORMAL_EPSILON || dist > push.aoParams.y) continue;
@@ -112,7 +130,7 @@ vec3 bloom(vec2 uv) {
     if (push.bloomParams.x < 0.5 || push.bloomParams.z <= 0.0 || push.bloomParams.w <= 0.0)
         return vec3(0.0);
 
-    vec2 texel = 1.0 / vec2(textureSize(hdrInput, 0));
+    vec2 texel = viewportTexel();
     vec2 radius = texel * push.bloomParams.w;
     vec2 offsets[BLOOM_SAMPLE_COUNT] = vec2[](
         vec2( 1.0,  0.0), vec2(-1.0,  0.0), vec2( 0.0,  1.0), vec2( 0.0, -1.0),
@@ -120,11 +138,11 @@ vec3 bloom(vec2 uv) {
         vec2( 2.0,  0.0), vec2(-2.0,  0.0), vec2( 0.0,  2.0), vec2( 0.0, -2.0)
     );
 
-    vec3 sum = brightPass(texture(hdrInput, uv).rgb) * 0.18;
+    vec3 sum = brightPass(sampleHdr(uv).rgb) * 0.18;
     float weightSum = 0.18;
     for (int i = 0; i < BLOOM_SAMPLE_COUNT; ++i) {
         float weight = i < 8 ? 0.075 : 0.055;
-        sum += brightPass(texture(hdrInput, uv + offsets[i] * radius).rgb) * weight;
+        sum += brightPass(sampleHdr(uv + offsets[i] * radius).rgb) * weight;
         weightSum += weight;
     }
     return (sum / weightSum) * push.bloomParams.z;
@@ -133,7 +151,7 @@ vec3 bloom(vec2 uv) {
 vec3 applyFog(vec3 color, vec2 uv) {
     if (push.fogParams.x < 0.5) return color;
 
-    float depth = texture(depthInput, uv).r;
+    float depth = sampleDepth(uv);
     if (depth >= 0.9999) return color;
 
     vec3 viewPos = reconstructViewPosition(uv, depth);
@@ -143,7 +161,7 @@ vec3 applyFog(vec3 color, vec2 uv) {
 }
 
 void main() {
-    vec4 hdr4 = texture(hdrInput, fragUV);
+    vec4 hdr4 = sampleHdr(fragUV);
     vec3 hdr = hdr4.rgb;
 
     hdr *= ambientOcclusion(fragUV);

@@ -11,6 +11,9 @@ layout(push_constant) uniform PushConstants {
     uint textureId;   // Index bindless
     uint hasTexture;  // 1 si utilisation de texture, 0 sinon
     vec4 color;       // Couleur (RGBA)
+    vec2 corners[4];  // Optional pre-projected quad corners in pixels
+    uint useCorners;  // 1 for world-space projected quads
+    uint _pad;
 } push;
 
 layout(location = 0) out vec2 fragUV;
@@ -34,10 +37,14 @@ void main() {
     
     // Position pixel à l'écran
     vec2 pixelPos = push.position + localPos * push.size;
+    if (push.useCorners != 0) {
+        pixelPos = push.corners[gl_VertexIndex];
+    }
     
     // Projection Orthographique (0 -> screenSize) vers NDC (-1 -> 1)
     // X: 0 -> width devient -1 -> 1
-    // Y: 0 -> height devient -1 -> 1 (Attention vulkan Y descend)
+    // Vulkan viewport coordinates use a top-left framebuffer origin here:
+    // pixel y=0 must map to NDC -1, not +1.
     vec2 ndc = (pixelPos / push.screenSize) * 2.0 - 1.0;
     
     gl_Position = vec4(ndc.x, ndc.y, 0.0, 1.0);

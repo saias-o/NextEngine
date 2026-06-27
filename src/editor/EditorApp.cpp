@@ -64,6 +64,7 @@ void EditorApp::update(float dt) {
                        ? &engine_.sceneTree().currentScene()
                        : &engine_.scene();
     ui_.draw(this, shown, &engine_.camera(), &engine_.project(), &engine_.resources(), dt);
+    engine_.setRenderViewport(ui_.viewportPosition(), ui_.viewportSize());
 
     // The render target during Play is the World (set by mountWorld); leave it.
     if (!isPlayMode()) {

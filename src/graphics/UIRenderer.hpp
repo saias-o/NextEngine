@@ -11,6 +11,7 @@ class VulkanDevice;
 class ResourceManager;
 class Pipeline;
 class Scene;
+class Camera;
 class UINode;
 class WebCanvasNode;
 class UICanvasNode;
@@ -18,9 +19,12 @@ class UICanvasNode;
 struct UIDrawCmd {
     glm::vec2 position;
     glm::vec2 size;
+    glm::vec2 corners[4];
     glm::vec4 color;
     uint32_t textureId;
     uint32_t hasTexture;
+    uint32_t useCorners = 0;
+    int sortOrder = 0;
 };
 
 class UIRenderer {
@@ -30,9 +34,11 @@ public:
     UIRenderer(const UIRenderer&) = delete;
     UIRenderer& operator=(const UIRenderer&) = delete;
 
-    void gatherUI(Scene& scene);
+    void gatherUI(Scene& scene, const Camera* camera = nullptr, glm::vec2 viewportSize = glm::vec2(0.0f));
     void updateAsyncTextures(VkCommandBuffer cmd);
-    void recordCommands(VkCommandBuffer cmd, uint32_t width, uint32_t height);
+    void recordCommands(VkCommandBuffer cmd, uint32_t width, uint32_t height,
+                        glm::vec2 viewportOffset = glm::vec2(0.0f),
+                        glm::vec2 viewportSize = glm::vec2(0.0f));
 
 private:
     void traverseUI(UINode* node);
@@ -45,6 +51,7 @@ private:
 
     std::vector<UIDrawCmd> drawCmds_;
     std::vector<WebCanvasNode*> webNodesToUpdate_;
+    bool loggedWebCanvasGather_ = false;
 };
 
 } // namespace ne

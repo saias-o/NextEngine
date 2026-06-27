@@ -3,7 +3,9 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace ne {
 
@@ -32,6 +34,8 @@ public:
     bool mouseButtonDown(int glfwButton) const { return glfwGetMouseButton(window_, glfwButton) == GLFW_PRESS; }
     // Mouse movement accumulated since the last call (then reset to zero).
     void consumeMouseDelta(double& dx, double& dy);
+    void consumeScrollDelta(double& dx, double& dy);
+    std::vector<uint32_t> consumeTextInput();
 
     // Cursor capture: disabled (hidden, locked) for fly-cam vs normal for UI.
     bool cursorCaptured() const { return cursorCaptured_; }
@@ -42,12 +46,17 @@ public:
 private:
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
     static void cursorPosCallback(GLFWwindow* window, double x, double y);
+    static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+    static void charCallback(GLFWwindow* window, unsigned int codepoint);
 
     GLFWwindow* window_ = nullptr;
     bool resized_ = false;
 
     double mouseDx_ = 0.0;
     double mouseDy_ = 0.0;
+    double scrollDx_ = 0.0;
+    double scrollDy_ = 0.0;
+    std::vector<uint32_t> textInput_;
     double lastX_ = 0.0;
     double lastY_ = 0.0;
     bool firstMouse_ = true;

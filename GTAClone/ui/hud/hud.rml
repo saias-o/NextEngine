@@ -1,0 +1,27 @@
+<rml>
+  <head>
+    <link type="text/rcss" href="hud.rcss"/>
+  </head>
+  <body>
+    <div id="hud-root">
+      <div id="wanted-stars" class="wanted-stars">
+        <img class="star" src="star.png"/>
+        <img class="star" src="star.png"/>
+        <img class="star" src="star.png"/>
+        <img class="star" src="star.png"/>
+        <img class="star" src="star.png"/>
+      </div>
+      <div id="cash-button" class="cash-wrap ui-hit">
+        <div id="cash-shadow" class="cash cash-shadow">$00000000</div>
+        <div id="cash" class="cash">$00000000</div>
+      </div>
+      <div id="ledger-panel" class="ledger-panel ui-hit hidden">
+        <div class="ledger-title">Transactions</div>
+        <div class="ledger-subtitle">Derniers achats et ventes</div>
+        <div id="ledger-list" class="ledger-list"></div>
+        <button id="back-button" class="back-button ui-hit">Retour</button>
+      </div>
+    </div>
+    <script src="hud.js"></script>
+  </body>
+</rml>

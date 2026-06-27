@@ -1518,6 +1518,12 @@ void EditorUI::drawSettingsWindow(Project* project) {
             if (ImGui::BeginTabItem("Editor")) {
                 ImGui::Spacing();
                 ImGui::SeparatorText("Preferences");
+
+                bool showColliders = project->showColliders();
+                if (ImGui::Checkbox("Show Colliders", &showColliders)) {
+                    project->setShowColliders(showColliders);
+                    project->save();
+                }
                 
                 static bool autoSave = true;
                 ImGui::Checkbox("Auto-save Project", &autoSave);
@@ -1721,7 +1727,8 @@ bool projectPoint(const glm::mat4& viewProj, const glm::vec2& vpPos, const glm::
 } // namespace
 
 void EditorUI::drawColliderGizmos(Camera* camera, Scene* scene) {
-    if (!showColliders_ || !camera || !scene) return;
+    if ((app_ && app_->isPlayMode()) || !camera || !scene) return;
+    if (ctxProject_ && !ctxProject_->showColliders()) return;
 
     ImGuiViewport* vp = ImGui::GetMainViewport();
     glm::vec2 vpPos(vp->WorkPos.x, vp->WorkPos.y);

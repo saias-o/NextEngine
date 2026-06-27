@@ -9,6 +9,7 @@ namespace ne {
 
 class XRController;
 class TeleportArea;
+class WebCanvasNode;
 
 // Far-field interactor for teleport locomotion: attach to an XRController. While
 // the thumbstick is pushed forward it aims a ray from the controller's aim pose
@@ -45,6 +46,8 @@ private:
     glm::vec3 rayOrigin_{0.0f};
     glm::vec3 rayDir_{0.0f, 0.0f, -1.0f};
     TeleportArea* targetArea_ = nullptr;  // re-validated against the live group on commit
+    WebCanvasNode* uiPressedTarget_ = nullptr;
+    glm::vec2 uiPressedLocal_{0.0f};
 };
 
 } // namespace ne

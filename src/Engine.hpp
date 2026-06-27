@@ -53,6 +53,8 @@ public:
     bool xrMode() const { return xrMode_; }
 
     void setSceneOverride(Scene* scene) { sceneOverride_ = scene; }
+    void setRenderViewport(glm::vec2 position, glm::vec2 size);
+    void clearRenderViewport();
 
     // Runtime/Play: wrap the current edit scene in the persistent World (hosting
     // autoloads + the swappable gameplay sub-scene) and render that instead.
@@ -102,6 +104,9 @@ private:
     FrameFn onFrame_;
     Camera camera_;
     CameraDirector cameraDirector_;  // picks + blends scene cameras during Play
+    bool renderViewportOverride_ = false;
+    glm::vec2 renderViewportPos_{0.0f};
+    glm::vec2 renderViewportSize_{0.0f};
 
     std::string playSnapshot_;  // edit doc serialized at play start, to restore on stop
 

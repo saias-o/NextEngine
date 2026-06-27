@@ -13,7 +13,7 @@ layout(set = 0, binding = 0) uniform CameraUBO {
 
 layout(push_constant) uniform PushConstants {
     mat4 model;
-    vec4 params;  // x = useLightmap, y = boneOffset
+    vec4 params;  // y = boneOffset
 } push;
 
 #ifdef BINDLESS
@@ -25,7 +25,7 @@ struct InstanceData {
     uint pad2, pad3;
 };
 
-layout(std140, set = 3, binding = 0) readonly buffer InstanceBuffer {
+layout(std140, set = 2, binding = 0) readonly buffer InstanceBuffer {
     InstanceData instances[];
 };
 #endif

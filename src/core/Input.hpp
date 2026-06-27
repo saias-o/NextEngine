@@ -40,6 +40,20 @@ struct ActionBinding {
 
 using ActionCallback = std::function<void(float strength)>;
 
+enum class TouchPhase {
+    Began,
+    Moved,
+    Ended,
+    Cancelled
+};
+
+struct TouchPoint {
+    uint64_t id = 0;
+    glm::vec2 position{0.0f};
+    glm::vec2 previousPosition{0.0f};
+    TouchPhase phase = TouchPhase::Moved;
+};
+
 class Input {
 public:
     // ---- Binding API ----
@@ -62,11 +76,20 @@ public:
     // ---- Raw Input Queries (Ignores Contexts & UI capture) ----
     static bool isKeyDown(KeyCode key);
     static bool isKeyPressed(KeyCode key);
+    static bool isKeyReleased(KeyCode key);
     static bool isMouseButtonDown(MouseButton btn);
     static bool isMouseButtonPressed(MouseButton btn);
+    static bool isMouseButtonReleased(MouseButton btn);
 
     static glm::vec2 mouseDelta();          // movement since last frame
     static glm::vec2 mousePosition();       // cursor position in window pixels
+    static glm::vec2 scrollDelta();         // wheel/trackpad delta since last frame
+    static const std::vector<uint32_t>& textInputCodepoints();
+    static const std::vector<TouchPoint>& touches();
+
+    // Platform backends with native touch (mobile/web) enqueue events before
+    // Engine::run samples the frame. Desktop GLFW leaves this empty.
+    static void submitTouch(uint64_t id, glm::vec2 position, TouchPhase phase);
 
     // ---- Event Consumption ----
     static void consumeMouse();

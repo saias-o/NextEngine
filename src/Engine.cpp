@@ -311,6 +311,20 @@ void Engine::run() {
     runDesktop();
 }
 
+void Engine::setRenderViewport(glm::vec2 position, glm::vec2 size) {
+    renderViewportOverride_ = size.x > 1.0f && size.y > 1.0f;
+    renderViewportPos_ = position;
+    renderViewportSize_ = size;
+    if (renderer_) renderer_->setViewportRect(position, size);
+}
+
+void Engine::clearRenderViewport() {
+    renderViewportOverride_ = false;
+    renderViewportPos_ = glm::vec2(0.0f);
+    renderViewportSize_ = glm::vec2(0.0f);
+    if (renderer_) renderer_->clearViewportRect();
+}
+
 void Engine::runDesktop() {
     double last = glfwGetTime();
     while (!window_->shouldClose()) {
@@ -348,7 +362,17 @@ void Engine::runDesktop() {
 
         Scene* activeScene = sceneOverride_ ? sceneOverride_ : scene_.get();
 
-        if (uiInteraction_.update(*activeScene, Input::mousePosition(), isLeftDown, isLeftPressed, isLeftReleased)) {
+        int framebufferWidth = 0;
+        int framebufferHeight = 0;
+        window_->framebufferSize(framebufferWidth, framebufferHeight);
+        glm::vec2 uiMouse = Input::mousePosition();
+        glm::vec2 uiViewportSize{static_cast<float>(framebufferWidth), static_cast<float>(framebufferHeight)};
+        if (renderViewportOverride_) {
+            uiMouse -= renderViewportPos_;
+            uiViewportSize = renderViewportSize_;
+        }
+        if (uiInteraction_.update(*activeScene, camera_, uiMouse, uiViewportSize,
+                                  isLeftDown, isLeftPressed, isLeftReleased)) {
             Input::consumeMouse();
         }
 

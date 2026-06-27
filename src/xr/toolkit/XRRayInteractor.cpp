@@ -6,12 +6,17 @@
 #include "xr/toolkit/XRTypes.hpp"
 
 #include "scene/Node.hpp"
+#include "scene/Scene.hpp"
 #include "scene/SceneTree.hpp"
+#include "scene/WebCanvasNode.hpp"
 #include "core/Log.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <nlohmann/json.hpp>
+
+#include <algorithm>
+#include <limits>
 
 namespace ne {
 
@@ -33,6 +38,51 @@ void XRRayInteractor::onUpdate(float) {
     const XRPose& aim = s.aim.tracked ? s.aim : s.grip;
     rayOrigin_ = aim.position;
     rayDir_ = glm::normalize(aim.orientation * glm::vec3(0.0f, 0.0f, -1.0f));
+
+    WebCanvasNode* uiTarget = nullptr;
+    glm::vec2 uiLocal{0.0f};
+    float uiDistance = std::numeric_limits<float>::max();
+    if (t->mounted()) {
+        for (WebCanvasNode* canvas : t->world().webCanvases()) {
+            if (!canvas || !canvas->isActiveInHierarchy() || !canvas->interactive()) continue;
+            if (canvas->mode() != WebCanvasNode::Mode::WorldSpace) continue;
+            glm::vec2 local{0.0f};
+            float distance = 0.0f;
+            if (canvas->raycast(rayOrigin_, rayDir_, local, distance) && distance <= maxDistance && distance < uiDistance) {
+                uiTarget = canvas;
+                uiLocal = {
+                    std::clamp(local.x, 0.0f, static_cast<float>(canvas->width())),
+                    std::clamp(local.y, 0.0f, static_cast<float>(canvas->height()))
+                };
+                uiDistance = distance;
+            }
+        }
+    }
+
+    if (uiTarget) {
+        uiTarget->fireMouseEvent(WebCanvasNode::MouseEvent::Move,
+            static_cast<int>(uiLocal.x), static_cast<int>(uiLocal.y),
+            XRInput::triggerDown(hand) ? WebCanvasNode::MouseButton::Left : WebCanvasNode::MouseButton::None);
+    }
+    if (XRInput::triggerPressed(hand) && uiTarget) {
+        uiPressedTarget_ = uiTarget;
+        uiPressedLocal_ = uiLocal;
+        uiTarget->fireMouseEvent(WebCanvasNode::MouseEvent::Down,
+            static_cast<int>(uiLocal.x), static_cast<int>(uiLocal.y), WebCanvasNode::MouseButton::Left);
+    }
+    if (XRInput::triggerReleased(hand) && uiPressedTarget_) {
+        WebCanvasNode* releaseTarget = uiPressedTarget_;
+        glm::vec2 releaseLocal = releaseTarget == uiTarget ? uiLocal : uiPressedLocal_;
+        if (releaseTarget->isActiveInHierarchy()) {
+            releaseLocal = {
+                std::clamp(releaseLocal.x, 0.0f, static_cast<float>(releaseTarget->width())),
+                std::clamp(releaseLocal.y, 0.0f, static_cast<float>(releaseTarget->height()))
+            };
+            releaseTarget->fireMouseEvent(WebCanvasNode::MouseEvent::Up,
+                static_cast<int>(releaseLocal.x), static_cast<int>(releaseLocal.y), WebCanvasNode::MouseButton::Left);
+        }
+        uiPressedTarget_ = nullptr;
+    }
 
     const bool wantAim = s.active && s.thumbstick.y > aimThreshold;
 

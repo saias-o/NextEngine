@@ -14,7 +14,6 @@
 #include "graphics/Swapchain.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "graphics/ResourceManager.hpp"
-#include "render/LightBaker.hpp"
 #include "render/GIVolume.hpp"
 #include "graphics/UIRenderer.hpp"
 #include "scene/LightNode.hpp"
@@ -27,6 +26,7 @@
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/MeshLod.hpp"
+#include "scene/WebCanvasNode.hpp"
 #include "scene/animation/Animator.hpp"
 #ifdef NE_ENABLE_XR
 #include "xr/XrSession.hpp"   // xr::EyeView
@@ -70,6 +70,17 @@ glm::mat4 directionalMatrix(const glm::vec3& dir, float distance) {
     return proj * view;
 }
 
+std::vector<WebCanvasNode*> activeWebCanvases(Scene& scene) {
+    std::vector<WebCanvasNode*> nodes;
+    scene.traverse([&](Node& node, const glm::mat4&) {
+        auto* canvas = dynamic_cast<WebCanvasNode*>(&node);
+        if (canvas && canvas->isActiveInHierarchy()) {
+            nodes.push_back(canvas);
+        }
+    });
+    return nodes;
+}
+
 // DDGI volume configuration scaled by the GPU's quality tier. Denser probes +
 // more rays = finer, cleaner GI; lower tiers (mobile/Quest) stay cheap. Same
 // world coverage, centered on the origin.
@@ -110,10 +121,10 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
                    ResourceManager& resources, ImGuiLayer& imgui)
     : device_(device), swapchain_(&swapchain), window_(window), resources_(resources), imgui_(&imgui) {
     createGlobalSetLayout();
-    lightBaker_ = std::make_unique<LightBaker>(device_, globalSetLayout_);
     uiRenderer_ = std::make_unique<UIRenderer>(device_, resources_, swapchain_->colorFormat());
     createHdrResources();
     createPipeline(resources_.materialSetLayout());
+    createWebCanvasWorldPipeline();
     createTonemapPipeline();
     buildFeatures(0, swapchain_->depthFormat(), swapchain_->samples());
     createUniformBuffers();
@@ -139,7 +150,6 @@ Renderer::Renderer(VulkanDevice& device, Window& window, ResourceManager& resour
       xrViewCount_(xrViewCount) {
     // Shared rendering machinery (identical to desktop) ...
     createGlobalSetLayout();
-    lightBaker_ = std::make_unique<LightBaker>(device_, globalSetLayout_);
     createUniformBuffers();
     shadowMap_ = std::make_unique<ShadowMap>(device_);
     gi_ = std::make_unique<GIVolume>(device_, giDescForTier(device_.capabilities().tier),
@@ -176,6 +186,35 @@ Renderer::~Renderer() {
     if (cullingSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), cullingSetLayout_, nullptr);
     if (cullingPool_) vkDestroyDescriptorPool(device_.device(), cullingPool_, nullptr);
     // pipeline_ and the buffers are torn down by their destructors.
+}
+
+void Renderer::setViewportRect(glm::vec2 position, glm::vec2 size) {
+    viewportPos_ = position;
+    viewportSize_ = size;
+    viewportOverride_ = size.x > 1.0f && size.y > 1.0f;
+}
+
+void Renderer::clearViewportRect() {
+    viewportOverride_ = false;
+    viewportPos_ = glm::vec2(0.0f);
+    viewportSize_ = glm::vec2(0.0f);
+}
+
+VkRect2D Renderer::activeRenderRect() const {
+    VkExtent2D full = swapchain_ ? swapchain_->extent() : VkExtent2D{1, 1};
+    if (!viewportOverride_) return {{0, 0}, full};
+
+    int32_t x = static_cast<int32_t>(std::max(0.0f, std::floor(viewportPos_.x)));
+    int32_t y = static_cast<int32_t>(std::max(0.0f, std::floor(viewportPos_.y)));
+    uint32_t w = static_cast<uint32_t>(std::max(1.0f, std::round(viewportSize_.x)));
+    uint32_t h = static_cast<uint32_t>(std::max(1.0f, std::round(viewportSize_.y)));
+
+    if (static_cast<uint32_t>(x) >= full.width || static_cast<uint32_t>(y) >= full.height) {
+        return {{0, 0}, full};
+    }
+    w = std::min(w, full.width - static_cast<uint32_t>(x));
+    h = std::min(h, full.height - static_cast<uint32_t>(y));
+    return {{x, y}, {w, h}};
 }
 
 void Renderer::createGlobalSetLayout() {
@@ -254,12 +293,14 @@ void Renderer::createPipeline(VkDescriptorSetLayout materialSetLayout) {
     std::string vertShader = useGpuDriven ? "bindless.shader.vert.spv" : "shader.vert.spv";
     std::string fragShader = useGpuDriven ? "bindless.shader.frag.spv" : "shader.frag.spv";
     
-    // set 0 = global, set 1 = material, set 2 = per-object baked lightmap, set 3 = culling/bindless (optional).
-    std::vector<VkDescriptorSetLayout> setLayouts = {
-        globalSetLayout_, materialSetLayout, lightBaker_->setLayout()};
-        
+    // Classic path: set 0 = global, set 1 = material.
+    // Dormant GPU-driven path: set 0 = global, set 1 = bindless material data,
+    // set 2 = culling/instance data.
+    std::vector<VkDescriptorSetLayout> setLayouts;
     if (useGpuDriven) {
-        setLayouts.push_back(cullingSetLayout_);
+        setLayouts = {globalSetLayout_, resources_.globalMaterialSetLayout(), cullingSetLayout_};
+    } else {
+        setLayouts = {globalSetLayout_, materialSetLayout};
     }
         
     std::vector<VkFormat> colorFormats = {VK_FORMAT_R16G16B16A16_SFLOAT};
@@ -272,10 +313,25 @@ void Renderer::createPipeline(VkDescriptorSetLayout materialSetLayout) {
     // per material with no other change. Always built against the classic
     // (non-bindless) 3-set layout used by the per-object draw path.
     std::vector<VkDescriptorSetLayout> classicLayouts = {
-        globalSetLayout_, materialSetLayout, lightBaker_->setLayout()};
+        globalSetLayout_, materialSetLayout};
     unlitPipeline_ = std::make_unique<Pipeline>(device_, shaderPath("shader.vert.spv"),
         shaderPath("unlit.frag.spv"), colorFormats, swapchain_->depthFormat(), classicLayouts,
         swapchain_->samples());
+}
+
+void Renderer::createWebCanvasWorldPipeline() {
+    if (!resources_.globalMaterialSetLayout()) {
+        Log::warn("WebCanvas world-space rendering disabled: descriptor indexing is unavailable.");
+        return;
+    }
+
+    std::vector<VkDescriptorSetLayout> setLayouts = {resources_.globalMaterialSetLayout()};
+    std::vector<VkFormat> colorFormats = {VK_FORMAT_R16G16B16A16_SFLOAT};
+    webCanvasWorldPipeline_ = std::make_unique<Pipeline>(device_,
+        shaderPath("web_canvas_world.vert.spv"), shaderPath("web_canvas_world.frag.spv"),
+        colorFormats, swapchain_->depthFormat(), setLayouts, swapchain_->samples(),
+        false, true, sizeof(WebCanvasWorldPushConstants), false, VK_COMPARE_OP_LESS_OR_EQUAL,
+        VK_CULL_MODE_NONE, BlendMode::Alpha, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
 }
 
 void Renderer::createUniformBuffers() {
@@ -711,6 +767,7 @@ Renderer::TonemapPushConstants Renderer::tonemapPushConstants(
                                  std::max(settings.bloomThreshold, 0.0f),
                                  std::max(settings.bloomIntensity, 0.0f),
                                  std::max(settings.bloomRadius, 0.0f));
+    push.sourceRect = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
     return push;
 }
 
@@ -951,9 +1008,6 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
                     }
 
                     if (inside) {
-                        bool baked = settings.lightingMode == LightingMode::Baked
-                                     && lightBaker_->has(node);
-                        
                         int32_t boneOffset = -1;
                         if (Animator* anim = getAnimatorInParent(node)) {
                             if (!anim->globalPose().skinningMatrices.empty()) {
@@ -965,8 +1019,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
                         }
 
                         currentDraws_.push_back(SceneDraw{drawMesh, drawMat, node, world, node->castShadows(),
-                                                          baked, lightBaker_->lightmapSet(node), boneOffset,
-                                                          drawMat->desc().type});
+                                                          boneOffset, drawMat->desc().type});
                     }
                 }
             }
@@ -1180,8 +1233,9 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
     colorAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     colorAttach.imageView = swapchain_->imageView(imageIndex);
     colorAttach.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttach.clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
 
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -1194,26 +1248,36 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
     vkCmdBeginRendering(cmd, &renderingInfo);
     tonemapPipeline_->bind(cmd);
 
+    VkRect2D renderRect = activeRenderRect();
     VkViewport viewport{};
-    viewport.width = static_cast<float>(swapchain_->extent().width);
-    viewport.height = static_cast<float>(swapchain_->extent().height);
+    viewport.x = static_cast<float>(renderRect.offset.x);
+    viewport.y = static_cast<float>(renderRect.offset.y);
+    viewport.width = static_cast<float>(renderRect.extent.width);
+    viewport.height = static_cast<float>(renderRect.extent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
-    VkRect2D scissor{};
-    scissor.extent = swapchain_->extent();
+    VkRect2D scissor = renderRect;
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, tonemapPipeline_->layout(),
         0, 1, &tonemapSet_, 0, nullptr);
         
     TonemapPushConstants push = tonemapPushConstants(scene.settings(), camera.projection());
+    VkExtent2D fullExtent = swapchain_->extent();
+    push.sourceRect = glm::vec4(
+        static_cast<float>(renderRect.offset.x) / static_cast<float>(std::max(1u, fullExtent.width)),
+        static_cast<float>(renderRect.offset.y) / static_cast<float>(std::max(1u, fullExtent.height)),
+        static_cast<float>(renderRect.extent.width) / static_cast<float>(std::max(1u, fullExtent.width)),
+        static_cast<float>(renderRect.extent.height) / static_cast<float>(std::max(1u, fullExtent.height)));
     vkCmdPushConstants(cmd, tonemapPipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(TonemapPushConstants), &push);
 
     vkCmdDraw(cmd, 3, 1, 0, 0);
-    uiRenderer_->recordCommands(cmd, swapchain_->extent().width, swapchain_->extent().height);
+    uiRenderer_->recordCommands(cmd, swapchain_->extent().width, swapchain_->extent().height,
+                                {static_cast<float>(renderRect.offset.x), static_cast<float>(renderRect.offset.y)},
+                                {static_cast<float>(renderRect.extent.width), static_cast<float>(renderRect.extent.height)});
     imgui_->renderDrawData(cmd);  // UI on top, in the LDR swapchain pass
     vkCmdEndRendering(cmd);
 }
@@ -1268,19 +1332,62 @@ void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, boo
             lastMaterial = draw.material;
         }
 
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
-                                2, 1, &draw.lightmapSet, 0, nullptr);
-
         PushConstants pc{};
         pc.model = draw.world;
         // params.y: offset into the global bone matrix buffer, or -1.
-        pc.params = glm::vec4(draw.useLightmap ? 1.0f : 0.0f,
-                              static_cast<float>(draw.boneOffset), 0.0f, 0.0f);
+        pc.params = glm::vec4(0.0f, static_cast<float>(draw.boneOffset), 0.0f, 0.0f);
         vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(PushConstants), &pc);
 
         draw.mesh->bind(cmd);
         draw.mesh->draw(cmd);
+    }
+}
+
+void Renderer::recordWorldWebCanvases(VkCommandBuffer cmd, Scene& scene, const Camera& camera) {
+    if (!webCanvasWorldPipeline_ || !resources_.globalMaterialSet()) return;
+
+    struct Draw {
+        WebCanvasNode* node = nullptr;
+        float distance = 0.0f;
+    };
+    std::vector<Draw> draws;
+    for (WebCanvasNode* node : activeWebCanvases(scene)) {
+        if (!node) continue;
+        if (node->mode() != WebCanvasNode::Mode::WorldSpace || !node->texture()) continue;
+        glm::vec3 center = glm::vec3(node->worldTransform() * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+        draws.push_back({node, glm::length(center - camera.position)});
+    }
+    if (draws.empty()) return;
+
+    std::stable_sort(draws.begin(), draws.end(), [](const Draw& a, const Draw& b) {
+        if (a.node->renderOrder() != b.node->renderOrder()) {
+            return a.node->renderOrder() < b.node->renderOrder();
+        }
+        return a.distance > b.distance;
+    });
+
+    webCanvasWorldPipeline_->bind(cmd);
+    VkDescriptorSet textures = resources_.globalMaterialSet();
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, webCanvasWorldPipeline_->layout(),
+                            0, 1, &textures, 0, nullptr);
+
+    for (const Draw& draw : draws) {
+        WebCanvasNode* node = draw.node;
+        Texture* texture = node->texture();
+        if (!texture) continue;
+        if (texture->bindlessIndex() == ~0u) {
+            texture->setBindlessIndex(resources_.getBindlessTextureIndex(texture));
+        }
+
+        WebCanvasWorldPushConstants pc{};
+        pc.model = node->worldTransform();
+        pc.params = glm::vec4(node->worldWidth(), node->worldHeight(),
+                              static_cast<float>(texture->bindlessIndex()), 1.0f);
+        vkCmdPushConstants(cmd, webCanvasWorldPipeline_->layout(),
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(pc), &pc);
+        vkCmdDraw(cmd, 4, 1, 0, 0);
     }
 }
 
@@ -1297,7 +1404,9 @@ void Renderer::recordShadowPasses(VkCommandBuffer cmd) {
 }
 
 void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera, Project* project) {
-    camera.setPerspective(glm::radians(camera.fovDegrees), swapchain_->aspectRatio(),
+    VkRect2D renderRect = activeRenderRect();
+    float aspect = renderRect.extent.width / static_cast<float>(std::max(1u, renderRect.extent.height));
+    camera.setPerspective(glm::radians(camera.fovDegrees), aspect,
                           camera.nearZ, camera.farZ);
     
     // Store camera frustum for culling compute shader
@@ -1405,14 +1514,10 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     // cast into view; each shadow layer just reuses it.
     recordShadowPasses(cmd);
 
-    // Lightmap bake (one-shot, requested via the editor): render each included
-    // mesh into its lightmap using the freshly-rendered shadow maps + lights.
-    if (doBake_)
-        lightBaker_->record(cmd, globalSets_[currentFrame_], scene);
-
     auto& settings = scene.settings();
     glm::vec4 clearColor = settings.clearColor;
-    VkExtent2D extent = swapchain_->extent();
+    VkRect2D renderRect = activeRenderRect();
+    VkExtent2D extent = renderRect.extent;
 
     const bool msaa = swapchain_->samples() != VK_SAMPLE_COUNT_1_BIT;
     // Color is rendered into the MSAA target and resolved to the HDR image; with
@@ -1473,7 +1578,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
 
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea.offset = {0, 0};
+    renderingInfo.renderArea.offset = renderRect.offset;
     renderingInfo.renderArea.extent = extent;
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 1;
@@ -1483,8 +1588,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     vkCmdBeginRendering(cmd, &renderingInfo);
 
     VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
+    viewport.x = static_cast<float>(renderRect.offset.x);
+    viewport.y = static_cast<float>(renderRect.offset.y);
     viewport.width = static_cast<float>(extent.width);
     viewport.height = static_cast<float>(extent.height);
     viewport.minDepth = 0.0f;
@@ -1492,7 +1597,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor{};
-    scissor.offset = {0, 0};
+    scissor.offset = renderRect.offset;
     scissor.extent = extent;
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
@@ -1509,21 +1614,16 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
             1, 1, &globalMaterialSet, 0, nullptr);
             
-        // Set 2: Lightmap (we just bind default for now since bindless lightmaps aren't implemented yet)
-        VkDescriptorSet defaultLightmapSet = lightBaker_->lightmapSet(nullptr);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
-            2, 1, &defaultLightmapSet, 0, nullptr);
-            
         // Push constants for the graphics pipeline (overwrites the compute ones in the push constant memory)
         PushConstants gfxPc{};
         gfxPc.model = glm::mat4(1.0f); // Unused in bindless
-        gfxPc.params = glm::vec4(scene.settings().lightingMode == LightingMode::Baked ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+        gfxPc.params = glm::vec4(0.0f);
         vkCmdPushConstants(cmd, pipeline_->layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(PushConstants), &gfxPc);
 
-        // Set 3: InstanceBuffer (from cullingSets_)
+        // Set 2: InstanceBuffer (from cullingSets_)
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
-            3, 1, &cullingSets_[currentFrame_], 0, nullptr);
+            2, 1, &cullingSets_[currentFrame_], 0, nullptr);
             
         // Bind the global vertex and index buffers
         auto& geometry = resources_.geometry();
@@ -1560,6 +1660,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
                     Time::elapsed(), false, &camera, nullptr, false, extent,
                     currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
     recordFeatures(fc);
+    recordWorldWebCanvases(cmd, scene, camera);
 
     vkCmdEndRendering(cmd);
 
@@ -1653,13 +1754,13 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     updateGIDescriptors();
     updateEnvironmentDescriptor(scene);
 
+    VkRect2D renderRect = activeRenderRect();
     updateUniformBuffer(currentFrame_, scene, camera, project);
-    uiRenderer_->gatherUI(scene);
+    uiRenderer_->gatherUI(scene, &camera,
+        {static_cast<float>(renderRect.extent.width), static_cast<float>(renderRect.extent.height)});
 
     vkResetCommandBuffer(commandBuffers_[currentFrame_], 0);
     recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex, scene, camera);
-    doBake_ = false;  // one-shot lightmap bake consumed this frame
-
     VkSemaphore waitSemaphores[] = {imageAvailableSemaphores_[currentFrame_]};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     VkSemaphore signalSemaphores[] = {swapchain_->renderFinishedSemaphore(imageIndex)};
@@ -1787,7 +1888,7 @@ void Renderer::createXrPipelines() {
 
     // ── Scene (multiview): per-eye camera matrices via gl_ViewIndex ──
     std::vector<VkDescriptorSetLayout> sceneLayouts = {
-        globalSetLayout_, resources_.materialSetLayout(), lightBaker_->setLayout()};
+        globalSetLayout_, resources_.materialSetLayout()};
     xrScenePipeline_ = std::make_unique<Pipeline>(device_,
         shaderPath("multiview.shader.vert.spv"), shaderPath("shader.frag.spv"),
         hdrColor, depthFormat, sceneLayouts, VK_SAMPLE_COUNT_1_BIT,
@@ -1801,6 +1902,15 @@ void Renderer::createXrPipelines() {
         hdrColor, depthFormat, sceneLayouts, VK_SAMPLE_COUNT_1_BIT,
         true, true, 0, true, VK_COMPARE_OP_LESS, VK_CULL_MODE_BACK_BIT, false,
         VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, viewMask);
+
+    if (resources_.globalMaterialSetLayout()) {
+        std::vector<VkDescriptorSetLayout> webLayouts = {resources_.globalMaterialSetLayout()};
+        xrWebCanvasWorldPipeline_ = std::make_unique<Pipeline>(device_,
+            shaderPath("multiview.web_canvas_world.vert.spv"), shaderPath("web_canvas_world.frag.spv"),
+            hdrColor, depthFormat, webLayouts, VK_SAMPLE_COUNT_1_BIT,
+            false, true, sizeof(WebCanvasWorldPushConstants), false, VK_COMPARE_OP_LESS_OR_EQUAL,
+            VK_CULL_MODE_NONE, BlendMode::Alpha, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, viewMask);
+    }
 
     // Same registry as desktop; each feature builds its stereo pipeline from the
     // viewMask. The Renderer stays ignorant of which effects exist.
@@ -1979,8 +2089,61 @@ void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
                     Time::elapsed(), true, nullptr, &eyes, passthrough, xrExtent_,
                     currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
     recordFeatures(fc);
+    recordXrWorldWebCanvases(cmd, scene, eyes);
 
     vkCmdEndRendering(cmd);
+}
+
+void Renderer::recordXrWorldWebCanvases(VkCommandBuffer cmd, Scene& scene,
+                                        const std::vector<EyeRenderInfo>& eyes) {
+    if (!xrWebCanvasWorldPipeline_ || !resources_.globalMaterialSet()) return;
+
+    glm::vec3 head(0.0f);
+    for (const EyeRenderInfo& eye : eyes) head += eye.eyePosition;
+    head /= static_cast<float>(std::max<size_t>(1, eyes.size()));
+
+    struct Draw {
+        WebCanvasNode* node = nullptr;
+        float distance = 0.0f;
+    };
+    std::vector<Draw> draws;
+    for (WebCanvasNode* node : activeWebCanvases(scene)) {
+        if (!node) continue;
+        if (node->mode() != WebCanvasNode::Mode::WorldSpace || !node->texture()) continue;
+        glm::vec3 center = glm::vec3(node->worldTransform() * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+        draws.push_back({node, glm::length(center - head)});
+    }
+    if (draws.empty()) return;
+
+    std::stable_sort(draws.begin(), draws.end(), [](const Draw& a, const Draw& b) {
+        if (a.node->renderOrder() != b.node->renderOrder()) {
+            return a.node->renderOrder() < b.node->renderOrder();
+        }
+        return a.distance > b.distance;
+    });
+
+    xrWebCanvasWorldPipeline_->bind(cmd);
+    VkDescriptorSet textures = resources_.globalMaterialSet();
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, xrWebCanvasWorldPipeline_->layout(),
+                            0, 1, &textures, 0, nullptr);
+
+    for (const Draw& draw : draws) {
+        WebCanvasNode* node = draw.node;
+        Texture* texture = node->texture();
+        if (!texture) continue;
+        if (texture->bindlessIndex() == ~0u) {
+            texture->setBindlessIndex(resources_.getBindlessTextureIndex(texture));
+        }
+
+        WebCanvasWorldPushConstants pc{};
+        pc.model = node->worldTransform();
+        pc.params = glm::vec4(node->worldWidth(), node->worldHeight(),
+                              static_cast<float>(texture->bindlessIndex()), 1.0f);
+        vkCmdPushConstants(cmd, xrWebCanvasWorldPipeline_->layout(),
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(pc), &pc);
+        vkCmdDraw(cmd, 4, 1, 0, 0);
+    }
 }
 
 void Renderer::recordXrTonemap(VkCommandBuffer cmd, Scene& scene,

@@ -30,7 +30,6 @@ class Swapchain;
 class Material;
 class ResourceManager;
 class ShadowMap;
-class LightBaker;
 class UIRenderer;
 class GIVolume;
 struct SceneSettings;
@@ -47,7 +46,7 @@ struct UniformBufferObject {
 // shader.vert / shader.frag.
 struct PushConstants {
     glm::mat4 model;
-    glm::vec4 params;  // x = useLightmap (sample the baked lightmap)
+    glm::vec4 params;  // y = bone matrix offset, or -1 when unskinned
 };
 
 // Limits kept simple and easy to raise; mirrored by the shader constants.
@@ -111,6 +110,8 @@ public:
 
     // Desktop frame: render the scene and present to the window swapchain.
     void drawFrame(Scene& scene, Camera& camera, Project* project);
+    void setViewportRect(glm::vec2 position, glm::vec2 size);
+    void clearViewportRect();
 
 #ifdef NE_ENABLE_XR
     void drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eyes,
@@ -124,6 +125,12 @@ private:
         glm::vec4 fogColor{0.0f};
         glm::vec4 fogParams{0.0f};       // x enabled, y start, z density, w exposure
         glm::vec4 bloomParams{0.0f};     // x enabled, y threshold, z intensity, w radius px
+        glm::vec4 sourceRect{0.0f, 0.0f, 1.0f, 1.0f};
+    };
+
+    struct WebCanvasWorldPushConstants {
+        glm::mat4 model{1.0f};
+        glm::vec4 params{0.0f};  // x width, y height, z bindless texture index, w alpha
     };
 
     void updateGlobalShadowDescriptor();
@@ -134,6 +141,7 @@ private:
                                               const glm::mat4& projection) const;
     void createGlobalSetLayout();
     void createPipeline(VkDescriptorSetLayout materialSetLayout);
+    void createWebCanvasWorldPipeline();
     // The scene pipeline for a material's shading model (desktop / XR). Both
     // variants share an identical descriptor-set + push-constant layout, so the
     // draw loop can swap between them and keep its bound sets (layout-compatible).
@@ -162,10 +170,12 @@ private:
                      const glm::mat4* view = nullptr, const glm::mat4* proj = nullptr);
     // Records the sorted CPU mesh draw list for both desktop and XR. The caller
     // chooses the first pipeline for the active render target; this method handles
-    // pipeline switches, material/lightmap binds, push constants and mesh draws.
+    // pipeline switches, material binds, push constants and mesh draws.
     void recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, bool xrMultiview);
+    void recordWorldWebCanvases(VkCommandBuffer cmd, Scene& scene, const Camera& camera);
     void recordShadowPasses(VkCommandBuffer cmd);
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Scene& scene, const Camera& camera);
+    VkRect2D activeRenderRect() const;
 
     VulkanDevice& device_;
     Swapchain* swapchain_ = nullptr;  // null in XR mode (OpenXR owns presentation)
@@ -175,10 +185,14 @@ private:
 
     std::unique_ptr<Pipeline> pipeline_;        // scene pipeline: MaterialType::Lit
     std::unique_ptr<Pipeline> unlitPipeline_;   // scene pipeline: MaterialType::Unlit
+    std::unique_ptr<Pipeline> webCanvasWorldPipeline_;
     std::unique_ptr<ShadowMap> shadowMap_;
-    std::unique_ptr<LightBaker> lightBaker_;
     std::unique_ptr<UIRenderer> uiRenderer_;
     std::unique_ptr<GIVolume> gi_;  // DDGI irradiance volume (the single GI primitive)
+
+    bool viewportOverride_ = false;
+    glm::vec2 viewportPos_{0.0f};
+    glm::vec2 viewportSize_{0.0f};
 
     // HDR offscreen target — scene renders here, then tonemapped to swapchain.
     VkImage hdrImage_ = VK_NULL_HANDLE;
@@ -245,8 +259,6 @@ private:
     std::array<glm::mat4, kMaxShadowCasters> shadowMatrices_{};
     int shadowCount_ = 0;
 
-    bool doBake_ = false;  // run the bake passes this frame (set from bakeRequested)
-
     // DDGI update control. Full realtime updates every frame; amortized realtime
     // warms up then updates on a cadence. Baked mode converges then freezes.
     static constexpr int kGIBakeFrames = 256;
@@ -282,11 +294,14 @@ private:
                                Scene& scene, Project* project);
     void recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
                            const std::vector<EyeRenderInfo>& eyes);
+    void recordXrWorldWebCanvases(VkCommandBuffer cmd, Scene& scene,
+                                  const std::vector<EyeRenderInfo>& eyes);
     void recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
                          const std::vector<EyeRenderInfo>& eyes);
 
     std::unique_ptr<Pipeline> xrScenePipeline_;    // multiview scene: MaterialType::Lit
     std::unique_ptr<Pipeline> xrUnlitPipeline_;    // multiview scene: MaterialType::Unlit
+    std::unique_ptr<Pipeline> xrWebCanvasWorldPipeline_;
     std::unique_ptr<Pipeline> xrTonemapPipeline_;  // per-eye tonemap → XR image
     // Skybox/water in XR are scene-pass features (see features_), shared with desktop.
 

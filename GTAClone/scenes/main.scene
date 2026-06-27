@@ -3346,6 +3346,40 @@
             1.0
           ]
         }
+      },
+      {
+        "type": "WebCanvasNode",
+        "name": "GTA HUD",
+        "enabled": true,
+        "behaviours": [],
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "width": 1280,
+        "height": 720,
+        "mode": 0,
+        "url": "GTAClone/ui/hud/hud.rml",
+        "html": "",
+        "hotReload": true,
+        "startupScripts": [],
+        "worldWidth": 1.0,
+        "interactive": true,
+        "renderOrder": 1000
       }
     ]
   }

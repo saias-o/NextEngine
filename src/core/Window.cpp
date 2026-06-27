@@ -19,6 +19,8 @@ Window::Window(int width, int height, std::string title, bool visible) {
     if (glfwRawMouseMotionSupported())
         glfwSetInputMode(window_, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
     glfwSetCursorPosCallback(window_, cursorPosCallback);
+    glfwSetScrollCallback(window_, scrollCallback);
+    glfwSetCharCallback(window_, charCallback);
 }
 
 Window::~Window() {
@@ -44,11 +46,35 @@ void Window::cursorPosCallback(GLFWwindow* window, double x, double y) {
     self->lastY_ = y;
 }
 
+void Window::scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+    auto self = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
+    self->scrollDx_ += xoffset;
+    self->scrollDy_ += yoffset;
+}
+
+void Window::charCallback(GLFWwindow* window, unsigned int codepoint) {
+    auto self = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
+    self->textInput_.push_back(static_cast<uint32_t>(codepoint));
+}
+
 void Window::consumeMouseDelta(double& dx, double& dy) {
     dx = mouseDx_;
     dy = mouseDy_;
     mouseDx_ = 0.0;
     mouseDy_ = 0.0;
+}
+
+void Window::consumeScrollDelta(double& dx, double& dy) {
+    dx = scrollDx_;
+    dy = scrollDy_;
+    scrollDx_ = 0.0;
+    scrollDy_ = 0.0;
+}
+
+std::vector<uint32_t> Window::consumeTextInput() {
+    std::vector<uint32_t> out = std::move(textInput_);
+    textInput_.clear();
+    return out;
 }
 
 void Window::setCursorCaptured(bool captured) {

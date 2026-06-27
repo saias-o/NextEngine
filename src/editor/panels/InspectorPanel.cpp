@@ -218,9 +218,8 @@ void InspectorPanel::draw(EditorUI* editor) {
         int w = webNode->width();
         int h = webNode->height();
         if (ImGui::DragInt("Width", &w, 1, 1, 8192) || ImGui::DragInt("Height", &h, 1, 1, 8192)) {
-            // Re-init is required, but we can't easily re-init dynamically without VulkanDevice here
-            // We just let the user set the values. It will take effect on next scene reload.
-            // A potential improvement is to expose a resize method to WebCanvasNode.
+            webNode->resize(static_cast<uint32_t>(w), static_cast<uint32_t>(h));
+            editor->markDirty();
         }
 
         pe.combo("Mode",
@@ -248,6 +247,22 @@ void InspectorPanel::draw(EditorUI* editor) {
         pe.checkbox("Hot Reload",
                     [](Node& n) { return static_cast<WebCanvasNode&>(n).hotReloadEnabled(); },
                     [](Node& n, bool v) { static_cast<WebCanvasNode&>(n).setHotReloadEnabled(v); });
+        pe.checkbox("Interactive",
+                    [](Node& n) { return static_cast<WebCanvasNode&>(n).interactive(); },
+                    [](Node& n, bool v) { static_cast<WebCanvasNode&>(n).setInteractive(v); });
+        pe.dragFloat("World Width",
+                     [](Node& n) { return static_cast<WebCanvasNode&>(n).worldWidth(); },
+                     [](Node& n, float v) { static_cast<WebCanvasNode&>(n).setWorldWidth(v); },
+                     0.01f, 0.01f, 100.0f);
+        pe.dragInt("Render Order",
+                   [](Node& n) { return static_cast<WebCanvasNode&>(n).renderOrder(); },
+                   [](Node& n, int v) { static_cast<WebCanvasNode&>(n).setRenderOrder(v); },
+                   1, -1024, 1024);
+        if (!webNode->lastLoadOk()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.25f, 1.0f), "Last error: %s", webNode->lastError().c_str());
+        } else {
+            ImGui::TextDisabled("Last load: OK");
+        }
         ImGui::Separator();
         ImGui::Text("Startup Scripts");
         
