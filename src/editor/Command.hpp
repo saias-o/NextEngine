@@ -160,6 +160,22 @@ private:
     std::string type_;
 };
 
+class RemoveBehaviourCommand : public Command {
+public:
+    RemoveBehaviourCommand(NodeId node, std::string behaviourType, size_t index)
+        : nodeId_(node), type_(std::move(behaviourType)), index_(index) {}
+    void execute(SceneDocument& document) override;
+    void undo(SceneDocument& document) override;
+    const char* name() const override { return "Remove Behaviour"; }
+    size_t memoryCost() const override { return sizeof(*this) + type_.capacity() + snapshot_.capacity(); }
+
+private:
+    NodeId nodeId_;
+    std::string type_;
+    size_t index_ = 0;
+    std::string snapshot_;
+};
+
 // Attach a ScriptBehaviour pointing at a JS file to a node. Undo removes the last
 // ScriptBehaviour. Used by the MCP `write_script` tool's optional attach step.
 class AttachScriptCommand : public Command {

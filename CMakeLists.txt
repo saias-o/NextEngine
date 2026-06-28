@@ -52,8 +52,11 @@ set(SHADERS
     ${SHADER_DIR}/water.frag
     ${SHADER_DIR}/particle_render.vert
     ${SHADER_DIR}/particle_render.frag
+    ${SHADER_DIR}/particle_init.comp
+    ${SHADER_DIR}/particle_prepare.comp
     ${SHADER_DIR}/particle_emit.comp
     ${SHADER_DIR}/particle_sim.comp
+    ${SHADER_DIR}/particle_finalize.comp
     ${SHADER_DIR}/outline.vert
     ${SHADER_DIR}/outline.frag
     ${SHADER_DIR}/ui.vert

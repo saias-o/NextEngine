@@ -7,6 +7,7 @@
 #include "scene/SceneSerializer.hpp"
 #include "scripting/ScriptBehaviour.hpp"
 
+#include <nlohmann/json.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 namespace ne {
@@ -204,6 +205,40 @@ void AddBehaviourCommand::undo(SceneDocument& document) {
     for (const auto& b : node->behaviours())
         if (b->typeName() && type_ == b->typeName()) victim = b.get();
     if (victim) node->removeBehaviour(victim);
+    document.markDirty();
+}
+
+void RemoveBehaviourCommand::execute(SceneDocument& document) {
+    Node* node = document.find(nodeId_);
+    if (!node) return;
+    size_t seen = 0;
+    for (const auto& b : node->behaviours()) {
+        if (!b->typeName() || type_ != b->typeName()) continue;
+        if (seen++ != index_) continue;
+
+        if (snapshot_.empty()) {
+            nlohmann::json j;
+            j["type"] = type_;
+            j["enabled"] = b->enabled();
+            b->save(j);
+            snapshot_ = j.dump();
+        }
+        node->removeBehaviour(b.get());
+        document.markDirty();
+        return;
+    }
+}
+
+void RemoveBehaviourCommand::undo(SceneDocument& document) {
+    Node* node = document.find(nodeId_);
+    if (!node || snapshot_.empty()) return;
+    nlohmann::json j = nlohmann::json::parse(snapshot_, nullptr, false);
+    if (j.is_discarded()) return;
+    auto behaviour = BehaviourRegistry::instance().create(type_);
+    if (!behaviour) return;
+    if (j.contains("enabled")) behaviour->setEnabled(j["enabled"].get<bool>());
+    behaviour->load(j);
+    node->addBehaviourAt(std::move(behaviour), index_);
     document.markDirty();
 }
 

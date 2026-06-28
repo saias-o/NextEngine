@@ -33,6 +33,7 @@
 #include "scene/WebCanvasNode.hpp"
 
 #include <imgui.h>
+#include <array>
 #include <cstring>
 #include <algorithm>
 #include <functional>
@@ -111,6 +112,160 @@ namespace {
             if (!p.tooltip.empty() && ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", p.tooltip.c_str());
         }
+    }
+
+    size_t behaviourTypeIndex(const Node* node, const Behaviour* target) {
+        if (!node || !target || !target->typeName()) return 0;
+        size_t index = 0;
+        for (const auto& b : node->behaviours()) {
+            if (!b->typeName() || std::strcmp(b->typeName(), target->typeName()) != 0) continue;
+            if (b.get() == target) return index;
+            ++index;
+        }
+        return 0;
+    }
+
+    Behaviour* behaviourByTypeIndex(Node& node, const std::string& type, size_t index) {
+        size_t seen = 0;
+        for (const auto& b : node.behaviours()) {
+            if (!b->typeName() || type != b->typeName()) continue;
+            if (seen++ == index) return b.get();
+        }
+        return nullptr;
+    }
+
+    nlohmann::json readProperty(const reflect::PropertyDesc& p, const void* obj) {
+        nlohmann::json value;
+        p.get(obj, value);
+        return value;
+    }
+
+    void applyBehaviourProperty(Node& node, const std::string& type, size_t index,
+                                const std::string& property, const nlohmann::json& value) {
+        Behaviour* b = behaviourByTypeIndex(node, type, index);
+        if (!b) return;
+        if (const reflect::TypeDesc* td = reflect::TypeRegistry::instance().find(type)) {
+            if (const reflect::PropertyDesc* p = td->findProperty(property))
+                p->set(b, value);
+        }
+    }
+
+    void applyBehaviourEnabled(Node& node, const std::string& type, size_t index, bool enabled) {
+        if (Behaviour* b = behaviourByTypeIndex(node, type, index))
+            b->setEnabled(enabled);
+    }
+
+    bool editReflectedJson(const reflect::PropertyDesc& p, nlohmann::json& value) {
+        const char* label = p.name.c_str();
+        const bool hasRange = p.hasRange;
+        const float mn = static_cast<float>(p.min);
+        const float mx = static_cast<float>(p.max);
+
+        if (p.kind == "float") {
+            float v = value.is_number() ? value.get<float>() : 0.0f;
+            bool changed = hasRange ? ImGui::SliderFloat(label, &v, mn, mx)
+                                    : ImGui::DragFloat(label, &v, 0.05f);
+            if (changed) value = v;
+            return changed;
+        }
+        if (p.kind == "int") {
+            int v = value.is_number_integer() ? value.get<int>() : 0;
+            bool changed = ImGui::DragInt(label, &v, 1.0f,
+                hasRange ? static_cast<int>(mn) : 0,
+                hasRange ? static_cast<int>(mx) : 0);
+            if (changed) value = v;
+            return changed;
+        }
+        if (p.kind == "bool") {
+            bool v = value.is_boolean() && value.get<bool>();
+            bool changed = ImGui::Checkbox(label, &v);
+            if (changed) value = v;
+            return changed;
+        }
+        if (p.kind == "vec3") {
+            glm::vec3 v(0.0f);
+            if (value.is_array() && value.size() >= 3)
+                v = {value[0].get<float>(), value[1].get<float>(), value[2].get<float>()};
+            const bool isColor = p.name.find("olor") != std::string::npos;
+            bool changed = isColor ? ImGui::ColorEdit3(label, &v.x)
+                                   : ImGui::DragFloat3(label, &v.x, 0.05f);
+            if (changed) value = nlohmann::json::array({v.x, v.y, v.z});
+            return changed;
+        }
+        if (p.kind == "vec4") {
+            glm::vec4 v(0.0f);
+            if (value.is_array() && value.size() >= 4)
+                v = {value[0].get<float>(), value[1].get<float>(),
+                     value[2].get<float>(), value[3].get<float>()};
+            const bool isColor = p.name.find("olor") != std::string::npos;
+            bool changed = isColor ? ImGui::ColorEdit4(label, &v.x)
+                                   : ImGui::DragFloat4(label, &v.x, 0.05f);
+            if (changed) value = nlohmann::json::array({v.x, v.y, v.z, v.w});
+            return changed;
+        }
+        if (p.kind == "string" || p.kind == "asset") {
+            std::array<char, 512> buf{};
+            std::string s = value.is_string() ? value.get<std::string>() : std::string();
+            std::strncpy(buf.data(), s.c_str(), buf.size() - 1);
+            bool changed = ImGui::InputText(label, buf.data(), buf.size());
+            if (changed) value = std::string(buf.data());
+            return changed;
+        }
+        if (p.kind == "enum") {
+            int v = value.is_number_integer() ? value.get<int>() : 0;
+            bool changed = false;
+            if (!p.enumLabels.empty()) {
+                std::vector<const char*> labels;
+                labels.reserve(p.enumLabels.size());
+                for (const std::string& item : p.enumLabels) labels.push_back(item.c_str());
+                changed = ImGui::Combo(label, &v, labels.data(), static_cast<int>(labels.size()));
+            } else {
+                changed = ImGui::DragInt(label, &v);
+            }
+            if (changed) value = v;
+            return changed;
+        }
+        return false;
+    }
+
+    std::unique_ptr<Command> drawReflectedBehaviourProperties(const reflect::TypeDesc& td, Node* node,
+                                                              Behaviour* behaviour) {
+        if (!node || !behaviour || td.properties.empty() || !behaviour->typeName()) return nullptr;
+        const std::string type = behaviour->typeName();
+        const size_t index = behaviourTypeIndex(node, behaviour);
+        static ImGuiID editId = 0;
+        static nlohmann::json editOld;
+
+        for (const reflect::PropertyDesc& p : td.properties) {
+            nlohmann::json value = readProperty(p, behaviour);
+            const nlohmann::json before = value;
+            const bool changed = editReflectedJson(p, value);
+            if (changed) p.set(behaviour, value);
+
+            const ImGuiID id = ImGui::GetItemID();
+            if (ImGui::IsItemActivated()) {
+                editId = id;
+                editOld = before;
+            }
+            if (ImGui::IsItemDeactivatedAfterEdit() && editId == id) {
+                const nlohmann::json oldValue = editOld;
+                const nlohmann::json newValue = value;
+                const std::string prop = p.name;
+                editId = 0;
+                editOld = nullptr;
+                return std::make_unique<SetPropertyCommand>(
+                    node->id(), "Set " + type + "." + prop,
+                    [type, index, prop, oldValue](Node& n) {
+                        applyBehaviourProperty(n, type, index, prop, oldValue);
+                    },
+                    [type, index, prop, newValue](Node& n) {
+                        applyBehaviourProperty(n, type, index, prop, newValue);
+                    });
+            }
+            if (!p.tooltip.empty() && ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", p.tooltip.c_str());
+        }
+        return nullptr;
     }
 }
 
@@ -999,26 +1154,39 @@ void InspectorPanel::drawMaterial(Material* material, MeshNode* meshNode, Editor
 
 void InspectorPanel::drawBehaviours(Node* node, EditorUI* editor) {
     ImGui::SeparatorText("Behaviours");
-
-    Behaviour* toRemove = nullptr;
+    std::string removeType;
+    size_t removeIndex = 0;
 
     for (const auto& b : node->behaviours()) {
         if (!b->visibleInEditor()) continue;
         ImGui::PushID(b.get());
 
-        // Behaviour edits are not command-backed yet; mark the document dirty.
+        const char* typeName = b->typeName() ? b->typeName() : "Unknown Behaviour";
+        const size_t typeIndex = behaviourTypeIndex(node, b.get());
+
         bool enabled = b->enabled();
         if (ImGui::Checkbox("##enabled", &enabled)) {
-            b->setEnabled(enabled); editor->markDirty();
+            const bool oldEnabled = !enabled;
+            const std::string type = typeName;
+            editor->execute(std::make_unique<SetPropertyCommand>(
+                node->id(), "Set Behaviour Enabled",
+                [type, typeIndex, oldEnabled](Node& n) {
+                    applyBehaviourEnabled(n, type, typeIndex, oldEnabled);
+                },
+                [type, typeIndex, enabled](Node& n) {
+                    applyBehaviourEnabled(n, type, typeIndex, enabled);
+                }));
         }
         ImGui::SameLine();
 
-        const char* typeName = b->typeName() ? b->typeName() : "Unknown Behaviour";
         bool expanded = ImGui::CollapsingHeader(typeName, ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
 
         ImGui::SameLine(ImGui::GetWindowWidth() - 30.0f);
         if (ImGui::Button("X")) {
-            toRemove = b.get();
+            if (b->typeName()) {
+                removeType = b->typeName();
+                removeIndex = typeIndex;
+            }
         }
 
         if (expanded) {
@@ -1028,7 +1196,20 @@ void InspectorPanel::drawBehaviours(Node* node, EditorUI* editor) {
                 else
                     ImGui::TextDisabled("LOD Group requires a MeshNode.");
             } else {
-                InspectorRegistry::instance().draw(*b, *editor);
+                bool drew = false;
+                if (b->typeName()) {
+                    if (const reflect::TypeDesc* td = reflect::TypeRegistry::instance().find(b->typeName())) {
+                        if (auto command = drawReflectedBehaviourProperties(*td, node, b.get()))
+                            editor->execute(std::move(command));
+                        drew = !td->properties.empty();
+                    }
+                }
+                if (!drew) {
+                    drew = InspectorRegistry::instance().draw(*b, *editor);
+                }
+                if (!drew) {
+                    ImGui::TextDisabled("No editable properties.");
+                }
             }
 
             // Animator: drop a .bvh from the file browser to add it as a clip.
@@ -1049,9 +1230,10 @@ void InspectorPanel::drawBehaviours(Node* node, EditorUI* editor) {
         }
         ImGui::PopID();
     }
-    
-    if (toRemove) {
-        node->removeBehaviour(toRemove); editor->markDirty();
+
+    if (!removeType.empty()) {
+        editor->execute(std::make_unique<RemoveBehaviourCommand>(
+            node->id(), removeType, removeIndex));
     }
 
     ImGui::Spacing();
@@ -1066,7 +1248,8 @@ void InspectorPanel::drawBehaviours(Node* node, EditorUI* editor) {
         auto& factories = BehaviourRegistry::instance().factories();
         for (const auto& pair : factories) {
             if (ImGui::Selectable(pair.first.c_str())) {
-                node->addBehaviour(pair.second()); editor->markDirty();
+                editor->execute(std::make_unique<AddBehaviourCommand>(
+                    node->id(), pair.first));
             }
         }
         ImGui::EndPopup();

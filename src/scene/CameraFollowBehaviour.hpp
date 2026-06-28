@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Reflection.hpp"
 #include "scene/Behaviour.hpp"
 
 #include <glm/glm.hpp>
@@ -19,10 +20,6 @@ class CameraFollowBehaviour : public Behaviour {
 public:
     void onReady() override;
     void onUpdate(float dt) override;
-
-    const char* typeName() const override { return "CameraFollow"; }
-    void save(nlohmann::json& j) const override;
-    void load(const nlohmann::json& j) override;
 
     // Target.
     std::string targetGroup = "player";
@@ -44,6 +41,8 @@ public:
     // Wall handling.
     float collisionMargin = 0.25f;  // keep the camera this far off the hit surface
     float minDistance = 0.6f;       // never closer than this to the pivot
+
+    NE_REFLECT_BEHAVIOUR(CameraFollowBehaviour, "CameraFollow")
 
 private:
     glm::vec3 computeDesired(const glm::vec3& pivot) const;

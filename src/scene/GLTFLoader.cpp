@@ -22,6 +22,7 @@
 #include <glm/gtx/matrix_decompose.hpp>
 
 #include <cstring>
+#include <cmath>
 #include <filesystem>
 #include <unordered_map>
 #include <unordered_set>
@@ -250,24 +251,29 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
             
             std::vector<Vertex> vertices;
             std::vector<uint32_t> indices;
+            bool hasTangents = false;
             
             // Vertices
             size_t vertexCount = 0;
             for (size_t k = 0; k < prim.attributes_count; ++k) {
                 if (prim.attributes[k].type == cgltf_attribute_type_position) {
                     vertexCount = prim.attributes[k].data->count;
-                    break;
+                } else if (prim.attributes[k].type == cgltf_attribute_type_tangent) {
+                    hasTangents = true;
                 }
             }
             vertices.resize(vertexCount);
+            for (Vertex& vertex : vertices) {
+                vertex.color = glm::vec3(1.0f);
+                vertex.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                vertex.tangent = glm::vec4(0.0f);
+            }
             
             for (size_t k = 0; k < prim.attributes_count; ++k) {
                 cgltf_attribute& attr = prim.attributes[k];
                 for (size_t v = 0; v < vertexCount; ++v) {
                     if (attr.type == cgltf_attribute_type_position) {
                         cgltf_accessor_read_float(attr.data, v, glm::value_ptr(vertices[v].pos), 3);
-                        vertices[v].color = glm::vec3(1.0f); // default color
-                        vertices[v].tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f); // default tangent
                     } else if (attr.type == cgltf_attribute_type_normal) {
                         cgltf_accessor_read_float(attr.data, v, glm::value_ptr(vertices[v].normal), 3);
                     } else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 0) {
@@ -283,13 +289,6 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
                     } else if (attr.type == cgltf_attribute_type_weights && attr.index == 0) {
                         cgltf_accessor_read_float(attr.data, v, glm::value_ptr(vertices[v].boneWeights), 4);
                     }
-                }
-            }
-            
-            // Fix NaN issues: if tangent was missing, it's (0,0,0,0) which breaks shader TBN. Provide a default.
-            for (size_t v = 0; v < vertexCount; ++v) {
-                if (glm::length(glm::vec3(vertices[v].tangent)) < 0.01f) {
-                    vertices[v].tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
                 }
             }
             
@@ -339,10 +338,44 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
                     for (size_t v = 0; v < vertexCount; ++v) indices[v] = static_cast<uint32_t>(v);
                 }
             }
-            
-            // Note: we could compute tangents here if missing, but MikkTSpace is complex.
-            // For now, if no tangent, we provide a default one (1,0,0,1) which will result in some normal mapping,
-            // but ideally we'd compute it.
+
+            if (!hasTangents) {
+                for (size_t tri = 0; tri + 2 < indices.size(); tri += 3) {
+                    Vertex& v0 = vertices[indices[tri + 0]];
+                    Vertex& v1 = vertices[indices[tri + 1]];
+                    Vertex& v2 = vertices[indices[tri + 2]];
+
+                    const glm::vec3 e1 = v1.pos - v0.pos;
+                    const glm::vec3 e2 = v2.pos - v0.pos;
+                    const glm::vec2 duv1 = v1.texCoord - v0.texCoord;
+                    const glm::vec2 duv2 = v2.texCoord - v0.texCoord;
+                    const float det = duv1.x * duv2.y - duv2.x * duv1.y;
+                    if (std::abs(det) < 1e-8f) continue;
+                    const glm::vec3 tangent = (e1 * duv2.y - e2 * duv1.y) / det;
+                    if (!std::isfinite(tangent.x) || !std::isfinite(tangent.y) ||
+                        !std::isfinite(tangent.z))
+                        continue;
+                    v0.tangent += glm::vec4(tangent, 0.0f);
+                    v1.tangent += glm::vec4(tangent, 0.0f);
+                    v2.tangent += glm::vec4(tangent, 0.0f);
+                }
+            }
+
+            for (Vertex& v : vertices) {
+                glm::vec3 n = glm::length(v.normal) > 1e-6f
+                    ? glm::normalize(v.normal) : glm::vec3(0.0f, 1.0f, 0.0f);
+                glm::vec3 t = glm::vec3(v.tangent);
+                const float handedness = v.tangent.w < 0.0f ? -1.0f : 1.0f;
+                if (glm::length(t) < 1e-6f) {
+                    glm::vec3 c1 = glm::cross(n, glm::vec3(0.0f, 0.0f, 1.0f));
+                    glm::vec3 c2 = glm::cross(n, glm::vec3(0.0f, 1.0f, 0.0f));
+                    t = glm::length(c1) > glm::length(c2) ? c1 : c2;
+                }
+                t = t - n * glm::dot(n, t);
+                if (glm::length(t) < 1e-6f) t = glm::vec3(1.0f, 0.0f, 0.0f);
+                v.normal = n;
+                v.tangent = glm::vec4(glm::normalize(t), handedness);
+            }
             
             AssetID meshId = resources.registerMemoryMesh(vertices, indices);
             Log::info("Loaded GLTF Primitive: ", vertexCount, " vertices, ", indices.size(), " indices, meshId=", meshId, " type=", prim.type);

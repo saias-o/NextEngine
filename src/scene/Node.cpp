@@ -65,6 +65,18 @@ Behaviour* Node::addBehaviour(std::unique_ptr<Behaviour> behaviour) {
     return ptr;
 }
 
+Behaviour* Node::addBehaviourAt(std::unique_ptr<Behaviour> behaviour, size_t index) {
+    behaviour->node_ = this;
+    Behaviour* ptr = behaviour.get();
+    if (index >= behaviours_.size()) {
+        behaviours_.push_back(std::move(behaviour));
+    } else {
+        behaviours_.insert(behaviours_.begin() + index, std::move(behaviour));
+    }
+    g_hierarchyVersion++;
+    return ptr;
+}
+
 void Node::removeBehaviour(Behaviour* b) {
     if (!b) return;
     for (auto it = behaviours_.begin(); it != behaviours_.end(); ++it) {

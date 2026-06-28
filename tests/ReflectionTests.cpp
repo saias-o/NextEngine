@@ -2,10 +2,14 @@
 // round-trip, and the named signal/slot descriptors used by the M2 wiring layer.
 
 #include "core/Reflection.hpp"
+#include "audio/AudioSourceBehaviour.hpp"
+#include "scene/CameraFollowBehaviour.hpp"
 #include "scene/NodeRegistry.hpp"
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/ReflectedTypes.hpp"
 #include "scene/RotatorBehaviour.hpp"
+#include "scene/SpawnerBehaviour.hpp"
+#include "scene/animation/Timeline.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -28,6 +32,20 @@ int main() {
     assert(rotor->findProperty("speed")->hasRange);
     assert(rotor->findSignal("fullRotation") && rotor->findSignal("fullRotation")->arity == 0);
     assert(rotor->findSlot("reset"));
+
+    const ne::reflect::TypeDesc* audio = reg.find("AudioSource");
+    assert(audio && audio->category == "behaviour");
+    assert(audio->findProperty("audioName") &&
+           audio->findProperty("audioName")->kind == "string");
+    const ne::reflect::TypeDesc* cameraFollow = reg.find("CameraFollow");
+    assert(cameraFollow && cameraFollow->category == "behaviour");
+    assert(cameraFollow->findProperty("targetGroup"));
+    assert(cameraFollow->findProperty("distance") &&
+           cameraFollow->findProperty("distance")->hasRange);
+    const ne::reflect::TypeDesc* spawner = reg.find("Spawner");
+    assert(spawner && spawner->category == "behaviour");
+    assert(spawner->findProperty("scenePath") &&
+           spawner->findProperty("scenePath")->kind == "asset");
 
     // Enum property surfaces labels (LightNode.bakeMode / lightType).
     const ne::reflect::TypeDesc* light = reg.find("LightNode");
@@ -76,6 +94,28 @@ int main() {
     dst.load(saved);
     assert(dst.speed == 123.5f);
     assert(dst.axis.z == 1.0f);
+
+    ne::CameraFollowBehaviour follow;
+    nlohmann::json followJson;
+    cameraFollow->saveTo(&follow, followJson);
+    followJson["distance"] = 8.0f;
+    followJson["targetGroup"] = "hero";
+    cameraFollow->loadFrom(&follow, followJson);
+    assert(follow.distance == 8.0f);
+    assert(follow.targetGroup == "hero");
+
+    ne::RotatorBehaviour animated;
+    ne::TimelinePropertyTrack speedTrack(animated, "speed");
+    speedTrack.addKey(0.0f, 10.0f);
+    speedTrack.addKey(2.0f, 30.0f);
+    speedTrack.evaluate(1.0f);
+    assert(animated.speed == 20.0f);
+    ne::TimelinePropertyTrack axisTrack(animated, "axis");
+    axisTrack.addKey(0.0f, nlohmann::json::array({0.0f, 1.0f, 0.0f}));
+    axisTrack.addKey(1.0f, nlohmann::json::array({0.0f, 0.0f, 1.0f}));
+    axisTrack.evaluate(0.5f);
+    assert(animated.axis.y == 0.5f);
+    assert(animated.axis.z == 0.5f);
 
     // Missing keys keep defaults (defensive load).
     ne::RotatorBehaviour partial;

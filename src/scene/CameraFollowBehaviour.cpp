@@ -6,8 +6,6 @@
 #include "physics/PhysicsWorld.hpp"
 #include "core/Input.hpp"
 
-#include <nlohmann/json.hpp>
-
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -93,32 +91,20 @@ void CameraFollowBehaviour::onUpdate(float dt) {
             glm::quat_cast(glm::inverse(glm::lookAt(camPos_, pivot, kWorldUp)));
 }
 
-void CameraFollowBehaviour::save(nlohmann::json& j) const {
-    j["targetGroup"] = targetGroup;
-    j["distance"] = distance;
-    j["height"] = height;
-    j["shoulderOffset"] = shoulderOffset;
-    j["yawSensitivity"] = yawSensitivity;
-    j["pitchSensitivity"] = pitchSensitivity;
-    j["minPitch"] = minPitch;
-    j["maxPitch"] = maxPitch;
-    j["positionDamping"] = positionDamping;
-    j["collisionMargin"] = collisionMargin;
-    j["minDistance"] = minDistance;
-}
-
-void CameraFollowBehaviour::load(const nlohmann::json& j) {
-    if (j.contains("targetGroup")) targetGroup = j["targetGroup"].get<std::string>();
-    if (j.contains("distance")) distance = j["distance"].get<float>();
-    if (j.contains("height")) height = j["height"].get<float>();
-    if (j.contains("shoulderOffset")) shoulderOffset = j["shoulderOffset"].get<float>();
-    if (j.contains("yawSensitivity")) yawSensitivity = j["yawSensitivity"].get<float>();
-    if (j.contains("pitchSensitivity")) pitchSensitivity = j["pitchSensitivity"].get<float>();
-    if (j.contains("minPitch")) minPitch = j["minPitch"].get<float>();
-    if (j.contains("maxPitch")) maxPitch = j["maxPitch"].get<float>();
-    if (j.contains("positionDamping")) positionDamping = j["positionDamping"].get<float>();
-    if (j.contains("collisionMargin")) collisionMargin = j["collisionMargin"].get<float>();
-    if (j.contains("minDistance")) minDistance = j["minDistance"].get<float>();
+void CameraFollowBehaviour::describe(reflect::TypeBuilder<CameraFollowBehaviour>& t) {
+    t.doc("Third-person follow camera that orbits a target group and avoids walls.");
+    t.property("targetGroup", &CameraFollowBehaviour::targetGroup)
+        .tooltip("group tag of the node to follow");
+    t.property("distance", &CameraFollowBehaviour::distance).range(0.5, 50.0);
+    t.property("height", &CameraFollowBehaviour::height).range(0.0, 10.0);
+    t.property("shoulderOffset", &CameraFollowBehaviour::shoulderOffset).range(-5.0, 5.0);
+    t.property("yawSensitivity", &CameraFollowBehaviour::yawSensitivity).range(0.0, 2.0);
+    t.property("pitchSensitivity", &CameraFollowBehaviour::pitchSensitivity).range(0.0, 2.0);
+    t.property("minPitch", &CameraFollowBehaviour::minPitch).range(-89.0, 0.0);
+    t.property("maxPitch", &CameraFollowBehaviour::maxPitch).range(0.0, 89.0);
+    t.property("positionDamping", &CameraFollowBehaviour::positionDamping).range(1.0, 50.0);
+    t.property("collisionMargin", &CameraFollowBehaviour::collisionMargin).range(0.0, 2.0);
+    t.property("minDistance", &CameraFollowBehaviour::minDistance).range(0.1, 10.0);
 }
 
 } // namespace ne

@@ -13,14 +13,10 @@ void AudioSourceBehaviour::onReady() {
     }
 }
 
-void AudioSourceBehaviour::save(nlohmann::json& json) const {
-    json["audioName"] = audioName;
-}
-
-void AudioSourceBehaviour::load(const nlohmann::json& json) {
-    if (json.contains("audioName")) {
-        audioName = json["audioName"].get<std::string>();
-    }
+void AudioSourceBehaviour::describe(reflect::TypeBuilder<AudioSourceBehaviour>& t) {
+    t.doc("Plays an audio alias when its node becomes ready.");
+    t.property("audioName", &AudioSourceBehaviour::audioName)
+        .tooltip("audio alias declared by the project");
 }
 
 } // namespace ne

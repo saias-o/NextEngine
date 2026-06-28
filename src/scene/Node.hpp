@@ -74,6 +74,7 @@ public:
     // Attach an already-constructed behaviour (e.g. from the BehaviourRegistry
     // during deserialization); returns it (borrowed).
     Behaviour* addBehaviour(std::unique_ptr<Behaviour> behaviour);
+    Behaviour* addBehaviourAt(std::unique_ptr<Behaviour> behaviour, size_t index);
 
     // Remove a specific behaviour instance.
     void removeBehaviour(Behaviour* b);

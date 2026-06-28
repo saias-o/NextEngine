@@ -1,17 +1,20 @@
 #include "scene/ReflectedTypes.hpp"
 
 #include "core/Reflection.hpp"
+#include "audio/AudioSourceBehaviour.hpp"
 #include "scene/BehaviourRegistry.hpp"
 #include "scene/NodeRegistry.hpp"
 
 // Reflected types (each declares a static describe() and the NE_REFLECT_* macro).
 #include "scene/Blackboard.hpp"
+#include "scene/CameraFollowBehaviour.hpp"
 #include "scene/CharacterBehaviour.hpp"
 #include "scene/HealthBehaviour.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/WaterNode.hpp"
 #include "scene/RotatorBehaviour.hpp"
+#include "scene/SpawnerBehaviour.hpp"
 #include "scene/StateMachineBehaviour.hpp"
 #include "scenario/ScenarioAnchor.hpp"
 #include "scenario/ScenarioDirector.hpp"
@@ -48,8 +51,11 @@ void registerNode() {
 
 void registerReflectedTypes() {
     registerBehaviour<RotatorBehaviour>();
+    registerBehaviour<AudioSourceBehaviour>();
+    registerBehaviour<CameraFollowBehaviour>();
     registerBehaviour<CharacterBehaviour>();
     registerBehaviour<HealthBehaviour>();  // core gameplay component
+    registerBehaviour<SpawnerBehaviour>();
     // High-level gameplay primitives (M5).
     registerBehaviour<Blackboard>();
     registerBehaviour<StateMachineBehaviour>();

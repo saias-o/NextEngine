@@ -26,16 +26,14 @@ void SpawnerBehaviour::spawn() {
         t->after(n, lifetime, [n] { n->queueFree(); });  // owned by n → cancels if it dies first
 }
 
-void SpawnerBehaviour::save(nlohmann::json& json) const {
-    json["scenePath"] = scenePath;
-    json["interval"] = interval;
-    json["lifetime"] = lifetime;
-}
-
-void SpawnerBehaviour::load(const nlohmann::json& json) {
-    if (json.contains("scenePath")) scenePath = json["scenePath"].get<std::string>();
-    if (json.contains("interval")) interval = json["interval"].get<float>();
-    if (json.contains("lifetime")) lifetime = json["lifetime"].get<float>();
+void SpawnerBehaviour::describe(reflect::TypeBuilder<SpawnerBehaviour>& t) {
+    t.doc("Instantiates a scene at this node on a timer.");
+    t.property("scenePath", &SpawnerBehaviour::scenePath)
+        .asset().tooltip("project-relative .scene to instantiate");
+    t.property("interval", &SpawnerBehaviour::interval)
+        .range(0.0, 60.0).tooltip("seconds between spawns; 0 disables");
+    t.property("lifetime", &SpawnerBehaviour::lifetime)
+        .range(0.0, 60.0).tooltip("seconds before spawned nodes are freed; 0 keeps them");
 }
 
 } // namespace ne

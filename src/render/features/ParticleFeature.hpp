@@ -24,23 +24,13 @@ public:
     void record(const FrameContext& fc) override;
 
 private:
-    struct CpuParticle {
-        glm::vec3 position{0.0f};
-        glm::vec3 velocity{0.0f};
-        glm::vec4 startColor{1.0f};
-        glm::vec4 endColor{1.0f};
-        float age = 0.0f;
-        float lifetime = 1.0f;
-        float startSize = 0.1f;
-        float rotation = 0.0f;
-        float angularVelocity = 0.0f;
-    };
-
     struct EmitterState {
-        std::vector<CpuParticle> particles;
         float spawnAccumulator = 0.0f;
         float updateAccumulator = 0.0f;
         float lastTime = -1.0f;
+        float timeSinceLastEmit = 1000000.0f;
+        float simDtThisFrame = 0.0f;
+        uint32_t spawnThisFrame = 0;
         uint64_t lastSeenSerial = 0;
         uint32_t effectRevision = 0;
         uint32_t seed = 1;
@@ -61,14 +51,9 @@ private:
     uint64_t recordSerial_ = 0;
     std::unique_ptr<Pipeline> alphaPipeline_;
     std::unique_ptr<Pipeline> additivePipeline_;
-    std::unique_ptr<ParticleRuntime> runtime_;
+    std::unique_ptr<ParticleRuntime> alphaRuntime_;
+    std::unique_ptr<ParticleRuntime> additiveRuntime_;
     std::unordered_map<ParticleSystemNode*, EmitterState> states_;
-
-    void spawn(ParticleSystemNode& emitter, EmitterState& state, uint32_t count, uint32_t capacity);
-    void simulate(ParticleSystemNode& emitter, EmitterState& state, float dt);
-    uint32_t pack(const std::vector<ParticleSystemNode*>& emitters,
-                  ParticleSystemNode::BlendMode mode,
-                  ParticleRuntime::RenderParticle* out, uint32_t capacity, uint32_t& offset);
 };
 
 } // namespace ne
