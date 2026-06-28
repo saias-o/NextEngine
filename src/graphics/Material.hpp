@@ -15,19 +15,9 @@ class VulkanDevice;
 class Texture;
 class Buffer;
 
-// A surface description: a texture plus shader parameters, exposed as descriptor
-// set 1 (binding 0 = sampler, binding 1 = params UBO). Materials are created and
-// owned by the ResourceManager; nodes reference them.
 class ResourceManager;
 
-// Which shading model a material uses. Selects the scene pipeline at draw time
-// (see Renderer::scenePipelineFor) — Unlit and Lit share the exact same vertex
-// shader, descriptor-set layout and push constants, only the fragment differs.
-//   Lit   = full PBR + lighting + shadows + IBL + GI (shader.frag).
-//   Unlit = albedo * baseColor + emissive, no lighting (unlit.frag). Cheaper —
-//           ideal for UI, holograms, stylized art, particles, skybox-like quads.
-// To add a shading model: add a value here, a fragment shader, and one pipeline
-// in the Renderer (createPipeline / createXrPipelines). Nothing else changes.
+// Selects the scene fragment pipeline; Lit and Unlit share the vertex/layout path.
 enum class MaterialType : uint32_t {
     Lit = 0,
     Unlit = 1,

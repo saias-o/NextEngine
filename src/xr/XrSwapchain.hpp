@@ -9,11 +9,7 @@ namespace ne { class VulkanDevice; }
 
 namespace ne::xr {
 
-// One color XR swapchain — the XR analogue of graphics/Swapchain, one per view
-// (eye). Owns the XrSwapchain plus VkImageViews onto the runtime-provided
-// VkImages. The acquire/wait/release triple brackets GPU usage of an image each
-// frame (mirrors vkAcquireNextImageKHR semantics). RAII; non-copyable/non-movable
-// (held via unique_ptr by Session).
+// XR color swapchain for one eye; wraps runtime images with VkImageViews.
 class Swapchain {
 public:
     Swapchain(VulkanDevice& device, XrSession session, int64_t format,

@@ -7,13 +7,8 @@
 
 namespace ne {
 
-// A hitscan gun for the player. Left mouse fires a ray from the active camera; the
-// first NPC (a node in `targetGroup` carrying a Health behaviour) along it takes
-// `damage`, unless a wall is in the way. Attach to the player node.
-//
-// NPCs are kinematic CharacterVirtual controllers, which the physics raycast does
-// NOT see — so we intersect the ray against the NPCs' positions ourselves and use
-// the physics raycast only to check that a building isn't blocking the shot.
+// Hitscan weapon. CharacterBody NPCs are checked manually; physics raycast is
+// used only for wall occlusion.
 class GunBehaviour : public Behaviour {
 public:
     void onReady() override;

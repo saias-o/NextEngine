@@ -18,15 +18,8 @@ struct SignalConnectionDef {
     std::string slot;            // reflected slot name on the `to` node/behaviour
 };
 
-// Wires reflected named signals to reflected named slots across a node subtree,
-// driven entirely by data (no C++ glue). This is the "brancher des signaux →
-// behaviours" layer: an emitter declared in scene JSON triggers a target's slot.
-//
-// Lifetime-safe both ways:
-//   • emitter side — guarded by the Signal's weak control block (Connection);
-//   • target side  — re-resolved by NodeId at emit time, so a freed target node
-//     is a silent no-op (never a dangling call).
-// All Connections drop when this object is cleared/destroyed (owned by the Scene).
+// Data-driven reflected signal -> slot wiring. Targets are re-resolved by NodeId
+// at emit time, so freed targets become no-ops.
 class SignalWiring {
 public:
     // (Re)wire every def against the subtree rooted at `root`. Clears any prior

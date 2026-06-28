@@ -25,9 +25,7 @@ struct SwapChainSupportDetails {
     std::vector<VkPresentModeKHR> presentModes;
 };
 
-// Owns the Vulkan instance, surface, physical/logical device, queues and a
-// command pool. Acts as the central GPU handle that every other subsystem
-// borrows by reference, and exposes the common allocation helpers.
+// Central Vulkan/GPU handle borrowed by the renderer and resource wrappers.
 class VulkanDevice {
 public:
     // Standard and Custom/XR constructor. Passing a non-null creator delegates
@@ -55,8 +53,7 @@ public:
     VkSampleCountFlagBits maxUsableSampleCount() const;
     float maxAnisotropy() const;
 
-    // What this GPU supports and which modern paths we enabled (single source of
-    // truth for advanced-rendering feature gating).
+    // Supported/enabled GPU features.
     const RenderCapabilities& capabilities() const { return capabilities_; }
 
     QueueFamilyIndices findQueueFamilies() const { return findQueueFamilies(physicalDevice_); }

@@ -1,8 +1,6 @@
 #version 450
 
-// Writes surface albedo into the 3D voxel grid. Empty voxels stay 0 (cleared each
-// frame before this pass). Overlapping writes race harmlessly (last write wins) —
-// acceptable for a coverage/albedo grid used only as a GI bounce source.
+// Writes surface albedo into the 3D voxel grid; overlapping writes are harmless.
 
 layout(set = 0, binding = 0, rgba16f) uniform writeonly image3D voxelAlbedo;
 

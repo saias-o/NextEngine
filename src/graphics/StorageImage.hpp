@@ -8,9 +8,7 @@ namespace ne {
 
 class VulkanDevice;
 
-// A GPU image usable as a compute storage target and as a sampled texture — the
-// output medium for compute passes (Radiance Cascades atlases, radiance caches,
-// froxel volumes, post-process buffers). RAII; borrows the device.
+// GPU image usable as both compute storage and sampled texture.
 class StorageImage {
 public:
     StorageImage(VulkanDevice& device, uint32_t width, uint32_t height, VkFormat format,

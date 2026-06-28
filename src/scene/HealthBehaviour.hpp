@@ -19,7 +19,6 @@ public:
 
     NE_REFLECT_BEHAVIOUR(HealthBehaviour, "Health")
 
-    // ── Gameplay API (also reflected as slots) ────────────────────────────────
     void damage(float amount);   // reduce health; dies at <= 0
     void kill();                 // instant death
     bool dead() const { return dead_; }

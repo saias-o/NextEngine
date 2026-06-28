@@ -5,14 +5,7 @@
 
 #include <array>
 
-// NextEngine XR Toolkit (NEXRTK) — shared types.
-//
-// The toolkit is a thin layer of nodes + behaviours on top of the engine's
-// scene/behaviour/signal model. It never reaches into OpenXR directly: it reads
-// hand state from the XRInput service (fed by the OpenXR action layer — Étape C),
-// so every piece works the same whether the source is a real headset, a desktop
-// emulator, or a test. Same engine conventions throughout: logic = behaviour,
-// "call down / signal up", nodes located via groups (never by name).
+// Shared XR toolkit types. Toolkit code reads XRInput, not OpenXR directly.
 
 namespace ne {
 
@@ -33,10 +26,7 @@ struct XRPose {
     }
 };
 
-// One controller / hand sampled this frame. Poses are expressed in the XR
-// reference space (== world while there is no XR origin offset; once an XROrigin
-// node exists, the controller node lives under it and the hierarchy composes the
-// world transform). Buttons are raw analog values; XRInput derives the edges.
+// One controller/hand sample. Buttons are raw analog values; XRInput derives edges.
 struct XRHandState {
     bool active = false;          // device present & tracked this frame
     XRPose grip;                  // grip pose — for holding objects
@@ -48,9 +38,7 @@ struct XRHandState {
     bool secondaryButton = false; // B / Y
 };
 
-// OpenXR's default hand skeleton has 26 joints. The numeric values deliberately
-// match XrHandJointEXT so the native bridge can copy them without a lookup table,
-// while the toolkit remains independent from OpenXR headers.
+// Numeric values match XrHandJointEXT; this header stays OpenXR-free.
 enum class XRHandJoint : int {
     Palm = 0,
     Wrist,
@@ -98,9 +86,7 @@ struct XRHandSkeletonState {
     }
 };
 
-// Group tags used to locate interactables without coupling by name (the engine
-// has no global find-by-name on purpose). Interactables join these in onReady();
-// interactors scan them via tree()->group(...).
+// Group tags used to locate interactables without name lookups.
 inline constexpr const char* kXRGrabbableGroup = "xr_grabbable";
 inline constexpr const char* kXRTouchableGroup = "xr_touchable";
 inline constexpr const char* kXROriginGroup = "xr_origin";          // the player rig

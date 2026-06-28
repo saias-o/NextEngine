@@ -18,10 +18,7 @@ class Swapchain;
 class Actions;
 class HandTracking;
 
-// Everything one eye needs to be rendered this frame: the acquired XR image to
-// draw into, and the per-eye camera matrices (already in the engine's Vulkan
-// conventions). The render callback fills `image` and leaves it in
-// COLOR_ATTACHMENT_OPTIMAL.
+// Acquired image + per-eye camera data for the current XR frame.
 struct EyeView {
     VkImage image;
     VkImageView imageView;
@@ -31,11 +28,7 @@ struct EyeView {
     glm::vec3 eyePosition;
 };
 
-// The OpenXR session: its reference space, the PRIMARY_STEREO views, the per-eye
-// swapchains, and the frame loop (xrWaitFrame → locateViews → per-eye render →
-// xrEndFrame). This is the XR presentation seam — the analogue of the desktop
-// acquire/submit/present in Renderer::drawFrame. It owns the command buffers and
-// fence used to submit eye renders. Borrows the Instance and VulkanDevice.
+// OpenXR presentation seam: session state, reference space, views and swapchains.
 class Session {
 public:
     Session(Instance& instance, VulkanDevice& device);
@@ -48,32 +41,21 @@ public:
     bool pollEvents();
     bool running() const { return running_; }
 
-    // Records the whole stereo frame into one command buffer. All eye images are
-    // already acquired/waited (layout in: UNDEFINED; the callback must leave each
-    // in COLOR_ATTACHMENT_OPTIMAL). One callback per frame (not per eye) so the
-    // renderer can draw both eyes in a single multiview pass.
+    // One callback per frame so the renderer can draw both eyes with multiview.
     using RenderFrameFn = std::function<void(VkCommandBuffer cmd,
                                              const std::vector<EyeView>& eyes)>;
 
-    // One complete XR frame. Handles pacing via xrWaitFrame even when the runtime
-    // says not to render (keeps the compositor happy). Safe to call only while
-    // running(); a no-op otherwise.
+    // One XR frame; xrWaitFrame handles pacing even when shouldRender is false.
     void renderFrame(const RenderFrameFn& render);
 
     // Per-eye render extent (recommended by the runtime). Valid after construction.
     VkExtent2D eyeExtent() const;
     int64_t colorFormat() const { return colorFormat_; }
 
-    // Recenter the reference space (locomotion/teleport). `position` + `yawRadians`
-    // (about +Y) place the player rig; the runtime then reports head/controllers in
-    // this frame, so all poses come back world-space and the compositor stays
-    // consistent. No-op if unchanged. Cheap (only recreates the XrSpace on change).
+    // Recenter the reference space for locomotion/teleport.
     void setReferenceOffset(const glm::vec3& position, float yawRadians);
 
-    // Poll the OpenXR action sets and feed the toolkit XRInput service (hand poses
-    // + buttons). Call once per frame, after XRInput::beginFrame() and before the
-    // scene update, so interactors see fresh edges. Uses the previous frame's
-    // predicted display time to locate poses (negligible latency).
+    // Feed XRInput once per frame, before scene update, so edges are fresh.
     void syncActions();
 
     // Latest head pose (updated each rendered frame), for driving the engine

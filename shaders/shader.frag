@@ -83,10 +83,7 @@ void main() {
 
     vec3 albedo = albedoSample.rgb * fragColor * baseColor.rgb;
 
-    // GI debug: visualize the voxelized scene albedo (giAtlas.z == 1). Snap the
-    // sample to the voxel center so neighbouring fragments in the same voxel get
-    // the same color — making the grid visible as discrete blocks (and exposing
-    // any grid misalignment / missing coverage).
+    // GI debug: snap to voxel centers so the grid is visible as blocks.
     if (lights.giAtlas.z == 1) {
         float res = float(lights.giAtlas.w);
         vec3 uvw = giVolumeUVW(fragWorldPos);
@@ -120,10 +117,7 @@ void main() {
 
     vec3 V = normalize(lights.cameraPos.xyz - fragWorldPos);
 
-    // Single unified path: indirect diffuse from the DDGI volume (live in realtime,
-    // frozen in baked mode) + live direct lighting + live shadows. No per-mesh
-    // lightmaps — every surface (static or dynamic) samples the same volume, so
-    // baked == realtime visually and there are no lightmap-UV issues.
+    // Realtime and baked modes both sample the DDGI volume.
     LightTerms t = accumulate(N, V, fragWorldPos, albedo, metallic, roughness);
     vec3 lit = t.diffuse + t.specular;
 

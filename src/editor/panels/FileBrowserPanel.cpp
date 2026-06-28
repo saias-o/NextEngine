@@ -103,9 +103,7 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
     try {
         std::string query = toLower(editor->fileBrowserSearchBuf_);
 
-        // Rescan the directory only when something changed (path/query), after a
-        // local mutation (time reset to < 0), or once per refresh window — never
-        // every frame. The listing is cached on the editor as sorted paths.
+        // Cached listing: refresh on path/query change, local mutation, or timer.
         constexpr double kRefreshSeconds = 1.0;
         EditorUI::FileListing& listing = editor->fileListing_;
         const std::string browsePathStr = browsePath.string();
@@ -237,9 +235,7 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                 ImGui::BeginGroup();
                 
                 if (ext == ".png" || ext == ".jpg" || ext == ".bmp" || ext == ".hdr") {
-                    // Only generate a thumbnail for on-screen items; off-screen
-                    // grid cells (and any past the per-frame budget) fall back to
-                    // the placeholder and resolve on a later frame.
+                    // Thumbnails are lazy and budgeted; placeholders resolve later.
                     ImTextureID thumb = 0;
                     if (ImGui::IsRectVisible(ImVec2(iconSize, iconSize)))
                         thumb = editor->thumbnails_.get(resources->device(), pathStr);

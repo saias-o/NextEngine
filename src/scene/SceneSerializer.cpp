@@ -54,14 +54,12 @@ bool reloadImportedModel(Node& target, const std::string& path, ResourceManager&
     return true;
 }
 
-// ── Node -> JSON ─────────────────────────────────────────────────────────────
 json serializeNode(Node& node, ResourceManager& resources) {
     json j;
     node.serialize(j, resources);
     return j;
 }
 
-// ── JSON -> Node ─────────────────────────────────────────────────────────────
 std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources,
                                       NodeIdPolicy idPolicy) {
     const std::string type = j.value("type", "Node");

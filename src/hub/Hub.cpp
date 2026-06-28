@@ -43,7 +43,6 @@ Hub::~Hub() {
 void Hub::setupStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
     
-    // Modern padding and rounding
     style.WindowPadding     = ImVec2(15, 15);
     style.WindowRounding    = 8.0f;
     style.FramePadding      = ImVec2(12, 8);
@@ -59,7 +58,6 @@ void Hub::setupStyle() {
     style.ChildBorderSize   = 1.0f;
     style.FrameBorderSize   = 0.0f;
 
-    // Dark sleek colors
     ImVec4* colors = style.Colors;
     colors[ImGuiCol_Text]                   = ImVec4(0.95f, 0.96f, 0.98f, 1.00f);
     colors[ImGuiCol_TextDisabled]           = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);

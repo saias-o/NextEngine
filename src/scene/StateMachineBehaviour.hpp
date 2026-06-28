@@ -14,17 +14,7 @@ namespace ne {
 
 class Blackboard;
 
-// Data-driven finite state machine — an NPC "brain" authored as a table, not code.
-// States are names; transitions fire on a trigger (fire("x")), a blackboard
-// predicate (key op value), and/or a timeout (after seconds). All declared
-// conditions on a transition must hold. Emits `stateChanged(name)` on entry.
-//
-// Authored via the MCP `configure_behaviour` tool with:
-//   { "initialState":"patrol",
-//     "states":["patrol","chase"],
-//     "transitions":[
-//       {"from":"patrol","to":"chase","when":{"key":"sawPlayer","op":"==","value":1}},
-//       {"from":"chase","to":"patrol","after":3.0} ] }
+// Data-driven finite state machine with trigger, blackboard, and timeout transitions.
 class StateMachineBehaviour : public Behaviour {
 public:
     void onReady() override;

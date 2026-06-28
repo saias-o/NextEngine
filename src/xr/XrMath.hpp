@@ -1,9 +1,6 @@
 #pragma once
 
-// Pure XR math: OpenXR pose/FOV → GLM matrices, in the engine's Vulkan
-// conventions (column-major, depth 0..1, Y handled inside the projection so no
-// extra flip is needed). Depends only on the core OpenXR types (XrPosef/XrFovf),
-// never on the runtime or the platform/graphics extensions.
+// OpenXR pose/FOV -> GLM matrices in the engine's Vulkan conventions.
 
 #include <openxr/openxr.h>
 
@@ -38,10 +35,7 @@ inline glm::mat4 viewFromPose(const XrPosef& pose) {
     return glm::inverse(modelFromPose(pose));
 }
 
-// Asymmetric perspective projection from an OpenXR FOV (tangent half-angles).
-// Mirrors Khronos' XrMatrix4x4f_CreateProjectionFov for GRAPHICS_VULKAN: the
-// Vulkan Y-down clip space is baked into the height term (tanDown - tanUp) and
-// the depth range is [0,1] (offsetZ = 0), so callers must NOT flip Y again.
+// Vulkan Y-down clip space is baked in here; callers must not flip Y again.
 inline glm::mat4 projectionFromFov(const XrFovf& fov, float nearZ, float farZ) {
     const float tanLeft  = std::tan(fov.angleLeft);
     const float tanRight = std::tan(fov.angleRight);

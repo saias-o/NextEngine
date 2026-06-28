@@ -53,7 +53,6 @@ void VehicleBehaviour::onUpdate(float dt) {
 
     const bool occupied = occupant_ != nullptr;
 
-    // ── Boarding / leaving ────────────────────────────────────────────────────
     if (Input::isActionJustPressed("EnterVehicle")) {
         if (!occupied) {
             if (SceneTree* t = tree()) {
@@ -73,7 +72,6 @@ void VehicleBehaviour::onUpdate(float dt) {
 
     const bool driving = occupant_ != nullptr;
 
-    // ── Throttle / steering ───────────────────────────────────────────────────
     float throttle = driving ? Input::getAxis("MoveBackward", "MoveForward") : 0.0f;  // +fwd
     float steer = driving ? Input::getAxis("MoveLeft", "MoveRight") : 0.0f;           // +right
 
@@ -93,7 +91,6 @@ void VehicleBehaviour::onUpdate(float dt) {
     node()->transform().rotation = rot;
     glm::vec3 forward = rot * kForward;
 
-    // ── Drive the CharacterBody (engine performs the actual slide) ─────────────
     glm::vec3 v = body->velocity;
     v.x = forward.x * speed_;
     v.z = forward.z * speed_;
@@ -104,7 +101,6 @@ void VehicleBehaviour::onUpdate(float dt) {
     }
     body->velocity = v;
 
-    // ── Run over pedestrians when moving fast enough ──────────────────────────
     if (std::abs(speed_) >= killSpeed) {
         if (SceneTree* t = tree()) {
             glm::vec3 carPos = glm::vec3(node()->worldTransform()[3]);

@@ -1,12 +1,7 @@
 #pragma once
 
-// Internal include used only by the xr/*.cpp translation units: it pulls in the
-// OpenXR platform header, which on Windows references LARGE_INTEGER (and the
-// Vulkan-binding structs reference Vulkan types). It MUST come before any use of
-// the XR_KHR_vulkan_enable2 / Win32 structs, so this header fixes the include
-// order in one place. Kept out of the public xr headers so <windows.h> never
-// leaks into the rest of the engine (only XrInstance/XrSwapchain/XrSession/
-// XrVulkanBinding .cpp need it).
+// Internal xr/*.cpp include: fixes Windows/Vulkan/OpenXR platform include order.
+// Keep out of public headers so <windows.h> does not leak into the engine.
 
 #ifndef NOMINMAX
 #define NOMINMAX

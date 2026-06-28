@@ -24,7 +24,6 @@ std::string trim(const std::string& s) {
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
 
 bool Project::create(const std::string& parentDir, const std::string& projectName) {
     fs::path projDir = fs::path(parentDir) / projectName;
@@ -62,7 +61,6 @@ bool Project::create(const std::string& parentDir, const std::string& projectNam
     return true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 
 bool Project::load(const std::string& neprojPath) {
     fs::path path(neprojPath);
@@ -163,7 +161,6 @@ bool Project::load(const std::string& neprojPath) {
     return true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 
 bool Project::save() const {
     if (!loaded_) {

@@ -8,11 +8,7 @@
 
 namespace ne {
 
-// Decouples the Renderer from concrete effects — the same idea as Godot's
-// CompositorEffect list or Unity's ScriptableRendererFeature list. Effects register
-// a factory + a draw order here; the Renderer only ever sees the ScenePassFeature
-// interface and NEVER includes or names a concrete effect. Adding an effect is a new
-// file + one registration line; the Renderer never changes.
+// Registry of scene-pass render features, sorted by draw order.
 class RenderFeatureRegistry {
 public:
     using Factory = std::function<std::unique_ptr<ScenePassFeature>()>;
@@ -31,10 +27,7 @@ private:
     std::vector<Entry> entries_;
 };
 
-// Registers the engine's built-in effects (water, skybox, debug lines). Called once
-// at startup, before any Renderer is built. Central registration (rather than static
-// self-registration) avoids the static-library dead-strip problem — the same reason
-// scene/ReflectedTypes.cpp registers node/behaviour types centrally.
+// Central registration avoids static-library dead stripping of feature factories.
 void registerBuiltinRenderFeatures();
 
 } // namespace ne

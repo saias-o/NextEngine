@@ -1,8 +1,4 @@
-// Shared PBR lighting math — the SINGLE source of truth for the scene shader.
-//
-// Uses Cook-Torrance microfacet BRDF with GGX distribution, Smith-Schlick
-// geometry term, and Fresnel-Schlick approximation.
-// See diffuseIrradiance() / specularRadiance() / accumulate().
+// Shared PBR lighting math for the scene shaders.
 
 #include "ddgi_common.glsl"
 
@@ -25,7 +21,7 @@ layout(set = 0, binding = 1) uniform LightingUBO {
     ivec4 counts;       // x = light count, y = mode (0 realtime, 1 baked)
     Light lights[MAX_LIGHTS];
     mat4 shadowMatrices[MAX_SHADOWS];
-    // --- DDGI irradiance volume params (the single GI primitive) ---
+    // DDGI irradiance volume params.
     vec4 giOrigin;      // xyz = volume min corner (world), w = enabled (0/1)
     vec4 giSpacing;     // xyz = probe spacing (world units)
     ivec4 giCounts;     // xyz = probe counts per axis, w = probesPerRow in atlas
@@ -61,13 +57,7 @@ vec3 giVolumeUVW(vec3 wp) {
 
 struct LightTerms { vec3 diffuse; vec3 specular; };
 
-// ---------------------------------------------------------------------------
-// Indirect diffuse — DDGI irradiance volume (the single GI primitive)
-//
-// The volume is sampled the SAME way whether it was updated this frame (realtime)
-// or frozen from a bake — that is the whole point of the unified design. Dynamic
-// objects simply sample it; they are never written into any lightmap.
-// ---------------------------------------------------------------------------
+// Indirect diffuse from the DDGI irradiance volume.
 
 int giProbeIndex(ivec3 c) {
     return c.x + c.y * lights.giCounts.x + c.z * lights.giCounts.x * lights.giCounts.y;
@@ -89,10 +79,7 @@ vec3 sampleIrradianceVolume(vec3 wp, vec3 N, vec3 V) {
     ivec3 counts  = lights.giCounts.xyz;
     vec3  spacing = lights.giSpacing.xyz;
 
-    // Self-shadow bias (Majercik): offset the sample point off the surface along
-    // the normal AND toward the camera, so the probe Chebyshev test doesn't see
-    // the surface occluding itself — removes the dark "hatched" splotches and
-    // cleans up corners/contacts.
+    // Bias the sample off the surface before the Chebyshev visibility test.
     float maxSpacing = max(spacing.x, max(spacing.y, spacing.z));
     wp += (N * 0.35 + V * 0.35) * maxSpacing;
 
@@ -122,11 +109,11 @@ vec3 sampleIrradianceVolume(vec3 wp, vec3 N, vec3 V) {
         vec3  tw   = mix(1.0 - frac, frac, vec3(off));
         float wTri = tw.x * tw.y * tw.z;
 
-        // 2. Directional (back-face) weight — discard probes behind the surface.
+        // 2. Directional weight: prefer probes in front of the surface.
         float wDir = max(0.0001, dot(dir, N) * 0.5 + 0.5);
         wDir *= wDir;
 
-        // 3. Chebyshev visibility — probability that wp is visible from the probe.
+        // 3. Chebyshev visibility from the probe.
         vec2  vis  = texture(giVisibility, giProbeUV(idx, -dir, visT, visAtlas)).rg;
         float mean = vis.x;
         float wVis = 1.0;
@@ -151,16 +138,9 @@ vec3 sampleIrradianceVolume(vec3 wp, vec3 N, vec3 V) {
 vec3 giIndirectDiffuse(vec3 wp, vec3 N, vec3 V, vec3 albedo) {
     if (lights.giOrigin.w < 0.5)
         return lights.ambient.rgb * albedo;
-    // Probes store the cosine-weighted MEAN incident radiance, so the Lambertian
-    // diffuse response is albedo * meanRadiance (the pi cancels). giSpacing.w is a
-    // user intensity multiplier to make the indirect more visible. See the
-    // accumulation convention in ddgi_blend.comp.
+    // Probes store cosine-weighted mean incident radiance; pi cancels for Lambert.
     return sampleIrradianceVolume(wp, N, V) * albedo * lights.giSpacing.w;
 }
-
-// ---------------------------------------------------------------------------
-// Shadow
-// ---------------------------------------------------------------------------
 
 // Hardware-PCF shadow lookup. Returns the lit fraction in [0,1] (1 = fully lit).
 float shadowFactor(int idx, vec3 worldPos, float ndotl) {
@@ -180,12 +160,7 @@ float shadowFactor(int idx, vec3 worldPos, float ndotl) {
     return sum / 9.0;
 }
 
-// ---------------------------------------------------------------------------
-// Cook-Torrance BRDF building blocks
-// ---------------------------------------------------------------------------
-
 // GGX / Trowbridge-Reitz Normal Distribution Function.
-// Concentrates microfacet normals around the halfway vector h; alpha = roughness^2.
 // D(h) = alpha^2 / (pi * ((n·h)^2 * (alpha^2 - 1) + 1)^2)
 float distributionGGX(float NdotH, float roughness) {
     float a  = roughness * roughness;
@@ -211,7 +186,6 @@ float geometrySmith(float NdotV, float NdotL, float roughness) {
 
 // Fresnel-Schlick approximation.
 // F = F0 + (1 - F0) * (1 - h·v)^5
-// At grazing angles the surface reflects all light regardless of material.
 vec3 fresnelSchlick(float HdotV, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - HdotV, 0.0, 1.0), 5.0);
 }
@@ -220,10 +194,6 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     vec3 grazing = max(vec3(1.0 - roughness), F0);
     return F0 + (grazing - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
-
-// ---------------------------------------------------------------------------
-// Image-based lighting
-// ---------------------------------------------------------------------------
 
 vec3 rotateEnvironmentDir(vec3 dir) {
     float s = sin(lights.environmentParams.w);
@@ -253,9 +223,7 @@ vec3 environmentMissRadiance(vec3 dir) {
     return sampleEnvironmentLod(dir, 0.0) * lights.environmentParams.y;
 }
 
-// Mobile-friendly split-sum BRDF approximation used by several realtime PBR
-// implementations. It restores the grazing/roughness response that makes
-// environment reflections read as glossy instead of flat.
+// Split-sum BRDF approximation for environment specular.
 vec3 environmentBRDF(vec3 F0, float roughness, float NdotV) {
     const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
     const vec4 c1 = vec4( 1.0,  0.0425,  1.04, -0.04);

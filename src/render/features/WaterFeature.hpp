@@ -13,12 +13,7 @@ namespace ne {
 class VulkanDevice;
 class Buffer;
 
-// Animated water surface — NextEngine's default water. Draws every active WaterNode
-// in the scene with a procedural Gerstner grid (no vertex buffer) and Fresnel sky
-// reflection, plus an optional analytic shore (beach/lake) with a depth-tinted body,
-// swash foam and a soft waterline. Reuses the global set 0; per-node look/feel rides
-// in a small set-1 UBO array (indexed by a push constant). A textbook render feature:
-// zero Renderer edits to add or change it.
+// Render feature for WaterNode: procedural grid, set 0 globals, set 1 water data.
 class WaterFeature : public ScenePassFeature {
 public:
     ~WaterFeature() override;
@@ -26,8 +21,7 @@ public:
     void record(const FrameContext& fc) override;
 
 private:
-    // Mirrors GpuWater in water_common.glsl (12 vec4, std140 — all-vec4 so the layout
-    // is identical on both sides with no padding). Per WaterNode, per frame.
+    // Mirrors GpuWater in water_common.glsl; all-vec4 keeps std140 padding explicit.
     struct GpuWater {
         glm::vec4 area;        // centreX, surfaceY, centreZ, halfSize
         glm::vec4 deep;        // rgb deep colour, w roughness

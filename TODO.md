@@ -60,3 +60,12 @@
 **MOYENNE** : XR handtracking/MSAA/ImGui, Versions, World model, Skills
 **BASSE** : Culling stéréo, anchors backend, LTO, GPU RmlUi, Agents
 **FUTURE** : Radiance Cascades, recherche avancée
+
+---
+
+## Dettes techniques repérées
+- [ ] `TimelinePropertyTrack::evaluate()` est encore un placeholder no-op ; implémenter le binding réflexion + interpolation de propriétés.
+- [ ] `GLTFLoader` fournit une tangente par défaut `(1,0,0,1)` quand le mesh n'en a pas ; ajouter MikkTSpace ou désactiver proprement le normal mapping dans ce cas.
+- [ ] Certaines mutations éditeur marquent seulement le document dirty sans être undoables (scripts WebCanvas, changements de `CollisionShape` avec `resetAuto`) ; les raccorder au système de commandes.
+- [ ] Renommage de projet dans le Hub : vérifier la synchronisation entre le dossier, l'entrée Hub et le fichier `.neproj`.
+- [ ] Finir la migration des behaviours built-in restants vers la réflexion/registry unifiée.

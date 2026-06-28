@@ -1,8 +1,6 @@
 #version 450
 
-// Debug line drawing (skeleton bones, gizmos). Reuses the scene's set-0 camera
-// UBO (view[2]/proj[2]; index 0 — debug lines are desktop/mono only) and the
-// standard Vertex layout (only position + color are read).
+// Debug lines reuse the scene camera UBO; desktop/mono only.
 
 layout(set = 0, binding = 0) uniform CameraUBO {
     mat4 view[2];

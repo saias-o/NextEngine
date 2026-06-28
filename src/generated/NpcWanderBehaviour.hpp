@@ -9,14 +9,7 @@
 
 namespace ne {
 
-// A dead-simple wandering pedestrian. Attach to a CharacterBody node (a capsule).
-// Every `changeInterval` seconds it picks a new random heading and strolls toward
-// it at `speed`, turning smoothly and facing where it walks. The CharacterBody
-// handles gravity and sliding against the world, so NPCs stay on the ground and
-// bump off buildings without any pathfinding.
-//
-// If `leashRadius` > 0 the NPC is gently steered back when it wanders too far from
-// its spawn point, so a crowd stays roughly where it was placed.
+// Random wandering for a CharacterBody pedestrian, optionally leashed to spawn.
 class NpcWanderBehaviour : public Behaviour {
 public:
     void onReady() override;

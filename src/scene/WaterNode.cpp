@@ -44,7 +44,6 @@ void WaterNode::describe(reflect::TypeBuilder<WaterNode>& t) {
     t.property("detailFadeDistance", &WaterNode::detailFadeDistance).range(10.0, 2000.0)
         .tooltip("ripples calm down past this distance");
 
-    // ── Shore (beach / lake) ──
     t.property("shoreMode", &WaterNode::shoreMode)
         .enumValues({"None", "Beach", "Lake"})
         .tooltip("None = endless water; Beach = straight shoreline; Lake = round pond");

@@ -1,19 +1,7 @@
 #version 450
 
-// Animated water surface — fragment stage. Modern, mobile/VR-friendly and texture-
-// free. The fine ripple normals come from FBM value-noise with ANALYTIC derivatives
-// (so the normal is read straight from the gradient — no finite differences), in
-// TWO layers at different scale/speed/direction (the procedural equivalent of two
-// scrolling normal maps). Each FBM octave is rotated with a non-aligned matrix and a
-// non-integer lacunarity, and the sample domain is warped, so there is no visible
-// tiling on large expanses. Ripples fade with distance to kill shimmer. Shading is
-// Fresnel reflection (environment map if present, else a cheap procedural sky), a
-// sun sparkle, a depth-tinted refracted body, and crest foam — every knob parameterized.
-//
-// SHORE (beach/lake): from the analytic water depth we get, for free, the three
-// things that sell a real waterline — a shallow→deep colour gradient, a foam band
-// that runs up and back with the swash, and a soft alpha fade so the water dissolves
-// into the wet sand instead of cutting a hard line. All depth-driven, no extra maps.
+// Texture-free water shading: procedural ripple normals, Fresnel reflection,
+// sun sparkle, depth tint and shore foam.
 
 #include "lighting.glsl"
 #include "water_common.glsl"
@@ -32,8 +20,7 @@ float hash21(vec2 p) {
     return fract(p.x * p.y);
 }
 
-// Value noise with analytic derivative: returns (value, d/dx, d/dy). No filtering
-// taps — the gradient is exact, which is exactly what a normal needs.
+// Value noise with analytic derivative: returns (value, d/dx, d/dy).
 vec3 noised(vec2 x) {
     vec2 p = floor(x);
     vec2 f = fract(x);
@@ -51,8 +38,7 @@ vec3 noised(vec2 x) {
     return vec3(v, deriv);
 }
 
-// Accumulated gradient (xz) of an FBM height field, scrolled by `flow`. Rotating the
-// domain each octave + non-integer lacunarity removes axis-aligned repetition.
+// Accumulated gradient (xz) of a scrolled FBM height field.
 vec2 fbmGrad(vec2 p, vec2 flow, float t) {
     vec2 grad = vec2(0.0);
     float amp = 1.0, freq = 1.0, norm = 0.0;
@@ -89,8 +75,7 @@ void main() {
     GpuWater w = waters.items[push.index];
     int mode = int(w.shoreMode.x + 0.5);
 
-    // Local water depth drives the whole shore look. On dry land (depth < 0) there is
-    // no water at all — discard so we never blend or write depth over the beach.
+    // Dry land: do not blend or write depth over the beach.
     float depth = waterDepthAt(fragWorldPos.xz, w);
     if (mode != 0 && depth < 0.0) discard;
 
@@ -128,9 +113,7 @@ void main() {
     bool hasEnv = lights.environmentParams.x > 0.5;
     float rough = clamp(w.deep.w, 0.02, 0.4);
 
-    // Refracted body colour: shallow water reads as the sandy/turquoise `shoreColor`
-    // and deepens to `deep` over `depthColorFalloff` metres (the classic beach
-    // gradient). With no shore, it is the deep colour everywhere as before.
+    // Refracted body colour deepens from shore tint to deep water tint.
     vec3 shallowCol = (mode != 0) ? w.shoreColor.rgb : w.deep.rgb;
     float dt = clamp(depth / max(w.misc.w, 0.01), 0.0, 1.0);
     vec3 bodyTint = mix(shallowCol, w.deep.rgb, dt);
@@ -155,14 +138,10 @@ void main() {
     vec3 H = normalize(-sunDir + V);
     color += sunCol * pow(max(dot(N, H), 0.0), w.look.y) * w.look.z;
 
-    // Foam: wave crests everywhere, plus a shoreline band that runs up and back with
-    // the swash. The run-up reach oscillates in time (offset along the shore so it is
-    // not a uniform pulse); a brighter "lace" tracks the leading edge of each wash.
+    // Crest foam plus a swash band near the shoreline.
     float foam = smoothstep(w.look.w, 1.0, fragCrest) * w.misc.z;
     if (mode != 0) {
-        // Swash phase varies only WEAKLY along the shoreline (waves arrive nearly
-        // together); the run-up itself is the in/out band motion below. So the foam
-        // washes toward the beach instead of sliding sideways.
+        // Keep phase mostly coherent along the shore so foam moves inland.
         vec2 wd = waveDirAt(fragWorldPos.xz, w);
         vec2 alongShore = vec2(-wd.y, wd.x);
         float alongCoord = dot(fragWorldPos.xz, alongShore);
@@ -176,8 +155,7 @@ void main() {
     }
     color = mix(color, w.foam.rgb, clamp(foam, 0.0, 1.0));
 
-    // Soft edge: fade to transparent at the waterline so the water dissolves into the
-    // wet sand instead of cutting a hard line. Opaque (alpha 1) in deeper water.
+    // Fade alpha at the waterline; deeper water is opaque.
     float alpha = (mode != 0) ? smoothstep(0.0, max(w.shoreColor.w, 0.01), depth) : 1.0;
     outColor = vec4(color, alpha);
 }

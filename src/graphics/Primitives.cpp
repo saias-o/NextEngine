@@ -2,12 +2,7 @@
 
 namespace ne {
 
-// A unit cube with per-face normals and UVs. Color is white so the fragment
-// shader shows texture * lighting unmodified.
-//
-// Beyond the (repeating, per-face) texture UV, each vertex also carries a
-// non-overlapping secondary UV set: the 6 faces are packed into a 3x2 grid of
-// [0,1]^2 (one cell each), with a small inset so adjacent faces do not bleed.
+// Unit cube with per-face normals, texture UVs, and non-overlapping lightmap UVs.
 const std::vector<Vertex>& cubeVertices() {
     static const std::vector<Vertex> verts = [] {
         struct Corner { glm::vec3 pos; glm::vec2 uv; };
@@ -28,7 +23,6 @@ const std::vector<Vertex>& cubeVertices() {
         out.reserve(24);
         for (int f = 0; f < 6; ++f) {
             const int col = f % 3, row = f / 3;
-            // For axis-aligned faces, standard tangent
             glm::vec4 tangent;
             if (faces[f].normal.z > 0.5f) tangent = glm::vec4(1, 0, 0, 1);
             else if (faces[f].normal.z < -0.5f) tangent = glm::vec4(-1, 0, 0, 1);

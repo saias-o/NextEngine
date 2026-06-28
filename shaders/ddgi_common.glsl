@@ -1,15 +1,6 @@
-// DDGI shared math — the SINGLE source of truth for octahedral (de)encoding used
-// by both the probe-update compute pass and the lighting evaluation, so a probe
-// written by the update reads back identically at shading time.
+// Shared DDGI octahedral direction encoding.
 //
-// Octahedral mapping after Cigolle et al. 2014, "A Survey of Efficient
-// Representations for Independent Unit Vectors" (JCGT 3(2)). This maps a unit
-// direction to a [-1,1]^2 square with no seams at the equator — the encoding
-// DDGI (Majercik 2019) uses for its per-probe irradiance / visibility tiles.
-//
-// NOTE: keep this file dependency-free (no UBO, no samplers). The volume-sampling
-// helpers that need the LightingUBO + atlases live in lighting.glsl, which
-// includes this file first.
+// Keep dependency-free: volume sampling lives in lighting.glsl.
 
 #ifndef DDGI_COMMON_GLSL
 #define DDGI_COMMON_GLSL

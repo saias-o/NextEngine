@@ -47,7 +47,6 @@ void XRDirectInteractor::onUpdate(float) {
     const XRHand hand = controller_->hand();
     const glm::vec3 handPos = worldPos(controller_);
 
-    // ── Grab ── Re-derive the currently-held object from the live group (no stored
     // pointer → no dangling if it was freed).
     XRGrabbable* held = nullptr;
     for (Node* n : t->group(kXRGrabbableGroup))
@@ -73,7 +72,6 @@ void XRDirectInteractor::onUpdate(float) {
         if (best) best->grab(controller_);
     }
 
-    // ── Touch ── Report this hand's in-range state to every touchable (it diffs).
     for (Node* n : t->group(kXRTouchableGroup)) {
         XRTouchable* tb = n->getBehaviour<XRTouchable>();
         if (!tb) continue;

@@ -30,7 +30,6 @@ public:
     SceneTree(const SceneTree&) = delete;
     SceneTree& operator=(const SceneTree&) = delete;
 
-    // ── World lifecycle ──────────────────────────────────────────────────────
     // Build the World, adopting `startScene` (the LIVE edit scene, moved — never
     // copied, so live resources like WebCanvas views aren't duplicated) as the
     // current sub-scene. Returns the World (the render/update target). Spawns autoloads.
@@ -44,25 +43,21 @@ public:
     void setProjectRoot(const std::string& root) { projectRoot_ = root; }
     std::string resolveProjectPath(const std::string& path) const;
 
-    // ── Instancing ("everything is a scene") ─────────────────────────────────
     // Load a .scene and add it under `parent` (or the current sub-scene if null);
     // returns the new node (its transform can then be set). Cached after first
     // load, so spawning many copies (projectiles, enemies) avoids disk I/O.
     Node* instantiate(const std::string& scenePath, Node* parent = nullptr);
 
-    // ── Deferred operations (applied by the Engine after the scene update) ────
     void changeScene(const std::string& scenePath);  // load a level file
     void reloadScene();
     void requestFree(Node* node);                     // backs Node::queueFree()
     void applyDeferred();
     bool quitRequested() const { return quitRequested_; }
 
-    // ── Pause / quit ─────────────────────────────────────────────────────────
     void setPaused(bool paused);   // drives Time::setScale(0/1)
     bool paused() const;
     void quit() { quitRequested_ = true; }
 
-    // ── Timers / tweens (owned by a node; cancelled when it dies; frozen on pause) ─
     TimerId after(Node* owner, float seconds, std::function<void()> fn);    // one-shot
     TimerId every(Node* owner, float interval, std::function<void()> fn);   // repeating
     TimerId tween(Node* owner, float duration, Easing easing,
@@ -75,7 +70,6 @@ public:
     void cancelTimersOwnedBy(Node* owner);
     void tickTimers(float dt);  // called by the Engine each frame (scaled dt)
 
-    // ── Autoloads (persistent singleton nodes, children of the World) ────────
     // Code-registered: a node carrying a behaviour T.
     template <typename T>
     void registerAutoload(const std::string& name) {
@@ -98,13 +92,11 @@ public:
     }
     Node* autoloadNode(const std::string& name) const;
 
-    // ── Groups ───────────────────────────────────────────────────────────────
     // Locate nodes by opt-in tag (the only global lookup; there is no find-by-name).
     // Traversal-based — always correct across reparenting/destruction.
     const std::vector<Node*>& group(const std::string& name);
     Node* firstInGroup(const std::string& name);
 
-    // ── Spatial queries ───────────────────────────────────────────────────────
     // Character bodies (CharacterVirtual: player, NPCs, cars) are NOT visible to
     // PhysicsWorld::raycast, so gameplay (weapons, AoE, aggro, pickups, run-overs)
     // would otherwise re-implement the same manual loops. These node-level queries

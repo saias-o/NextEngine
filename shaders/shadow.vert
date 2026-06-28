@@ -1,8 +1,6 @@
 #version 450
 
-// Depth-only shadow pass: just transform the position into the light's clip
-// space. mvp = lightViewProj * model (precomputed on the CPU). The other vertex
-// attributes are part of the shared Vertex layout but unused here.
+// Depth-only shadow pass. mvp = lightViewProj * model.
 layout(push_constant) uniform PushConstants {
     mat4 mvp;
 } push;

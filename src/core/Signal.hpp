@@ -1,12 +1,7 @@
 #pragma once
 
-// Typed signal/slot for "call down, signal up" communication. A `Behaviour`
-// declares `Signal<Args...>` members and emits them; listeners connect via
-// `Behaviour::listen()` (lifetime-managed) or `Signal::connect()` (manual).
-//
-// Lifetime-safe both ways: slots live in a shared control block, connections
-// hold a weak reference. The emitter dying or the listener dying first are both
-// safe — a dangling connection simply becomes a no-op.
+// Typed signal/slot. Connections hold weak control blocks, so dangling links
+// become no-ops instead of calls into freed objects.
 
 #include <algorithm>
 #include <cstdint>

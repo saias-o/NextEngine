@@ -6,12 +6,8 @@ namespace ne {
 
 class XRController;
 
-// Near-field interactor: attach to an XRController to let that hand grab
-// XRGrabbables and poke XRTouchables it gets close to. It owns no interactable
-// pointers across frames — each frame it scans the "xr_grabbable"/"xr_touchable"
-// groups (the engine's sanctioned, name-free lookup), so freeing an interactable
-// node mid-grab is safe. Selection range = the interactable's own radius (refined
-// by its mesh AABB) plus `reach`.
+// Near-field interactor for grabbing and touching. It rescans groups every frame,
+// so interactables can be freed safely.
 class XRDirectInteractor : public Behaviour {
 public:
     void onReady() override;

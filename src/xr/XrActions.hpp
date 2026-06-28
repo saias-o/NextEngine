@@ -8,11 +8,7 @@ namespace ne::xr {
 
 class Instance;
 
-// OpenXR action-set input layer — the producer that "lights up" NEXRTK. It
-// declares the interaction actions (grip + aim pose, trigger, squeeze, thumbstick,
-// A/B), suggests bindings for the common controllers (Oculus Touch, Khronos
-// simple), creates per-hand action spaces, and each frame syncs + locates them,
-// pushing the result into the toolkit's ne::XRInput service. Owned by Session.
+// OpenXR action-set input layer feeding ne::XRInput.
 class Actions {
 public:
     Actions(Instance& instance, XrSession session);
@@ -20,9 +16,7 @@ public:
     Actions(const Actions&) = delete;
     Actions& operator=(const Actions&) = delete;
 
-    // Poll the runtime and feed ne::XRInput. Poses are located in `space` (the app
-    // reference space — already recentred to world) at `time`. Safe to call every
-    // frame; when the session isn't focused the actions read inactive.
+    // Locate hand poses in `space` and feed ne::XRInput.
     void sync(XrSession session, XrSpace space, XrTime time);
 
 private:

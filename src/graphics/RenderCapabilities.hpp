@@ -4,9 +4,7 @@
 
 namespace ne {
 
-// Quality tier the engine targets, derived from the GPU's capabilities. The
-// render path scales by switching descriptor sets / pipelines per tier rather
-// than rebuilding the frame graph (cf. RENDU_AVANCE.md, "regress gracefully").
+// Quality tier derived from GPU capabilities.
 enum class QualityTier {
     Low,     // mobile / integrated / UMA: no hardware RT, cheapest GI path
     Medium,  // console-class / mid GPU
@@ -24,10 +22,7 @@ inline const char* toString(QualityTier t) {
     return "?";
 }
 
-// What the selected physical device actually supports and what we enabled. This
-// is the single source of truth the renderer queries to decide which modern code
-// paths (compute GI, async compute, bindless, multiview, dynamic rendering…) are
-// available — every advanced feature in RENDU_AVANCE.md gates on these flags.
+// Features supported and enabled on the selected physical device.
 struct RenderCapabilities {
     uint32_t apiVersion = VK_API_VERSION_1_0;  // negotiated device API version
 

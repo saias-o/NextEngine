@@ -14,9 +14,7 @@ struct Bone {
     glm::mat4 inverseBindMatrix{1.0f}; // Transforms from mesh space to local bone space
 };
 
-// Rig represents the immutable hierarchy of bones for a skeletal mesh.
-// It is designed to be Cache-Friendly (Data-Oriented), storing bones in a flat array.
-// Bones MUST be topologically sorted (a parent must appear before its children in the array).
+// Flat skeletal hierarchy. Parents must appear before their children.
 class Rig {
 public:
     void addBone(const std::string& name, int32_t parentIndex, const glm::mat4& invBind) {

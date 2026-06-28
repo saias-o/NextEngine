@@ -16,10 +16,7 @@ class Buffer;
 class Scene;
 class ComputePipeline;
 
-// Layout of the DDGI irradiance probe volume — the SINGLE global-illumination
-// primitive of the engine. A regular 3D grid of probes; each probe stores an
-// octahedral irradiance tile and an octahedral visibility tile (mean distance,
-// mean distance^2) for the Chebyshev occlusion test.
+// Layout of the DDGI probe grid. Visibility stores mean distance and mean^2.
 struct GIVolumeDesc {
     glm::vec3 origin{-12.0f, -4.0f, -12.0f};  // world-space min corner
     glm::vec3 spacing{3.0f, 3.0f, 3.0f};      // probe spacing (world units)
@@ -34,16 +31,8 @@ struct GIVolumeDesc {
     int probeCount() const { return counts.x * counts.y * counts.z; }
 };
 
-// Owns the GPU resources of the irradiance probe volume: two ping-pong atlases
-// for irradiance (rgba16f) and visibility (rg16f), plus the sampler the lighting
-// pass uses. The update compute pass (P2) writes the "write" atlas and reads the
-// "read" atlas (previous frame) for the temporal blend; the lighting pass always
-// samples the "read" atlas. In baked mode the atlases are simply frozen.
-//
-// P0: no compute yet — the atlases are filled once with a constant (ambient-like
-// irradiance + infinite visibility) so the whole sampling path is exercised and
-// the scene renders through the volume. P1/P2 replace the fill with voxelization
-// + DDGI ray-marching.
+// Owns ping-pong irradiance/visibility atlases plus the sampler used by lighting.
+// Baked mode freezes the current atlases.
 class GIVolume {
 public:
     GIVolume(VulkanDevice& device, const GIVolumeDesc& desc,

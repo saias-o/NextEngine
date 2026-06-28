@@ -9,11 +9,7 @@ namespace ne::xr {
 void check(XrResult r, const char* what);
 inline bool succeeded(XrResult r) { return r >= 0; }
 
-// Owns the connection to the OpenXR runtime: the XrInstance and the selected
-// head-mounted XrSystemId. Also caches the XR_KHR_vulkan_enable2 entry points
-// (extension functions are not exported by the loader, only reachable via
-// xrGetInstanceProcAddr). No graphics state here — just the runtime handle that
-// XrVulkanBinding and Session borrow. RAII; non-copyable.
+// OpenXR runtime handle plus cached XR_KHR_vulkan_enable2 entry points.
 class Instance {
 public:
     Instance();

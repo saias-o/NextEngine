@@ -47,7 +47,6 @@ void registerNode() {
 } // namespace
 
 void registerReflectedTypes() {
-    // ── behaviours ──
     registerBehaviour<RotatorBehaviour>();
     registerBehaviour<CharacterBehaviour>();
     registerBehaviour<HealthBehaviour>();  // core gameplay component
@@ -62,7 +61,6 @@ void registerReflectedTypes() {
     registerBehaviour<NpcWanderBehaviour>();
     registerBehaviour<GunBehaviour>();
 
-    // ── nodes ──
     registerNode<LightNode>();
     registerNode<WaterNode>();
     registerNode<ParticleSystemNode>();

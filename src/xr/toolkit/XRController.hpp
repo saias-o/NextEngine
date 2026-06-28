@@ -5,14 +5,8 @@
 
 namespace ne {
 
-// A tracked hand/controller in the scene. Its transform follows the matching
-// XRInput grip pose every frame (via an internal tracker behaviour added in the
-// constructor — no setup required). Attach interactors to it (e.g.
-// XRDirectInteractor) and parent a controller model / collider as children.
-//
-// Pose is written as the node's *local* transform: with no XR origin that equals
-// world space; once an XROrigin node exists and the controller is its child, the
-// hierarchy composes grip→world automatically, so locomotion/teleport "just work".
+// Tracked hand/controller node. The internal tracker writes the grip pose locally,
+// so parenting under XROrigin composes locomotion normally.
 class XRController : public Node {
 public:
     explicit XRController(XRHand hand = XRHand::Right);

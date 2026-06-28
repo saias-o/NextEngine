@@ -50,9 +50,7 @@
 
 namespace ne {
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Construction
-// ─────────────────────────────────────────────────────────────────────────────
 
 namespace {
 bool intersectRayPlane(const glm::vec3& rayOrigin, const glm::vec3& rayDir, const glm::vec3& planeOrigin, const glm::vec3& planeNormal, float& t) {
@@ -114,7 +112,7 @@ void EditorUI::applyEditorStyle() {
     style.IndentSpacing    = 20.0f;
 
     style.WindowBorderSize = 1.0f;
-    style.FrameBorderSize  = 1.0f; // Crisp outlines for premium look
+    style.FrameBorderSize  = 1.0f;
     style.TabBorderSize    = 0.0f;
 
     // Colors — Deep charcoal/obsidian modern theme
@@ -180,9 +178,7 @@ void EditorUI::applyEditorStyle() {
     c[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.0f, 0.0f, 0.0f, 0.50f);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Main draw entry point
-// ─────────────────────────────────────────────────────────────────────────────
 
 void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* project, ResourceManager* resources, float dt) {
     document_.bind(scene, resources);
@@ -340,9 +336,7 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     document_.select(selectedNode_);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Scene update: serialization, clipboard, undo/redo helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 bool EditorUI::canEdit() const {
     return !(app_ && app_->isPlayMode());
@@ -427,9 +421,7 @@ void EditorUI::closeModelImporter() {
     previewScene_.reset();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // New Project dialog (modal popup)
-// ─────────────────────────────────────────────────────────────────────────────
 
 void EditorUI::drawNewProjectDialog(Project* project) {
     if (showNewProjectDialog_) {
@@ -487,9 +479,7 @@ void EditorUI::drawNewProjectDialog(Project* project) {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Project scene resolution
-// ─────────────────────────────────────────────────────────────────────────────
 
 void EditorUI::loadProjectMainScene(Project* project, Scene* scene, ResourceManager* resources) {
     if (!project || !scene || !resources) return;
@@ -539,9 +529,7 @@ void EditorUI::loadProjectMainScene(Project* project, Scene* scene, ResourceMana
     Log::info("Project '", project->name(), "': no scene found, starting with empty scene.");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Open Project dialog (modal popup — background recursive .neproj scan)
-// ─────────────────────────────────────────────────────────────────────────────
 
 namespace {
 
@@ -615,7 +603,6 @@ void EditorUI::drawOpenProjectDialog(Project* project) {
 
     namespace fs = std::filesystem;
 
-    // ── Root path row ────────────────────────────────────────────────────────
     ImGui::Text("Search root:");
     ImGui::SameLine();
     char rootBuf[512];
@@ -637,7 +624,6 @@ void EditorUI::drawOpenProjectDialog(Project* project) {
 
     ImGui::Separator();
 
-    // ── Header ───────────────────────────────────────────────────────────────
     const bool scanning = openScanFuture_.valid();
     if (!openScanDone_ && scanning) {
         ImGui::TextDisabled("Scanning for projects…");
@@ -648,7 +634,6 @@ void EditorUI::drawOpenProjectDialog(Project* project) {
                     openProjCache_.size(), scanning ? "  (refreshing…)" : "");
     }
 
-    // ── Project list ─────────────────────────────────────────────────────────
     ImGui::BeginChild("##OpenBrowse", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 4),
                       ImGuiChildFlags_Borders);
     for (const auto& projPath : openProjCache_) {
@@ -727,9 +712,7 @@ void EditorUI::drawSaveSceneAsDialog(Project* project, Scene* scene, ResourceMan
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // About NextEngine dialog (modal popup)
-// ─────────────────────────────────────────────────────────────────────────────
 
 void EditorUI::drawAboutWindow() {
     if (showAboutWindow_) {
@@ -803,9 +786,7 @@ void EditorUI::drawAboutWindow() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Build Settings dialog (modal popup)
-// ─────────────────────────────────────────────────────────────────────────────
 
 void EditorUI::refreshBuildScenes_(Project* project) {
     buildScenes_.clear();
@@ -887,7 +868,6 @@ void EditorUI::drawBuildWindow(Project* project) {
         // Right Column: Dynamic Settings Pane
         ImGui::BeginChild("##PlatformSettings", ImVec2(0, -bottomReserve), ImGuiChildFlags_Borders);
         {
-            // ── Main scene (startup) ─────────────────────────────────────────
             ImGui::SeparatorText("Startup Scene");
             if (buildScenes_.empty()) {
                 ImGui::TextColored(ImVec4(0.85f, 0.55f, 0.20f, 1.0f),
@@ -912,7 +892,6 @@ void EditorUI::drawBuildWindow(Project* project) {
             ImGui::Spacing();
             ImGui::Separator();
 
-            // ── Platform-Specific UI Panel ───────────────────────────────────
             if (selectedBuildPlatform_ == BuildPlatform::Windows) {
                 // Windows Platform Settings
                 ImGui::SeparatorText("Windows Build Settings");
@@ -1008,7 +987,6 @@ void EditorUI::drawBuildWindow(Project* project) {
         ImGui::Separator();
         ImGui::Spacing();
 
-        // ── Last build result (status + scrollable log + actions) ────────────
         if (buildHasResult_) {
             if (buildLastSuccess_) {
                 ImGui::TextColored(ImVec4(0.40f, 0.80f, 0.40f, 1.0f),
@@ -1030,7 +1008,6 @@ void EditorUI::drawBuildWindow(Project* project) {
             ImGui::Spacing();
         }
 
-        // ── Footer buttons ───────────────────────────────────────────────────
         const bool isWindows = (selectedBuildPlatform_ == BuildPlatform::Windows);
         const bool canBuild =
             isWindows && project && project->isLoaded() && !buildScenes_.empty();
@@ -1413,9 +1390,7 @@ void EditorUI::renderGizmoTranslateScale(ImDrawList* drawList, int hoveredAxis) 
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Settings
-// ─────────────────────────────────────────────────────────────────────────────
 
 void EditorUI::drawSettingsWindow(Project* project) {
     if (!showSettingsWindow_) return;

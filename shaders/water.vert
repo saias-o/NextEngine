@@ -1,19 +1,7 @@
 #version 450
 
-// Animated water surface — vertex stage. Generates a tessellated grid procedurally
-// (no vertex buffer, like the skybox triangle) and displaces it with several
-// octaves of directional waves. Each octave is ROTATED and uses a NON-harmonic
-// frequency ratio, so the swell never reads as a repeating grid. Optional Gerstner-
-// like horizontal "choppiness" sharpens the crests. Produces the position, an
-// analytic normal, and a crest factor (for foam) for the fragment stage.
-//
-// When the WaterNode has a shore (beach/lake), the wave displacement is FADED OUT in
-// shallow water so the surface meets the sand cleanly at the waterline (depth 0) and
-// big swells never poke through the beach — the shore seam relies on this.
-//
-// Per-eye camera matrices come from the shared global camera UBO (set 0, binding
-// 0); the MULTIVIEW variant indexes them by gl_ViewIndex, so the same water works
-// for desktop (mono) and XR (stereo) through the engine's one pipeline.
+// Procedural water grid with analytic normals. Multiview selects the eye via
+// gl_ViewIndex, sharing the same camera UBO as the scene pass.
 
 #ifdef MULTIVIEW
 #extension GL_EXT_multiview : require
@@ -51,19 +39,13 @@ void main() {
     float speed = w.waveA.z;
     float chop = w.waveA.w;
 
-    // Waves flatten as the bottom rises: 1 in open/deep water, 0 at (and past) the
-    // waterline. Keeps crests from clipping the beach and lands the surface exactly
-    // on the sand so the fragment alpha edge lines up.
+    // Fade displacement in shallow water so the surface meets the shore cleanly.
     float depth = waterDepthAt(xz, w);
     float shallow = (int(w.shoreMode.x + 0.5) == 0)
         ? 1.0
         : smoothstep(0.0, max(w.shoreTune.w, 0.01), depth);
 
-    // Multi-octave swell, AIMED AT THE SHORE. The base heading is the shoreward wave
-    // direction (waveDirAt); octaves fan out only slightly around it so the crests
-    // stay parallel to the shore and roll straight in, while a non-harmonic frequency
-    // growth still kills the grid look. With no shore, octaves keep the original wide
-    // spread (~37°/octave) so endless ocean water is unchanged.
+    // Slightly fan octaves around the shore direction; open water uses a wider fan.
     int waveMode = int(w.shoreMode.x + 0.5);
     vec2 baseDir = waveDirAt(xz, w);
     const float FAN[5] = float[5](0.0, 13.0, -10.0, 18.0, -6.0);  // shoreward spread (deg)

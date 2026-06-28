@@ -1,13 +1,8 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 
-// DDGI probe blending (P2). One thread per interior octahedral texel. Accumulates
-// the traced rays into the texel's direction and temporally blends with the
-// previous frame (hysteresis). mode 0 = irradiance, mode 1 = visibility.
-//
-// Conventions match RTXGI ProbeBlendingCS: irradiance weight = max(0, dot);
-// distance weight = pow(max(0,dot), exponent). Irradiance is normalized to the
-// cosine-weighted MEAN radiance (diffuse = albedo * value; see giIndirectDiffuse).
+// DDGI probe blending. Mode 0 = irradiance, mode 1 = visibility.
+// Irradiance stores cosine-weighted mean radiance.
 
 #include "lighting.glsl"   // octDecode + lights.giAtlas/giCounts
 

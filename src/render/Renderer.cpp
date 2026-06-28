@@ -1794,7 +1794,6 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
 
 #ifdef NE_ENABLE_XR
 namespace ne {
-// ────────────────────────────────────────────────────────────── XR (multiview)
 
 namespace {
 // All eyes render in one pass into a 2-layer image; the view mask has one bit
@@ -1876,7 +1875,6 @@ void Renderer::createXrPipelines() {
     const uint32_t viewMask = xrViewMask(xrViewCount_);
     const std::vector<VkFormat> hdrColor = {hdrFormat};
 
-    // ── Scene (multiview): per-eye camera matrices via gl_ViewIndex ──
     std::vector<VkDescriptorSetLayout> sceneLayouts = {
         globalSetLayout_, resources_.materialSetLayout()};
     xrScenePipeline_ = std::make_unique<Pipeline>(device_,
@@ -1906,7 +1904,6 @@ void Renderer::createXrPipelines() {
     // viewMask. The Renderer stays ignorant of which effects exist.
     buildFeatures(viewMask, depthFormat, VK_SAMPLE_COUNT_1_BIT);
 
-    // ── Tonemap set layout + sampler + per-eye sets + (mono) pipeline ──
     {
         VkDescriptorSetLayoutBinding hdrBinding{};
         hdrBinding.binding = 0;

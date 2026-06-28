@@ -15,20 +15,8 @@
 
 namespace ne {
 
-// Transactional property editor for the inspector.
-//
-// Each helper draws one ImGui widget bound to a node property, applies edits
-// live for immediate feedback, and records a single undoable, dirty-marking
-// `SetPropertyCommand` when the interaction ends (drag released / field
-// committed). Continuous drags therefore collapse into one history entry, and
-// the captured value is the pristine pre-edit value (read before the widget),
-// not an intermediate frame.
-//
-// Properties are addressed through get/set callables taking `Node&`, never a
-// cached pointer, so the recorded command stays valid across scene
-// reconstructions (it re-resolves the node by id). The editor is a cheap
-// per-call-site stack object; the small amount of cross-frame state (which
-// widget is mid-edit, and its pre-edit value) lives on EditorUI.
+// Inspector helper that turns live ImGui edits into one undoable command.
+// Commands re-resolve nodes by id, so they survive scene reconstruction.
 class PropertyEditor {
 public:
     PropertyEditor(EditorUI& ui, Node* node) : ui_(ui), node_(node) {}
@@ -109,8 +97,7 @@ public:
                   [&](int& v) { return ImGui::Combo(label, &v, itemsZeroSep); });
     }
 
-    // Text fields commit only when editing ends — never per keystroke — so a
-    // setter with side effects (e.g. reloading a web document) fires once.
+    // Commit text only when editing ends; setters may have side effects.
     void inputText(const char* label, std::function<std::string(Node&)> get,
                    std::function<void(Node&, std::string)> set) {
         if (!node_) return;
@@ -122,10 +109,7 @@ public:
         commit<std::string>(label, current, std::string(buf), set);
     }
 
-    // One-shot property change for instantaneous edits (drag-drop assignment, a
-    // combo/button with side effects): records a command immediately from the
-    // current value to `newValue`. No activation/commit dance — the change is
-    // atomic.
+    // One-shot property change for drag-drop, combo, or button edits.
     template <class T>
     void push(const char* label, std::function<T(Node&)> get,
               std::function<void(Node&, T)> set, const T& newValue) {
@@ -139,9 +123,7 @@ public:
     }
 
 private:
-    // Common path: read the property, draw the widget, apply live, and record a
-    // command on commit. `Widget` edits the value in place and returns true on a
-    // same-frame change.
+    // Apply live for feedback; record undo only on commit.
     template <class T, class Widget>
     void edit(const char* label, std::function<T(Node&)> get,
               std::function<void(Node&, T)> set, Widget&& widget) {

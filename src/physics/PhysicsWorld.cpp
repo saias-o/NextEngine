@@ -31,7 +31,6 @@ using namespace JPH;
 
 namespace {
 
-// ── Broadphase layer mapping ────────────────────────────────────────────────
 class BPLayerInterfaceImpl final : public BroadPhaseLayerInterface {
 public:
     BPLayerInterfaceImpl() {
@@ -71,7 +70,6 @@ public:
     }
 };
 
-// ── Jolt global state (allocator / factory / type registry), refcounted ─────
 int g_refCount = 0;
 
 void globalInit() {

@@ -1,22 +1,6 @@
 #version 450
 
-// Fullscreen triangle: three vertices cover the entire viewport without a vertex
-// buffer. The oversized triangle is clipped by the rasterizer. This is cheaper
-// than a quad (no diagonal edge = no redundant fragment work at the seam).
-//
-//   v2 (−1,3)
-//    |\
-//    | \
-//    |  \
-//    |---+--- v1 (3,−1)
-//    |   |  /
-//    |   | /
-//    +---+/
-//   v0 (−1,−1)
-//
-// Vulkan's NDC has Y pointing downward, so the UVs are flipped:
-//   v0 → UV(0,1), v1 → UV(2,1), v2 → UV(0,−1)
-// The rasterizer interpolates across the visible [0,1]² region automatically.
+// Fullscreen triangle generated without a vertex buffer.
 
 layout(location = 0) out vec2 fragUV;
 

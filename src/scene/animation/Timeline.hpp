@@ -15,16 +15,13 @@ public:
     virtual void evaluate(float time) = 0;
 };
 
-// FAKE PROPERTY TRACK:
-// As per architecture guidelines, this is a placeholder for a future reflection-based property track.
-// It will eventually drive arbitrary properties like "Light.intensity" or "Material.roughness".
+// Placeholder for future reflection-driven property tracks.
 class TimelinePropertyTrack : public TimelineTrack {
 public:
     explicit TimelinePropertyTrack(std::string targetPath) : targetPath_(std::move(targetPath)) {}
 
     void evaluate(float time) override {
-        // TODO(Reflection): Parse targetPath_ (e.g. "Light.intensity"), interpolate keyframes, 
-        // and apply the value. Faked for now to keep foundations solid and avoid God Classes.
+        // TODO(Reflection): parse targetPath_, interpolate keyframes, and apply the value.
         (void)time;
     }
 
@@ -34,8 +31,7 @@ private:
     std::string targetPath_;
 };
 
-// A Timeline represents a cinematic sequence or generic multi-track animation.
-// It is completely distinct from skeletal AnimationClip, allowing it to sequence anything.
+// Cinematic/generic multi-track animation, separate from skeletal AnimationClip.
 class Timeline {
 public:
     void addTrack(std::unique_ptr<TimelineTrack> track) {

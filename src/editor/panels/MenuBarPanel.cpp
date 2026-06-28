@@ -14,7 +14,6 @@ namespace ne {
 
 void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, ResourceManager* resources) {
     if (ImGui::BeginMainMenuBar()) {
-        // ── 1. File Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Project...")) {
                 editor->showNewProjectDialog_ = true;
@@ -67,7 +66,6 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
             ImGui::EndMenu();
         }
 
-        // ── 2. Edit Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("Edit")) {
             const bool canEdit = editor->canEdit();  // Play is read-only.
             if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canEdit && editor->history_.canUndo())) {
@@ -89,7 +87,6 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
             ImGui::EndMenu();
         }
 
-        // ── 3. View Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("View")) {
             ImGui::MenuItem("Scene Tree",       nullptr, &editor->showSceneTree_);
             ImGui::MenuItem("Inspector",        nullptr, &editor->showInspector_);
@@ -99,7 +96,6 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
             ImGui::EndMenu();
         }
 
-        // ── 4. Scene Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("Scene")) {
             Node* parentNode = editor->selectedNode_ ? editor->selectedNode_ : scene;
             bool hasParent = parentNode != nullptr && editor->canEdit();  // Play is read-only.
@@ -144,7 +140,6 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
             ImGui::EndMenu();
         }
 
-        // ── 5. Settings Menu ───────────────────────────────────────────
         if (ImGui::BeginMenu("Settings")) {
             bool hasProject = project && project->isLoaded();
             if (ImGui::MenuItem("Settings", nullptr, false, hasProject)) {
@@ -153,7 +148,6 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
             ImGui::EndMenu();
         }
 
-        // ── 6. Build Menu ─────────────────────────────────────────────
         if (ImGui::BeginMenu("Build")) {
             if (ImGui::MenuItem("Build Project...")) {
                 if (project && project->isLoaded()) {
@@ -168,7 +162,6 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
             ImGui::EndMenu();
         }
 
-        // ── 7. Help Menu ──────────────────────────────────────────────
         if (ImGui::BeginMenu("Help")) {
             if (ImGui::MenuItem("About NextEngine")) {
                 editor->showAboutWindow_ = true;
@@ -176,7 +169,6 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
             ImGui::EndMenu();
         }
 
-        // ── Right-aligned Scene / Play mode toggle ──────────────────────
         {
             float contentWidth = ImGui::GetContentRegionAvail().x;
             float buttonWidth  = 160.0f;

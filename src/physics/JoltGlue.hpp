@@ -13,7 +13,6 @@
 
 namespace ne {
 
-// ── glm ↔ Jolt conversions ──────────────────────────────────────────────────
 // Note the quaternion component order differs: glm::quat is (w,x,y,z), Jolt's
 // Quat ctor is (x,y,z,w).
 inline JPH::Vec3 toJolt(const glm::vec3& v) { return JPH::Vec3(v.x, v.y, v.z); }
@@ -21,7 +20,6 @@ inline JPH::Quat toJolt(const glm::quat& q) { return JPH::Quat(q.x, q.y, q.z, q.
 inline glm::vec3 toGlm(JPH::Vec3Arg v) { return glm::vec3(v.GetX(), v.GetY(), v.GetZ()); }
 inline glm::quat toGlm(JPH::QuatArg q) { return glm::quat(q.GetW(), q.GetX(), q.GetY(), q.GetZ()); }
 
-// ── Collision layers ────────────────────────────────────────────────────────
 // Two object layers (static vs moving) and two matching broadphase layers — the
 // standard minimal setup. Static bodies never collide with each other.
 namespace Layers {

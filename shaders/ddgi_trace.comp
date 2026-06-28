@@ -1,12 +1,7 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 
-// DDGI ray trace (P2). One thread per (probe, ray): march the voxel grid with a
-// DDA (Amanatides & Woo 1987), shade the hit with the SHARED lighting math
-// (single bounce — direct diffuse only), and store the result for the blend pass.
-//
-// Reuses set 0 (lights, shadow maps, voxel grid) via lighting.glsl, so GI is shaded
-// with exactly the same lights/shadows as the main pass.
+// DDGI ray trace: one thread per (probe, ray), DDA through the voxel grid.
 
 #include "lighting.glsl"
 
@@ -42,7 +37,7 @@ void main() {
     vec3 dir = normalize(mat3(pc.randomRot) *
                          sphericalFibonacci(float(ray), float(pc.raysPerProbe)));
 
-    // --- DDA march in voxel/cell space (Amanatides & Woo) ---
+    // DDA march in voxel/cell space (Amanatides & Woo).
     int   res       = lights.giAtlas.w;
     vec3  extent    = spacing * vec3(counts - 1);
     vec3  voxelSize = extent / float(res);
@@ -91,9 +86,7 @@ void main() {
     vec3 radiance;
     if (hit) {
         vec3 hitPos = probePos + dir * hitDist;
-        // Single bounce: direct diffuse outgoing radiance of the hit surface.
-        // lightContribution() already folds in albedo/pi, attenuation, cone and
-        // shadow; V is irrelevant for the diffuse term so we pass the normal.
+        // Single-bounce direct diffuse; V is irrelevant for the diffuse term.
         vec3 outRadiance = vec3(0.0);
         for (int l = 0; l < lights.counts.x; ++l)
             outRadiance += lightContribution(l, hitNormal, hitNormal, hitPos,

@@ -98,7 +98,6 @@ glm::vec3 vec3Of(const json& j, const glm::vec3& fallback) {
     return fallback;
 }
 
-// ── compact scene view (token-efficient) ─────────────────────────────────────
 json compactNode(const Node& node) {
     json j;
     j["id"] = idStr(node.id());
@@ -118,7 +117,6 @@ json compactNode(const Node& node) {
     return j;
 }
 
-// ── reflection helpers for set_property ──────────────────────────────────────
 const reflect::PropertyDesc* findProp(const std::string& typeName, const std::string& prop) {
     if (const auto* d = reflect::TypeRegistry::instance().find(typeName))
         return d->findProperty(prop);
@@ -157,7 +155,6 @@ json readProp(const Node& n, bool onBehaviour, const std::string& behType, const
     return out;
 }
 
-// ── tools ────────────────────────────────────────────────────────────────────
 std::string manifestHash() {
     std::string dump = reflect::TypeRegistry::instance().manifest("").dump();
     return std::to_string(std::hash<std::string>{}(dump));
@@ -368,7 +365,6 @@ json toolSetSceneSettings(const ToolCtx& ctx, const json& args) {
     return {{"ok", true}};
 }
 
-// ── M4: code authoring + validation ─────────────────────────────────────────
 namespace fs = std::filesystem;
 
 std::string slurp(const std::string& path) {
@@ -815,7 +811,6 @@ json toolListRecipes(const ToolCtx&, const json&) {
     });
 }
 
-// ── tool schema list (kept concise; descriptions guide the LLM) ──────────────
 json tool(const char* name, const char* desc, json schema) {
     return {{"name", name}, {"description", desc}, {"inputSchema", std::move(schema)}};
 }

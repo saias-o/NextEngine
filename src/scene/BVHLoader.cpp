@@ -44,7 +44,6 @@ AssetID BVHLoader::load(const std::string& path, ResourceManager& resources) {
     std::vector<BvhJoint> joints;
     int totalChannels = 0;
 
-    // ── HIERARCHY: collect joints (name + channels) in declaration order ─────
     std::string tok;
     bool inEndSite = false;
     while (file >> tok) {
@@ -80,7 +79,6 @@ AssetID BVHLoader::load(const std::string& path, ResourceManager& resources) {
         return kAssetInvalid;
     }
 
-    // ── MOTION header ────────────────────────────────────────────────────────
     int frameCount = 0;
     float frameTime = 1.0f / 30.0f;
     file >> tok;  // "Frames:"
@@ -124,7 +122,6 @@ AssetID BVHLoader::load(const std::string& path, ResourceManager& resources) {
         }
     }
 
-    // ── Build the clip (tracks keyed by joint name) ──────────────────────────
     float duration = (frameCount - 1) * frameTime;
     auto clip = std::make_unique<AnimationClip>(path, duration);
 

@@ -35,20 +35,16 @@ public:
     // Bind pose fallback used during evaluation (defaults to identity transforms).
     void setBindPose(LocalPose bindPose) { bindPose_ = std::move(bindPose); }
 
-    // ── Clip library (filled by the loader from the model's animations) ──────
     void addClip(const std::string& name, const AnimationClip* clip) { clips_[name] = clip; }
     const std::unordered_map<std::string, const AnimationClip*>& clips() const { return clips_; }
 
-    // ── Retargeting: play clips authored on a differently-named skeleton ──────
     // Name-based (see RetargetMap). Affects clips started via play() afterwards.
     void setRetarget(RetargetMap map) { retarget_ = std::move(map); }
     const RetargetMap& retarget() const { return retarget_; }
 
-    // ── Simple playback by name (crossfades from the current clip) ───────────
     void play(const std::string& name, bool loop = true, float crossfade = 0.2f);
     const std::string& currentClip() const { return currentClip_; }
 
-    // ── Advanced graph control ───────────────────────────────────────────────
     void setRootNode(std::unique_ptr<AnimNode> rootNode);
     void setStateMachine(std::unique_ptr<AnimStateMachine> sm);  // wires the blackboard
 

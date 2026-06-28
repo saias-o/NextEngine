@@ -9,10 +9,8 @@ namespace ne {
 class VulkanDevice;
 class Window;
 
-// Owns the swap chain together with its MSAA color target and depth buffer.
-// With dynamic rendering there is no VkRenderPass or VkFramebuffer: the Swapchain
-// just hands out the images / views, and the Renderer drives layout transitions
-// and vkCmdBeginRendering itself. Everything is rebuilt on resize via recreate().
+// Swapchain plus MSAA color target and depth buffer. Dynamic rendering means
+// the Renderer owns layout transitions and vkCmdBeginRendering.
 class Swapchain {
 public:
     Swapchain(VulkanDevice& device, Window& window);

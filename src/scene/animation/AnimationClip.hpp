@@ -23,8 +23,7 @@ class AnimTrack {
 public:
     virtual ~AnimTrack() = default;
     
-    // Evaluates the track at a given time and modifies the relevant part of outTransform.
-    // NOTE: This assumes outTransform is already initialized to a sensible default (e.g. Bind Pose).
+    // outTransform must already contain the default pose for untouched channels.
     virtual void evaluate(float time, Transform& outTransform) const = 0;
 };
 

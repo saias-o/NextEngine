@@ -1,9 +1,6 @@
 #version 450
 
-// HDR → LDR tonemap pass.
-// Reads the floating-point scene color, applies exposure control, maps through
-// the ACES filmic curve (which gracefully compresses highlights), and finishes
-// with a linear-to-sRGB gamma transfer. Output goes to the swapchain (8-bit).
+// HDR -> LDR tonemap pass with AO, fog and bloom.
 
 layout(set = 0, binding = 0) uniform sampler2D hdrInput;
 layout(set = 0, binding = 1) uniform sampler2D depthInput;
@@ -44,9 +41,7 @@ vec2 viewportTexel() {
     return 1.0 / max(sourcePixels, vec2(1.0));
 }
 
-// ACES filmic tonemap — Krzysztof Narkowicz's 2015 fit.
-// Maps [0,∞) HDR values to [0,1] with a pleasant S-curve that keeps blacks
-// dark and gracefully rolls off highlights without hard clipping.
+// ACES filmic tonemap, Krzysztof Narkowicz 2015 fit.
 vec3 acesFilmic(vec3 x) {
     const float a = 2.51;
     const float b = 0.03;
@@ -168,15 +163,11 @@ void main() {
     hdr = applyFog(hdr, fragUV);
     hdr += bloom(fragUV);
 
-    // Exposure: a simple linear scale before the curve.
     hdr *= push.fogParams.w;
 
-    // Tonemap: compress the HDR range into displayable [0,1].
     vec3 mapped = acesFilmic(hdr);
 
-    // Gamma: convert from linear light to sRGB for the monitor.
-    // Using the simple pow approximation (close enough for games; the exact
-    // piecewise sRGB transfer adds negligible quality at higher cost).
+    // Approximate linear -> sRGB conversion.
     vec3 srgb = pow(mapped, vec3(1.0 / 2.2));
 
     // Preserve scene coverage in alpha so XR passthrough composites correctly

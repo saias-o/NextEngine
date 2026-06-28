@@ -278,7 +278,6 @@ private:
     std::array<VkSampler, 2> cachedEnvironmentSampler_{};
 
 #ifdef NE_ENABLE_XR
-    // ── XR / multiview (stereo) ────────────────────────────────────────────────
     // Created only by the XR constructor. The scene is rendered once into a
     // 2-layer HDR target (viewMask = 0b11, gl_ViewIndex per eye), then each layer
     // is tonemapped into the matching eye swapchain image.

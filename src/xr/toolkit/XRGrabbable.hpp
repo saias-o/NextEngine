@@ -9,11 +9,7 @@ namespace ne {
 
 class XRController;
 
-// Makes its node grabbable by an XR hand. Attach to a node that has a collider
-// (so it can be sized/picked); an XRDirectInteractor on a controller drives the
-// actual grab/release. Holding follows the controller's grip pose; for a
-// RigidBody the object becomes kinematic while held and is thrown with the hand's
-// motion on release (physics-aware). "Signal up": react via grabbed/released.
+// Makes its node grabbable by an XR hand. RigidBodies become kinematic while held.
 class XRGrabbable : public Behaviour {
 public:
     void onReady() override;

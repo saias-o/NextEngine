@@ -1,6 +1,5 @@
 #pragma once
 
-// ─────────────────────────────────────────────────────────────────────────────
 // NextEngine reflection — the "API the LLM reads instead of the source".
 //
 // A behaviour/node declares its fields ONCE in a static `describe()`:
@@ -22,7 +21,6 @@
 // the MSYS2 toolchain happy). This header pulls in nlohmann/json, so it is meant
 // to be included by leaf gameplay .cpp files (and the few headers that use the
 // NE_REFLECT_* macros), never by widely-shared engine headers.
-// ─────────────────────────────────────────────────────────────────────────────
 
 #include "core/ReflectionFwd.hpp"
 #include "core/Signal.hpp"
@@ -43,7 +41,6 @@ namespace ne::reflect {
 
 using json = nlohmann::json;
 
-// ── value <-> json conversion + a manifest "kind" name ───────────────────────
 template <typename M, typename Enable = void>
 struct Traits {
     static const char* kind() {
@@ -95,7 +92,6 @@ struct Traits<glm::quat> {
     }
 };
 
-// ── argument packing for signals/slots (JSON-friendly payloads) ──────────────
 template <typename V>
 inline void pushArg(json& arr, const V& v) {
     if constexpr (std::is_same_v<V, bool>) arr.push_back(v);
@@ -117,7 +113,6 @@ inline std::decay_t<A> getArg(const json& arr, std::size_t i) {
     else return T{};
 }
 
-// ── descriptors ──────────────────────────────────────────────────────────────
 struct PropertyDesc {
     std::string name;
     std::string kind;       // "float" | "int" | "bool" | "string" | "vec3" | ... | "asset"
@@ -193,7 +188,6 @@ struct TypeDesc {
     json manifest() const;  // defined in Reflection.cpp
 };
 
-// ── builder ──────────────────────────────────────────────────────────────────
 template <typename T>
 class TypeBuilder {
 public:
@@ -258,7 +252,6 @@ private:
     TypeDesc& d_;
 };
 
-// ── global registry (the manifest source) ────────────────────────────────────
 class TypeRegistry {
 public:
     static TypeRegistry& instance();
@@ -275,7 +268,6 @@ private:
     std::unordered_map<std::string, std::unique_ptr<TypeDesc>> types_;
 };
 
-// ── per-type cached descriptor (used by auto save/load, registry-independent) ─
 template <typename T>
 const TypeDesc& localDesc() {
     static const TypeDesc desc = [] {
@@ -295,11 +287,9 @@ void loadObject(T& obj, const json& j) { localDesc<T>().loadFrom(&obj, j); }
 
 } // namespace ne::reflect
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Macros placed in a class body. They wire typeName() + auto serialization to the
 // reflected descriptor. Put them in the class's *header* and define describe() in
 // the .cpp (which includes this header).
-// ─────────────────────────────────────────────────────────────────────────────
 #define NE_REFLECT_BEHAVIOUR(Type, NameStr)                                        \
 public:                                                                             \
     static constexpr const char* reflectName() { return NameStr; }                  \

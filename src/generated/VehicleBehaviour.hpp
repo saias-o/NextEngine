@@ -11,20 +11,8 @@ namespace ne {
 
 class Node;
 
-// A drivable, GTA-style arcade vehicle. Attach to a CharacterBody node (the car),
-// tagged in the `vehicle` group, with a box CollisionShape child. The body's
-// CharacterVirtual gives us free collision/sliding against the world, exactly like
-// the player — we only feed it a velocity and a steering rotation each frame.
-//
-// Enter/exit: when no one is driving, pressing the "EnterVehicle" action (F) while
-// an on-foot driver (the node in `driverGroup`, default "driver") stands within
-// `enterRadius` seats them — the driver node is disabled (hidden + on-foot control
-// stops) and the camera's follow target (the "player" group) is moved onto the
-// car. Pressing it again drops the driver back out beside the car.
-//
-// Kept self-contained: the car owns its driver relationship, so there is no
-// cross-node "manager". The camera switch is just a group tag moving between two
-// nodes, which CameraFollow re-resolves every frame.
+// Arcade vehicle controller for a CharacterBody car.
+// Enter/exit moves the driver/camera group relationship without a manager node.
 class VehicleBehaviour : public Behaviour {
 public:
     void onReady() override;

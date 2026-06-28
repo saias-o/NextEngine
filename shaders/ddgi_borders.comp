@@ -1,10 +1,7 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 
-// DDGI octahedral border copy (P2). Each probe's octahedral tile has a 1px gutter
-// so bilinear sampling near the edges wraps correctly across the octahedron. This
-// copies each border texel from its mirrored interior texel — the exact rule from
-// RTXGI ProbeBlendingCS (omitting it produces the classic "cross" seam artifact).
+// Copy the 1px octahedral gutter so bilinear sampling wraps across tile edges.
 
 #include "lighting.glsl"   // lights.giAtlas / giCounts
 

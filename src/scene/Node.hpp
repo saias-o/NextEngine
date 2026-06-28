@@ -33,9 +33,7 @@ struct Transform {
     glm::mat4 matrix() const;  // local TRS matrix
 };
 
-// A node in the scene hierarchy (à la Godot/Unity). Owns its children; a child's
-// world transform is its parent's world transform composed with its own local one.
-// Nodes are data-only — rendering lives in the Engine, which queries mesh().
+// Scene hierarchy node. Owns children; world transform composes parent and local.
 class Node {
 public:
     explicit Node(std::string name = "Node");
@@ -46,10 +44,10 @@ public:
     // Takes ownership of `child`, sets its parent, returns a borrowed pointer.
     Node* addChild(std::unique_ptr<Node> child);
 
-    // Takes ownership of `child` and inserts it at the specified index, sets its parent, returns a borrowed pointer.
+    // Takes ownership of `child`, inserts it at `index`, returns a borrowed pointer.
     Node* addChildAt(std::unique_ptr<Node> child, size_t index);
 
-    // Find the unique_ptr for `child` in our children_ vector, erase it (which deletes it), and return true.
+    // Erases and deletes `child` if it belongs to this node.
     bool removeChild(Node* child);
 
     // Detach a child from this node and return ownership. Returns nullptr if not a child.
@@ -91,9 +89,7 @@ public:
 
     const glm::mat4& worldTransform() const { return worldTransform_; }
 
-    // The runtime SceneTree (set only on the persistent World root). Walks to the
-    // root and reads it; returns nullptr when the node isn't under a live tree
-    // (e.g. in the editor at rest). Behaviours use it for changeScene/autoloads/groups.
+    // Runtime SceneTree, or nullptr when not under a live World.
     SceneTree* tree() const;
 
     // Request safe removal of this node at end of frame (never destroy mid-update).

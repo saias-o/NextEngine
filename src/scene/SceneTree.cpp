@@ -141,7 +141,6 @@ void SceneTree::applyDeferred() {
 void SceneTree::setPaused(bool paused) { Time::setScale(paused ? 0.0f : 1.0f); }
 bool SceneTree::paused() const { return Time::scale() == 0.0f; }
 
-// ── Timers / tweens ──────────────────────────────────────────────────────────
 
 TimerId SceneTree::addTimer(Timer t) {
     t.id = ++nextTimerId_;
@@ -212,7 +211,6 @@ void SceneTree::tickTimers(float dt) {
                   timers_.end());
 }
 
-// ── Autoloads ────────────────────────────────────────────────────────────────
 
 void SceneTree::setAutoloadDef(const std::string& name, AutoloadFactory factory) {
     for (auto& def : autoloadDefs_) {
@@ -266,7 +264,6 @@ Node* SceneTree::autoloadNode(const std::string& name) const {
     return it != autoloadNodes_.end() ? it->second : nullptr;
 }
 
-// ── Groups ───────────────────────────────────────────────────────────────────
 
 namespace {
 void collectGroup(Node& n, const std::string& g, std::vector<Node*>& out) {
@@ -295,7 +292,6 @@ Node* SceneTree::firstInGroup(const std::string& name) {
     return world_ ? firstInGroupRec(*world_, name) : nullptr;
 }
 
-// ── Spatial queries ──────────────────────────────────────────────────────────
 
 std::vector<Node*> SceneTree::overlapSphere(const glm::vec3& center, float radius,
                                             const std::string& group) {

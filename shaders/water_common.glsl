@@ -1,14 +1,4 @@
-// Shared water data + shore helpers for water.vert and water.frag.
-//
-// All look/feel lives in a small set-1 UBO array (one entry per WaterNode, indexed
-// by a push-constant). This replaces the old 128-byte push block: a realistic shore
-// needs more parameters than the Vulkan-guaranteed push minimum can hold, and a UBO
-// is the engine's standard "per-frequency" home for per-object data (like Material's
-// set 1). The push now only carries the tiny per-draw bits (node index + time).
-//
-// The shore is fully ANALYTIC: `waterDepthAt` returns the local water depth in metres
-// from a couple of parameters, so making a beach or a lake is pure data — no textures,
-// no depth-buffer reads (perfect for tiled mobile/VR GPUs).
+// Shared water UBO layout and analytic shore helpers.
 
 const int WATER_MAX = 8;  // must match kMaxWaters in WaterFeature
 
@@ -36,11 +26,7 @@ layout(push_constant) uniform WaterPush {
     float time;   // animation clock (s)
 } push;
 
-// Local water depth (m) at a world XZ position: surfaceY - seabedY.
-//   > 0  underwater   (deepens away from the waterline)
-//   = 0  exactly the waterline
-//   < 0  dry land      (water should fade out / be discarded here)
-// Both shore shapes reduce to depth = (horizontal distance to waterline) * slope.
+// Positive depth is underwater; negative depth is dry land.
 float waterDepthAt(vec2 xz, GpuWater w) {
     int mode = int(w.shoreMode.x + 0.5);
     if (mode == 0) return 1e4;                          // open water: always deep
@@ -58,9 +44,7 @@ vec2 rotate2(vec2 v, float rad) {
     return vec2(c * v.x - s * v.y, s * v.x + c * v.y);
 }
 
-// Direction the swell travels — toward the shore, so waves roll INTO the beach with
-// no authoring. Beach: the inland normal. Lake: radially outward toward the rim. With
-// no shore: a fixed open-ocean heading (keeps the original endless-water look).
+// Beach/lake waves travel toward their shore; open water keeps a fixed heading.
 vec2 waveDirAt(vec2 xz, GpuWater w) {
     int mode = int(w.shoreMode.x + 0.5);
     if (mode == 1) return normalize(w.shoreGeom.xy);

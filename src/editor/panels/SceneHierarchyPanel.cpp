@@ -42,16 +42,11 @@ static std::string toLower(const std::string& str) {
     return lower;
 }
 
-// Build a fresh node of the given type. Used by both "Create Child" and "Create
-// Parent" so the two stay in sync. `bodyWithCube` adds a visible cube mesh to a
-// new physics body (wanted for a standalone body, not when wrapping an existing
-// node as its parent). Returns null for None/SceneInstance (handled by callers).
+// Shared factory for "Create Child" and "Create Parent".
 static std::unique_ptr<Node> makeNodeOfType(CreateNodeType type, Mesh* defaultMesh,
                                             Material* defaultMaterial, ResourceManager* resources,
                                             bool bodyWithCube) {
-    // Fall back to engine defaults when the scene has no mesh to copy from (e.g. a
-    // blank scene). Without this, the first created mesh carries a null material —
-    // which is invisible to the inspector and is dropped on save → can't be edited.
+    // Blank scenes need defaults so the first mesh is visible and serializable.
     if (resources) {
         if (!defaultMesh) defaultMesh = resources->getMesh(kAssetBuiltinCube);
         if (!defaultMaterial) defaultMaterial = resources->getMaterial(MaterialDesc{});

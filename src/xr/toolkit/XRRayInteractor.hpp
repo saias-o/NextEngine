@@ -11,11 +11,7 @@ class XRController;
 class TeleportArea;
 class WebCanvasNode;
 
-// Far-field interactor for teleport locomotion: attach to an XRController. While
-// the thumbstick is pushed forward it aims a ray from the controller's aim pose
-// and highlights the nearest valid TeleportArea hit; releasing the stick commits
-// the teleport (moves the XROrigin found in the "xr_origin" group). The aim
-// state + target are exposed so a game can draw the ray/reticle.
+// Far-field interactor for teleport locomotion and UI ray presses.
 class XRRayInteractor : public Behaviour {
 public:
     void onReady() override;

@@ -1,11 +1,6 @@
 #version 450
 
-// Scene voxelization (P1) — feeds the DDGI ray-march (P2). The scene is rendered
-// three times, once per dominant axis, into an attachment-less pass; each fragment
-// writes the surface albedo into a 3D voxel grid (voxelize.frag). The exact raster
-// orientation is irrelevant because the voxel coordinate is derived from the world
-// position, not gl_FragCoord — we only need every triangle to be rasterized densely
-// from at least one of the three axes.
+// Scene voxelization for DDGI: render once per dominant axis into a 3D albedo grid.
 
 layout(set = 0, binding = 1) uniform VoxelUBO {
     vec4 origin;    // xyz = volume min corner (world)

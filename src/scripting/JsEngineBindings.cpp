@@ -290,7 +290,6 @@ JSValue jsTreePaused(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     return JS_NewBool(ctx, tree && tree->paused());
 }
 
-// ── reflected signals: node.on(name, fn) / node.emit(name, ...args) ──────────
 struct SignalHit { void* obj = nullptr; const reflect::SignalDesc* desc = nullptr; };
 
 SignalHit findSignalOnNode(Node* node, const std::string& name) {

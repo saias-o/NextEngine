@@ -12,15 +12,8 @@ class CharacterVirtual;
 
 namespace ne {
 
-// A character controller (cf. Godot CharacterBody3D), backed by Jolt's
-// CharacterVirtual: a kinematic capsule that slides along geometry, walks up
-// stairs, sticks to the floor and pushes dynamic bodies. The collider is a child
-// CollisionShape (Auto → capsule), like the other body nodes.
-//
-// A controller behaviour drives it by ONLY writing `velocity` and reading
-// `isOnFloor()` — the engine performs the actual move inside the physics step
-// (there is no moveAndSlide() to call or forget). After the step, `velocity`
-// reflects the slide result and `isOnFloor()` is up to date.
+// Jolt CharacterVirtual controller. Gameplay writes velocity; the engine moves it
+// during the physics step and updates floor state afterward.
 class CharacterBodyNode : public CollisionObjectNode {
 public:
     CharacterBodyNode();   // out-of-line (Ref<CharacterVirtual> member needs the complete type)
@@ -38,7 +31,6 @@ public:
     void prePhysicsStep(PhysicsWorld& world, float dt) override;  // move/slide
     void syncFromPhysics(PhysicsWorld& world) override;   // write pose back to the node
 
-    // ── Gameplay API ─────────────────────────────────────────────────────────
     glm::vec3 velocity{0.0f};     // read/written by the controller behaviour
     float maxSlopeAngle = 50.0f;  // degrees; steeper ground → isOnSteepSlope(), slide off
     float mass = 70.0f;           // how hard the character pushes dynamic bodies

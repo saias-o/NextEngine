@@ -54,12 +54,8 @@ namespace {
         return "Assigned";
     }
 
-    // Generic inspector for any reflected node/behaviour: draws one widget per
-    // reflected property straight from the manifest, so a new reflected type
-    // (e.g. WaterNode) gets a full inspector with ZERO editor code. Reads/writes
-    // go through the property's get/set (JSON), and edits are undoable via
-    // PropertyEditor. The PropertyDesc lives in the global TypeRegistry, so
-    // capturing it by pointer is safe for the program's lifetime.
+    // Generic inspector for reflected properties. PropertyDesc lives in the
+    // global TypeRegistry, so capturing it by pointer is safe.
     void drawReflectedProperties(const reflect::TypeDesc& td, Node* node, EditorUI* editor) {
         if (td.properties.empty()) return;
         PropertyEditor pe(*editor, node);
@@ -309,9 +305,8 @@ void InspectorPanel::draw(EditorUI* editor) {
     if (Scene* sceneNode = dynamic_cast<Scene*>(node)) {
         SceneSettings& s = sceneNode->settings();
         PropertyEditor pe(*editor, node);
-        // Every SceneSettings field is reached the same way; these generic
-        // factories turn a member pointer into get/set callables so each field
-        // becomes a one-line undoable command.
+        // Member-pointer helpers keep SceneSettings edits undoable without
+        // per-field boilerplate.
         auto G = [](auto m) { return [m](Node& n) { return static_cast<Scene&>(n).settings().*m; }; };
         auto S = [](auto m) { return [m](Node& n, auto v) { static_cast<Scene&>(n).settings().*m = v; }; };
 
@@ -613,9 +608,7 @@ void InspectorPanel::drawCollisionShape(CollisionShapeNode* shape, EditorUI* edi
     // Editing a shape field rebuilds the owning body (on undo too).
     auto rebuild = [](Node& n) { markOwningBodyDirty(&n); };
 
-    // Switching the shape type and the Auto detection have one-shot side effects
-    // (resetAuto), so they stay outside the value-command path; they still mark
-    // the document dirty. (Full command treatment: Lot 4 alongside resources.)
+    // Shape type changes have resetAuto side effects, so they are not command-backed yet.
     const char* kinds[] = {"Auto", "Box", "Sphere", "Capsule", "ConvexHull", "Mesh"};
     int current = static_cast<int>(shape->shapeType);
     if (ImGui::Combo("Shape", &current, kinds, IM_ARRAYSIZE(kinds))) {
@@ -837,9 +830,7 @@ void InspectorPanel::drawLodGroup(MeshNode* meshNode, EditorUI* editor) {
     ImGui::Text("Active LOD: %d", meshNode->activeLodIndex());
     ImGui::Text("Levels: %zu", lods.size());
 
-    // The LOD list is a per-element collection editor; its edits mark the
-    // document dirty but are not individually undoable (a dedicated LOD-list
-    // command is out of scope here — tracked as a follow-up).
+    // LOD list edits are collection mutations; they mark dirty but are not undoable yet.
     if (ImGui::Button("Add LOD", ImVec2(120, 0))) {
         MeshLodLevel lvl;
         lvl.mesh = meshNode->mesh();
@@ -949,11 +940,7 @@ void InspectorPanel::drawMaterial(Material* material, MeshNode* meshNode, Editor
     ResourceManager* res = editor->ctxResources_;
     PropertyEditor pe(*editor, meshNode);
 
-    // A material edit is, from the node's view, switching which (interned)
-    // Material it points to: the setter rebuilds the desc and re-interns it, so
-    // it round-trips for undo. The getter reads one field off the current desc;
-    // the setter overrides that one field on the *current* desc, so edits to
-    // different fields compose cleanly.
+    // Material edits rebuild the interned MaterialDesc so undo swaps descriptors.
     auto MG = [](auto m) {
         return [m](Node& n) {
             Material* mat = static_cast<MeshNode&>(n).material();
@@ -980,9 +967,7 @@ void InspectorPanel::drawMaterial(Material* material, MeshNode* meshNode, Editor
         ImGui::EndDragDropTarget();
     }
 
-    // Editable even when the mesh has no material yet: the MS setter starts from a
-    // default MaterialDesc and interns a real material on the first edit, so a
-    // null-material mesh becomes editable instead of being stuck.
+    // MS starts from a default desc, so meshes with no material become editable.
     if (res) {
         // Shading model (Unity Lit / Unlit). Switching re-interns the material with
         // the new MaterialType; the renderer picks the matching pipeline per draw.
@@ -1021,9 +1006,7 @@ void InspectorPanel::drawBehaviours(Node* node, EditorUI* editor) {
         if (!b->visibleInEditor()) continue;
         ImGui::PushID(b.get());
 
-        // Behaviour edits (enable, add/remove, internal fields) are not yet
-        // routed through commands — that arrives with the InspectorRegistry in
-        // Lot 6. Until then they mark the document dirty.
+        // Behaviour edits are not command-backed yet; mark the document dirty.
         bool enabled = b->enabled();
         if (ImGui::Checkbox("##enabled", &enabled)) {
             b->setEnabled(enabled); editor->markDirty();
