@@ -14,8 +14,8 @@ namespace ne {
 
 // Shared typed key/value store for gameplay state (cf. behaviour-tree blackboard).
 // Used as an autoload (persistent, found via tree()->autoload<Blackboard>()) or
-// placed on a node in the "blackboard" group. StateMachine/Scenario read & write
-// it; a `changed` signal lets reactive logic listen. Values are number/bool/string.
+// placed on a node in the "blackboard" group. StateMachine reads it; a `changed`
+// signal lets reactive logic listen. Values are number/bool/string.
 class Blackboard : public Behaviour {
 public:
     using Value = std::variant<double, bool, std::string>;

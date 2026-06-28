@@ -12,8 +12,10 @@
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/WaterNode.hpp"
 #include "scene/RotatorBehaviour.hpp"
-#include "scene/ScenarioBehaviour.hpp"
 #include "scene/StateMachineBehaviour.hpp"
+#include "scenario/ScenarioAnchor.hpp"
+#include "scenario/ScenarioDirector.hpp"
+#include "scenario/ScenarioRunnerBehaviour.hpp"
 #include "generated/VehicleBehaviour.hpp"
 #include "generated/NpcWanderBehaviour.hpp"
 #include "generated/GunBehaviour.hpp"
@@ -52,7 +54,9 @@ void registerReflectedTypes() {
     // High-level gameplay primitives (M5).
     registerBehaviour<Blackboard>();
     registerBehaviour<StateMachineBehaviour>();
-    registerBehaviour<ScenarioBehaviour>();
+    registerBehaviour<ScenarioAnchor>();
+    registerBehaviour<ScenarioDirector>();
+    registerBehaviour<ScenarioRunnerBehaviour>();
     // GTA-clone gameplay (drivable cars + wandering NPCs).
     registerBehaviour<VehicleBehaviour>();
     registerBehaviour<NpcWanderBehaviour>();

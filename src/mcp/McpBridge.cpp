@@ -18,6 +18,9 @@
 #include "scripting/JsContext.hpp"
 #include "scripting/JsRuntime.hpp"
 #include "scripting/ScriptBehaviour.hpp"
+#include "scenario/ScenarioAsset.hpp"
+#include "scenario/ScenarioRegistry.hpp"
+#include "scenario/ScenarioRunnerBehaviour.hpp"
 
 #include "nlohmann/json.hpp"
 
@@ -431,6 +434,106 @@ json toolWriteUi(const ToolCtx& ctx, const json& args) {
     return {{"path", abs}};
 }
 
+std::string scenarioAbsPath(const ToolCtx& ctx, const json& args) {
+    if (!args.contains("path")) fail("missing 'path'");
+    fs::path p(args["path"].get<std::string>());
+    if (p.is_absolute()) return p.string();
+    return projectRootOf(ctx) + "/" + p.string();
+}
+
+json scenarioIssuesJson(const std::vector<ScenarioIssue>& issues) {
+    json out = json::array();
+    for (const auto& issue : issues)
+        out.push_back({{"path", issue.path}, {"message", issue.message}});
+    return out;
+}
+
+json toolListScenarioActions(const ToolCtx&, const json&) {
+    return ScenarioActionRegistry::names();
+}
+
+json toolListScenarioConditions(const ToolCtx&, const json&) {
+    return ScenarioConditionRegistry::names();
+}
+
+json toolValidateScenario(const ToolCtx& ctx, const json& args) {
+    ScenarioAsset asset;
+    std::vector<ScenarioIssue> issues;
+    std::string abs = scenarioAbsPath(ctx, args);
+    bool ok = ScenarioAsset::loadFromFile(abs, asset, &issues);
+    return {{"ok", ok}, {"path", abs}, {"issues", scenarioIssuesJson(issues)}};
+}
+
+json toolGetScenario(const ToolCtx& ctx, const json& args) {
+    std::string abs = scenarioAbsPath(ctx, args);
+    std::string text = slurp(abs);
+    if (text.empty()) fail("could not read scenario: " + abs);
+    return json::parse(text);
+}
+
+json toolCreateScenario(const ToolCtx& ctx, const json& args) {
+    if (!args.contains("path")) fail("missing 'path'");
+    std::string abs = scenarioAbsPath(ctx, args);
+    json doc = args.value("scenario", json::object());
+    if (doc.empty()) {
+        doc = {
+            {"version", 1},
+            {"id", fs::path(abs).stem().string()},
+            {"roles", json::object()},
+            {"blackboard", json::object()},
+            {"steps", json::array({{{"id", "start"}, {"end", "success"}}})}
+        };
+    }
+    ScenarioAsset asset;
+    std::vector<ScenarioIssue> issues;
+    ScenarioAsset::parse(doc, asset, &issues);
+    if (!issues.empty()) return {{"ok", false}, {"path", abs}, {"issues", scenarioIssuesJson(issues)}};
+    spit(abs, asset.toJson().dump(2) + "\n");
+    return {{"ok", true}, {"path", abs}};
+}
+
+json toolUpdateScenarioStep(const ToolCtx& ctx, const json& args) {
+    if (!args.contains("step") || !args["step"].is_object()) fail("missing object 'step'");
+    std::string abs = scenarioAbsPath(ctx, args);
+    json doc = json::parse(slurp(abs));
+    std::string id = args["step"].value("id", std::string());
+    if (id.empty()) fail("step.id is required");
+    json& steps = doc["steps"];
+    if (!steps.is_array()) steps = json::array();
+    bool replaced = false;
+    for (auto& step : steps) {
+        if (step.is_object() && step.value("id", std::string()) == id) {
+            step = args["step"];
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced) steps.push_back(args["step"]);
+
+    ScenarioAsset asset;
+    std::vector<ScenarioIssue> issues;
+    ScenarioAsset::parse(doc, asset, &issues);
+    if (!issues.empty()) return {{"ok", false}, {"path", abs}, {"issues", scenarioIssuesJson(issues)}};
+    spit(abs, asset.toJson().dump(2) + "\n");
+    return {{"ok", true}, {"path", abs}};
+}
+
+json toolAttachScenario(const ToolCtx& ctx, const json& args) {
+    requireEdit(ctx);
+    Node* node = requireNode(ctx, args);
+    if (!args.contains("path")) fail("missing 'path'");
+    std::string scenarioPath = args["path"].get<std::string>();
+    auto* runner = node->getBehaviour<ScenarioRunnerBehaviour>();
+    if (!runner) {
+        ctx.exec(std::make_unique<AddBehaviourCommand>(node->id(), "ScenarioRunner"));
+        runner = node->getBehaviour<ScenarioRunnerBehaviour>();
+    }
+    if (!runner) fail("failed to attach ScenarioRunner");
+    runner->scenarioPath = scenarioPath;
+    if (args.contains("autoStart")) runner->autoStart = args["autoStart"].get<bool>();
+    return {{"ok", true}, {"id", idStr(node->id())}, {"behaviour", "ScenarioRunner"}};
+}
+
 std::string cppType(const std::string& t) {
     if (t == "int") return "int";
     if (t == "bool") return "bool";
@@ -589,7 +692,7 @@ json toolReadLogs(const ToolCtx&, const json& args) {
 }
 
 // Push an arbitrary serialized config into a behaviour via its load() hook. This
-// is how nested, data-driven behaviours (StateMachine, Scenario, Blackboard,
+// is how nested, data-driven behaviours (StateMachine, Blackboard,
 // ScriptBehaviour properties) are authored in one call. Undoable.
 json toolConfigureBehaviour(const ToolCtx& ctx, const json& args) {
     requireEdit(ctx);
@@ -654,8 +757,12 @@ json toolAgentGuide(const ToolCtx&, const json&) {
         "  properties/signals/slots. Cache by 'hash'.\n"
         "- Build scenes with create_node / set_property / set_transform / add_to_group.\n"
         "- Behaviour: add_behaviour, then set_property (scalars) or configure_behaviour\n"
-        "  (full JSON: StateMachine/Scenario/Blackboard/script props).\n"
+        "  (full JSON: StateMachine/Blackboard/script props).\n"
         "- Wire events: connect_signal {from,signal,to,slot} (reflected names).\n"
+        "- Scenario flows: use create_scenario / update_scenario_step /\n"
+        "  validate_scenario / attach_scenario. Do not write ScriptBehaviour code\n"
+        "  to orchestrate tutorials, quests, puzzles, waves, cinematics, boss phases\n"
+        "  or missions; scripts are only for reusable local capabilities.\n"
         "- Code: write_script (JS, fast iteration) or write_cpp_behaviour + build (perf).\n"
         "  UI: write_ui (HTML/RML/CSS).\n"
         "- Validate: run_headless_check (scripts), read_logs. Maps: import_model.\n"
@@ -686,12 +793,25 @@ json toolListRecipes(const ToolCtx&, const json&) {
              "write_script a small JS that listens and sets the light intensity, attachTo the Area",
              "or connect_signal Switch.bodyEntered -> a behaviour slot that enables the light"})}},
         {{"name", "scripted_sequence"},
-         {"summary", "A timed cutscene that flips blackboard flags an FSM reacts to."},
+         {"summary", "A generic declarative scenario sequence; prefer this over custom script orchestration."},
          {"steps", json::array({
-             "create a Blackboard node in group 'blackboard'",
-             "add_behaviour Scenario on a node",
-             "configure_behaviour Scenario {autoStart:true, steps:[{wait:2},{set:{key:'doorOpen',value:1}},{wait:1},{set:{key:'lightsOn',value:1}}]}",
-             "add a StateMachine elsewhere that transitions on those blackboard keys"})}}
+             "create_scenario {path:'scenarios/intro.nescenario', scenario:{version:1,id:'intro',roles:{player:{group:'player',required:true}},blackboard:{},steps:[{id:'start',enter:[{'objective.show':{text:'Reach the marker'}}],wait:{'area.entered':{area:'marker',by:'player'}},next:'done'},{id:'done',enter:[{'objective.complete':{}}],end:'success'}]}}",
+             "attach_scenario the created .nescenario to a node with ScenarioRunner",
+             "validate_scenario before saving or continuing"})}},
+        {{"name", "enemy_wave"},
+         {"summary", "Spawn a wave and complete when the enemy group is empty."},
+         {"steps", json::array({
+             "place a ScenarioAnchor with key 'wave_spawn'",
+             "create_scenario with scene.instantiate actions for enemy prefabs at 'wave_spawn'",
+             "wait on {'group.count':{group:'enemy',op:'==',value:0}}",
+             "end success"})}},
+        {{"name", "boss_phases"},
+         {"summary", "Drive boss phases with blackboard and transitions."},
+         {"steps", json::array({
+             "boss local behaviours expose health/combat capabilities",
+             "scenario transitions watch blackboard.equals or signal.received",
+             "enter actions call slots or emit signals to switch phase behaviours",
+             "never put the phase graph inside the boss onUpdate"})}}
     });
 }
 
@@ -741,6 +861,24 @@ json toolList() {
     tools.push_back(tool("write_ui",
         "Write an HTML/RML/CSS file for a WebCanvasNode (hot-reloaded). Path is project-relative.",
         obj({{"path", str()}, {"code", str()}}, {"path", "code"})));
+    tools.push_back(tool("list_scenario_actions",
+        "List the only valid declarative scenario action keys. LLMs must not invent actions.", obj({})));
+    tools.push_back(tool("list_scenario_conditions",
+        "List the only valid declarative scenario condition keys. LLMs must not invent conditions.", obj({})));
+    tools.push_back(tool("create_scenario",
+        "Create a .nescenario JSON asset. {path, scenario?}. Validates before writing.",
+        obj({{"path", str()}, {"scenario", json{{"type", "object"}}}}, {"path"})));
+    tools.push_back(tool("validate_scenario",
+        "Validate a .nescenario asset with strict action/condition/schema checks.",
+        obj({{"path", str()}}, {"path"})));
+    tools.push_back(tool("get_scenario",
+        "Read a .nescenario asset as JSON.", obj({{"path", str()}}, {"path"})));
+    tools.push_back(tool("update_scenario_step",
+        "Replace or append one scenario step in a .nescenario, validating before writing.",
+        obj({{"path", str()}, {"step", json{{"type", "object"}}}}, {"path", "step"})));
+    tools.push_back(tool("attach_scenario",
+        "Attach a ScenarioRunner to a node and point it at a .nescenario.",
+        obj({{"id", str()}, {"path", str()}, {"autoStart", json{{"type", "boolean"}}}}, {"id", "path"})));
     tools.push_back(tool("write_cpp_behaviour",
         "Scaffold a reflected C++ behaviour (perf path). {name, doc?, properties:[{name,type,default,min,max,tooltip}], onReady?, onUpdate?}. Then call 'build'.",
         obj({{"name", str()}, {"doc", str()}, {"properties", json{{"type", "array"}}}, {"onReady", str()}, {"onUpdate", str()}}, {"name"})));
@@ -751,7 +889,7 @@ json toolList() {
     tools.push_back(tool("read_logs",
         "Recent engine log lines (newest last).", obj({{"count", json{{"type", "number"}}}})));
     tools.push_back(tool("configure_behaviour",
-        "Push a full serialized config into a behaviour (StateMachine/Scenario/Blackboard/ScriptBehaviour). {id, behaviour:'<TypeName>', data:{...}}.",
+        "Push a full serialized config into a behaviour (StateMachine/Blackboard/ScriptBehaviour). {id, behaviour:'<TypeName>', data:{...}}.",
         obj({{"id", str()}, {"behaviour", str()}, {"data", json{{"type", "object"}}}}, {"id", "behaviour", "data"})));
     tools.push_back(tool("list_recipes",
         "Curated composition recipes for complex things (NPC, trigger light, scripted sequence).", obj({})));
@@ -822,6 +960,13 @@ json McpBridge::callTool(EditorUI& ui, const std::string& name, const json& args
     if (name == "set_scene_settings") return toolSetSceneSettings(ctx, args);
     if (name == "write_script") return toolWriteScript(ctx, args);
     if (name == "write_ui") return toolWriteUi(ctx, args);
+    if (name == "list_scenario_actions") return toolListScenarioActions(ctx, args);
+    if (name == "list_scenario_conditions") return toolListScenarioConditions(ctx, args);
+    if (name == "create_scenario") return toolCreateScenario(ctx, args);
+    if (name == "validate_scenario") return toolValidateScenario(ctx, args);
+    if (name == "get_scenario") return toolGetScenario(ctx, args);
+    if (name == "update_scenario_step") return toolUpdateScenarioStep(ctx, args);
+    if (name == "attach_scenario") return toolAttachScenario(ctx, args);
     if (name == "write_cpp_behaviour") return toolWriteCppBehaviour(ctx, args);
     if (name == "build") return toolBuild(ctx, args);
     if (name == "run_headless_check") return toolHeadlessCheck(ctx, args);

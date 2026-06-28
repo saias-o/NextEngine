@@ -306,7 +306,11 @@ add_library(ne_engine STATIC
     src/scene/RotatorBehaviour.cpp
     src/scene/Blackboard.cpp
     src/scene/StateMachineBehaviour.cpp
-    src/scene/ScenarioBehaviour.cpp
+    src/scenario/ScenarioAsset.cpp
+    src/scenario/ScenarioRegistry.cpp
+    src/scenario/ScenarioAnchor.cpp
+    src/scenario/ScenarioDirector.cpp
+    src/scenario/ScenarioRunnerBehaviour.cpp
     src/physics/PhysicsWorld.cpp
     src/physics/CollisionShapeNode.cpp
     src/physics/CollisionObjectNode.cpp
@@ -481,6 +485,12 @@ if (BUILD_TESTING)
     target_link_libraries(ne_gameplay_primitive_tests PRIVATE ne_engine)
     target_compile_options(ne_gameplay_primitive_tests PRIVATE -Wall -Wextra)
     add_test(NAME ne_gameplay_primitive_tests COMMAND $<TARGET_FILE:ne_gameplay_primitive_tests>)
+
+    add_executable(ne_scenario_system_tests tests/ScenarioSystemTests.cpp)
+    ne_test_target(ne_scenario_system_tests)
+    target_link_libraries(ne_scenario_system_tests PRIVATE ne_engine)
+    target_compile_options(ne_scenario_system_tests PRIVATE -Wall -Wextra)
+    add_test(NAME ne_scenario_system_tests COMMAND $<TARGET_FILE:ne_scenario_system_tests>)
 
     add_executable(ne_physics_character_tests tests/PhysicsCharacterTest.cpp)
     ne_test_target(ne_physics_character_tests)

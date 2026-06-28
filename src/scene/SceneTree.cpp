@@ -71,6 +71,10 @@ std::string SceneTree::resolvePath(const std::string& path) const {
     return projectRoot_ + "/" + path;
 }
 
+std::string SceneTree::resolveProjectPath(const std::string& path) const {
+    return resolvePath(path);
+}
+
 Node* SceneTree::instantiate(const std::string& scenePath, Node* parent) {
     // Cache the inner scene-node JSON (type forced to Scene) so repeated spawns
     // re-deserialize from memory instead of re-reading the file.

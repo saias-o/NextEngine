@@ -1,11 +1,10 @@
-// Locks in M5: the data-driven gameplay primitives (Blackboard, StateMachine,
-// Scenario) behave correctly when authored purely by data (load()) and driven
+// Locks in M5: the data-driven gameplay primitives (Blackboard, StateMachine)
+// behave correctly when authored purely by data (load()) and driven
 // frame by frame — the path the LLM uses via configure_behaviour.
 
 #include "scene/Blackboard.hpp"
 #include "scene/Node.hpp"
 #include "scene/ReflectedTypes.hpp"
-#include "scene/ScenarioBehaviour.hpp"
 #include "scene/StateMachineBehaviour.hpp"
 
 #include "nlohmann/json.hpp"
@@ -82,29 +81,10 @@ static void testStateMachineTrigger() {
     assert(sm->currentState() == "go");
 }
 
-static void testScenario() {
-    ne::Node s("S");
-    auto* bb = s.addBehaviour<ne::Blackboard>();
-    auto* sc = s.addBehaviour<ne::ScenarioBehaviour>();
-    sc->load({{"autoStart", true},
-              {"steps", json::array({{{"wait", 0.5}}, {{"set", {{"key", "door"}, {"value", 1}}}}})}});
-
-    int finished = 0;
-    auto conn = sc->finished.connect([&] { ++finished; });
-
-    sc->onReady();        // starts; enters the wait step
-    sc->onUpdate(0.2f);   // waitLeft 0.3
-    assert(bb->number("door") == 0.0);
-    sc->onUpdate(0.4f);   // wait elapses -> set door=1 -> end -> finished
-    assert(bb->number("door") == 1.0);
-    assert(finished == 1);
-}
-
 int main() {
     ne::registerReflectedTypes();
     testBlackboard();
     testStateMachinePredicateAndTimeout();
     testStateMachineTrigger();
-    testScenario();
     return 0;
 }

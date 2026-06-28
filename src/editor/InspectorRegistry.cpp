@@ -9,6 +9,8 @@
 #include "audio/AudioSourceBehaviour.hpp"
 #include "physics/CharacterBodyNode.hpp"
 #include "scripting/ScriptBehaviour.hpp"
+#include "scenario/ScenarioAsset.hpp"
+#include "scenario/ScenarioRunnerBehaviour.hpp"
 
 #include <imgui.h>
 
@@ -16,6 +18,7 @@
 #include <cstring>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace ne {
 namespace {
@@ -44,6 +47,33 @@ void registerBuiltins(InspectorRegistry& reg) {
         changed |= ImGui::DragFloat("Interval (s)", &s.interval, 0.05f, 0.0f, 60.0f);
         changed |= ImGui::DragFloat("Lifetime (s)", &s.lifetime, 0.05f, 0.0f, 60.0f);
         if (changed) ed.markDirty();
+    });
+
+    reg.registerDrawer("ScenarioRunner", [](Behaviour& b, EditorUI& ed) {
+        auto& s = static_cast<ScenarioRunnerBehaviour&>(b);
+        bool changed = false;
+        changed |= textField<512>("Scenario", s.scenarioPath);
+        changed |= ImGui::Checkbox("Auto Start", &s.autoStart);
+        changed |= ImGui::Checkbox("Cleanup On Stop", &s.cleanupOnStop);
+        if (changed) ed.markDirty();
+
+        if (ImGui::Button("Validate")) {
+            ne::ScenarioAsset asset;
+            std::vector<ne::ScenarioIssue> issues;
+            ne::ScenarioAsset::loadFromFile(s.scenarioPath, asset, &issues);
+            if (issues.empty()) ImGui::OpenPopup("ScenarioValidPopup");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Start")) s.start();
+        ImGui::SameLine();
+        if (ImGui::Button("Stop")) s.stop();
+        ImGui::TextDisabled("State: %s%s", s.running() ? "Running" : "Stopped", s.paused() ? " (Paused)" : "");
+        if (!s.currentStep().empty()) ImGui::TextDisabled("Step: %s", s.currentStep().c_str());
+        if (!s.lastError().empty()) ImGui::TextWrapped("Last error: %s", s.lastError().c_str());
+        if (ImGui::BeginPopup("ScenarioValidPopup")) {
+            ImGui::TextUnformatted("Scenario valid");
+            ImGui::EndPopup();
+        }
     });
 
     reg.registerDrawer("Character", [](Behaviour& b, EditorUI& ed) {

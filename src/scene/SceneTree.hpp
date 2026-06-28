@@ -42,6 +42,7 @@ public:
 
     // Project root used to resolve relative .scene paths (set by the Engine).
     void setProjectRoot(const std::string& root) { projectRoot_ = root; }
+    std::string resolveProjectPath(const std::string& path) const;
 
     // ── Instancing ("everything is a scene") ─────────────────────────────────
     // Load a .scene and add it under `parent` (or the current sub-scene if null);
