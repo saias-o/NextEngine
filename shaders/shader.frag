@@ -54,7 +54,6 @@ layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec3 fragColor;
 layout(location = 3) in vec2 fragTexCoord;
-layout(location = 4) in vec2 fragLightmapUV;
 layout(location = 5) in vec3 fragTangent;
 layout(location = 6) in vec3 fragBitangent;
 

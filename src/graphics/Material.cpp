@@ -117,10 +117,10 @@ Material::Material(VulkanDevice& device, ResourceManager& manager, const Materia
     if (device_.capabilities().descriptorIndexing) {
         bindlessIndex_ = manager.registerMaterialData(
             desc.baseColor, desc.emissiveColor, desc.metallic, desc.roughness, desc.ao,
-            albedo_->bindlessIndex(),
-            normalMap_->bindlessIndex(),
-            metallicRoughnessMap_->bindlessIndex(),
-            emissiveMap_->bindlessIndex()
+            manager.ensureBindlessTextureIndex(albedo_),
+            manager.ensureBindlessTextureIndex(normalMap_),
+            manager.ensureBindlessTextureIndex(metallicRoughnessMap_),
+            manager.ensureBindlessTextureIndex(emissiveMap_)
         );
     }
 }

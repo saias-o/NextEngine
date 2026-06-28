@@ -6,9 +6,8 @@ namespace ne {
 // shader shows texture * lighting unmodified.
 //
 // Beyond the (repeating, per-face) texture UV, each vertex also carries a
-// non-overlapping `lightmapUV`: the 6 faces are packed into a 3x2 grid of [0,1]^2
-// (one cell each), with a small inset so adjacent faces don't bleed into each
-// other when baked. This is the cube's lightmap unwrap.
+// non-overlapping secondary UV set: the 6 faces are packed into a 3x2 grid of
+// [0,1]^2 (one cell each), with a small inset so adjacent faces do not bleed.
 const std::vector<Vertex>& cubeVertices() {
     static const std::vector<Vertex> verts = [] {
         struct Corner { glm::vec3 pos; glm::vec2 uv; };

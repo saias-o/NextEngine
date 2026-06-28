@@ -2,7 +2,6 @@
 #include "graphics/VulkanDevice.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Pipeline.hpp"
-#include "core/Camera.hpp"
 #include "scene/Scene.hpp"
 #include "scene/UICanvasNode.hpp"
 #include "scene/UIColorNode.hpp"
@@ -60,23 +59,20 @@ UIRenderer::UIRenderer(VulkanDevice& device, ResourceManager& resources, VkForma
     // Get the generated pipeline layout directly from Pipeline
     pipelineLayout_ = pipeline_->layout();
 
-    Log::info("UIRenderer: Pipeline cree");
+    Log::info("UIRenderer: pipeline created");
 }
 
 UIRenderer::~UIRenderer() {
     // pipelineLayout_ is owned by Pipeline, so we don't destroy it here.
 }
 
-void UIRenderer::gatherUI(Scene& scene, const Camera* camera, glm::vec2 viewportSize) {
-    (void)camera;
+void UIRenderer::gatherUI(Scene& scene, glm::vec2 viewportSize) {
     drawCmds_.clear();
     webNodesToUpdate_.clear();
     
     UICanvasNode* canvas = scene.uiCanvas();
-    scene.traverse([&](Node& node, const glm::mat4&) {
-        auto* wcn = dynamic_cast<WebCanvasNode*>(&node);
-        if (!wcn) return;
-        if (!wcn->isActiveInHierarchy()) return;
+    for (WebCanvasNode* wcn : scene.webCanvases()) {
+        if (!wcn || !wcn->isActiveInHierarchy()) continue;
         if (wcn->mode() == WebCanvasNode::Mode::ScreenSpace) {
             glm::vec2 pos = wcn->screenPosition();
             glm::vec2 size = wcn->screenSize();
@@ -98,15 +94,12 @@ void UIRenderer::gatherUI(Scene& scene, const Camera* camera, glm::vec2 viewport
             cmd.position = wcn->screenPosition();
             cmd.size = wcn->screenSize();
             cmd.color = glm::vec4(1.0f);
-            if (wcn->texture()->bindlessIndex() == ~0u) {
-                wcn->texture()->setBindlessIndex(resources_.getBindlessTextureIndex(wcn->texture()));
-            }
-            cmd.textureId = wcn->texture()->bindlessIndex();
+            cmd.textureId = resources_.ensureBindlessTextureIndex(wcn->texture());
             cmd.hasTexture = 1;
             cmd.sortOrder = wcn->renderOrder();
             drawCmds_.push_back(cmd);
         }
-    });
+    }
 
     std::stable_sort(drawCmds_.begin(), drawCmds_.end(), [](const UIDrawCmd& a, const UIDrawCmd& b) {
         return a.sortOrder < b.sortOrder;
@@ -119,7 +112,6 @@ void UIRenderer::gatherUI(Scene& scene, const Camera* camera, glm::vec2 viewport
     }
 
     if (canvas && canvas->isActiveInHierarchy()) {
-        // Traverse recursivement les UINodes
         for (auto& child : canvas->children()) {
             if (UINode* uiChild = dynamic_cast<UINode*>(child.get())) {
                 traverseUI(uiChild);
@@ -152,7 +144,7 @@ void UIRenderer::traverseUI(UINode* node) {
     } else if (auto imageNode = dynamic_cast<UIImageNode*>(node)) {
         Texture* tex = resources_.getTexture(imageNode->texture());
         if (tex) {
-            cmd.textureId = tex->bindlessIndex();
+            cmd.textureId = resources_.ensureBindlessTextureIndex(tex);
             cmd.hasTexture = 1;
             draw = true;
         }
@@ -212,14 +204,7 @@ void UIRenderer::recordCommands(VkCommandBuffer cmd, uint32_t width, uint32_t he
     };
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    // Bind le Global Set pour les textures bindless (au set 1, comme défini dans le shader ui.frag layout(set=1))
-    // Attention : on a créé notre pipeline avec 1 seul layout (le GlobalSetLayout).
-    // Donc il s'attend à le trouver au set 0 dans le pipelineLayout, MAIS dans ui.frag on a dit `layout(set = 1)`.
-    // Il faut que ça matche. Le plus simple est de le binder au set 1, et donc de fournir un set 0 vide dans le layout.
-    // Ou bien changer le shader pour set=0.
-    // On va binder au même index que dans le layout.
-    // Wait, on a mis layoutCount=1 dans pipelineLayout, donc c'est le set 0 !
-    // Je corrigerai le shader via replace si besoin.
+    // Set 0 matches ui.frag and contains the bindless texture table.
     VkDescriptorSet globalSet = resources_.globalMaterialSet();
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1, &globalSet, 0, nullptr);
 

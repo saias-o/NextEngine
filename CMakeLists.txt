@@ -320,8 +320,6 @@ add_library(ne_engine STATIC
     third_party/imgui/imgui_demo.cpp
     third_party/imgui/backends/imgui_impl_glfw.cpp
     third_party/imgui/backends/imgui_impl_vulkan.cpp
-    # xatlas (vendored, MIT): automatic lightmap UV unwrapping
-    third_party/xatlas/xatlas.cpp
 )
 
 # LLM-generated behaviours (written by the MCP write_cpp_behaviour tool). Globbed
@@ -342,7 +340,6 @@ target_include_directories(ne_engine PUBLIC
     third_party/imgui
     third_party/json
     third_party/miniaudio
-    third_party/xatlas
 )
 target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt quickjs RmlUi::RmlUi)
 if(NE_ENABLE_XR)

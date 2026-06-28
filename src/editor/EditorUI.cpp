@@ -43,6 +43,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <string>
@@ -1432,7 +1433,7 @@ void EditorUI::drawSettingsWindow(Project* project) {
             if (ImGui::BeginTabItem("General")) {
                 ImGui::Spacing();
                 char nameBuf[128];
-                strncpy(nameBuf, project->name().c_str(), sizeof(nameBuf));
+                std::snprintf(nameBuf, sizeof(nameBuf), "%s", project->name().c_str());
                 if (ImGui::InputText("Project Name", nameBuf, sizeof(nameBuf))) {
                     project->setName(nameBuf);
                 }

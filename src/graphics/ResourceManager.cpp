@@ -215,6 +215,9 @@ void ResourceManager::createGlobalBindlessResources() {
 
 uint32_t ResourceManager::getBindlessTextureIndex(Texture* texture) {
     if (!globalMaterialSet_) return 0;
+    if (!texture) return 0;
+    if (nextBindlessTextureIndex_ >= kMaxBindlessTextures)
+        throw std::runtime_error("bindless texture table exhausted");
     
     uint32_t index = nextBindlessTextureIndex_++;
     
@@ -235,6 +238,15 @@ uint32_t ResourceManager::getBindlessTextureIndex(Texture* texture) {
     vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
     
     return index;
+}
+
+uint32_t ResourceManager::ensureBindlessTextureIndex(Texture* texture) {
+    if (!texture) return 0;
+    if (!globalMaterialSet_) return 0;
+    if (texture->bindlessIndex() == ~0u) {
+        texture->setBindlessIndex(getBindlessTextureIndex(texture));
+    }
+    return texture->bindlessIndex();
 }
 
 
@@ -307,9 +319,7 @@ Mesh* ResourceManager::loadMesh(AssetID id) {
     std::string path = registry_->getPath(id);
     if (path.empty()) return nullptr;
 
-    // Generate lightmap UVs (xatlas) so any .obj can be baked; fromObjFile skips
-    // the unwrap for very large meshes (cost) and falls back to the texture UV.
-    auto mesh = Mesh::fromObjFile(*geometryRegistry_, path, /*generateLightmapUVs=*/true);
+    auto mesh = Mesh::fromObjFile(*geometryRegistry_, path);
     Mesh* ptr = mesh.get();
     meshes_.emplace(id, std::move(mesh));
     reverseMeshMap_[ptr] = id;
@@ -347,7 +357,7 @@ Texture* ResourceManager::getTexture(AssetID id, bool srgb) {
     if (path.empty()) return nullptr;
 
     auto tex = std::make_unique<Texture>(device_, path, srgb);
-    tex->setBindlessIndex(getBindlessTextureIndex(tex.get()));
+    ensureBindlessTextureIndex(tex.get());
     Texture* ptr = tex.get();
     textures_.emplace(id, std::move(tex));
     return ptr;
@@ -364,6 +374,7 @@ Material* ResourceManager::getMaterial(const MaterialDesc& desc) {
 }
 
 AssetID ResourceManager::getOrRegister(const std::string& path, AssetType type, bool srgb) {
+    (void)srgb; // AssetRegistry tracks identity/type today, not texture import settings.
     if (!registry_) return kAssetInvalid;
     return registry_->registerAsset(path, type);
 }
@@ -378,7 +389,7 @@ AssetID ResourceManager::registerMemoryTexture(const uint8_t* data, size_t size,
     
     VkFormat format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
     auto tex = std::make_unique<Texture>(device_, pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), format);
-    tex->setBindlessIndex(getBindlessTextureIndex(tex.get()));
+    ensureBindlessTextureIndex(tex.get());
     stbi_image_free(pixels);
     
     static std::atomic<AssetID> s_dynamicId{0x8000000000000000ULL};
@@ -415,12 +426,12 @@ void ResourceManager::ensureDefaultTextures() {
     if (!defaultWhiteTexture_) {
         uint8_t whitePixels[] = {255, 255, 255, 255};
         defaultWhiteTexture_ = std::make_unique<Texture>(device_, whitePixels, 1, 1, VK_FORMAT_R8G8B8A8_SRGB);
-        defaultWhiteTexture_->setBindlessIndex(getBindlessTextureIndex(defaultWhiteTexture_.get()));
+        ensureBindlessTextureIndex(defaultWhiteTexture_.get());
     }
     if (!defaultNormalTexture_) {
         const uint8_t normalPixel[4] = {128, 128, 255, 255}; // 0.5, 0.5, 1.0 flat normal
         defaultNormalTexture_ = std::make_unique<Texture>(device_, normalPixel, 1, 1, VK_FORMAT_R8G8B8A8_SRGB);
-        defaultNormalTexture_->setBindlessIndex(getBindlessTextureIndex(defaultNormalTexture_.get()));
+        ensureBindlessTextureIndex(defaultNormalTexture_.get());
     }
 }
 

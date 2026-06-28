@@ -346,10 +346,10 @@ void InspectorPanel::draw(EditorUI* editor) {
         if (s.lightingMode == LightingMode::Realtime) {
             ImGui::TextDisabled("Lighting & shadows computed live; baking disabled.");
         } else {
-            if (ImGui::Button("Generate Bake"))
+            if (ImGui::Button("Bake GI"))
                 s.bakeRequested = true;  // transient action request, not a document edit
             ImGui::SameLine();
-            ImGui::TextDisabled(s.baked ? "Bake: ready" : "Bake: none");
+            ImGui::TextDisabled(s.baked ? "GI Bake: frozen" : "GI Bake: none");
         }
 
         ImGui::SeparatorText("Global Illumination");
@@ -794,9 +794,6 @@ void InspectorPanel::drawMeshRenderer(MeshNode* meshNode, EditorUI* editor) {
     pe.checkbox("Cast Shadows",
                 [](Node& n) { return static_cast<MeshNode&>(n).castShadows(); },
                 [](Node& n, bool v) { static_cast<MeshNode&>(n).castShadows() = v; });
-    pe.checkbox("Include to light baking",
-                [](Node& n) { return static_cast<MeshNode&>(n).includeInLightBaking(); },
-                [](Node& n, bool v) { static_cast<MeshNode&>(n).includeInLightBaking() = v; });
     pe.checkbox("Outline",
                 [](Node& n) { return static_cast<MeshNode&>(n).outlineEnabled(); },
                 [](Node& n, bool v) { static_cast<MeshNode&>(n).setOutlineEnabled(v); });

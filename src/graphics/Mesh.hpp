@@ -21,7 +21,7 @@ struct Vertex {
     glm::vec3 normal;
     glm::vec3 color;
     glm::vec2 texCoord;
-    glm::vec2 lightmapUV;  // second, non-overlapping UV set for baked lightmaps
+    glm::vec2 lightmapUV;  // secondary UV set, mirrored from texture UV by default
     glm::vec4 tangent;
     glm::ivec4 boneIndices{-1, -1, -1, -1};
     glm::vec4 boneWeights{0.0f, 0.0f, 0.0f, 0.0f};
@@ -50,9 +50,8 @@ public:
     Mesh(const Mesh&) = delete;
     Mesh& operator=(const Mesh&) = delete;
 
-    // Loads an .obj. With generateLightmapUVs, a non-overlapping second UV set is
-    // produced via xatlas (splitting vertices at chart seams) so the mesh can be
-    // lightmap-baked; otherwise lightmapUV falls back to the texture UV.
+    // Loads an .obj. generateLightmapUVs is retained for compatibility and is
+    // currently ignored; the secondary UV set mirrors the texture UVs.
     static std::unique_ptr<Mesh> fromObjFile(GeometryRegistry& registry, const std::string& path,
                                              bool generateLightmapUVs = false);
 

@@ -1,16 +1,16 @@
 #version 450
 
-// Un simple quad généré sans VBO (triangle strip)
+// Fullscreen-style UI quad generated without a VBO (triangle strip).
 // Indices: 0, 1, 2, 3
 // Positions: (0,0), (1,0), (0,1), (1,1)
 
 layout(push_constant) uniform PushConstants {
-    vec2 position;    // Position X,Y (Top-Left) en pixels
-    vec2 size;        // Largeur, Hauteur en pixels
-    vec2 screenSize;  // Largeur, Hauteur de l'écran en pixels
+    vec2 position;    // Top-left position in pixels
+    vec2 size;        // Width and height in pixels
+    vec2 screenSize;  // Framebuffer size in pixels
     uint textureId;   // Index bindless
-    uint hasTexture;  // 1 si utilisation de texture, 0 sinon
-    vec4 color;       // Couleur (RGBA)
+    uint hasTexture;  // 1 when textured, 0 for solid color
+    vec4 color;       // RGBA tint
     vec2 corners[4];  // Optional pre-projected quad corners in pixels
     uint useCorners;  // 1 for world-space projected quads
     uint _pad;
@@ -22,7 +22,7 @@ layout(location = 2) flat out uint fragTextureId;
 layout(location = 3) flat out uint fragHasTexture;
 
 void main() {
-    // Génération d'un quad (Triangle Strip) avec gl_VertexIndex
+    // Generate a quad from gl_VertexIndex.
     vec2 quad[4] = vec2[](
         vec2(0.0, 0.0), // Top-Left
         vec2(1.0, 0.0), // Top-Right
@@ -35,14 +35,14 @@ void main() {
     // UVs
     fragUV = localPos;
     
-    // Position pixel à l'écran
+    // Pixel position on screen.
     vec2 pixelPos = push.position + localPos * push.size;
     if (push.useCorners != 0) {
         pixelPos = push.corners[gl_VertexIndex];
     }
     
-    // Projection Orthographique (0 -> screenSize) vers NDC (-1 -> 1)
-    // X: 0 -> width devient -1 -> 1
+    // Orthographic projection from pixels to NDC.
+    // X: 0 -> width becomes -1 -> 1.
     // Vulkan viewport coordinates use a top-left framebuffer origin here:
     // pixel y=0 must map to NDC -1, not +1.
     vec2 ndc = (pixelPos / push.screenSize) * 2.0 - 1.0;

@@ -17,11 +17,11 @@ enum class LightType {
 };
 
 // How a light is meant to be evaluated. Everything is realtime today, but the
-// field lets a future bake step know which lights to precompute into lightmaps.
+// field leaves room for future bake tooling without changing scene data.
 enum class LightBakeMode {
     Realtime,  // always computed live
-    Baked,     // contribution precomputed offline (static geometry only)
-    Mixed,     // direct realtime + baked indirect
+    Baked,     // contribution supplied by a baked GI/runtime cache
+    Mixed,     // direct realtime + cached indirect
 };
 
 // A light source in the scene graph (cf. Godot Light3D / Unity Light).

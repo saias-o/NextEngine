@@ -48,9 +48,6 @@ public:
     bool& castShadows() { return castShadows_; }
     bool castShadows() const { return castShadows_; }
 
-    bool& includeInLightBaking() { return includeInLightBaking_; }
-    bool includeInLightBaking() const { return includeInLightBaking_; }
-
     bool outlineEnabled() const { return outlineEnabled_; }
     void setOutlineEnabled(bool enabled) { outlineEnabled_ = enabled; }
     glm::vec4& outlineColor() { return outlineColor_; }
@@ -72,7 +69,6 @@ private:
     std::vector<MeshLodLevel> lods_;
     mutable int activeLodIndex_ = 0;
     bool castShadows_ = true;
-    bool includeInLightBaking_ = false;
     bool outlineEnabled_ = false;
     glm::vec4 outlineColor_{0.02f, 0.02f, 0.02f, 1.0f};
     float outlineWidth_ = 3.0f;  // screen pixels

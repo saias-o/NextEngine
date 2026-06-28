@@ -70,15 +70,26 @@ glm::mat4 directionalMatrix(const glm::vec3& dir, float distance) {
     return proj * view;
 }
 
-std::vector<WebCanvasNode*> activeWebCanvases(Scene& scene) {
-    std::vector<WebCanvasNode*> nodes;
-    scene.traverse([&](Node& node, const glm::mat4&) {
-        auto* canvas = dynamic_cast<WebCanvasNode*>(&node);
-        if (canvas && canvas->isActiveInHierarchy()) {
-            nodes.push_back(canvas);
+struct WebCanvasWorldDraw {
+    WebCanvasNode* node = nullptr;
+    float distance = 0.0f;
+};
+
+std::vector<WebCanvasWorldDraw> collectWorldWebCanvasDraws(Scene& scene, glm::vec3 viewpoint) {
+    std::vector<WebCanvasWorldDraw> draws;
+    for (WebCanvasNode* node : scene.webCanvases()) {
+        if (!node) continue;
+        if (node->mode() != WebCanvasNode::Mode::WorldSpace || !node->texture()) continue;
+        glm::vec3 center = glm::vec3(node->worldTransform() * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+        draws.push_back({node, glm::length(center - viewpoint)});
+    }
+    std::stable_sort(draws.begin(), draws.end(), [](const WebCanvasWorldDraw& a, const WebCanvasWorldDraw& b) {
+        if (a.node->renderOrder() != b.node->renderOrder()) {
+            return a.node->renderOrder() < b.node->renderOrder();
         }
+        return a.distance > b.distance;
     });
-    return nodes;
+    return draws;
 }
 
 // DDGI volume configuration scaled by the GPU's quality tier. Denser probes +
@@ -838,8 +849,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
         }
 
         // Directional and spot lights cast 2D shadow maps (point would need a
-        // cube map). Realtime mode always re-renders them; the baked stub does
-        // not yet freeze anything, so shadows stay live either way for now.
+        // cube map). Shadows stay live in both realtime and baked GI modes.
         bool wantsShadow = light->castShadows &&
             (light->type == LightType::Directional || light->type == LightType::Spot);
         if (wantsShadow && shadowCount_ < kMaxShadowCasters) {
@@ -1347,43 +1357,23 @@ void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, boo
 void Renderer::recordWorldWebCanvases(VkCommandBuffer cmd, Scene& scene, const Camera& camera) {
     if (!webCanvasWorldPipeline_ || !resources_.globalMaterialSet()) return;
 
-    struct Draw {
-        WebCanvasNode* node = nullptr;
-        float distance = 0.0f;
-    };
-    std::vector<Draw> draws;
-    for (WebCanvasNode* node : activeWebCanvases(scene)) {
-        if (!node) continue;
-        if (node->mode() != WebCanvasNode::Mode::WorldSpace || !node->texture()) continue;
-        glm::vec3 center = glm::vec3(node->worldTransform() * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-        draws.push_back({node, glm::length(center - camera.position)});
-    }
+    std::vector<WebCanvasWorldDraw> draws = collectWorldWebCanvasDraws(scene, camera.position);
     if (draws.empty()) return;
-
-    std::stable_sort(draws.begin(), draws.end(), [](const Draw& a, const Draw& b) {
-        if (a.node->renderOrder() != b.node->renderOrder()) {
-            return a.node->renderOrder() < b.node->renderOrder();
-        }
-        return a.distance > b.distance;
-    });
 
     webCanvasWorldPipeline_->bind(cmd);
     VkDescriptorSet textures = resources_.globalMaterialSet();
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, webCanvasWorldPipeline_->layout(),
                             0, 1, &textures, 0, nullptr);
 
-    for (const Draw& draw : draws) {
+    for (const WebCanvasWorldDraw& draw : draws) {
         WebCanvasNode* node = draw.node;
         Texture* texture = node->texture();
         if (!texture) continue;
-        if (texture->bindlessIndex() == ~0u) {
-            texture->setBindlessIndex(resources_.getBindlessTextureIndex(texture));
-        }
 
         WebCanvasWorldPushConstants pc{};
         pc.model = node->worldTransform();
         pc.params = glm::vec4(node->worldWidth(), node->worldHeight(),
-                              static_cast<float>(texture->bindlessIndex()), 1.0f);
+                              static_cast<float>(resources_.ensureBindlessTextureIndex(texture)), 1.0f);
         vkCmdPushConstants(cmd, webCanvasWorldPipeline_->layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(pc), &pc);
@@ -1756,7 +1746,7 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
 
     VkRect2D renderRect = activeRenderRect();
     updateUniformBuffer(currentFrame_, scene, camera, project);
-    uiRenderer_->gatherUI(scene, &camera,
+    uiRenderer_->gatherUI(scene,
         {static_cast<float>(renderRect.extent.width), static_cast<float>(renderRect.extent.height)});
 
     vkResetCommandBuffer(commandBuffers_[currentFrame_], 0);
@@ -2102,43 +2092,23 @@ void Renderer::recordXrWorldWebCanvases(VkCommandBuffer cmd, Scene& scene,
     for (const EyeRenderInfo& eye : eyes) head += eye.eyePosition;
     head /= static_cast<float>(std::max<size_t>(1, eyes.size()));
 
-    struct Draw {
-        WebCanvasNode* node = nullptr;
-        float distance = 0.0f;
-    };
-    std::vector<Draw> draws;
-    for (WebCanvasNode* node : activeWebCanvases(scene)) {
-        if (!node) continue;
-        if (node->mode() != WebCanvasNode::Mode::WorldSpace || !node->texture()) continue;
-        glm::vec3 center = glm::vec3(node->worldTransform() * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-        draws.push_back({node, glm::length(center - head)});
-    }
+    std::vector<WebCanvasWorldDraw> draws = collectWorldWebCanvasDraws(scene, head);
     if (draws.empty()) return;
-
-    std::stable_sort(draws.begin(), draws.end(), [](const Draw& a, const Draw& b) {
-        if (a.node->renderOrder() != b.node->renderOrder()) {
-            return a.node->renderOrder() < b.node->renderOrder();
-        }
-        return a.distance > b.distance;
-    });
 
     xrWebCanvasWorldPipeline_->bind(cmd);
     VkDescriptorSet textures = resources_.globalMaterialSet();
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, xrWebCanvasWorldPipeline_->layout(),
                             0, 1, &textures, 0, nullptr);
 
-    for (const Draw& draw : draws) {
+    for (const WebCanvasWorldDraw& draw : draws) {
         WebCanvasNode* node = draw.node;
         Texture* texture = node->texture();
         if (!texture) continue;
-        if (texture->bindlessIndex() == ~0u) {
-            texture->setBindlessIndex(resources_.getBindlessTextureIndex(texture));
-        }
 
         WebCanvasWorldPushConstants pc{};
         pc.model = node->worldTransform();
         pc.params = glm::vec4(node->worldWidth(), node->worldHeight(),
-                              static_cast<float>(texture->bindlessIndex()), 1.0f);
+                              static_cast<float>(resources_.ensureBindlessTextureIndex(texture)), 1.0f);
         vkCmdPushConstants(cmd, xrWebCanvasWorldPipeline_->layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(pc), &pc);

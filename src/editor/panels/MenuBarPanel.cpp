@@ -7,8 +7,8 @@
 #include "scene/SceneSerializer.hpp"
 
 #include <imgui.h>
+#include <cstdio>
 #include <filesystem>
-#include <cstring>
 
 namespace ne {
 
@@ -60,7 +60,7 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
                     std::filesystem::path p(editor->currentScenePath_);
                     defaultName = p.filename().string();
                 }
-                strncpy(editor->saveScenePathBuf_, defaultName.c_str(), sizeof(editor->saveScenePathBuf_));
+                std::snprintf(editor->saveScenePathBuf_, sizeof(editor->saveScenePathBuf_), "%s", defaultName.c_str());
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Quit", "Esc"))      { editor->quitRequested_ = true; }

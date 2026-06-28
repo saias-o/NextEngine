@@ -39,7 +39,6 @@ layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec3 inColor;
 layout(location = 3) in vec2 inTexCoord;
-layout(location = 4) in vec2 inLightmapUV;
 layout(location = 5) in vec4 inTangent;
 layout(location = 6) in ivec4 inBoneIndices;
 layout(location = 7) in vec4 inBoneWeights;
@@ -48,7 +47,6 @@ layout(location = 0) out vec3 fragWorldPos;
 layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out vec3 fragColor;
 layout(location = 3) out vec2 fragTexCoord;
-layout(location = 4) out vec2 fragLightmapUV;
 layout(location = 5) out vec3 fragTangent;
 layout(location = 6) out vec3 fragBitangent;
 
@@ -97,7 +95,6 @@ void main() {
     fragBitangent = cross(fragNormal, fragTangent) * inTangent.w;
     fragColor = inColor;
     fragTexCoord = inTexCoord;
-    fragLightmapUV = inLightmapUV;
 #ifdef MULTIVIEW
     int viewIndex = gl_ViewIndex;
 #else

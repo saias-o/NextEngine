@@ -123,12 +123,11 @@ struct WebHit {
 
 std::vector<WebCanvasNode*> activeWebCanvases(Scene& scene) {
     std::vector<WebCanvasNode*> canvases;
-    scene.traverse([&](Node& node, const glm::mat4&) {
-        auto* canvas = dynamic_cast<WebCanvasNode*>(&node);
+    for (WebCanvasNode* canvas : scene.webCanvases()) {
         if (canvas && canvas->isActiveInHierarchy() && canvas->interactive()) {
             canvases.push_back(canvas);
         }
-    });
+    }
     std::stable_sort(canvases.begin(), canvases.end(), [](const WebCanvasNode* a, const WebCanvasNode* b) {
         return a->renderOrder() < b->renderOrder();
     });

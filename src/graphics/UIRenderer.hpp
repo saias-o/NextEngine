@@ -11,7 +11,6 @@ class VulkanDevice;
 class ResourceManager;
 class Pipeline;
 class Scene;
-class Camera;
 class UINode;
 class WebCanvasNode;
 class UICanvasNode;
@@ -34,7 +33,7 @@ public:
     UIRenderer(const UIRenderer&) = delete;
     UIRenderer& operator=(const UIRenderer&) = delete;
 
-    void gatherUI(Scene& scene, const Camera* camera = nullptr, glm::vec2 viewportSize = glm::vec2(0.0f));
+    void gatherUI(Scene& scene, glm::vec2 viewportSize = glm::vec2(0.0f));
     void updateAsyncTextures(VkCommandBuffer cmd);
     void recordCommands(VkCommandBuffer cmd, uint32_t width, uint32_t height,
                         glm::vec2 viewportOffset = glm::vec2(0.0f),

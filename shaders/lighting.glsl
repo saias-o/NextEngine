@@ -1,11 +1,7 @@
-// Shared PBR lighting math — the SINGLE source of truth for both the realtime
-// scene shader (shader.frag) and the lightmap bake shader (bake.frag). Because
-// both include this file, a bake evaluates exactly the same lighting as realtime.
+// Shared PBR lighting math — the SINGLE source of truth for the scene shader.
 //
 // Uses Cook-Torrance microfacet BRDF with GGX distribution, Smith-Schlick
-// geometry term, and Fresnel-Schlick approximation. The terms are split into a
-// view-INdependent diffuse part (ambient + Lambertian + shadow → bakeable) and
-// a view-DEPENDENT specular part (kept realtime, never baked).
+// geometry term, and Fresnel-Schlick approximation.
 // See diffuseIrradiance() / specularRadiance() / accumulate().
 
 #include "ddgi_common.glsl"
@@ -371,21 +367,17 @@ LightTerms lightContribution(int i, vec3 N, vec3 V, vec3 wp,
 // Convenience aggregators
 // ---------------------------------------------------------------------------
 
-// Diffuse + ambient + shadows, view-independent → this is what gets baked.
-// For the bake path a dummy V is fine since diffuse is view-independent (F is
-// approximated with F0 at normal incidence, which is close enough for Lambertian).
+// Diffuse + ambient + shadows, view-independent.
 vec3 diffuseIrradiance(vec3 N, vec3 wp, vec3 albedo, float metallic, float roughness) {
     vec3 sum = giIndirectDiffuse(wp, N, N, albedo);
     sum += environmentLighting(N, N, albedo, metallic, roughness).diffuse;
     // Use the surface normal as a stand-in view dir for the diffuse-only path.
-    // The Fresnel term evaluated at NdotH≈1 yields ~F0, which is acceptable for
-    // baking since specular highlights (which depend on the true V) are excluded.
     for (int i = 0; i < lights.counts.x; ++i)
         sum += lightContribution(i, N, N, wp, albedo, metallic, roughness).diffuse;
     return sum;
 }
 
-// View-dependent specular only → always evaluated live (never baked).
+// View-dependent specular only.
 vec3 specularRadiance(vec3 N, vec3 V, vec3 wp, vec3 albedo, float metallic, float roughness) {
     vec3 sum = environmentLighting(N, V, albedo, metallic, roughness).specular;
     for (int i = 0; i < lights.counts.x; ++i)
@@ -394,9 +386,7 @@ vec3 specularRadiance(vec3 N, vec3 V, vec3 wp, vec3 albedo, float metallic, floa
 }
 
 // Direct lighting only (no indirect/ambient term) — diffuse + specular with
-// shadows. Used by baked surfaces, which take their indirect from the frozen
-// lightmap but keep direct lighting and shadows live (so dynamic objects still
-// cast moving shadows onto baked receivers).
+// shadows.
 LightTerms directLighting(vec3 N, vec3 V, vec3 wp, vec3 albedo, float metallic, float roughness) {
     LightTerms total;
     total.diffuse = vec3(0.0);

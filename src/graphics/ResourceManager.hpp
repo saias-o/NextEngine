@@ -70,7 +70,7 @@ public:
 
     VkDescriptorSetLayout materialSetLayout() const { return materialSetLayout_; }
     
-    // Global bindless Set Layout (Set 1 in GPU-driven mode)
+    // Global bindless texture/material table. Pipelines choose the set index.
     VkDescriptorSetLayout globalMaterialSetLayout() const { return globalMaterialSetLayout_; }
     VkDescriptorSet globalMaterialSet() const { return globalMaterialSet_; }
     Buffer* globalMaterialBuffer() const { return globalMaterialBuffer_.get(); }
@@ -80,8 +80,8 @@ public:
     void setRegistry(AssetRegistry* registry) { registry_ = registry; }
     AssetRegistry* getRegistry() const { return registry_; }
 
-    // Register a texture in the bindless array, returns its index.
-    uint32_t getBindlessTextureIndex(Texture* texture);
+    // Register a texture in the bindless array if needed, returns its index.
+    uint32_t ensureBindlessTextureIndex(Texture* texture);
     
     // Register material data in the global SSBO, returns its index.
     uint32_t registerMaterialData(const glm::vec4& baseColor, const glm::vec4& emissive,
@@ -94,6 +94,7 @@ private:
     Mesh* createMesh(AssetID id, const std::vector<Vertex>& vertices,
                      const std::vector<uint32_t>& indices);
     void ensureDefaultTextures();
+    uint32_t getBindlessTextureIndex(Texture* texture);
 
     VulkanDevice& device_;
     AssetRegistry* registry_;

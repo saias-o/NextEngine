@@ -63,7 +63,6 @@ void MeshNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
         j["shader"] = (d.type == MaterialType::Unlit) ? "unlit" : "lit";
     }
     j["castShadows"] = castShadows_;
-    j["includeInLightBaking"] = includeInLightBaking_;
     j["meshEnabled"] = meshEnabled_;
     j["outlineEnabled"] = outlineEnabled_;
     j["outlineColor"] = {outlineColor_.r, outlineColor_.g, outlineColor_.b, outlineColor_.a};
@@ -126,7 +125,6 @@ void MeshNode::deserialize(const nlohmann::json& j, ResourceManager& resources) 
         material_ = resources.getMaterial(desc);
     }
     if (j.contains("castShadows")) castShadows_ = j["castShadows"].get<bool>();
-    if (j.contains("includeInLightBaking")) includeInLightBaking_ = j["includeInLightBaking"].get<bool>();
     if (j.contains("meshEnabled")) meshEnabled_ = j["meshEnabled"].get<bool>();
     if (j.contains("outlineEnabled")) outlineEnabled_ = j["outlineEnabled"].get<bool>();
     if (j.contains("outlineColor") && j["outlineColor"].is_array() && j["outlineColor"].size() == 4) {

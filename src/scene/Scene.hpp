@@ -17,7 +17,7 @@ class CollisionObjectNode;
 // Whether lighting is evaluated live every frame, or frozen from a bake.
 enum class LightingMode {
     Realtime,  // shadows/lighting recomputed each frame; baking disabled
-    Baked,     // static contribution precomputed via "Generate Bake"
+    Baked,     // DDGI volume converged then frozen via "Bake GI"
 };
 
 enum class GIMode {
@@ -31,8 +31,8 @@ struct SceneSettings {
     bool enablePostProcessing = true;
 
     LightingMode lightingMode = LightingMode::Realtime;
-    bool baked = false;          // true once a bake has been generated
-    bool bakeRequested = false;  // transient: editor asks the renderer to bake
+    bool baked = false;          // true once the DDGI bake/freeze has converged
+    bool bakeRequested = false;  // transient: editor asks the renderer to bake GI
 
     // Global illumination (DDGI irradiance volume — the single GI primitive).
     bool giEnabled = true;       // sample the irradiance volume for indirect diffuse

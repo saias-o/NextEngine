@@ -49,8 +49,9 @@ void RmlUiRenderInterface::beginFrame(uint32_t width, uint32_t height) {
     width_ = width;
     height_ = height;
     const size_t byteCount = static_cast<size_t>(width_) * height_ * 4;
-    premultipliedPixels_.assign(byteCount, kTransparent);
-    outputPixels_.assign(byteCount, kTransparent);
+    premultipliedPixels_.resize(byteCount);
+    std::fill(premultipliedPixels_.begin(), premultipliedPixels_.end(), kTransparent);
+    outputPixels_.resize(byteCount);
     scissorEnabled_ = false;
     scissorRegion_ = Rml::Rectanglei::MakeInvalid();
     transformEnabled_ = false;
@@ -226,6 +227,7 @@ void RmlUiRenderInterface::drawTriangle(const Rml::Vertex& a, const Rml::Vertex&
     if (minX > maxX || minY > maxY) return;
 
     const float invArea = 1.0f / area;
+    const bool textured = texture != 0;
     for (int y = minY; y <= maxY; ++y) {
         for (int x = minX; x <= maxX; ++x) {
             Rml::Vector2f p{static_cast<float>(x) + kPixelCenter, static_cast<float>(y) + kPixelCenter};
@@ -234,9 +236,12 @@ void RmlUiRenderInterface::drawTriangle(const Rml::Vertex& a, const Rml::Vertex&
             float w2 = edge(p0, p1, p) * invArea;
             if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
 
-            Pixel texel = sampleTexture(texture,
-                a.tex_coord.x * w0 + b.tex_coord.x * w1 + c.tex_coord.x * w2,
-                a.tex_coord.y * w0 + b.tex_coord.y * w1 + c.tex_coord.y * w2);
+            Pixel texel{kOpaque, kOpaque, kOpaque, kOpaque};
+            if (textured) {
+                texel = sampleTexture(texture,
+                    a.tex_coord.x * w0 + b.tex_coord.x * w1 + c.tex_coord.x * w2,
+                    a.tex_coord.y * w0 + b.tex_coord.y * w1 + c.tex_coord.y * w2);
+            }
 
             Pixel color;
             color.r = clampByte(a.colour.red * w0 + b.colour.red * w1 + c.colour.red * w2);
