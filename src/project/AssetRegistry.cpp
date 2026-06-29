@@ -1,4 +1,5 @@
 #include "project/AssetRegistry.hpp"
+#include "core/FormatVersions.hpp"
 #include "core/Log.hpp"
 
 #include <nlohmann/json.hpp>
@@ -71,11 +72,37 @@ bool AssetRegistry::load(const std::string& projectRoot) {
     try {
         json j;
         file >> j;
+        if (!j.is_object()) {
+            Log::error("AssetRegistry: registry root must be an object: ", path.string());
+            return false;
+        }
+
+        const bool legacyShape = !j.contains("assets");
+        const int version = legacyShape ? format::kLegacyVersion
+                                        : format::readVersion(j, format::kLegacyVersion);
+        if (!legacyShape && version > format::kAssetRegistryVersion) {
+            Log::error("AssetRegistry: unsupported asset registry format v", version,
+                       " (supported v", format::kAssetRegistryVersion, "): ", path.string());
+            return false;
+        }
+        if (legacyShape) {
+            Log::info("AssetRegistry: migrated legacy registry format v0 -> v",
+                      format::kAssetRegistryVersion, " in memory: ", path.string());
+        } else if (version < format::kAssetRegistryVersion) {
+            Log::info("AssetRegistry: migrated registry format v", version, " -> v",
+                      format::kAssetRegistryVersion, " in memory: ", path.string());
+        }
+
+        const json* assetsJson = legacyShape ? &j : &j["assets"];
+        if (!assetsJson->is_object()) {
+            Log::error("AssetRegistry: 'assets' must be an object: ", path.string());
+            return false;
+        }
         
         std::unordered_map<AssetID, AssetMetadata> tempAssetsByID;
         std::unordered_map<std::string, AssetID> tempAssetsByPath;
 
-        for (const auto& [idStr, entryJson] : j.items()) {
+        for (const auto& [idStr, entryJson] : assetsJson->items()) {
             AssetMetadata meta;
             meta.id = std::stoull(idStr);
             meta.relativePath = entryJson.value("path", "");
@@ -105,7 +132,7 @@ bool AssetRegistry::save(const std::string& projectRoot) const {
         return false;
     }
 
-    json j = json::object();
+    json assets = json::object();
     
     // Sort by path for predictable diffs in git
     std::vector<AssetMetadata> sortedAssets;
@@ -115,12 +142,17 @@ bool AssetRegistry::save(const std::string& projectRoot) const {
     });
 
     for (const auto& meta : sortedAssets) {
-        j[std::to_string(meta.id)] = {
+        assets[std::to_string(meta.id)] = {
             {"path", meta.relativePath},
             {"hash", meta.contentHash},
             {"type", assetTypeToString(meta.type)}
         };
     }
+
+    json j = {
+        {"version", format::kAssetRegistryVersion},
+        {"assets", std::move(assets)}
+    };
 
     file << j.dump(4);
     return true;

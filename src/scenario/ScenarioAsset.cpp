@@ -1,5 +1,7 @@
 #include "scenario/ScenarioAsset.hpp"
 
+#include "core/FormatVersions.hpp"
+#include "core/Log.hpp"
 #include "scenario/ScenarioRegistry.hpp"
 
 #include <nlohmann/json.hpp>
@@ -146,7 +148,16 @@ bool ScenarioAsset::parse(const json& doc, ScenarioAsset& out, std::vector<Scena
         issue(local, "$", "scenario root must be an object");
     } else {
         out = ScenarioAsset{};
-        out.version = doc.value("version", 1);
+        if (doc.contains("version") && !doc["version"].is_number_integer()) {
+            issue(local, "$.version", "scenario version must be an integer");
+            out.version = format::kScenarioVersion;
+        } else {
+            out.version = format::readVersion(doc, format::kScenarioVersion);
+            if (!format::hasIntegerVersion(doc)) {
+                Log::info("ScenarioAsset: missing version, treating as v",
+                          format::kScenarioVersion);
+            }
+        }
         out.id = doc.value("id", std::string());
         out.blackboard = doc.value("blackboard", json::object());
 
@@ -177,7 +188,7 @@ bool ScenarioAsset::parse(const json& doc, ScenarioAsset& out, std::vector<Scena
 
 json ScenarioAsset::toJson() const {
     json doc;
-    doc["version"] = version;
+    doc["version"] = format::kScenarioVersion;
     doc["id"] = id;
     json roleJson = json::object();
     for (const auto& [name, role] : roles) roleJson[name] = role.data;
@@ -218,7 +229,7 @@ json ScenarioAsset::toJson() const {
 
 std::vector<ScenarioIssue> ScenarioAsset::validate() const {
     std::vector<ScenarioIssue> issues;
-    if (version != 1) issue(issues, "$.version", "unsupported scenario version");
+    if (version != format::kScenarioVersion) issue(issues, "$.version", "unsupported scenario version");
     if (id.empty()) issue(issues, "$.id", "scenario id is required");
     if (!blackboard.is_null() && !blackboard.is_object())
         issue(issues, "$.blackboard", "blackboard must be an object");

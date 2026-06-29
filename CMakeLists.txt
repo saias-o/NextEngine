@@ -505,6 +505,12 @@ if (BUILD_TESTING)
     target_compile_options(ne_scenario_system_tests PRIVATE -Wall -Wextra)
     add_test(NAME ne_scenario_system_tests COMMAND $<TARGET_FILE:ne_scenario_system_tests>)
 
+    add_executable(ne_format_version_tests tests/FormatVersionTests.cpp)
+    ne_test_target(ne_format_version_tests)
+    target_link_libraries(ne_format_version_tests PRIVATE ne_engine)
+    target_compile_options(ne_format_version_tests PRIVATE -Wall -Wextra)
+    add_test(NAME ne_format_version_tests COMMAND $<TARGET_FILE:ne_format_version_tests>)
+
     add_executable(ne_physics_character_tests tests/PhysicsCharacterTest.cpp)
     ne_test_target(ne_physics_character_tests)
     target_link_libraries(ne_physics_character_tests PRIVATE ne_engine)

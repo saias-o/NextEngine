@@ -1,15 +1,20 @@
 #include "project/Project.hpp"
 
+#include "core/FormatVersions.hpp"
 #include "core/Log.hpp"
+
+#include <nlohmann/json.hpp>
 
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 
 namespace ne {
 
 namespace {
 namespace fs = std::filesystem;
+using json = nlohmann::json;
 
 constexpr const char* kProjectExtension = ".neproj";
 constexpr const char* kProjectHeader    = "[NextEngine Project]";
@@ -20,6 +25,12 @@ std::string trim(const std::string& s) {
     if (start == std::string::npos) return "";
     auto end = s.find_last_not_of(" \t\r\n");
     return s.substr(start, end - start + 1);
+}
+
+bool parseBool01(const std::string& value, bool fallback) {
+    if (value == "1" || value == "true") return true;
+    if (value == "0" || value == "false") return false;
+    return fallback;
 }
 
 } // namespace
@@ -76,16 +87,8 @@ bool Project::load(const std::string& neprojPath) {
         return false;
     }
 
-    std::string line;
-    // First line must be the header.
-    if (!std::getline(file, line) || trim(line) != kProjectHeader) {
-        Log::error("Project::load: invalid project file (missing header): ", neprojPath);
-        return false;
-    }
-
-    // Read key=value pairs.
     std::string loadedName;
-    std::string loadedVersion;
+    std::string loadedEngineVersion;
     std::string loadedMainScene;
     int loadedMaxFps = kDefaultMaxFps;
     bool loadedVSync = kDefaultVSync;
@@ -96,41 +99,113 @@ bool Project::load(const std::string& neprojPath) {
     AudioSettings loadedAudioSettings;
     bool loadedAutoMeshLods = false;
     bool loadedShowColliders = true;
+    std::unordered_map<std::string, std::string> loadedAudioAliases;
+    std::unordered_map<std::string, std::string> loadedAutoloads;
 
-    while (std::getline(file, line)) {
-        line = trim(line);
-        if (line.empty() || line[0] == '#') continue;  // skip blank/comment lines
+    try {
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        const std::string text = buffer.str();
+        const std::string trimmed = trim(text);
 
-        auto eq = line.find('=');
-        if (eq == std::string::npos) continue;
-
-        std::string key   = trim(line.substr(0, eq));
-        std::string value = trim(line.substr(eq + 1));
-
-        if (key == "name")                loadedName       = value;
-        else if (key == "engine_version") loadedVersion    = value;
-        else if (key == "main_scene")     loadedMainScene  = value;
-        else if (key == "max_fps")        loadedMaxFps     = std::stoi(value);
-        else if (key == "vsync")          loadedVSync      = (value == "1");
-        else if (key == "shadow_resolution") loadedShadowRes = std::stoi(value);
-        else if (key == "shadow_dist")    loadedShadowDist = std::stof(value);
-        else if (key == "shadow_soft")    loadedShadowSoft = std::stof(value);
-        else if (key == "audio_master_vol") loadedMasterVolume = std::stof(value);
-        else if (key == "audio_default_vol") loadedAudioSettings.volume = std::stof(value);
-        else if (key == "audio_default_loop") loadedAudioSettings.loop = (value == "1");
-        else if (key == "audio_default_spatial") loadedAudioSettings.spatialized = (value == "1");
-        else if (key == "audio_default_min_dist") loadedAudioSettings.minDistance = std::stof(value);
-        else if (key == "audio_default_max_dist") loadedAudioSettings.maxDistance = std::stof(value);
-        else if (key == "auto_mesh_lods") loadedAutoMeshLods = (value == "1");
-        else if (key == "show_colliders") loadedShowColliders = (value == "1");
-        else if (key.find("audio_alias_") == 0) {
-            std::string aliasName = key.substr(12);
-            audioAliases_[aliasName] = value;
-            AudioManager::get().setAlias(aliasName, value);
+        if (trimmed.empty()) {
+            Log::error("Project::load: empty project file: ", neprojPath);
+            return false;
         }
-        else if (key.find("autoload_") == 0) {
-            autoloads_[key.substr(9)] = value;
+
+        if (!trimmed.empty() && trimmed.front() == '{') {
+            json doc = json::parse(trimmed);
+            const int version = format::readVersion(doc, format::kLegacyVersion);
+            if (!format::hasIntegerVersion(doc)) {
+                Log::warn("Project::load: JSON project has no integer version, treating as v0: ", neprojPath);
+            } else if (version > format::kProjectVersion) {
+                Log::warn("Project::load: project format v", version,
+                          " is newer than supported v", format::kProjectVersion,
+                          "; loading known fields best-effort: ", neprojPath);
+            } else if (version < format::kProjectVersion) {
+                Log::info("Project::load: migrated project format v", version,
+                          " -> v", format::kProjectVersion, " in memory: ", neprojPath);
+            }
+
+            loadedName = doc.value("name", std::string());
+            loadedEngineVersion = doc.value("engineVersion", doc.value("engine_version", std::string()));
+            loadedMainScene = doc.value("mainScene", doc.value("main_scene", std::string()));
+
+            const json runtime = doc.value("runtime", json::object());
+            loadedMaxFps = runtime.value("maxFps", doc.value("max_fps", loadedMaxFps));
+            loadedVSync = runtime.value("vsync", doc.value("vsync", loadedVSync));
+
+            const json rendering = doc.value("rendering", json::object());
+            loadedShadowRes = rendering.value("shadowResolution", doc.value("shadow_resolution", loadedShadowRes));
+            loadedShadowDist = rendering.value("shadowDistance", doc.value("shadow_dist", loadedShadowDist));
+            loadedShadowSoft = rendering.value("shadowSoftness", doc.value("shadow_soft", loadedShadowSoft));
+            loadedAutoMeshLods = rendering.value("autoMeshLods", doc.value("auto_mesh_lods", loadedAutoMeshLods));
+            loadedShowColliders = rendering.value("showColliders", doc.value("show_colliders", loadedShowColliders));
+
+            const json audio = doc.value("audio", json::object());
+            loadedMasterVolume = audio.value("masterVolume", doc.value("audio_master_vol", loadedMasterVolume));
+            const json audioDefault = audio.value("default", json::object());
+            loadedAudioSettings.volume = audioDefault.value("volume", doc.value("audio_default_vol", loadedAudioSettings.volume));
+            loadedAudioSettings.loop = audioDefault.value("loop", doc.value("audio_default_loop", loadedAudioSettings.loop));
+            loadedAudioSettings.spatialized = audioDefault.value("spatialized", doc.value("audio_default_spatial", loadedAudioSettings.spatialized));
+            loadedAudioSettings.minDistance = audioDefault.value("minDistance", doc.value("audio_default_min_dist", loadedAudioSettings.minDistance));
+            loadedAudioSettings.maxDistance = audioDefault.value("maxDistance", doc.value("audio_default_max_dist", loadedAudioSettings.maxDistance));
+
+            if (auto aliases = audio.find("aliases"); aliases != audio.end() && aliases->is_object()) {
+                for (const auto& [name, value] : aliases->items()) {
+                    if (value.is_string()) loadedAudioAliases[name] = value.get<std::string>();
+                }
+            }
+
+            if (auto autoloads = doc.find("autoloads"); autoloads != doc.end() && autoloads->is_object()) {
+                for (const auto& [name, value] : autoloads->items()) {
+                    if (value.is_string()) loadedAutoloads[name] = value.get<std::string>();
+                }
+            }
+        } else {
+            std::istringstream lines(text);
+            std::string line;
+            if (!std::getline(lines, line) || trim(line) != kProjectHeader) {
+                Log::error("Project::load: invalid project file (expected JSON or legacy header): ", neprojPath);
+                return false;
+            }
+
+            Log::info("Project::load: migrated legacy project format v0 -> v",
+                      format::kProjectVersion, " in memory: ", neprojPath);
+
+            while (std::getline(lines, line)) {
+                line = trim(line);
+                if (line.empty() || line[0] == '#') continue;
+
+                auto eq = line.find('=');
+                if (eq == std::string::npos) continue;
+
+                std::string key   = trim(line.substr(0, eq));
+                std::string value = trim(line.substr(eq + 1));
+
+                if (key == "name")                loadedName       = value;
+                else if (key == "engine_version") loadedEngineVersion = value;
+                else if (key == "main_scene")     loadedMainScene  = value;
+                else if (key == "max_fps")        loadedMaxFps     = std::stoi(value);
+                else if (key == "vsync")          loadedVSync      = parseBool01(value, loadedVSync);
+                else if (key == "shadow_resolution") loadedShadowRes = std::stoi(value);
+                else if (key == "shadow_dist")    loadedShadowDist = std::stof(value);
+                else if (key == "shadow_soft")    loadedShadowSoft = std::stof(value);
+                else if (key == "audio_master_vol") loadedMasterVolume = std::stof(value);
+                else if (key == "audio_default_vol") loadedAudioSettings.volume = std::stof(value);
+                else if (key == "audio_default_loop") loadedAudioSettings.loop = parseBool01(value, loadedAudioSettings.loop);
+                else if (key == "audio_default_spatial") loadedAudioSettings.spatialized = parseBool01(value, loadedAudioSettings.spatialized);
+                else if (key == "audio_default_min_dist") loadedAudioSettings.minDistance = std::stof(value);
+                else if (key == "audio_default_max_dist") loadedAudioSettings.maxDistance = std::stof(value);
+                else if (key == "auto_mesh_lods") loadedAutoMeshLods = parseBool01(value, loadedAutoMeshLods);
+                else if (key == "show_colliders") loadedShowColliders = parseBool01(value, loadedShowColliders);
+                else if (key.find("audio_alias_") == 0) loadedAudioAliases[key.substr(12)] = value;
+                else if (key.find("autoload_") == 0) loadedAutoloads[key.substr(9)] = value;
+            }
         }
+    } catch (const std::exception& e) {
+        Log::error("Project::load: failed to parse ", neprojPath, ": ", e.what());
+        return false;
     }
 
     if (loadedName.empty()) {
@@ -139,7 +214,7 @@ bool Project::load(const std::string& neprojPath) {
     }
 
     name_          = loadedName;
-    engineVersion_ = loadedVersion.empty() ? "0.1.0" : loadedVersion;
+    engineVersion_ = loadedEngineVersion.empty() ? "0.1.0" : loadedEngineVersion;
     mainScene_     = loadedMainScene;
     maxFps_        = loadedMaxFps;
     vSync_         = loadedVSync;
@@ -150,9 +225,14 @@ bool Project::load(const std::string& neprojPath) {
     defaultAudioSettings_ = loadedAudioSettings;
     autoMeshLods_ = loadedAutoMeshLods;
     showColliders_ = loadedShowColliders;
+    audioAliases_ = std::move(loadedAudioAliases);
+    autoloads_ = std::move(loadedAutoloads);
     filePath_      = path.string();
     rootPath_      = path.parent_path().string();
     loaded_        = true;
+
+    for (const auto& [aliasName, aliasPath] : audioAliases_)
+        AudioManager::get().setAlias(aliasName, aliasPath);
 
     assetRegistry_.load(rootPath_);
     assetRegistry_.sync(rootPath_);
@@ -178,32 +258,45 @@ bool Project::save() const {
         return false;
     }
 
-    file << kProjectHeader << "\n";
-    file << "name=" << name_ << "\n";
-    file << "engine_version=" << engineVersion_ << "\n";
-    if (!mainScene_.empty())
-        file << "main_scene=" << mainScene_ << "\n";
-    file << "max_fps=" << maxFps_ << "\n";
-    file << "vsync=" << (vSync_ ? "1" : "0") << "\n";
-    file << "shadow_resolution=" << shadowResolution_ << "\n";
-    file << "shadow_dist=" << shadowDistance_ << "\n";
-    file << "shadow_soft=" << shadowSoftness_ << "\n";
-    file << "audio_master_vol=" << masterVolume_ << "\n";
-    file << "audio_default_vol=" << defaultAudioSettings_.volume << "\n";
-    file << "audio_default_loop=" << (defaultAudioSettings_.loop ? "1" : "0") << "\n";
-    file << "audio_default_spatial=" << (defaultAudioSettings_.spatialized ? "1" : "0") << "\n";
-    file << "audio_default_min_dist=" << defaultAudioSettings_.minDistance << "\n";
-    file << "audio_default_max_dist=" << defaultAudioSettings_.maxDistance << "\n";
-    file << "auto_mesh_lods=" << (autoMeshLods_ ? "1" : "0") << "\n";
-    file << "show_colliders=" << (showColliders_ ? "1" : "0") << "\n";
-    
-    for (const auto& [aliasName, aliasPath] : audioAliases_) {
-        file << "audio_alias_" << aliasName << "=" << aliasPath << "\n";
-    }
+    json doc;
+    doc["version"] = format::kProjectVersion;
+    doc["name"] = name_;
+    doc["engineVersion"] = engineVersion_;
+    if (!mainScene_.empty()) doc["mainScene"] = mainScene_;
+    doc["runtime"] = {
+        {"maxFps", maxFps_},
+        {"vsync", vSync_}
+    };
+    doc["rendering"] = {
+        {"shadowResolution", shadowResolution_},
+        {"shadowDistance", shadowDistance_},
+        {"shadowSoftness", shadowSoftness_},
+        {"autoMeshLods", autoMeshLods_},
+        {"showColliders", showColliders_}
+    };
 
-    for (const auto& [autoName, autoVal] : autoloads_) {
-        file << "autoload_" << autoName << "=" << autoVal << "\n";
-    }
+    json aliases = json::object();
+    for (const auto& [aliasName, aliasPath] : audioAliases_)
+        aliases[aliasName] = aliasPath;
+
+    doc["audio"] = {
+        {"masterVolume", masterVolume_},
+        {"default", {
+            {"volume", defaultAudioSettings_.volume},
+            {"loop", defaultAudioSettings_.loop},
+            {"spatialized", defaultAudioSettings_.spatialized},
+            {"minDistance", defaultAudioSettings_.minDistance},
+            {"maxDistance", defaultAudioSettings_.maxDistance}
+        }},
+        {"aliases", std::move(aliases)}
+    };
+
+    json autoloads = json::object();
+    for (const auto& [autoName, autoVal] : autoloads_)
+        autoloads[autoName] = autoVal;
+    doc["autoloads"] = std::move(autoloads);
+
+    file << doc.dump(2) << "\n";
 
     Log::info("Saved project '", name_, "' to ", filePath_);
     return true;

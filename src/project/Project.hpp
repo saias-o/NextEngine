@@ -4,13 +4,14 @@
 #include "audio/AudioManager.hpp"
 
 #include <string>
+#include <unordered_map>
 
 namespace ne {
 
 // Represents a NextEngine project on disk. A project is a directory containing
-// a `.neproj` file (simple key=value text) plus standard sub-folders (assets/,
-// scenes/, scripts/, shaders/). The Project class manages creation, loading,
-// and saving of this structure.
+// a JSON `.neproj` file plus standard sub-folders (assets/, scenes/, scripts/,
+// shaders/). Legacy key=value `.neproj` files are still accepted on load.
+// The Project class manages creation, loading, and saving of this structure.
 //
 // When no project is loaded, `isLoaded()` returns false and the editor should
 // show a welcome/project-selection screen.

@@ -1,5 +1,6 @@
 #include "scene/SceneSerializer.hpp"
 
+#include "core/FormatVersions.hpp"
 #include "core/Log.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/ResourceManager.hpp"
@@ -25,8 +26,6 @@ namespace ne {
 
 namespace {
 using json = nlohmann::json;
-
-constexpr int kSceneVersion = 2;
 
 bool isModelPath(const std::string& path) {
     std::string ext = std::filesystem::path(path).extension().string();
@@ -144,6 +143,33 @@ void ensureUniqueIds(Node& root) {
     });
 }
 
+bool acceptSceneDocumentVersion(const json& doc, const std::string& context,
+                                const std::string& path) {
+    if (!doc.is_object()) {
+        Log::error(context, ": scene document root must be an object: ", path);
+        return false;
+    }
+    if (doc.contains("version") && !doc["version"].is_number_integer()) {
+        Log::error(context, ": scene document version must be an integer: ", path);
+        return false;
+    }
+
+    const int version = format::readVersion(doc, format::kLegacyVersion);
+    if (version > format::kSceneVersion) {
+        Log::error(context, ": unsupported scene format v", version,
+                   " (supported v", format::kSceneVersion, "): ", path);
+        return false;
+    }
+    if (!format::hasIntegerVersion(doc)) {
+        Log::info(context, ": migrated legacy scene format v0 -> v",
+                  format::kSceneVersion, " in memory: ", path);
+    } else if (version < format::kSceneVersion) {
+        Log::info(context, ": migrated scene format v", version, " -> v",
+                  format::kSceneVersion, " in memory: ", path);
+    }
+    return true;
+}
+
 } // namespace
 
 std::string SceneSerializer::nodeToJson(Node& node, ResourceManager& resources) {
@@ -173,6 +199,8 @@ std::unique_ptr<Node> SceneSerializer::loadNodeFromSceneFile(const std::string& 
     }
     try {
         json doc = json::parse(file);
+        if (!acceptSceneDocumentVersion(doc, "loadNodeFromSceneFile", path))
+            return nullptr;
         json root = doc.at("scene");
         root["type"] = "Scene"; // Force the root node to be instantiated as a Scene
         auto node = deserializeNode(root, resources, idPolicy);
@@ -187,7 +215,7 @@ std::unique_ptr<Node> SceneSerializer::loadNodeFromSceneFile(const std::string& 
 bool SceneSerializer::saveToFile(Node& sceneRoot, ResourceManager& resources,
                                  const std::string& path) {
     json doc;
-    doc["version"] = kSceneVersion;
+    doc["version"] = format::kSceneVersion;
     doc["scene"] = serializeNode(sceneRoot, resources);
 
     std::ofstream file(path);
@@ -210,6 +238,8 @@ bool SceneSerializer::loadIntoScene(Scene& scene, ResourceManager& resources,
 
     try {
         json doc = json::parse(file);
+        if (!acceptSceneDocumentVersion(doc, "loadIntoScene", path))
+            return false;
         const json& root = doc.at("scene");
 
         scene.clearChildren();
