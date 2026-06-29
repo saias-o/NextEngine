@@ -46,6 +46,8 @@ set(SHADERS
     ${SHADER_DIR}/culling.comp
     ${SHADER_DIR}/tonemap.vert
     ${SHADER_DIR}/tonemap.frag
+    ${SHADER_DIR}/bloom_downsample.frag
+    ${SHADER_DIR}/bloom_upsample.frag
     ${SHADER_DIR}/skybox.vert
     ${SHADER_DIR}/skybox.frag
     ${SHADER_DIR}/water.vert
@@ -218,6 +220,7 @@ add_library(ne_engine STATIC
     src/core/Camera.cpp
     src/core/Input.cpp
     src/core/Paths.cpp
+    src/core/Profiler.cpp
     src/core/Reflection.cpp
     src/fx/ParticleEffect.cpp
     src/fx/ParticlePresetLibrary.cpp
@@ -271,7 +274,9 @@ add_library(ne_engine STATIC
     src/graphics/Swapchain.cpp
     src/graphics/Buffer.cpp
     src/graphics/Material.cpp
+    src/graphics/GpuProfiler.cpp
     src/graphics/ImGuiLayer.cpp
+    src/graphics/MemoryProfiler.cpp
     src/graphics/GeometryRegistry.cpp
     src/graphics/Mesh.cpp
     src/graphics/UIRenderer.cpp
@@ -284,6 +289,7 @@ add_library(ne_engine STATIC
     src/graphics/Texture.cpp
     src/graphics/ResourceManager.cpp
     src/render/Renderer.cpp
+    src/render/PostProcessor.cpp
     src/render/RenderFeatureRegistry.cpp
     src/fx/ParticleRuntime.cpp
     src/render/features/WaterFeature.cpp
@@ -349,6 +355,9 @@ target_include_directories(ne_engine PUBLIC
     third_party/miniaudio
 )
 target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt quickjs RmlUi::RmlUi)
+if(WIN32)
+    target_link_libraries(ne_engine PUBLIC winmm psapi)
+endif()
 if(NE_ENABLE_XR)
     target_sources(ne_engine PRIVATE
         src/xr/XrInstance.cpp
@@ -431,6 +440,7 @@ add_library(ne_editor STATIC
     src/editor/panels/FileBrowserPanel.cpp
     src/editor/panels/ViewportPanel.cpp
     src/editor/panels/ModelImporterPanel.cpp
+    src/editor/panels/ProfilerPanel.cpp
 )
 target_link_libraries(ne_editor PUBLIC ne_engine)
 target_compile_options(ne_editor PRIVATE -Wall -Wextra)

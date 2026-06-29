@@ -88,6 +88,7 @@ bool Project::load(const std::string& neprojPath) {
     std::string loadedVersion;
     std::string loadedMainScene;
     int loadedMaxFps = kDefaultMaxFps;
+    bool loadedVSync = kDefaultVSync;
     int loadedShadowRes = kDefaultShadowResolution;
     float loadedShadowDist = kDefaultShadowDistance;
     float loadedShadowSoft = kDefaultShadowSoftness;
@@ -110,7 +111,8 @@ bool Project::load(const std::string& neprojPath) {
         else if (key == "engine_version") loadedVersion    = value;
         else if (key == "main_scene")     loadedMainScene  = value;
         else if (key == "max_fps")        loadedMaxFps     = std::stoi(value);
-        else if (key == "shadow_resolution") shadowResolution_ = std::stoi(value);
+        else if (key == "vsync")          loadedVSync      = (value == "1");
+        else if (key == "shadow_resolution") loadedShadowRes = std::stoi(value);
         else if (key == "shadow_dist")    loadedShadowDist = std::stof(value);
         else if (key == "shadow_soft")    loadedShadowSoft = std::stof(value);
         else if (key == "audio_master_vol") loadedMasterVolume = std::stof(value);
@@ -140,6 +142,8 @@ bool Project::load(const std::string& neprojPath) {
     engineVersion_ = loadedVersion.empty() ? "0.1.0" : loadedVersion;
     mainScene_     = loadedMainScene;
     maxFps_        = loadedMaxFps;
+    vSync_         = loadedVSync;
+    shadowResolution_ = loadedShadowRes;
     shadowDistance_ = loadedShadowDist;
     shadowSoftness_ = loadedShadowSoft;
     masterVolume_ = loadedMasterVolume;
@@ -180,6 +184,7 @@ bool Project::save() const {
     if (!mainScene_.empty())
         file << "main_scene=" << mainScene_ << "\n";
     file << "max_fps=" << maxFps_ << "\n";
+    file << "vsync=" << (vSync_ ? "1" : "0") << "\n";
     file << "shadow_resolution=" << shadowResolution_ << "\n";
     file << "shadow_dist=" << shadowDistance_ << "\n";
     file << "shadow_soft=" << shadowSoftness_ << "\n";

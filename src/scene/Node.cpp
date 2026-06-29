@@ -16,6 +16,7 @@
 namespace ne {
 
 uint32_t Node::g_hierarchyVersion = 1;
+uint32_t Node::g_transformVersion = 1;
 
 glm::mat4 Transform::matrix() const {
     glm::mat4 m = glm::translate(glm::mat4(1.0f), position);
@@ -172,6 +173,7 @@ void Node::updateTransforms(const glm::mat4& parentWorld, bool parentDirty) {
     if (dirty) {
         worldTransform_ = parentWorld * currentLocal;
         lastLocalMatrix_ = currentLocal;
+        ++g_transformVersion;
     }
     
     for (auto& child : children_) {

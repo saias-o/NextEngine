@@ -13,13 +13,15 @@ class Window;
 // the Renderer owns layout transitions and vkCmdBeginRendering.
 class Swapchain {
 public:
-    Swapchain(VulkanDevice& device, Window& window);
+    Swapchain(VulkanDevice& device, Window& window, bool vSync = false);
     ~Swapchain();
     Swapchain(const Swapchain&) = delete;
     Swapchain& operator=(const Swapchain&) = delete;
 
     // Waits until the window has a non-zero size, then rebuilds the swap chain.
     void recreate();
+    bool setVSync(bool enabled);
+    bool vSync() const { return vSync_; }
 
     VkSwapchainKHR handle() const { return swapchain_; }
     VkExtent2D extent() const { return extent_; }
@@ -71,6 +73,7 @@ private:
     VkFormat depthFormat_{};
     VkExtent2D extent_{};
     VkSampleCountFlagBits samples_ = VK_SAMPLE_COUNT_1_BIT;
+    bool vSync_ = false;
 
     // Multisampled color target, resolved into the swap-chain image for present.
     VkImage colorImage_ = VK_NULL_HANDLE;

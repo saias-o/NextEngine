@@ -32,6 +32,8 @@ class ResourceManager;
 class ShadowMap;
 class UIRenderer;
 class GIVolume;
+class GpuProfiler;
+class PostProcessor;
 struct SceneSettings;
 
 // Camera block shared by the desktop (mono) and XR (stereo multiview) paths:
@@ -126,6 +128,8 @@ private:
         glm::vec4 fogParams{0.0f};       // x enabled, y start, z density, w exposure
         glm::vec4 bloomParams{0.0f};     // x enabled, y threshold, z intensity, w radius px
         glm::vec4 sourceRect{0.0f, 0.0f, 1.0f, 1.0f};
+        glm::vec4 projectionParams{0.0f};
+        glm::vec4 projectionParams2{0.0f};
     };
 
     struct WebCanvasWorldPushConstants {
@@ -136,7 +140,8 @@ private:
     void updateGlobalShadowDescriptor();
     void updateGIDescriptors();  // re-point set 0 bindings 4/5 at the current GI atlas
     void updateEnvironmentDescriptor(Scene& scene);
-    bool shouldUpdateRealtimeGI() const;
+    bool shouldUpdateRealtimeGI(bool dirty) const;
+    uint64_t giDirtySignature(const Scene& scene) const;
     TonemapPushConstants tonemapPushConstants(const SceneSettings& settings,
                                               const glm::mat4& projection) const;
     void createGlobalSetLayout();
@@ -152,6 +157,7 @@ private:
     void createHdrResources();
     void cleanupHdrResources();
     void createTonemapPipeline();
+    void updateTonemapDescriptorSet();
     void recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
                            Scene& scene, const Camera& camera);
     void createUniformBuffers();
@@ -189,6 +195,7 @@ private:
     std::unique_ptr<ShadowMap> shadowMap_;
     std::unique_ptr<UIRenderer> uiRenderer_;
     std::unique_ptr<GIVolume> gi_;  // DDGI irradiance volume (the single GI primitive)
+    std::unique_ptr<GpuProfiler> gpuProfiler_;
 
     bool viewportOverride_ = false;
     glm::vec2 viewportPos_{0.0f};
@@ -204,6 +211,8 @@ private:
     VkImage depthResolveImage_ = VK_NULL_HANDLE;  // single-sample depth for AO when MSAA is enabled
     VmaAllocation depthResolveAllocation_ = VK_NULL_HANDLE;
     VkImageView depthResolveView_ = VK_NULL_HANDLE;
+    uint64_t hdrTrackedBytes_ = 0;
+    std::unique_ptr<PostProcessor> postProcessor_;
 
     // Tonemap pipeline
     std::unique_ptr<Pipeline> tonemapPipeline_;
@@ -211,6 +220,7 @@ private:
     VkDescriptorPool tonemapPool_ = VK_NULL_HANDLE;
     VkDescriptorSet tonemapSet_ = VK_NULL_HANDLE;
     VkSampler tonemapSampler_ = VK_NULL_HANDLE;
+    VkSampler tonemapDepthSampler_ = VK_NULL_HANDLE;
     float exposure_ = 1.0f;
 
     // Scene-pass features (skybox, water, debug lines, …). The Renderer builds them
@@ -267,6 +277,8 @@ private:
     int giRealtimeWarmupRemaining_ = kGIRealtimeWarmupFrames;
     uint64_t giFrameCounter_ = 0;
     uint32_t giLastHierarchyVersion_ = 0;
+    uint32_t giLastTransformVersion_ = 0;
+    uint64_t giLastDirtySignature_ = 0;
     bool giWasEnabled_ = true;
     int giLastLightingMode_ = 0;
     int giLastMode_ = 0;
@@ -289,6 +301,7 @@ private:
     void createXrTargets();
     void createXrPipelines();
     void cleanupXrTargets();
+    void updateXrTonemapDescriptorSets();
     void updateUniformBufferXr(uint32_t frame, const std::vector<EyeRenderInfo>& eyes,
                                Scene& scene, Project* project);
     void recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
@@ -319,9 +332,11 @@ private:
     VmaAllocation xrDepthAllocation_ = VK_NULL_HANDLE;
     VkImageView xrDepthArrayView_ = VK_NULL_HANDLE;
     std::array<VkImageView, 2> xrDepthLayerViews_{};   // per-layer, tonemap depth source
+    uint64_t xrTrackedBytes_ = 0;
 
     VkDescriptorPool xrTonemapPool_ = VK_NULL_HANDLE;
     std::array<VkDescriptorSet, 2> xrTonemapSets_{};   // one per eye layer
+    std::array<std::unique_ptr<PostProcessor>, 2> xrPostProcessors_;
 #else
     bool xrMode_ = false; // fallback for non-XR builds
 #endif

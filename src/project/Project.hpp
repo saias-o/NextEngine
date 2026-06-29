@@ -58,12 +58,16 @@ public:
     std::string shadersDir() const { return rootPath_ + "/shaders"; }
 
     static constexpr int kDefaultMaxFps = 240;
+    static constexpr bool kDefaultVSync = false;
     static constexpr int kDefaultShadowResolution = 2048;
     static constexpr float kDefaultShadowDistance = 25.0f;
     static constexpr float kDefaultShadowSoftness = 1.0f;
 
     int maxFps() const { return maxFps_; }
     void setMaxFps(int fps) { maxFps_ = fps; }
+
+    bool vSync() const { return vSync_; }
+    void setVSync(bool enabled) { vSync_ = enabled; }
 
     int shadowResolution() const { return shadowResolution_; }
     void setShadowResolution(int res) { shadowResolution_ = res; }
@@ -106,6 +110,7 @@ private:
     std::string engineVersion_ = "0.1.0";
     std::string mainScene_;
     int maxFps_ = kDefaultMaxFps; // 0 means unlimited
+    bool vSync_ = kDefaultVSync;
     int shadowResolution_ = kDefaultShadowResolution;
     float shadowDistance_ = kDefaultShadowDistance;
     float shadowSoftness_ = kDefaultShadowSoftness;

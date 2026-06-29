@@ -4,6 +4,7 @@
 
 layout(set = 0, binding = 0) uniform sampler2D hdrInput;
 layout(set = 0, binding = 1) uniform sampler2D depthInput;
+layout(set = 0, binding = 2) uniform sampler2D bloomInput;
 
 layout(push_constant) uniform PushConstants {
     mat4 invProjection;
@@ -12,6 +13,8 @@ layout(push_constant) uniform PushConstants {
     vec4 fogParams;       // x enabled, y start, z density, w exposure
     vec4 bloomParams;     // x enabled, y threshold, z intensity, w radius px
     vec4 sourceRect;      // xy = source UV origin, zw = source UV size
+    vec4 projectionParams; // x invP00, y invP11, z invP23, w invP33
+    vec4 projectionParams2; // x invP22, y invP32
 } push;
 
 layout(location = 0) in vec2 fragUV;
@@ -21,9 +24,6 @@ const int AO_DIR_COUNT = 8;
 const int AO_STEP_COUNT = 2;
 const float AO_BIAS = 0.03;
 const float AO_NORMAL_EPSILON = 1e-4;
-const int BLOOM_SAMPLE_COUNT = 12;
-const float BLOOM_SOFT_KNEE = 0.35;
-
 vec2 sourceUV(vec2 viewportUV) {
     return push.sourceRect.xy + clamp(viewportUV, vec2(0.0), vec2(1.0)) * push.sourceRect.zw;
 }
@@ -52,9 +52,12 @@ vec3 acesFilmic(vec3 x) {
 }
 
 vec3 reconstructViewPosition(vec2 uv, float depth) {
-    vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    vec4 view = push.invProjection * clip;
-    return view.xyz / max(view.w, 1e-6);
+    vec2 clipXY = uv * 2.0 - 1.0;
+    float viewW = push.projectionParams.z * depth + push.projectionParams.w;
+    vec3 view = vec3(clipXY.x * push.projectionParams.x,
+                     clipXY.y * push.projectionParams.y,
+                     push.projectionParams2.x * depth + push.projectionParams2.y);
+    return view / max(viewW, 1e-6);
 }
 
 vec3 viewNormalFromDepth(vec2 uv, vec3 center) {
@@ -113,34 +116,10 @@ float ambientOcclusion(vec2 uv) {
     return pow(clamp(ao, 0.0, 1.0), push.aoParams.w);
 }
 
-vec3 brightPass(vec3 color) {
-    float threshold = push.bloomParams.y;
-    float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    float knee = max(threshold * BLOOM_SOFT_KNEE, 0.001);
-    float weight = smoothstep(threshold - knee, threshold + knee, luminance);
-    return color * weight;
-}
-
 vec3 bloom(vec2 uv) {
-    if (push.bloomParams.x < 0.5 || push.bloomParams.z <= 0.0 || push.bloomParams.w <= 0.0)
+    if (push.bloomParams.x < 0.5 || push.bloomParams.z <= 0.0)
         return vec3(0.0);
-
-    vec2 texel = viewportTexel();
-    vec2 radius = texel * push.bloomParams.w;
-    vec2 offsets[BLOOM_SAMPLE_COUNT] = vec2[](
-        vec2( 1.0,  0.0), vec2(-1.0,  0.0), vec2( 0.0,  1.0), vec2( 0.0, -1.0),
-        vec2( 0.707,  0.707), vec2(-0.707,  0.707), vec2( 0.707, -0.707), vec2(-0.707, -0.707),
-        vec2( 2.0,  0.0), vec2(-2.0,  0.0), vec2( 0.0,  2.0), vec2( 0.0, -2.0)
-    );
-
-    vec3 sum = brightPass(sampleHdr(uv).rgb) * 0.18;
-    float weightSum = 0.18;
-    for (int i = 0; i < BLOOM_SAMPLE_COUNT; ++i) {
-        float weight = i < 8 ? 0.075 : 0.055;
-        sum += brightPass(sampleHdr(uv + offsets[i] * radius).rgb) * weight;
-        weightSum += weight;
-    }
-    return (sum / weightSum) * push.bloomParams.z;
+    return texture(bloomInput, clamp(uv, vec2(0.0), vec2(1.0))).rgb * push.bloomParams.z;
 }
 
 vec3 applyFog(vec3 color, vec2 uv) {

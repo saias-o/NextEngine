@@ -27,6 +27,7 @@ class InspectorPanel;
 class FileBrowserPanel;
 class ViewportPanel;
 class ModelImporterPanel;
+class ProfilerPanel;
 class McpBridge;
 
 // The full editor interface (Godot/Unity-style). Draws a dockable layout:
@@ -43,6 +44,7 @@ class EditorUI {
     friend class FileBrowserPanel;
     friend class ViewportPanel;
     friend class ModelImporterPanel;
+    friend class ProfilerPanel;
     friend class PropertyEditor;
     friend class McpBridge;  // reaches document_ + execute() for MCP-driven edits
 public:
@@ -121,6 +123,7 @@ private:
     bool showFileBrowser_ = true;
     bool showViewportOverlay_ = true;
     bool showModelImporter_ = false;
+    bool showProfiler_ = false;
 
     // Selection
     Node* selectedNode_ = nullptr;

@@ -2,9 +2,11 @@
 
 #include "core/Input.hpp"
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 #include "core/Time.hpp"
 #include "core/Window.hpp"
 #include "graphics/ImGuiLayer.hpp"
+#include "graphics/MemoryProfiler.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Swapchain.hpp"
 #include "graphics/VulkanDevice.hpp"
@@ -65,6 +67,11 @@
 
 #ifdef _WIN32
 #include <process.h>
+extern "C" __declspec(dllimport) unsigned int __stdcall timeBeginPeriod(unsigned int period);
+extern "C" __declspec(dllimport) unsigned int __stdcall timeEndPeriod(unsigned int period);
+#ifndef TIMERR_NOERROR
+#define TIMERR_NOERROR 0
+#endif
 #endif
 
 namespace ne {
@@ -72,6 +79,43 @@ namespace ne {
 namespace {
 constexpr uint32_t kWidth = 1600;
 constexpr uint32_t kHeight = 900;
+
+void sleepUntil(double targetTime) {
+    while (true) {
+        const double remaining = targetTime - glfwGetTime();
+        if (remaining <= 0.0) break;
+
+        // Windows can still coalesce a nominal 1 ms sleep into ~15.6 ms on some
+        // systems. Stop sleeping early enough that one coarse sleep cannot push
+        // a 45/60 FPS cap down to the next refresh-like bucket.
+        if (remaining > 0.010) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        } else {
+            std::this_thread::yield();
+        }
+    }
+}
+
+#ifdef _WIN32
+class TimerResolutionScope {
+public:
+    TimerResolutionScope() : active_(timeBeginPeriod(1) == TIMERR_NOERROR) {}
+    ~TimerResolutionScope() {
+        if (active_) timeEndPeriod(1);
+    }
+
+    TimerResolutionScope(const TimerResolutionScope&) = delete;
+    TimerResolutionScope& operator=(const TimerResolutionScope&) = delete;
+
+private:
+    bool active_ = false;
+};
+#else
+class TimerResolutionScope {
+public:
+    TimerResolutionScope() = default;
+};
+#endif
 }
 
 Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool requireXr) {
@@ -109,6 +153,9 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
 
     if (!initialProject.empty() && !project_->load(initialProject))
         Log::warn("Failed to load initial project: ", initialProject);
+
+    if (!xrMode_ && swapchain_)
+        swapchain_->setVSync(project_->vSync());
 
     // No project loaded → the game provides its scene.
     if (!project_->isLoaded() && sceneSetup)
@@ -323,30 +370,22 @@ void Engine::clearRenderViewport() {
 }
 
 void Engine::runDesktop() {
+    TimerResolutionScope timerResolution;
+    Profiler::instance().setThreadName("Main");
     double last = glfwGetTime();
     while (!window_->shouldClose()) {
-        window_->pollEvents();
+        NE_PROFILE_FRAME_BEGIN();
+        {
+        NE_PROFILE_SCOPE("Frame");
 
-        int maxFps = project_ ? project_->maxFps() : Project::kDefaultMaxFps;
-        if (maxFps > 0) {
-            double targetTime = 1.0 / maxFps;
-            while (true) {
-                double elapsed = glfwGetTime() - last;
-                if (elapsed >= targetTime) break;
-                
-                // If we have more than 2ms to wait, sleep to save CPU.
-                // Otherwise, yield/spin for precision.
-                if (targetTime - elapsed > 0.002) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                } else {
-                    std::this_thread::yield();
-                }
-            }
+        {
+            NE_PROFILE_SCOPE("Window/PollEvents");
+            window_->pollEvents();
         }
-        
-        double now = glfwGetTime();
-        float realDt = static_cast<float>(now - last);
-        last = now;
+
+        const double frameStart = glfwGetTime();
+        float realDt = static_cast<float>(frameStart - last);
+        last = frameStart;
 
         Time::update(realDt);  // sets scaled delta + elapsed
         Input::newFrame();     // single per-frame input snapshot
@@ -368,40 +407,74 @@ void Engine::runDesktop() {
             uiMouse -= renderViewportPos_;
             uiViewportSize = renderViewportSize_;
         }
-        if (uiInteraction_.update(*activeScene, camera_, uiMouse, uiViewportSize,
-                                  isLeftDown, isLeftPressed, isLeftReleased)) {
-            Input::consumeMouse();
+        {
+            NE_PROFILE_SCOPE("UI/Interaction");
+            if (uiInteraction_.update(*activeScene, camera_, uiMouse, uiViewportSize,
+                                      isLeftDown, isLeftPressed, isLeftReleased)) {
+                Input::consumeMouse();
+            }
         }
 
-        imgui_->beginFrame();
-        if (onFrame_)
+        {
+            NE_PROFILE_SCOPE("ImGui/BeginFrame");
+            imgui_->beginFrame();
+        }
+        if (onFrame_) {
+            NE_PROFILE_SCOPE("Editor/OnFrame");
             onFrame_(realDt);              // application: its input + UI
+        }
 
         // The application callback may switch Play/Preview mode and destroy the
         // previously active scene. Never carry that borrowed pointer across the
         // callback boundary.
         activeScene = sceneOverride_ ? sceneOverride_ : scene_.get();
-        activeScene->update(Time::delta());     // behaviours: scaled time (pausable)
+        {
+            NE_PROFILE_SCOPE("Scene/Update");
+            activeScene->update(Time::delta());     // behaviours: scaled time (pausable)
+        }
 
         // During Play, scene cameras drive the view (the editor fly cam is frozen).
         // The director picks the highest-priority active CameraNode and blends; with
         // no camera it returns false and the editor camera stays in control.
-        if (sceneTree_->mounted())
+        if (sceneTree_->mounted()) {
+            NE_PROFILE_SCOPE("Scene/CameraDirector");
             cameraDirector_.update(*activeScene, camera_, Time::delta());
+        }
 
         // Apply deferred gameplay ops (queueFree, changeScene) once behaviours are
         // done — never mutate the tree mid-update. The World object identity is
         // stable across scene swaps, so sceneOverride_ stays valid.
         if (sceneTree_->mounted()) {
+            NE_PROFILE_SCOPE("SceneTree/Deferred");
             sceneTree_->applyDeferred();
             sceneTree_->tickTimers(Time::delta());  // scaled dt → frozen on pause
             if (sceneTree_->quitRequested()) window_->close();
         }
 
-        AudioManager::get().update();      // update audio spatialization
-        imgui_->endFrame();  // finalize draw data even if the frame is skipped (resize)
+        {
+            NE_PROFILE_SCOPE("Audio/Update");
+            AudioManager::get().update();      // update audio spatialization
+        }
+        {
+            NE_PROFILE_SCOPE("ImGui/EndFrame");
+            imgui_->endFrame();  // finalize draw data even if the frame is skipped (resize)
+        }
 
-        renderer_->drawFrame(*activeScene, camera_, project_.get());
+        if (Profiler::instance().enabled()) {
+            MemoryProfiler::publish(*device_);
+        }
+        {
+            NE_PROFILE_SCOPE("Renderer/DrawFrame");
+            renderer_->drawFrame(*activeScene, camera_, project_.get());
+        }
+
+        const int maxFps = project_ ? project_->maxFps() : Project::kDefaultMaxFps;
+        if (maxFps > 0) {
+            NE_PROFILE_SCOPE("Frame/Throttle");
+            sleepUntil(frameStart + 1.0 / static_cast<double>(maxFps));
+        }
+        }
+        NE_PROFILE_FRAME_END();
     }
     vkDeviceWaitIdle(device_->device());
 }

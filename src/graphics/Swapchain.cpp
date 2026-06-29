@@ -1,6 +1,7 @@
 #include "graphics/Swapchain.hpp"
 
 #include "core/Window.hpp"
+#include "core/Log.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "vk_mem_alloc.h"
 
@@ -11,8 +12,24 @@
 
 namespace ne {
 
-Swapchain::Swapchain(VulkanDevice& device, Window& window)
-    : device_(device), window_(window) {
+namespace {
+const char* presentModeName(VkPresentModeKHR mode) {
+    switch (mode) {
+    case VK_PRESENT_MODE_IMMEDIATE_KHR: return "IMMEDIATE";
+    case VK_PRESENT_MODE_MAILBOX_KHR: return "MAILBOX";
+    case VK_PRESENT_MODE_FIFO_KHR: return "FIFO";
+    case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return "FIFO_RELAXED";
+    default: return "UNKNOWN";
+    }
+}
+
+bool hasPresentMode(const std::vector<VkPresentModeKHR>& available, VkPresentModeKHR mode) {
+    return std::find(available.begin(), available.end(), mode) != available.end();
+}
+}
+
+Swapchain::Swapchain(VulkanDevice& device, Window& window, bool vSync)
+    : device_(device), window_(window), vSync_(vSync) {
     samples_ = device_.maxUsableSampleCount();
     depthFormat_ = device_.findDepthFormat();
     createSwapchain();
@@ -20,6 +37,13 @@ Swapchain::Swapchain(VulkanDevice& device, Window& window)
     createColorResources();
     createDepthResources();
     createRenderFinishedSemaphores();
+}
+
+bool Swapchain::setVSync(bool enabled) {
+    if (vSync_ == enabled) return false;
+    vSync_ = enabled;
+    recreate();
+    return true;
 }
 
 Swapchain::~Swapchain() {
@@ -82,8 +106,15 @@ VkSurfaceFormatKHR Swapchain::chooseSurfaceFormat(const std::vector<VkSurfaceFor
 }
 
 VkPresentModeKHR Swapchain::choosePresentMode(const std::vector<VkPresentModeKHR>& available) const {
-    for (auto& m : available)
-        if (m == VK_PRESENT_MODE_MAILBOX_KHR) return m;
+    if (vSync_)
+        return VK_PRESENT_MODE_FIFO_KHR;  // guaranteed by the Vulkan spec
+
+    if (hasPresentMode(available, VK_PRESENT_MODE_IMMEDIATE_KHR))
+        return VK_PRESENT_MODE_IMMEDIATE_KHR;
+    if (hasPresentMode(available, VK_PRESENT_MODE_MAILBOX_KHR))
+        return VK_PRESENT_MODE_MAILBOX_KHR;
+    if (hasPresentMode(available, VK_PRESENT_MODE_FIFO_RELAXED_KHR))
+        return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
@@ -103,6 +134,7 @@ void Swapchain::createSwapchain() {
     auto format = chooseSurfaceFormat(support.formats);
     auto mode = choosePresentMode(support.presentModes);
     auto extent = chooseExtent(support.capabilities);
+    Log::info("Swapchain present mode: ", presentModeName(mode), " (vsync=", vSync_ ? "on" : "off", ")");
 
     uint32_t imageCount = support.capabilities.minImageCount + 1;
     if (support.capabilities.maxImageCount > 0 && imageCount > support.capabilities.maxImageCount)

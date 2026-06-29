@@ -24,6 +24,7 @@
 #include "editor/panels/FileBrowserPanel.hpp"
 #include "editor/panels/ViewportPanel.hpp"
 #include "editor/panels/ModelImporterPanel.hpp"
+#include "editor/panels/ProfilerPanel.hpp"
 #include "scene/GLTFLoader.hpp"
 #ifdef NE_ENABLE_MCP
 #include "mcp/McpBridge.hpp"
@@ -217,6 +218,9 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
 
     // Keyboard shortcuts (skip while typing in a text field).
     ImGuiIO& io = ImGui::GetIO();
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F3)) {
+        showProfiler_ = !showProfiler_;
+    }
     if (io.KeyCtrl && !io.WantTextInput) {
         // Copy and Save are read-only and stay available in Play; the mutating
         // shortcuts (undo/redo/paste/duplicate) are gated on canEdit().
@@ -318,6 +322,11 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     if (showModelImporter_) {
         ModelImporterPanel modelImporterPanel;
         modelImporterPanel.draw(this, previewScene_.get(), previewModelPath_);
+    }
+
+    if (showProfiler_) {
+        ProfilerPanel profilerPanel;
+        profilerPanel.draw(this);
     }
 
     ViewportPanel viewportPanel;
@@ -1418,14 +1427,8 @@ void EditorUI::drawSettingsWindow(Project* project) {
                 if (ImGui::InputInt("Max FPS (0 = Unlimited)", &maxFps)) {
                     if (maxFps < 0) maxFps = 0;
                     project->setMaxFps(maxFps);
-                }
-
-                bool autoLods = project->autoMeshLods();
-                if (ImGui::Checkbox("Auto Mesh LODs", &autoLods)) {
-                    project->setAutoMeshLods(autoLods);
                     project->save();
                 }
-                ImGui::TextDisabled("When enabled, importing .glb files runs AutoLOD to generate LOD chains.");
                 
                 ImGui::SeparatorText("Metadata");
                 ImGui::TextDisabled("Version: 1.0.0");
@@ -1482,11 +1485,14 @@ void EditorUI::drawSettingsWindow(Project* project) {
                 const char* msaaNames[] = { "Off", "2x MSAA", "4x MSAA", "8x MSAA" };
                 ImGui::Combo("Anti-aliasing", &msaa, msaaNames, 4);
 
-                static bool vsync = true;
-                ImGui::Checkbox("V-Sync", &vsync);
+                bool vsync = project->vSync();
+                if (ImGui::Checkbox("V-Sync", &vsync)) {
+                    project->setVSync(vsync);
+                    project->save();
+                }
                 
                 ImGui::Spacing();
-                ImGui::TextDisabled("(Note: These settings will be wired to the Vulkan backend later)");
+                ImGui::TextDisabled("(Note: Anti-aliasing will be wired to the Vulkan backend later)");
 
                 ImGui::EndTabItem();
             }

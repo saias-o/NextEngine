@@ -205,6 +205,7 @@ protected:
 
 public:
     static uint32_t g_hierarchyVersion;
+    static uint32_t g_transformVersion;
 };
 
 } // namespace ne

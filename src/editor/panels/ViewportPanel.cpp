@@ -9,7 +9,6 @@ namespace ne {
 
 void ViewportPanel::draw(EditorUI* editor, Camera* camera, float dt) {
     if (!editor->showViewportOverlay_) return;
-    (void)dt;
 
     ImGuiWindowFlags overlayFlags = ImGuiWindowFlags_NoDecoration
                                   | ImGuiWindowFlags_NoDocking
@@ -29,7 +28,8 @@ void ViewportPanel::draw(EditorUI* editor, Camera* camera, float dt) {
         else
             ImGui::TextColored(ImVec4(0.5f, 0.7f, 1.0f, 1.0f), "SCENE MODE");
 
-        ImGui::Text("%.1f FPS", ImGui::GetIO().Framerate);
+        const float fps = dt > 0.0f ? 1.0f / dt : 0.0f;
+        ImGui::Text("%.1f FPS", fps);
 
         if (camera) {
             ImGui::Text("Cam: %.1f %.1f %.1f",

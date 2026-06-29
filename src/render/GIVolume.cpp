@@ -4,6 +4,7 @@
 #include "graphics/Buffer.hpp"
 #include "graphics/Mesh.hpp"
 #include "graphics/Material.hpp"
+#include "graphics/GpuProfiler.hpp"
 #include "graphics/GpuSync.hpp"
 #include "graphics/ComputePipeline.hpp"
 #include "scene/Scene.hpp"
@@ -384,7 +385,8 @@ void GIVolume::createVoxelResources(VkDescriptorSetLayout materialSetLayout) {
     vkDestroyShaderModule(device_.device(), vert, nullptr);
 }
 
-void GIVolume::voxelize(VkCommandBuffer cmd, Scene& scene) {
+void GIVolume::voxelize(VkCommandBuffer cmd, Scene& scene, GpuProfiler* profiler) {
+    NE_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Voxelize");
     const uint32_t res = static_cast<uint32_t>(desc_.voxelResolution);
     glm::vec3 extent = worldExtent();
     glm::vec3 center = desc_.origin + extent * 0.5f;
@@ -561,7 +563,7 @@ void computeBarrier(VkCommandBuffer cmd, VkPipelineStageFlags2 dstStage) {
 }
 }
 
-void GIVolume::update(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
+void GIVolume::update(VkCommandBuffer cmd, VkDescriptorSet globalSet, GpuProfiler* profiler) {
     const int probeCount = desc_.probeCount();
     VkDescriptorSet giSet = giComputeSets_[curr_];
 
@@ -574,41 +576,50 @@ void GIVolume::update(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
     glm::mat4 randomRot = glm::mat4_cast(q);
 
     // --- 1. Trace ---
-    tracePipeline_->bind(cmd);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tracePipeline_->layout(), 0, 1, &globalSet, 0, nullptr);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tracePipeline_->layout(), 1, 1, &giSet, 0, nullptr);
-    TracePush tp{randomRot, desc_.raysPerProbe, probeCount};
-    vkCmdPushConstants(cmd, tracePipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(tp), &tp);
-    uint32_t rayGroups = (static_cast<uint32_t>(probeCount * desc_.raysPerProbe) + 63) / 64;
-    vkCmdDispatch(cmd, rayGroups, 1, 1);
+    {
+        NE_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Trace");
+        tracePipeline_->bind(cmd);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tracePipeline_->layout(), 0, 1, &globalSet, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tracePipeline_->layout(), 1, 1, &giSet, 0, nullptr);
+        TracePush tp{randomRot, desc_.raysPerProbe, probeCount};
+        vkCmdPushConstants(cmd, tracePipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(tp), &tp);
+        uint32_t rayGroups = (static_cast<uint32_t>(probeCount * desc_.raysPerProbe) + 63) / 64;
+        vkCmdDispatch(cmd, rayGroups, 1, 1);
+    }
 
     computeBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);  // rays write -> blend read
 
     // --- 2. Blend (irradiance then visibility) ---
-    blendPipeline_->bind(cmd);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, blendPipeline_->layout(), 0, 1, &globalSet, 0, nullptr);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, blendPipeline_->layout(), 1, 1, &giSet, 0, nullptr);
-    auto blend = [&](int mode, glm::ivec2 atlas) {
-        BlendPush bp{mode, desc_.raysPerProbe, probeCount, desc_.hysteresis, desc_.distExponent};
-        vkCmdPushConstants(cmd, blendPipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(bp), &bp);
-        vkCmdDispatch(cmd, (atlas.x + 7) / 8, (atlas.y + 7) / 8, 1);
-    };
-    blend(0, irradianceAtlasSize());
-    blend(1, visibilityAtlasSize());
+    {
+        NE_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Blend");
+        blendPipeline_->bind(cmd);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, blendPipeline_->layout(), 0, 1, &globalSet, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, blendPipeline_->layout(), 1, 1, &giSet, 0, nullptr);
+        auto blend = [&](int mode, glm::ivec2 atlas) {
+            BlendPush bp{mode, desc_.raysPerProbe, probeCount, desc_.hysteresis, desc_.distExponent};
+            vkCmdPushConstants(cmd, blendPipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(bp), &bp);
+            vkCmdDispatch(cmd, (atlas.x + 7) / 8, (atlas.y + 7) / 8, 1);
+        };
+        blend(0, irradianceAtlasSize());
+        blend(1, visibilityAtlasSize());
+    }
 
     computeBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);  // blend write -> border read
 
     // --- 3. Border copy ---
-    borderPipeline_->bind(cmd);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, borderPipeline_->layout(), 0, 1, &globalSet, 0, nullptr);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, borderPipeline_->layout(), 1, 1, &giSet, 0, nullptr);
-    auto border = [&](int mode, glm::ivec2 atlas) {
-        BorderPush bp{mode, probeCount};
-        vkCmdPushConstants(cmd, borderPipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(bp), &bp);
-        vkCmdDispatch(cmd, (atlas.x + 7) / 8, (atlas.y + 7) / 8, 1);
-    };
-    border(0, irradianceAtlasSize());
-    border(1, visibilityAtlasSize());
+    {
+        NE_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Borders");
+        borderPipeline_->bind(cmd);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, borderPipeline_->layout(), 0, 1, &globalSet, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, borderPipeline_->layout(), 1, 1, &giSet, 0, nullptr);
+        auto border = [&](int mode, glm::ivec2 atlas) {
+            BorderPush bp{mode, probeCount};
+            vkCmdPushConstants(cmd, borderPipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(bp), &bp);
+            vkCmdDispatch(cmd, (atlas.x + 7) / 8, (atlas.y + 7) / 8, 1);
+        };
+        border(0, irradianceAtlasSize());
+        border(1, visibilityAtlasSize());
+    }
 
     // Border writes -> lighting fragment reads (current atlas, set 0 bindings 4/5).
     computeBarrier(cmd, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
