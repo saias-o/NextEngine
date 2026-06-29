@@ -1,5 +1,6 @@
 #include "graphics/Buffer.hpp"
 
+#include "graphics/MemoryProfiler.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "vk_mem_alloc.h"
 
@@ -9,7 +10,7 @@
 namespace ne {
 
 Buffer::Buffer(VulkanDevice& device, VkDeviceSize size, VkBufferUsageFlags usage, MemoryUsage memory)
-    : device_(device), size_(size) {
+    : device_(device), size_(size), memory_(memory) {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = size;
@@ -29,9 +30,15 @@ Buffer::Buffer(VulkanDevice& device, VkDeviceSize size, VkBufferUsageFlags usage
         throw std::runtime_error("failed to create buffer");
 
     mapped_ = result.pMappedData;  // null when not host-visible
+    MemoryProfiler::registerAllocation(
+        memory_ == MemoryUsage::HostVisible ? "Buffer/HostVisible" : "Buffer/GpuOnly",
+        static_cast<uint64_t>(size_));
 }
 
 Buffer::~Buffer() {
+    MemoryProfiler::unregisterAllocation(
+        memory_ == MemoryUsage::HostVisible ? "Buffer/HostVisible" : "Buffer/GpuOnly",
+        static_cast<uint64_t>(size_));
     vmaDestroyBuffer(device_.allocator(), buffer_, allocation_);
 }
 

@@ -3,6 +3,7 @@
 #include "scene/animation/AnimationClip.hpp"
 #include "scene/Node.hpp"
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 
 namespace ne {
 
@@ -61,6 +62,8 @@ void Animator::play(const std::string& name, bool loop, float crossfade) {
 }
 
 void Animator::onUpdate(float dt) {
+    NE_PROFILE_SCOPE("Animation/AnimatorUpdate");
+    NE_PROFILE_COUNTER_ADD("Animation/Animators", 1);
     if (!rig_) return;
 
     if (rootNode_) {

@@ -1,5 +1,7 @@
 #include "scene/WebCanvasNode.hpp"
 
+#include "core/Profiler.hpp"
+
 #include "core/Log.hpp"
 #include "core/Paths.hpp"
 #include "core/Time.hpp"
@@ -797,16 +799,21 @@ bool WebCanvasNode::fireTouchEvent(uint64_t id, glm::vec2 position, TouchEvent t
 }
 
 void WebCanvasNode::updateTextureIfNeededAsync(VkCommandBuffer cmd) {
+    NE_PROFILE_FUNCTION();
     checkHotReload();
     if (!device_ || !texture_ || !rmlContext_ || !uiDirty_) return;
 
-    rmlContext_->Update();
+    {
+        NE_PROFILE_SCOPE("WebCanvas/RmlUpdate");
+        rmlContext_->Update();
+    }
     RmlUiRenderInterface* renderer = RmlUiRuntime::renderer();
     if (!renderer) return;
 
     renderer->beginFrame(width_, height_);
     std::vector<std::string> renderDependencies;
     {
+        NE_PROFILE_SCOPE("WebCanvas/RmlRender");
         RmlDependencyCapture capture(renderDependencies);
         rmlContext_->Render();
     }
@@ -845,10 +852,16 @@ void WebCanvasNode::updateTextureIfNeededAsync(VkCommandBuffer cmd) {
 
     const VkDeviceSize byteCount = static_cast<VkDeviceSize>(pixels.size());
     if (!stagingBuffer_ || stagingBuffer_->size() != byteCount) {
+        NE_PROFILE_COUNTER_ADD("WebCanvas/StagingRecreates", 1);
         stagingBuffer_ = std::make_unique<Buffer>(*device_, byteCount, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::HostVisible);
     }
-    stagingBuffer_->write(pixels.data(), byteCount);
-    texture_->updatePixelsAsync(cmd, *stagingBuffer_, width_, height_);
+    {
+        NE_PROFILE_SCOPE("WebCanvas/Upload");
+        stagingBuffer_->write(pixels.data(), byteCount);
+        texture_->updatePixelsAsync(cmd, *stagingBuffer_, width_, height_);
+    }
+    NE_PROFILE_COUNTER_ADD("WebCanvas/Uploads", 1);
+    NE_PROFILE_COUNTER_ADD("WebCanvas/UploadBytes", static_cast<double>(byteCount));
     uiDirty_ = false;
 }
 

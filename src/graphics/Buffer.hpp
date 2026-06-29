@@ -33,6 +33,7 @@ private:
     VmaAllocation allocation_ = VK_NULL_HANDLE;
     VkDeviceSize size_ = 0;
     void* mapped_ = nullptr;  // non-null for HostVisible buffers
+    MemoryUsage memory_ = MemoryUsage::GpuOnly;
 };
 
 } // namespace ne

@@ -2,6 +2,7 @@
 
 #include "graphics/VmaFwd.hpp"
 
+#include <cstdint>
 #include <string>
 
 namespace ne {
@@ -44,6 +45,8 @@ private:
     uint32_t width_ = 0;
     uint32_t height_ = 0;
     uint32_t mipLevels_ = 1;
+    uint64_t trackedBytes_ = 0;
+    std::string trackedCategory_;
     
     uint32_t bindlessIndex_ = ~0u;
 };

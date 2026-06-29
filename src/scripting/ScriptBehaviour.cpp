@@ -2,6 +2,7 @@
 
 #include "core/Log.hpp"
 #include "core/Paths.hpp"
+#include "core/Profiler.hpp"
 #include "scripting/JsContext.hpp"
 #include "scripting/JsEngineBindings.hpp"
 #include "scripting/JsRuntime.hpp"
@@ -242,7 +243,11 @@ void ScriptBehaviour::onReady() {
 }
 
 void ScriptBehaviour::onUpdate(float dt) {
-    checkHotReload(dt);
+    NE_PROFILE_SCOPE("Scripting/Update");
+    {
+        NE_PROFILE_SCOPE("Scripting/HotReloadCheck");
+        checkHotReload(dt);
+    }
     callHook("onUpdate", dt);
 }
 

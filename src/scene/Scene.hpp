@@ -150,6 +150,7 @@ private:
     std::vector<ParticleSystemNode*> particleSystems_;
     std::vector<Behaviour*> flatBehaviours_;
     std::vector<CollisionObjectNode*> bodies_;
+    uint32_t activeNodeCount_ = 0;
 
     std::unique_ptr<PhysicsWorld> physics_;
     SceneTree* tree_ = nullptr;

@@ -1,5 +1,6 @@
 #include "physics/PhysicsWorld.hpp"
 
+#include "core/Profiler.hpp"
 #include "physics/JoltGlue.hpp"
 
 #include <Jolt/RegisterTypes.h>
@@ -189,6 +190,7 @@ void* PhysicsWorld::bodyUserData(JPH::BodyID id) const {
 }
 
 void PhysicsWorld::step(float dt) {
+    NE_PROFILE_FUNCTION();
     if (dt <= 0.0f) return;
 
     const float fixed = 1.0f / 60.0f;
@@ -197,10 +199,12 @@ void PhysicsWorld::step(float dt) {
 
     int steps = 0;
     while (accumulator_ >= fixed && steps < 8) {
+        NE_PROFILE_SCOPE("Physics/JoltUpdate");
         system_->Update(fixed, 1, tempAllocator_.get(), jobSystem_.get());
         accumulator_ -= fixed;
         ++steps;
     }
+    NE_PROFILE_COUNTER("Physics/FixedSteps", steps);
 }
 
 JPH::BodyID PhysicsWorld::createBody(const BodyDesc& d) {

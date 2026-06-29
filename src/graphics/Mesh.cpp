@@ -1,6 +1,7 @@
 #include "graphics/Mesh.hpp"
 
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 #include "graphics/Buffer.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "tiny_obj_loader.h"
@@ -90,6 +91,7 @@ Mesh::~Mesh() {
 
 std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::string& path,
                                         bool generateLightmapUVs) {
+    NE_PROFILE_SCOPE("Resource/LoadObjMesh");
     (void)generateLightmapUVs; // Kept for API compatibility; UV unwrap baking was removed.
 
     tinyobj::attrib_t attrib;

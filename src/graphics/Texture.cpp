@@ -1,6 +1,8 @@
 #include "graphics/Texture.hpp"
 
+#include "core/Profiler.hpp"
 #include "graphics/Buffer.hpp"
+#include "graphics/MemoryProfiler.hpp"
 #include "graphics/VulkanDevice.hpp"
 
 #include <cmath>
@@ -72,9 +74,22 @@ void copyBufferToImage(VulkanDevice& device, VkBuffer buffer, VkImage image,
     device.endSingleTimeCommands(cmd);
 }
 
+uint64_t mipChainBytes(uint32_t width, uint32_t height, uint32_t bytesPerPixel, uint32_t levels) {
+    uint64_t total = 0;
+    uint32_t w = width;
+    uint32_t h = height;
+    for (uint32_t i = 0; i < levels; ++i) {
+        total += static_cast<uint64_t>(std::max(1u, w)) * std::max(1u, h) * bytesPerPixel;
+        w = std::max(1u, w / 2);
+        h = std::max(1u, h / 2);
+    }
+    return total;
+}
+
 } // namespace
 
 Texture::Texture(VulkanDevice& device, const std::string& path, bool srgb) : device_(device) {
+    NE_PROFILE_SCOPE("Resource/LoadTextureFile");
     int texWidth, texHeight, texChannels;
     bool isHdr = stbi_is_hdr(path.c_str());
     VkFormat format;
@@ -123,6 +138,9 @@ Texture::Texture(VulkanDevice& device, const std::string& path, bool srgb) : dev
     if (vmaCreateImage(device_.allocator(), &imageInfo, &allocInfo,
                        &image_, &allocation_, nullptr) != VK_SUCCESS)
         throw std::runtime_error("failed to create texture image");
+    trackedBytes_ = mipChainBytes(width_, height_, isHdr ? 16u : 4u, mipLevels_);
+    trackedCategory_ = isHdr ? "Texture/HDR" : "Texture/2D";
+    MemoryProfiler::registerAllocation(trackedCategory_, trackedBytes_);
 
     transitionLayout(device_, image_, VK_IMAGE_LAYOUT_UNDEFINED,
                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -136,6 +154,7 @@ Texture::Texture(VulkanDevice& device, const std::string& path, bool srgb) : dev
 
 Texture::Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, uint32_t height, VkFormat format, bool genMipmaps)
     : device_(device), width_(width), height_(height) {
+    NE_PROFILE_SCOPE("Resource/CreateMemoryTexture");
     mipLevels_ = 1; 
     if (genMipmaps && (width > 1 || height > 1)) {
         mipLevels_ = static_cast<uint32_t>(std::floor(std::log2(std::max(width_, height_)))) + 1;
@@ -167,6 +186,9 @@ Texture::Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, ui
     if (vmaCreateImage(device_.allocator(), &imageInfo, &allocInfo,
                        &image_, &allocation_, nullptr) != VK_SUCCESS)
         throw std::runtime_error("failed to create texture image");
+    trackedBytes_ = mipChainBytes(width_, height_, 4u, mipLevels_);
+    trackedCategory_ = "Texture/Dynamic";
+    MemoryProfiler::registerAllocation(trackedCategory_, trackedBytes_);
 
     transitionLayout(device_, image_, VK_IMAGE_LAYOUT_UNDEFINED,
                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -184,6 +206,7 @@ Texture::Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, ui
 }
 
 Texture::~Texture() {
+    MemoryProfiler::unregisterAllocation(trackedCategory_, trackedBytes_);
     vkDestroySampler(device_.device(), sampler_, nullptr);
     vkDestroyImageView(device_.device(), imageView_, nullptr);
     vmaDestroyImage(device_.allocator(), image_, allocation_);
@@ -303,6 +326,7 @@ void Texture::generateMipmaps() {
 }
 
 void Texture::updatePixels(const uint8_t* pixels, size_t size) {
+    NE_PROFILE_SCOPE("Texture/UpdatePixels");
     if (size != static_cast<size_t>(width_ * height_ * 4)) {
         throw std::runtime_error("updatePixels size mismatch");
     }
@@ -324,6 +348,7 @@ void Texture::updatePixels(const uint8_t* pixels, size_t size) {
 }
 
 void Texture::updatePixelsAsync(VkCommandBuffer cmd, Buffer& stagingBuffer, uint32_t width, uint32_t height) {
+    NE_PROFILE_SCOPE("Texture/UpdatePixelsAsync");
     if (width != width_ || height != height_) {
         throw std::runtime_error("updatePixelsAsync size mismatch");
     }

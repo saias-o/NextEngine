@@ -1,5 +1,6 @@
 #include "scene/BVHLoader.hpp"
 
+#include "core/Profiler.hpp"
 #include "scene/animation/AnimationClip.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "core/Log.hpp"
@@ -35,6 +36,7 @@ Chan parseChannel(const std::string& s) {
 } // namespace
 
 AssetID BVHLoader::load(const std::string& path, ResourceManager& resources) {
+    NE_PROFILE_SCOPE("Resource/LoadBVH");
     std::ifstream file(path);
     if (!file.is_open()) {
         Log::error("BVHLoader: cannot open ", path);

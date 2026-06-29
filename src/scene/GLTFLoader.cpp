@@ -1,4 +1,5 @@
 #include "scene/GLTFLoader.hpp"
+#include "core/Profiler.hpp"
 #include "scene/Scene.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/MeshLod.hpp"
@@ -201,6 +202,7 @@ static void processNode(cgltf_node* node, Node* parent, ResourceManager& resourc
 
 bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& resources,
                       const GLTFLoadOptions& options) {
+    NE_PROFILE_SCOPE("Resource/LoadGLTF");
     const std::string loadPath = AutoLODBridge::resolveLoadPath(path, options.autoMeshLods);
     Log::info("GLTFLoader: loading ", loadPath);
     
