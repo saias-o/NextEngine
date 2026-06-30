@@ -10,7 +10,7 @@
 
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 namespace {
 constexpr glm::vec3 kWorldUp{0.0f, 1.0f, 0.0f};
@@ -65,4 +65,4 @@ void GunBehaviour::describe(reflect::TypeBuilder<GunBehaviour>& t) {
     t.property("targetGroup", &GunBehaviour::targetGroup);
 }
 
-} // namespace ne
+} // namespace saida

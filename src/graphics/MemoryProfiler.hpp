@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 
@@ -17,4 +17,4 @@ public:
     static void publish(VulkanDevice& device);
 };
 
-} // namespace ne
+} // namespace saida

@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ne {
+namespace saida {
 
 namespace {
 constexpr glm::vec3 kWorldUp{0.0f, 1.0f, 0.0f};
@@ -107,4 +107,4 @@ void CameraFollowBehaviour::describe(reflect::TypeBuilder<CameraFollowBehaviour>
     t.property("minDistance", &CameraFollowBehaviour::minDistance).range(0.1, 10.0);
 }
 
-} // namespace ne
+} // namespace saida

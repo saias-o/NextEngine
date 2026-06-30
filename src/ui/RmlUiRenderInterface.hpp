@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class RmlUiRenderInterface final : public Rml::RenderInterface {
 public:
@@ -70,4 +70,4 @@ private:
     std::unordered_map<Rml::TextureHandle, TextureData> textures_;
 };
 
-} // namespace ne
+} // namespace saida

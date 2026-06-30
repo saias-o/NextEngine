@@ -2,7 +2,7 @@
 #include "scene/UICanvasNode.hpp"
 #include <nlohmann/json.hpp> // Pour remonter la hiérarchie
 
-namespace ne {
+namespace saida {
 
 bool UINode::isPointInside(float px, float py) const {
     float gx = globalX_;
@@ -78,4 +78,4 @@ void UINode::deserialize(const nlohmann::json& j, ResourceManager& resources) {
     pivotY_ = j.value("pivotY", 0.5f);
 }
 
-} // namespace ne
+} // namespace saida

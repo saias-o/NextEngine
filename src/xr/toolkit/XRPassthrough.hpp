@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ne {
+namespace saida {
 
 // Global passthrough (AR see-through) toggle — a service like XRInput/Time.
 // Gameplay requests it via setEnabled(); the OpenXR session reports whether the
@@ -19,4 +19,4 @@ public:
     static void setSupported(bool s);
 };
 
-} // namespace ne
+} // namespace saida

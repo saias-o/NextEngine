@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -335,4 +335,4 @@ bool ShadowMap::resize(uint32_t newResolution) {
     return true;
 }
 
-} // namespace ne
+} // namespace saida

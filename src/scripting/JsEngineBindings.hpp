@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ne {
+namespace saida {
 
 class Behaviour;
 class JsContext;
@@ -10,4 +10,4 @@ public:
     static void installForBehaviour(JsContext& context, Behaviour& behaviour);
 };
 
-} // namespace ne
+} // namespace saida

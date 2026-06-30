@@ -7,7 +7,7 @@
 
 #include <memory>
 
-namespace ne {
+namespace saida {
 
 // Ultra-cheap per-mesh outline: redraws only opted-in meshes as an inverted hull,
 // offset in screen space for pixel-stable thickness across desktop, mobile and XR.
@@ -30,4 +30,4 @@ private:
     std::unique_ptr<Pipeline> pipeline_;
 };
 
-} // namespace ne
+} // namespace saida

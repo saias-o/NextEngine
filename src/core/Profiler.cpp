@@ -10,7 +10,7 @@
 #include <sstream>
 #include <string_view>
 
-namespace ne {
+namespace saida {
 
 namespace {
 thread_local std::vector<uint32_t> t_scopeStack;
@@ -284,4 +284,4 @@ ProfileScope::~ProfileScope() {
     Profiler::instance().endScope(handle_);
 }
 
-} // namespace ne
+} // namespace saida

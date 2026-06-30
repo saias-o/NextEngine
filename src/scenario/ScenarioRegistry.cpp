@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <array>
 
-namespace ne {
+namespace saida {
 namespace {
 
 constexpr std::array<const char*, 17> kActions = {
@@ -77,4 +77,4 @@ std::vector<std::string> ScenarioConditionRegistry::names() {
     return out;
 }
 
-} // namespace ne
+} // namespace saida

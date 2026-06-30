@@ -2,7 +2,7 @@
 
 #include "scene/Behaviour.hpp"
 
-namespace ne {
+namespace saida {
 
 // Marker/editor component for MeshNode LOD chains. The actual runtime data lives
 // on MeshNode so the renderer can stay simple and fast; this behaviour makes the
@@ -12,4 +12,4 @@ public:
     const char* typeName() const override { return "LOD Group"; }
 };
 
-} // namespace ne
+} // namespace saida

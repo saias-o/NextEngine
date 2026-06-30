@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -433,4 +433,4 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JS_FreeValue(ctx, global);
 }
 
-} // namespace ne
+} // namespace saida

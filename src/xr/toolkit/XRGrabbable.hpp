@@ -5,7 +5,7 @@
 
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 class XRController;
 
@@ -41,4 +41,4 @@ private:
     bool pendingThrow_ = false;    // apply throwVelocity_ once dynamic again (next frame)
 };
 
-} // namespace ne
+} // namespace saida

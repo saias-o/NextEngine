@@ -1,16 +1,16 @@
-# PARTICLE_SYSTEM.md - Plan NEFX Pour NextEngine
+# PARTICLE_SYSTEM.md - Plan SaidaFX Pour SaidaEngine
 
 ## Resume
 
-Creer **NEFX**, un systeme de particules et FX inspire de Niagara, mais adapte a
-NextEngine : leger, data-driven, Vulkan-first, compatible XR multiview,
+Creer **SaidaFX**, un systeme de particules et FX inspire de Niagara, mais adapte a
+SaidaEngine : leger, data-driven, Vulkan-first, compatible XR multiview,
 optimise VR/mobile, et facile a piloter par humains comme par LLM.
 
 Le systeme repose sur trois niveaux :
 
 - `ParticleSystemNode` : noeud de scene simple, inspectable, serialisable,
   expose au manifeste LLM.
-- `ParticleEffect` / `.nefx` : asset d'effet compose d'emitters et de modules.
+- `ParticleEffect` / `.saidafx` : asset d'effet compose d'emitters et de modules.
 - `ParticleFeature` : render feature autonome qui simule/rend les particules
   sans modifier directement `Renderer`.
 
@@ -95,11 +95,11 @@ Fait :
 - Shaders compute presents : `particle_emit.comp`, `particle_sim.comp`.
 - `ParticlePresetLibrary` pour `Simple`, `Fire`, `Magic`, `Rain`, `Snow`,
   `Smoke`, `Explosion`.
-- Format `.nefx` JSON versionne avec emitters + modules Niagara-like.
-- Validation `.nefx` : version, emitters, modules et params requis.
-- Compilation `.nefx -> ParticleSystemNode` pour le chemin v1.
-- `effectPath` + drop/load `.nefx` dans l'inspector.
-- Budgets NEFX par `QualityTier`.
+- Format `.saidafx` JSON versionne avec emitters + modules Niagara-like.
+- Validation `.saidafx` : version, emitters, modules et params requis.
+- Compilation `.saidafx -> ParticleSystemNode` pour le chemin v1.
+- `effectPath` + drop/load `.saidafx` dans l'inspector.
+- Budgets SaidaFX par `QualityTier`.
 - Simulation CPU v1 optimisee : compactage en une passe, reserve par emitter,
   cadence reduite pour effets lointains.
 - Culling frustum desktop par emitter pour eviter simulation/pack hors camera.
@@ -119,7 +119,7 @@ Fait :
   - size end scale
   - stretch
 - Culling frustum desktop + XR stereo par emitter.
-- Templates `.nefx` livres dans `assets/fx/`.
+- Templates `.saidafx` livres dans `assets/fx/`.
 - Warnings editeur simples : budget mobile/XR, overdraw estime, alpha dense.
 - Tests non-GUI : reflection + particle effect assets.
 
@@ -135,7 +135,7 @@ Fait :
 
 ### 2. Runtime Modules Niagara-like
 
-- Compiler les modules `.nefx` en structs compactes, pas en JSON runtime.
+- Compiler les modules `.saidafx` en structs compactes, pas en JSON runtime.
 - Executer vraiment :
   - `SubEmitter`
 - Ajouter validation de budget plus fine : cout estime, overdraw, limites XR.
@@ -154,12 +154,12 @@ Fait :
 
 ### 4. Editor FX
 
-- Editeur `.nefx` simple/advanced.
+- Editeur `.saidafx` simple/advanced.
 - Liste d'emitters.
 - Ajouter/supprimer/reordonner modules.
 - Edition des params module par module.
 - Preview live.
-- Save/load `.nefx`.
+- Save/load `.saidafx`.
 - Templates rapides : Fire, Magic, Rain, Snow, Smoke, Explosion.
 - Editeur visuel avance des warnings overdraw/budget.
 
@@ -174,12 +174,12 @@ Fait :
 
 ### 6. Ergonomie Humain + LLM
 
-- Manifeste plus riche pour les modules `.nefx`.
+- Manifeste plus riche pour les modules `.saidafx`.
 - Commandes MCP/LLM :
   - creer un effet preset
   - ajouter un module
   - modifier un parametre module
-  - sauvegarder `.nefx`
+  - sauvegarder `.saidafx`
   - appliquer a un `ParticleSystemNode`
 - Documentation courte des params par classe d'effet.
 
@@ -200,7 +200,7 @@ Tests de build :
 
 - `cmake --build build`
 - Verifier que les nouveaux shaders se compilent.
-- Verifier que `ne_engine`, `NextEngine`, `NextEngineRuntime` linkent.
+- Verifier que `saida_engine`, `SaidaEngine`, `SaidaEngineRuntime` linkent.
 
 Tests unitaires / non-GUI :
 
@@ -226,4 +226,4 @@ Tests manuels GPU :
 - Les particules v1 utilisent des billboards unlit/emissive dans le HDR existant.
 - Les chemins existants `Renderer` et `RenderFeatureRegistry` restent les coutures
   principales ; pas de render graph ajoute.
-- Les effets avances `.nefx` arrivent apres une fondation stable et testee.
+- Les effets avances `.saidafx` arrivent apres une fondation stable et testee.

@@ -18,7 +18,7 @@ Notes pour plus tard. Le moteur a deja une base solide ; ces points concernent s
 
 - Ajouter une vraie couche "Shipping" : icone, metadata exe, version, zip portable, crash log, validation des DLL.
 - Garantir que l'export jeu ne contient ni code editeur ni MCP.
-- Enrichir le manifest `game.ne` si besoin : version format, main scene, options runtime, plateforme cible.
+- Enrichir le manifest `game.saida` si besoin : version format, main scene, options runtime, plateforme cible.
 
 ## 4. Rendre le MCP plus sur pour les agents
 
@@ -48,6 +48,6 @@ Notes pour plus tard. Le moteur a deja une base solide ; ces points concernent s
 
 ## 8. Versionner les formats
 
-- Versionner `.scene`, `.neproj`, scenarios et `asset_registry.json`.
+- Versionner `.scene`, `.saidaproj`, scenarios et `asset_registry.json`.
 - Ajouter migrations automatiques.
 - Prevoir compatibilite arriere avant que des agents generent beaucoup de contenu.

@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace ne {
+namespace saida {
 
 class AnimationClip;
 
@@ -74,4 +74,4 @@ private:
     GlobalPose globalPose_;
 };
 
-} // namespace ne
+} // namespace saida

@@ -32,12 +32,12 @@ json baseScenario() {
 }
 
 void testValidation() {
-    ne::ScenarioAsset asset;
-    std::vector<ne::ScenarioIssue> issues;
+    saida::ScenarioAsset asset;
+    std::vector<saida::ScenarioIssue> issues;
 
     json dup = baseScenario();
     dup["steps"] = json::array({{{"id", "a"}}, {{"id", "a"}}});
-    assert(!ne::ScenarioAsset::parse(dup, asset, &issues));
+    assert(!saida::ScenarioAsset::parse(dup, asset, &issues));
     assert(!issues.empty());
 
     json unknown = baseScenario();
@@ -45,12 +45,12 @@ void testValidation() {
         {{"id", "a"}, {"enter", json::array({{{"invented.action", json::object()}}})}, {"end", "success"}}
     });
     issues.clear();
-    assert(!ne::ScenarioAsset::parse(unknown, asset, &issues));
+    assert(!saida::ScenarioAsset::parse(unknown, asset, &issues));
     assert(!issues.empty());
 
     json ok = baseScenario();
     issues.clear();
-    assert(ne::ScenarioAsset::parse(ok, asset, &issues));
+    assert(saida::ScenarioAsset::parse(ok, asset, &issues));
     assert(issues.empty());
     assert(asset.toJson()["id"] == "test.scenario");
 }
@@ -65,11 +65,11 @@ void testTimedRuntime() {
          {"next", "done"}},
         {{"id", "done"}, {"end", "success"}}
     });
-    std::string path = writeScenario(doc, "ne_scenario_timed.nescenario");
+    std::string path = writeScenario(doc, "saida_scenario_timed.saidascenario");
 
-    ne::Scene scene;
-    auto* runnerNode = scene.createChild<ne::Node>("Runner");
-    auto* runner = runnerNode->addBehaviour<ne::ScenarioRunnerBehaviour>();
+    saida::Scene scene;
+    auto* runnerNode = scene.createChild<saida::Node>("Runner");
+    auto* runner = runnerNode->addBehaviour<saida::ScenarioRunnerBehaviour>();
     runner->scenarioPath = path;
     runner->autoStart = false;
 
@@ -93,14 +93,14 @@ void testSignalRuntime() {
          {"next", "done"}},
         {{"id", "done"}, {"end", "success"}}
     });
-    std::string path = writeScenario(doc, "ne_scenario_signal.nescenario");
+    std::string path = writeScenario(doc, "saida_scenario_signal.saidascenario");
 
-    ne::Scene scene;
-    auto* emitter = scene.createChild<ne::Node>("Emitter");
+    saida::Scene scene;
+    auto* emitter = scene.createChild<saida::Node>("Emitter");
     emitter->addToGroup("emitter");
-    auto* rotator = emitter->addBehaviour<ne::RotatorBehaviour>();
-    auto* runnerNode = scene.createChild<ne::Node>("Runner");
-    auto* runner = runnerNode->addBehaviour<ne::ScenarioRunnerBehaviour>();
+    auto* rotator = emitter->addBehaviour<saida::RotatorBehaviour>();
+    auto* runnerNode = scene.createChild<saida::Node>("Runner");
+    auto* runner = runnerNode->addBehaviour<saida::ScenarioRunnerBehaviour>();
     runner->scenarioPath = path;
     runner->autoStart = false;
 
@@ -116,7 +116,7 @@ void testSignalRuntime() {
 } // namespace
 
 int main() {
-    ne::registerReflectedTypes();
+    saida::registerReflectedTypes();
     testValidation();
     testTimedRuntime();
     testSignalRuntime();

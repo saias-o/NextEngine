@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ne {
+namespace saida {
 
 // Global frame timing, à la Unity's `Time`. The Engine advances it once per
 // frame; behaviours (and anything else) read it. `delta()` is scaled by
@@ -31,4 +31,4 @@ private:
     static inline float scale_ = 1.0f;
 };
 
-} // namespace ne
+} // namespace saida

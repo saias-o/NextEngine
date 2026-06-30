@@ -5,7 +5,7 @@
 #include "scene/Node.hpp"
 #include "scene/SceneTree.hpp"
 
-namespace ne {
+namespace saida {
 
 Blackboard* StateMachineBehaviour::blackboard() const {
     if (node())
@@ -116,4 +116,4 @@ void StateMachineBehaviour::load(const nlohmann::json& j) {
     }
 }
 
-} // namespace ne
+} // namespace saida

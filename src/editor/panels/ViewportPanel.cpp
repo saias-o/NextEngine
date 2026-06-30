@@ -5,7 +5,7 @@
 
 #include <imgui.h>
 
-namespace ne {
+namespace saida {
 
 void ViewportPanel::draw(EditorUI* editor, Camera* camera, float dt) {
     if (!editor->showViewportOverlay_) return;
@@ -63,4 +63,4 @@ void ViewportPanel::draw(EditorUI* editor, Camera* camera, float dt) {
     ImGui::PopStyleVar(2);
 }
 
-} // namespace ne
+} // namespace saida

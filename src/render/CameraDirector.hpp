@@ -6,7 +6,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-namespace ne {
+namespace saida {
 
 class Scene;
 class Camera;
@@ -51,4 +51,4 @@ private:
     NodeId liveId_ = kNodeInvalid;  // which camera is currently live (change → blend)
 };
 
-} // namespace ne
+} // namespace saida

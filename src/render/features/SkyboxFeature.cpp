@@ -11,7 +11,7 @@
 #include <array>
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 SkyboxFeature::~SkyboxFeature() {
     if (!device_) return;
@@ -122,4 +122,4 @@ void SkyboxFeature::record(const FrameContext& fc) {
     vkCmdDraw(fc.cmd, 3, 1, 0, 0);
 }
 
-} // namespace ne
+} // namespace saida

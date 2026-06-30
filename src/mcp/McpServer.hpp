@@ -6,7 +6,7 @@
 // the scene lives — no locking of engine state). The response line is sent back
 // on the client thread once the main thread resolves it.
 //
-// Editor/dev only (compiled into ne_editor under NE_ENABLE_MCP); never linked
+// Editor/dev only (compiled into saida_editor under SAIDA_ENABLE_MCP); never linked
 // into the shipped runtime.
 
 #include "nlohmann/json_fwd.hpp"
@@ -20,7 +20,7 @@
 #include <string>
 #include <thread>
 
-namespace ne {
+namespace saida {
 
 class McpServer {
 public:
@@ -61,4 +61,4 @@ private:
     std::queue<Pending> queue_;
 };
 
-} // namespace ne
+} // namespace saida

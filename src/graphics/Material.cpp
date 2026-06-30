@@ -8,7 +8,7 @@
 #include <array>
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 namespace {
 struct MaterialParams {
@@ -127,4 +127,4 @@ Material::Material(VulkanDevice& device, ResourceManager& manager, const Materia
 
 Material::~Material() = default;  // paramsBuffer_ RAII; set freed with the pool
 
-} // namespace ne
+} // namespace saida

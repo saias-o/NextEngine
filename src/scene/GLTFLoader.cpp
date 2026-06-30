@@ -30,7 +30,7 @@
 #include <vector>
 #include <string>
 
-namespace ne {
+namespace saida {
 
 static glm::vec4 toVec4(const float* f) { return {f[0], f[1], f[2], f[3]}; }
 static glm::vec3 toVec3(const float* f) { return {f[0], f[1], f[2]}; }
@@ -202,7 +202,7 @@ static void processNode(cgltf_node* node, Node* parent, ResourceManager& resourc
 
 bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& resources,
                       const GLTFLoadOptions& options) {
-    NE_PROFILE_SCOPE("Resource/LoadGLTF");
+    SAIDA_PROFILE_SCOPE("Resource/LoadGLTF");
     const std::string loadPath = AutoLODBridge::resolveLoadPath(path, options.autoMeshLods);
     Log::info("GLTFLoader: loading ", loadPath);
     
@@ -575,4 +575,4 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
     return true;
 }
 
-} // namespace ne
+} // namespace saida

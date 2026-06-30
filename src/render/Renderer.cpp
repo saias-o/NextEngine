@@ -32,7 +32,7 @@
 #include "scene/MeshLod.hpp"
 #include "scene/WebCanvasNode.hpp"
 #include "scene/animation/Animator.hpp"
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
 #include "xr/XrSession.hpp"   // xr::EyeView
 #include "xr/toolkit/XRPassthrough.hpp"
 #endif
@@ -46,7 +46,7 @@
 #include "graphics/Texture.hpp"
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 namespace {
 constexpr int kMaxFramesInFlight = 2;
@@ -199,7 +199,7 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
     }
 }
 
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
 Renderer::Renderer(VulkanDevice& device, Window& window, ResourceManager& resources,
                    VkExtent2D xrEyeExtent, VkFormat xrColorFormat, uint32_t xrViewCount)
     : device_(device), window_(window), resources_(resources),
@@ -228,7 +228,7 @@ Renderer::~Renderer() {
         vkDestroySemaphore(device_.device(), imageAvailableSemaphores_[i], nullptr);
         vkDestroyFence(device_.device(), inFlightFences_[i], nullptr);
     }
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
     if (xrMode_) {
         for (auto& post : xrPostProcessors_) post.reset();
         cleanupXrTargets();
@@ -901,7 +901,7 @@ void Renderer::createSyncObjects() {
 void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& cameraPos,
                            const Frustum* cullFrustum, Project* project,
                            const glm::mat4* view, const glm::mat4* proj) {
-    NE_PROFILE_FUNCTION();
+    SAIDA_PROFILE_FUNCTION();
     lodMatricesValid_ = view && proj;
     if (lodMatricesValid_) {
         lodView_ = *view;
@@ -1134,10 +1134,10 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
                   });
     }
 
-    NE_PROFILE_COUNTER("Renderer/VisibleDraws", currentDraws_.size());
-    NE_PROFILE_COUNTER("Renderer/ShadowCasters", shadowDraws_.size());
-    NE_PROFILE_COUNTER("Renderer/ShadowLights", shadowCount_);
-    NE_PROFILE_COUNTER("Animation/BoneMatrices", currentBoneCount);
+    SAIDA_PROFILE_COUNTER("Renderer/VisibleDraws", currentDraws_.size());
+    SAIDA_PROFILE_COUNTER("Renderer/ShadowCasters", shadowDraws_.size());
+    SAIDA_PROFILE_COUNTER("Renderer/ShadowLights", shadowCount_);
+    SAIDA_PROFILE_COUNTER("Animation/BoneMatrices", currentBoneCount);
 }
 
 void Renderer::createHdrResources() {
@@ -1350,9 +1350,9 @@ void Renderer::updateTonemapDescriptorSet() {
 
 void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
                                  Scene& scene, const Camera& camera) {
-    NE_PROFILE_FUNCTION();
+    SAIDA_PROFILE_FUNCTION();
     GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
-    NE_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/Tonemap+EditorUI");
+    SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/Tonemap+EditorUI");
     VkImageMemoryBarrier2 toShaderRead = imageBarrier2(hdrImage_,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
@@ -1423,21 +1423,21 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
     TonemapPushConstants push = tonemapPushConstants(scene.settings(), camera.projection());
     push.sourceRect = sourceRect;
     {
-        NE_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/Tonemap");
+        SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/Tonemap");
         vkCmdPushConstants(cmd, tonemapPipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(TonemapPushConstants), &push);
         vkCmdDraw(cmd, 3, 1, 0, 0);
     }
     {
-        NE_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/UI");
+        SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/UI");
         {
-            NE_PROFILE_SCOPE("UI/RecordCommands");
+            SAIDA_PROFILE_SCOPE("UI/RecordCommands");
             uiRenderer_->recordCommands(cmd, swapchain_->extent().width, swapchain_->extent().height,
                                         {static_cast<float>(renderRect.offset.x), static_cast<float>(renderRect.offset.y)},
                                         {static_cast<float>(renderRect.extent.width), static_cast<float>(renderRect.extent.height)});
         }
         {
-            NE_PROFILE_SCOPE("ImGui/RenderDrawData");
+            SAIDA_PROFILE_SCOPE("ImGui/RenderDrawData");
             imgui_->renderDrawData(cmd);  // UI on top, in the LDR swapchain pass
         }
     }
@@ -1461,7 +1461,7 @@ void Renderer::recordFeatures(const FrameContext& fc) {
 }
 
 void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, bool xrMultiview) {
-    NE_PROFILE_FUNCTION();
+    SAIDA_PROFILE_FUNCTION();
     if (!firstPipeline) return;
 
     Material* lastMaterial = nullptr;
@@ -1474,7 +1474,7 @@ void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, boo
 
     for (const auto& draw : currentDraws_) {
         Pipeline* want = scenePipelineFor(draw.materialType);
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
         if (xrMultiview)
             want = xrScenePipelineFor(draw.materialType);
 #else
@@ -1509,8 +1509,8 @@ void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, boo
         ++drawCalls;
         triangles += draw.mesh->allocation().indexCount / 3;
     }
-    NE_PROFILE_COUNTER("Renderer/DrawCalls", drawCalls);
-    NE_PROFILE_COUNTER("Renderer/Triangles", triangles);
+    SAIDA_PROFILE_COUNTER("Renderer/DrawCalls", drawCalls);
+    SAIDA_PROFILE_COUNTER("Renderer/Triangles", triangles);
 }
 
 void Renderer::recordWorldWebCanvases(VkCommandBuffer cmd, Scene& scene, const Camera& camera) {
@@ -1584,7 +1584,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     uint32_t gpuFrameZone = gpuProfiler ? gpuProfiler->beginZone(cmd, "GPU/Frame") : UINT32_MAX;
 
     {
-        NE_PROFILE_SCOPE("UI/UpdateAsyncTextures");
+        SAIDA_PROFILE_SCOPE("UI/UpdateAsyncTextures");
         uiRenderer_->updateAsyncTextures(cmd);
     }
 
@@ -1592,7 +1592,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     // scene albedo, then trace/blend/border the DDGI probes. The lighting pass
     // samples the result. When frozen, the previously-baked atlas is kept.
     if (giUpdateThisFrame_) {
-        NE_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
+        SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
         gi_->voxelize(cmd, scene, gpuProfiler);
         gi_->update(cmd, globalSets_[currentFrame_], gpuProfiler);
     }
@@ -1670,7 +1670,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     // pass. The caster list is not camera-culled, so off-camera casters still
     // cast into view; each shadow layer just reuses it.
     {
-        NE_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/Shadows");
+        SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/Shadows");
         recordShadowPasses(cmd);
     }
 
@@ -1746,7 +1746,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     renderingInfo.pDepthAttachment = &depthAttach;
 
     {
-    NE_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/SceneHDR");
+    SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/SceneHDR");
     vkCmdBeginRendering(cmd, &renderingInfo);
 
     VkViewport viewport{};
@@ -1814,7 +1814,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
             }
         }
     } else {
-        NE_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Scene/Opaque");
+        SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Scene/Opaque");
         recordMeshDraws(cmd, pipeline_.get(), false);
     }
 
@@ -1823,7 +1823,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
                     Time::elapsed(), false, &camera, nullptr, false, extent,
                     currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
     {
-        NE_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Scene/Features");
+        SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Scene/Features");
         recordFeatures(fc);
     }
     recordWorldWebCanvases(cmd, scene, camera);
@@ -1849,7 +1849,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
 
 void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     {
-        NE_PROFILE_SCOPE("Vulkan/WaitForFrameFence");
+        SAIDA_PROFILE_SCOPE("Vulkan/WaitForFrameFence");
         vkWaitForFences(device_.device(), 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
     }
     if (Profiler::instance().enabled() && gpuProfiler_) {
@@ -1858,7 +1858,7 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     }
 
     if (project) {
-        NE_PROFILE_SCOPE("Renderer/ProjectSettings");
+        SAIDA_PROFILE_SCOPE("Renderer/ProjectSettings");
         if (swapchain_->setVSync(project->vSync())) {
             cleanupHdrResources();
             createHdrResources();
@@ -1873,7 +1873,7 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     uint32_t imageIndex;
     VkResult result;
     {
-        NE_PROFILE_SCOPE("Vulkan/AcquireNextImage");
+        SAIDA_PROFILE_SCOPE("Vulkan/AcquireNextImage");
         result = vkAcquireNextImageKHR(device_.device(), swapchain_->handle(), UINT64_MAX,
             imageAvailableSemaphores_[currentFrame_], VK_NULL_HANDLE, &imageIndex);
     }
@@ -1943,25 +1943,25 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     // and re-point this frame's set 0 at the current atlas (safe: fence waited).
     if (giUpdateThisFrame_) gi_->beginFrame();
     {
-        NE_PROFILE_SCOPE("Renderer/UpdateDescriptors");
+        SAIDA_PROFILE_SCOPE("Renderer/UpdateDescriptors");
         updateGIDescriptors();
         updateEnvironmentDescriptor(scene);
     }
 
     VkRect2D renderRect = activeRenderRect();
     {
-        NE_PROFILE_SCOPE("Renderer/UpdateUniforms");
+        SAIDA_PROFILE_SCOPE("Renderer/UpdateUniforms");
         updateUniformBuffer(currentFrame_, scene, camera, project);
     }
     {
-        NE_PROFILE_SCOPE("UI/Gather");
+        SAIDA_PROFILE_SCOPE("UI/Gather");
         uiRenderer_->gatherUI(scene,
             {static_cast<float>(renderRect.extent.width), static_cast<float>(renderRect.extent.height)});
     }
 
     vkResetCommandBuffer(commandBuffers_[currentFrame_], 0);
     {
-        NE_PROFILE_SCOPE("Renderer/RecordCommandBuffer");
+        SAIDA_PROFILE_SCOPE("Renderer/RecordCommandBuffer");
         recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex, scene, camera);
     }
     VkSemaphore waitSemaphores[] = {imageAvailableSemaphores_[currentFrame_]};
@@ -1979,7 +1979,7 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     submitInfo.pSignalSemaphores = signalSemaphores;
 
     {
-        NE_PROFILE_SCOPE("Vulkan/QueueSubmit");
+        SAIDA_PROFILE_SCOPE("Vulkan/QueueSubmit");
         if (vkQueueSubmit(device_.graphicsQueue(), 1, &submitInfo, inFlightFences_[currentFrame_]) != VK_SUCCESS)
             throw std::runtime_error("failed to submit draw command buffer");
     }
@@ -1994,7 +1994,7 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     presentInfo.pImageIndices = &imageIndex;
 
     {
-        NE_PROFILE_SCOPE("Vulkan/QueuePresent");
+        SAIDA_PROFILE_SCOPE("Vulkan/QueuePresent");
         result = vkQueuePresentKHR(device_.presentQueue(), &presentInfo);
     }
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window_.wasResized()) {
@@ -2009,10 +2009,10 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
 }
 
-} // namespace ne
+} // namespace saida
 
-#ifdef NE_ENABLE_XR
-namespace ne {
+#ifdef SAIDA_ENABLE_XR
+namespace saida {
 
 namespace {
 // All eyes render in one pass into a 2-layer image; the view mask has one bit
@@ -2384,7 +2384,7 @@ void Renderer::recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
 
     const uint32_t n = std::min<uint32_t>(static_cast<uint32_t>(eyes.size()), xrViewCount_);
     {
-    NE_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/Tonemap+EditorUI");
+    SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/Tonemap+EditorUI");
     for (uint32_t i = 0; i < n; ++i) {
         if (xrPostProcessors_[i]) {
             xrPostProcessors_[i]->recordBloom(cmd, scene.settings(),
@@ -2432,7 +2432,7 @@ void Renderer::recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
             xrTonemapPipeline_->layout(), 0, 1, &xrTonemapSets_[i], 0, nullptr);
         TonemapPushConstants push = tonemapPushConstants(scene.settings(), eye.projection);
         {
-            NE_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/Tonemap");
+            SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/Tonemap");
             vkCmdPushConstants(cmd, xrTonemapPipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
                 0, sizeof(TonemapPushConstants), &push);
             vkCmdDraw(cmd, 3, 1, 0, 0);
@@ -2498,7 +2498,7 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
     // View-independent passes recorded once, then the stereo scene + tonemap.
     if (giUpdateThisFrame_) {
         GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
-        NE_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
+        SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
         gi_->voxelize(cmd, scene, gpuProfiler);
         gi_->update(cmd, globalSets_[currentFrame_], gpuProfiler);
     }
@@ -2510,5 +2510,5 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
     currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
 }
 
-} // namespace ne
-#endif // NE_ENABLE_XR
+} // namespace saida
+#endif // SAIDA_ENABLE_XR

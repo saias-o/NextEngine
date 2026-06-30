@@ -25,15 +25,15 @@ bool isIdentity(const glm::quat& q) {
 } // namespace
 
 int main() {
-    ne::registerReflectedTypes();
+    saida::registerReflectedTypes();
 
     // ── build a scene: A emits fullRotation, B has a reset slot ──
-    ne::Scene scene;
-    ne::Node* a = scene.addChild(std::make_unique<ne::Node>("A"));
-    auto* ra = a->addBehaviour<ne::RotatorBehaviour>();
+    saida::Scene scene;
+    saida::Node* a = scene.addChild(std::make_unique<saida::Node>("A"));
+    auto* ra = a->addBehaviour<saida::RotatorBehaviour>();
 
-    ne::Node* b = scene.addChild(std::make_unique<ne::Node>("B"));
-    b->addBehaviour<ne::RotatorBehaviour>();
+    saida::Node* b = scene.addChild(std::make_unique<saida::Node>("B"));
+    b->addBehaviour<saida::RotatorBehaviour>();
     b->transform().rotation = glm::angleAxis(1.0f, glm::vec3(0, 1, 0));  // non-identity
     assert(!isIdentity(b->transform().rotation));
 
@@ -55,9 +55,9 @@ int main() {
 
     // ── JSON round-trip preserves the connections block ──
     {
-        ne::Scene src;
-        ne::Node* x = src.addChild(std::make_unique<ne::Node>("X"));
-        ne::Node* y = src.addChild(std::make_unique<ne::Node>("Y"));
+        saida::Scene src;
+        saida::Node* x = src.addChild(std::make_unique<saida::Node>("X"));
+        saida::Node* y = src.addChild(std::make_unique<saida::Node>("Y"));
         src.connections().push_back({x->id(), "fullRotation", y->id(), "reset"});
 
         nlohmann::json j;
@@ -68,7 +68,7 @@ int main() {
             conns.push_back({{"from", c.from}, {"signal", c.signal}, {"to", c.to}, {"slot", c.slot}});
         j["connections"] = conns;
 
-        ne::Scene dst;
+        saida::Scene dst;
         dst.readConnections(j);
         assert(dst.connections().size() == 1);
         assert(dst.connections()[0].from == x->id());

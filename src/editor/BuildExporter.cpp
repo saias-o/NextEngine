@@ -12,7 +12,7 @@
 #include <shellapi.h>
 #endif
 
-namespace ne {
+namespace saida {
 
 namespace {
 namespace fs = std::filesystem;
@@ -83,10 +83,10 @@ BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
     if (ec) return fail("cannot create output directory: " + outDir.string());
     r.log += "Output: " + outDir.string() + "\n";
 
-    const fs::path binDir = fs::path(NE_RUNTIME_DIR);
-    const fs::path runtimeExe = binDir / "NextEngineRuntime.exe";
+    const fs::path binDir = fs::path(SAIDA_RUNTIME_DIR);
+    const fs::path runtimeExe = binDir / "SaidaEngineRuntime.exe";
     if (!fs::exists(runtimeExe))
-        return fail("runtime template not found — build the NextEngineRuntime "
+        return fail("runtime template not found — build the SaidaEngineRuntime "
                     "target first: " + runtimeExe.string());
 
     const std::string gameName = project.name().empty() ? "Game" : project.name();
@@ -120,12 +120,12 @@ BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
         !copyTree(project.scriptsDir(), outDir / "scripts", r.log))
         return fail("failed to copy project data");
 
-    // .neproj + asset registry (the runtime loads the project from these).
+    // .saidaproj + asset registry (the runtime loads the project from these).
     const fs::path neproj = project.filePath();
     if (fs::exists(neproj)) {
         fs::copy_file(neproj, outDir / neproj.filename(),
                       fs::copy_options::overwrite_existing, ec);
-        if (ec) return fail("failed to copy .neproj: " + ec.message());
+        if (ec) return fail("failed to copy .saidaproj: " + ec.message());
         r.log += "  " + neproj.filename().string() + "\n";
     } else {
         return fail("project file missing: " + neproj.string());
@@ -138,15 +138,15 @@ BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
         else r.log += "  asset_registry.json\n";
     }
 
-    // 5. Boot manifest (read by NextEngineRuntime at startup).
+    // 5. Boot manifest (read by SaidaEngineRuntime at startup).
     {
-        std::ofstream manifest(outDir / "game.ne", std::ios::trunc);
-        if (!manifest) return fail("cannot write boot manifest game.ne");
-        manifest << "# NextEngine game boot manifest\n";
+        std::ofstream manifest(outDir / "game.saida", std::ios::trunc);
+        if (!manifest) return fail("cannot write boot manifest game.saida");
+        manifest << "# SaidaEngine game boot manifest\n";
         manifest << "project=" << neproj.filename().string() << "\n";
         manifest << "main_scene=" << options.mainScene << "\n";
     }
-    r.log += "  game.ne (main_scene=" + options.mainScene + ")\n";
+    r.log += "  game.saida (main_scene=" + options.mainScene + ")\n";
 
     r.success = true;
     r.log += "Build succeeded.\n";
@@ -181,4 +181,4 @@ void BuildExporter::openInExplorer(const std::string& dir) {
 #endif
 }
 
-} // namespace ne
+} // namespace saida

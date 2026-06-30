@@ -2,7 +2,7 @@
 
 #include "xr/toolkit/XRTypes.hpp"
 
-namespace ne {
+namespace saida {
 
 // Global XR input service: sampled hand/head state plus derived button edges.
 class XRInput {
@@ -42,4 +42,4 @@ public:
     static void submitHead(const XRPose& pose);
 };
 
-} // namespace ne
+} // namespace saida

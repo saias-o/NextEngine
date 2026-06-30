@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
 
         if (readXrPreviewManifest) {
             const std::filesystem::path manifestPath =
-                std::filesystem::path(NE_BINARY_DIR) / "xr_preview.launch";
+                std::filesystem::path(SAIDA_BINARY_DIR) / "xr_preview.launch";
             std::ifstream manifest(manifestPath);
             if (!manifest || !std::getline(manifest, initialProject) ||
                 !std::getline(manifest, runtimeScene) || initialProject.empty() ||
@@ -48,27 +48,27 @@ int main(int argc, char** argv) {
         //
         // No SceneSetup: launched directly (no --project), the editor opens on an
         // empty scene. The Hub passes a project via --project to load real content.
-        ne::Engine engine(nullptr, initialProject, xrPreview);
+        saida::Engine engine(nullptr, initialProject, xrPreview);
         if (xrPreview) {
             if (runtimeScene.empty())
                 throw std::runtime_error("--xr requires --scene <path>");
             const std::string scenePath =
                 std::filesystem::absolute(runtimeScene).lexically_normal().string();
-            if (!ne::SceneSerializer::loadIntoScene(
+            if (!saida::SceneSerializer::loadIntoScene(
                     engine.scene(), engine.resources(), scenePath))
                 throw std::runtime_error("failed to load XR preview scene: " + scenePath);
             engine.mountWorld();
-            ne::Time::setScale(1.0f);
+            saida::Time::setScale(1.0f);
             engine.run();
             return EXIT_SUCCESS;
         }
 
         // Normal desktop editor.
-        ne::EditorApp editor(engine);
+        saida::EditorApp editor(engine);
         engine.setOnFrame([&editor](float dt) { editor.update(dt); });
         engine.run();
     } catch (const std::exception& e) {
-        ne::Log::error(e.what());
+        saida::Log::error(e.what());
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

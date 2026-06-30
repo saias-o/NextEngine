@@ -9,13 +9,13 @@
 #include <cstdint>
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class ParticleSystemNode : public Node {
 public:
     ParticleSystemNode() : Node("ParticleSystem") {}
 
-    NE_REFLECT_NODE(ParticleSystemNode, "ParticleSystem")
+    SAIDA_REFLECT_NODE(ParticleSystemNode, "ParticleSystem")
 
     enum class EffectClass {
         Simple = 0,
@@ -85,4 +85,4 @@ private:
     uint32_t effectRevision_ = 1;
 };
 
-} // namespace ne
+} // namespace saida

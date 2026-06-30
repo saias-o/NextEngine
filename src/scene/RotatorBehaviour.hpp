@@ -5,7 +5,7 @@
 
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 // Spins its node continuously around a local axis — the demo behaviour driving
 // the orbiting "moon" in the sample scenes. Reflected: `axis`/`speed` properties,
@@ -21,7 +21,7 @@ public:
     // Signal: emitted once each time the node completes a full 360° turn.
     Signal<> fullRotation;
 
-    NE_REFLECT_BEHAVIOUR(RotatorBehaviour, "Rotator")
+    SAIDA_REFLECT_BEHAVIOUR(RotatorBehaviour, "Rotator")
 
     glm::vec3 axis{0.0f, 1.0f, 0.0f};  // local rotation axis
     float speed = 70.0f;               // degrees per second
@@ -30,4 +30,4 @@ private:
     float accumDegrees_ = 0.0f;        // toward the next fullRotation pulse
 };
 
-} // namespace ne
+} // namespace saida

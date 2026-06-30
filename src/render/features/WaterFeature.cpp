@@ -14,7 +14,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 WaterFeature::~WaterFeature() {
     if (!device_) return;
@@ -145,4 +145,4 @@ void WaterFeature::record(const FrameContext& fc) {
     }
 }
 
-} // namespace ne
+} // namespace saida

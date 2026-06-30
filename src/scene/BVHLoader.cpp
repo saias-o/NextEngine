@@ -12,7 +12,7 @@
 #include <vector>
 #include <string>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -36,7 +36,7 @@ Chan parseChannel(const std::string& s) {
 } // namespace
 
 AssetID BVHLoader::load(const std::string& path, ResourceManager& resources) {
-    NE_PROFILE_SCOPE("Resource/LoadBVH");
+    SAIDA_PROFILE_SCOPE("Resource/LoadBVH");
     std::ifstream file(path);
     if (!file.is_open()) {
         Log::error("BVHLoader: cannot open ", path);
@@ -148,4 +148,4 @@ AssetID BVHLoader::load(const std::string& path, ResourceManager& resources) {
     return id;
 }
 
-} // namespace ne
+} // namespace saida

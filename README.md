@@ -1,4 +1,4 @@
-# NextEngine
+# SaidaEngine
 
 A lightweight 3D game engine written in **C++17 + Vulkan** and LLM-native.
 
@@ -13,7 +13,7 @@ A lightweight 3D game engine written in **C++17 + Vulkan** and LLM-native.
 - **DDGI** — dynamic diffuse global illumination (irradiance volume)
 - **Skeletal animation** — glTF/BVH, cubic-spline interpolation, retargeting, GPU skinning
 - **Physics** — Jolt Physics integration (rigid bodies, characters, areas, triggers)
-- **OpenXR / VR** — stereo multiview rendering, action sets, NEXRTK toolkit (grab, teleport, anchors, passthrough)
+- **OpenXR / VR** — stereo multiview rendering, action sets, SaidaXRTK toolkit (grab, teleport, anchors, passthrough)
 - **Editor** — scene tree, inspector, file browser, undo/redo, ImGui
 - **Scripting-ready** — node + behaviour + signal architecture (in Javascript)
 
@@ -55,8 +55,8 @@ FreeType, QuickJS-NG and RmlUi are pinned Git submodules. Clone them at the
 same time as the engine:
 
 ```sh
-git clone --recurse-submodules https://github.com/saias-o/NextEngine.git
-cd NextEngine
+git clone --recurse-submodules https://github.com/saias-o/SaidaEngine.git
+cd SaidaEngine
 git lfs pull
 ```
 
@@ -97,7 +97,7 @@ avant de lancer Ninja :
 
 ```powershell
 New-Item -ItemType Directory -Force -Path build\tmp, build\msys_home | Out-Null
-C:\msys64\usr\bin\bash.exe -lc 'cd /c/Users/evand/Documents/NextEngine && export HOME=/c/Users/evand/Documents/NextEngine/build/msys_home && export TMPDIR=/c/Users/evand/Documents/NextEngine/build/tmp && export TMP=/c/Users/evand/Documents/NextEngine/build/tmp && export TEMP=/c/Users/evand/Documents/NextEngine/build/tmp && export PATH=/ucrt64/bin:/usr/bin:$PATH && cmake --build build --parallel'
+C:\msys64\usr\bin\bash.exe -lc 'cd /c/Users/evand/Documents/SaidaEngine && export HOME=/c/Users/evand/Documents/SaidaEngine/build/msys_home && export TMPDIR=/c/Users/evand/Documents/SaidaEngine/build/tmp && export TMP=/c/Users/evand/Documents/SaidaEngine/build/tmp && export TEMP=/c/Users/evand/Documents/SaidaEngine/build/tmp && export PATH=/ucrt64/bin:/usr/bin:$PATH && cmake --build build --parallel'
 ```
 
 Symptomes typiques quand cette redirection manque :
@@ -108,9 +108,9 @@ Symptomes typiques quand cette redirection manque :
 
 Successful builds produce:
 
-- `build/bin/NextEngine.exe` — engine and demo game;
-- `build/bin/NextEngineHub.exe` — project hub;
-- `build/bin/NextEngineRuntime.exe` — standalone runtime template;
+- `build/bin/SaidaEngine.exe` — engine and demo game;
+- `build/bin/SaidaEngineHub.exe` — project hub;
+- `build/bin/SaidaEngineRuntime.exe` — standalone runtime template;
 - `build/tests/*.exe` — test binaries;
 - `build/libne_engine.a` — static engine library.
 
@@ -120,11 +120,11 @@ working directory.
 
 ### 4. Run manually
 
-`NextEngine.exe` is a GUI application with an infinite render loop. A human can
+`SaidaEngine.exe` is a GUI application with an infinite render loop. A human can
 launch it normally:
 
 ```sh
-./build/bin/NextEngine.exe
+./build/bin/SaidaEngine.exe
 ```
 
 For a Debug build with Vulkan validation layers, launch it through:
@@ -186,14 +186,14 @@ src/
   render/      Renderer, ShadowMap, LightBaker, GIVolume
   scene/        Node, Scene, Behaviour, SceneTree, GLTFLoader, animation/
   physics/     Jolt wrapper (PhysicsWorld, RigidBodyNode, CharacterBodyNode…)
-  xr/          OpenXR session, actions, NEXRTK toolkit
+  xr/          OpenXR session, actions, SaidaXRTK toolkit
   editor/      Scene editor (ImGui-based)
   game/        Demo scene content (lives in the exe, not the engine lib)
 shaders/       GLSL → SPIR-V (compiled by glslc at build time)
 third_party/   VMA, xatlas, Jolt, OpenXR, QuickJS, RmlUi, FreeType, ImGui, stb…
 ```
 
-The engine compiles as a static library (`ne_engine`); game code links against it — iterating game logic never recompiles the engine.
+The engine compiles as a static library (`saida_engine`); game code links against it — iterating game logic never recompiles the engine.
 
 ## Status
 

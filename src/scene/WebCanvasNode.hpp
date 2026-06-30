@@ -10,14 +10,14 @@
 
 #include <quickjs.h>
 
-namespace ne {
+namespace saida {
 
 class JsContext;
 class Buffer;
 class ResourceManager;
 class VulkanDevice;
 
-} // namespace ne
+} // namespace saida
 
 namespace Rml {
 class Context;
@@ -29,7 +29,7 @@ enum KeyIdentifier : unsigned char;
 }
 }
 
-namespace ne {
+namespace saida {
 
 class WebCanvasNode : public Node {
 public:
@@ -172,4 +172,4 @@ private:
     std::vector<std::unique_ptr<JsEventListenerRecord>> jsEventListeners_;
 };
 
-} // namespace ne
+} // namespace saida

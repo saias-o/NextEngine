@@ -1,7 +1,7 @@
 # Plan de fiabilisation de l'editeur
 
 Ce document est le journal d'execution de l'audit editeur. Un lot ne passe a
-`[x]` qu'apres compilation de `NextEngine`, execution des tests applicables et
+`[x]` qu'apres compilation de `SaidaEngine`, execution des tests applicables et
 `git diff --check`.
 
 ## Etat des lots
@@ -18,7 +18,7 @@ Ce document est le journal d'execution de l'audit editeur. Un lot ne passe a
 
 ## Journal de validation
 
-| Lot | Configuration | Build NextEngine | Tests | diff-check | Notes |
+| Lot | Configuration | Build SaidaEngine | Tests | diff-check | Notes |
 |---|---|---|---|---|---|
 | 0 | OK (Debug) | OK | 1/1 OK | OK | PATH MSYS2 requis; doublons CMake supprimes |
 | 1 | OK (Debug) | OK | 2/2 OK | OK | Scene active recalculee; timers possedes par Behaviour |
@@ -119,7 +119,7 @@ sur-ingenierie :
   et tous les overrides sont supprimes ; `imgui.h` retire de ces TUs.
 - Resultat : **plus aucun behaviour gameplay ne porte de drawer ImGui** →
   l'invariant « le moteur ne depend pas de drawers ImGui portes par les
-  behaviours » est respecte (ne_engine ne tire ImGui que via `ImGuiLayer`, le
+  behaviours » est respecte (saida_engine ne tire ImGui que via `ImGuiLayer`, le
   wrapper de backend assume).
 - `ScriptBehaviour` : petite API editeur publique ajoutee (`loaded()`,
   `hotReloadEnabled()/set`, `properties()`, `applyProperty()`) au lieu d'exposer
@@ -188,8 +188,8 @@ Ils ne doivent jamais simuler une action reussie.
 
 Tests, documentation et validation finale du chantier de fiabilisation :
 
-Nouveau fichier `tests/EditorDocumentTests.cpp` (target CMake `ne_editor_document_tests`,
-linke `ne_editor`) — 5 cas de test sans GPU ni ImGui :
+Nouveau fichier `tests/EditorDocumentTests.cpp` (target CMake `saida_editor_document_tests`,
+linke `saida_editor`) — 5 cas de test sans GPU ni ImGui :
 
 - **testSceneDocumentState** : `bind`/`find`/`dirty`/`saved`/`loaded`/`select`/`clearSelection`,
   et cas de selection perimee (noeud supprime → re-bind → `selectedId == kNodeInvalid`).
@@ -217,7 +217,7 @@ Suite complete : **4/4 OK** (core, scene lifecycle, editor commands, editor docu
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --target NextEngine
+cmake --build build --target SaidaEngine
 ctest --test-dir build --output-on-failure
 git diff --check
 ```

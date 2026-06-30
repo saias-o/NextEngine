@@ -10,7 +10,7 @@
 #include <limits>
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 namespace {
 const char* presentModeName(VkPresentModeKHR mode) {
@@ -242,4 +242,4 @@ void Swapchain::createDepthResources() {
     depthImageView_ = device_.createImageView(depthImage_, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
 }
 
-} // namespace ne
+} // namespace saida

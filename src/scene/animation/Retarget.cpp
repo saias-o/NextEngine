@@ -2,7 +2,7 @@
 
 #include <cctype>
 
-namespace ne {
+namespace saida {
 
 namespace {
 // Normalize a joint name for fuzzy matching across conventions.
@@ -35,4 +35,4 @@ RetargetMap RetargetMap::autoMap(const std::vector<std::string>& rigBones,
     return m;
 }
 
-} // namespace ne
+} // namespace saida

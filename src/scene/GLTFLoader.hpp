@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class Node;
 class ResourceManager;
@@ -17,4 +17,4 @@ public:
                      const GLTFLoadOptions& options = {});
 };
 
-} // namespace ne
+} // namespace saida

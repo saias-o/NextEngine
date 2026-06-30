@@ -39,7 +39,7 @@
 #include <functional>
 #include <utility>
 
-namespace ne {
+namespace saida {
 
 namespace {
     std::string getAssetName(AssetID id, EditorUI* editor) {
@@ -633,7 +633,7 @@ void InspectorPanel::draw(EditorUI* editor) {
     }
 
     if (auto* particles = dynamic_cast<ParticleSystemNode*>(node)) {
-        ImGui::SeparatorText("NEFX");
+        ImGui::SeparatorText("SaidaFX");
         PropertyEditor pe(*editor, node);
         if (ImGui::Button("Apply Effect Preset", ImVec2(-FLT_MIN, 0.0f))) {
             particles->applyEffectPreset();
@@ -643,7 +643,7 @@ void InspectorPanel::draw(EditorUI* editor) {
             particles->loadEffect();
             editor->markDirty();
         }
-        ImGui::Button("Drop .nefx Here", ImVec2(-FLT_MIN, 28.0f));
+        ImGui::Button("Drop .saidafx Here", ImVec2(-FLT_MIN, 28.0f));
         if (editor->ctxProject() && ImGui::BeginDragDropTarget()) {
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_ID")) {
                 AssetID id = *(AssetID*)payload->Data;
@@ -676,7 +676,7 @@ void InspectorPanel::draw(EditorUI* editor) {
             ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.25f, 1.0f),
                 "Alpha warning: consider lower spawn/budget for VR");
         }
-        ImGui::TextDisabled("Preset or .nefx fills the editable parameters below.");
+        ImGui::TextDisabled("Preset or .saidafx fills the editable parameters below.");
     }
 
     // Generic fallback: any reflected node type (e.g. WaterNode) gets a full
@@ -1256,4 +1256,4 @@ void InspectorPanel::drawBehaviours(Node* node, EditorUI* editor) {
     }
 }
 
-} // namespace ne
+} // namespace saida

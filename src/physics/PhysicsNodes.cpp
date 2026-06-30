@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-namespace ne {
+namespace saida {
 
 void StaticBodyNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
     Node::serialize(j, resources);
@@ -62,4 +62,4 @@ void AreaNode::handleOverlap(CollisionObjectNode* other, bool entered) {
     }
 }
 
-} // namespace ne
+} // namespace saida

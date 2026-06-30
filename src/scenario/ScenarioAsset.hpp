@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 struct ScenarioIssue {
     std::string path;
@@ -61,4 +61,4 @@ private:
                           const std::string& path, std::vector<ScenarioIssue>& issues);
 };
 
-} // namespace ne
+} // namespace saida

@@ -6,7 +6,7 @@
 #include <array>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class MeshNode;
 
@@ -15,10 +15,10 @@ class MeshNode;
 // serialized; a scene only needs one XRHand node per side.
 class XRHandNode : public Node {
 public:
-    explicit XRHandNode(ne::XRHand hand = ne::XRHand::Left);
+    explicit XRHandNode(saida::XRHand hand = saida::XRHand::Left);
 
-    ne::XRHand hand() const { return hand_; }
-    void setHand(ne::XRHand hand) { hand_ = hand; }
+    saida::XRHand hand() const { return hand_; }
+    void setHand(saida::XRHand hand) { hand_ = hand; }
     bool isTracked() const;
 
     // Called by the internal tracker behaviour once per scene update.
@@ -32,7 +32,7 @@ private:
     void buildVisuals(ResourceManager& resources);
     void setVisualsVisible(bool visible);
 
-    ne::XRHand hand_;
+    saida::XRHand hand_;
     glm::vec4 color_{0.2f, 0.75f, 1.0f, 1.0f};
     float jointScale_ = 1.0f;
     std::array<MeshNode*, kXRHandJointCount> jointNodes_{};
@@ -40,4 +40,4 @@ private:
     bool visualsBuilt_ = false;
 };
 
-} // namespace ne
+} // namespace saida

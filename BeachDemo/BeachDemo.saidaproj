@@ -1,4 +1,4 @@
-[NextEngine Project]
+[SaidaEngine Project]
 name=BeachDemo
 engine_version=0.1.0
 main_scene=scenes/beach.scene

@@ -3,7 +3,7 @@
 
 #include <algorithm>
 
-namespace ne {
+namespace saida {
 
 namespace {
 Window* g_window = nullptr;
@@ -471,4 +471,4 @@ void Input::unsubscribe(uint32_t callbackId) {
     }), g_subscriptions.end());
 }
 
-} // namespace ne
+} // namespace saida

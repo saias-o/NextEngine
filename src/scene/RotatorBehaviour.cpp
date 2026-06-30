@@ -5,7 +5,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <cmath>
 
-namespace ne {
+namespace saida {
 
 void RotatorBehaviour::describe(reflect::TypeBuilder<RotatorBehaviour>& t) {
     t.doc("Spins its node continuously around a local axis.");
@@ -36,4 +36,4 @@ void RotatorBehaviour::reset() {
     accumDegrees_ = 0.0f;
 }
 
-} // namespace ne
+} // namespace saida

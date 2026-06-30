@@ -10,7 +10,7 @@
 #include <cstdio>
 #include <filesystem>
 
-namespace ne {
+namespace saida {
 
 void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, ResourceManager* resources) {
     if (ImGui::BeginMainMenuBar()) {
@@ -20,7 +20,7 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
             }
             if (ImGui::MenuItem("Open Project...")) {
                 editor->showOpenProjectDialog_ = true;
-                editor->openBrowsePath_ = std::string(NE_PROJECT_ROOT);
+                editor->openBrowsePath_ = std::string(SAIDA_PROJECT_ROOT);
             }
             bool hasProject = project && project->isLoaded();
             if (ImGui::MenuItem("Save Project", nullptr, false, hasProject)) {
@@ -164,7 +164,7 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
         }
 
         if (ImGui::BeginMenu("Help")) {
-            if (ImGui::MenuItem("About NextEngine")) {
+            if (ImGui::MenuItem("About SaidaEngine")) {
                 editor->showAboutWindow_ = true;
             }
             ImGui::EndMenu();
@@ -202,4 +202,4 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
     }
 }
 
-} // namespace ne
+} // namespace saida

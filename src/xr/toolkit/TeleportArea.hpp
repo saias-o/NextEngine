@@ -3,7 +3,7 @@
 #include "scene/Node.hpp"
 #include "core/Signal.hpp"
 
-namespace ne {
+namespace saida {
 
 // A flat region the player may teleport onto (Godot/Unity teleport-anchor style).
 // It is a passive marker: an XRRayInteractor scans the "xr_teleport_area" group,
@@ -30,4 +30,4 @@ public:
     void deserialize(const nlohmann::json& j, ResourceManager& resources) override;
 };
 
-} // namespace ne
+} // namespace saida

@@ -7,7 +7,7 @@
 
 #include <random>
 
-namespace ne {
+namespace saida {
 
 // Random wandering for a CharacterBody pedestrian, optionally leashed to spawn.
 class NpcWanderBehaviour : public Behaviour {
@@ -15,7 +15,7 @@ public:
     void onReady() override;
     void onUpdate(float dt) override;
 
-    NE_REFLECT_BEHAVIOUR(NpcWanderBehaviour, "NpcWander")
+    SAIDA_REFLECT_BEHAVIOUR(NpcWanderBehaviour, "NpcWander")
 
     float speed = 1.6f;          // m/s walking speed
     float changeInterval = 3.0f; // seconds between heading changes
@@ -35,4 +35,4 @@ private:
     std::mt19937 rng_;
 };
 
-} // namespace ne
+} // namespace saida

@@ -9,7 +9,7 @@
 #include <fstream>
 #include <random>
 
-namespace ne {
+namespace saida {
 
 namespace {
 using json = nlohmann::json;
@@ -387,8 +387,8 @@ AssetType AssetRegistry::determineType(const std::filesystem::path& path) const 
     if (ext == ".ogg") return AssetType::Audio;
     if (ext == ".rig") return AssetType::Rig;
     if (ext == ".anim") return AssetType::Animation;
-    if (ext == ".nefx") return AssetType::Effect;
+    if (ext == ".saidafx") return AssetType::Effect;
     return AssetType::Unknown;
 }
 
-} // namespace ne
+} // namespace saida

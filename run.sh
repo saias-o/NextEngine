@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lance NextEngine avec les validation layers Vulkan activées.
+# Lance SaidaEngine avec les validation layers Vulkan activées.
 #
 # Les layers (paquet MSYS2 mingw-w64-ucrt-x86_64-vulkan-validation-layers) ne
 # sont pas enregistrées auprès du loader : on pointe VK_LAYER_PATH sur le dossier
@@ -13,4 +13,4 @@ export PATH="$ucrt_bin:$PATH"
 export VK_LAYER_PATH="$(cygpath -w "$ucrt_bin")"
 
 cd "$(dirname "$0")/build/bin"
-exec ./NextEngine.exe "$@"
+exec ./SaidaEngine.exe "$@"

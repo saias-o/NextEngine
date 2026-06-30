@@ -5,7 +5,7 @@
 #include <cmath>
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 TeleportArea::TeleportArea() : Node("TeleportArea") {
     addToGroup(kXRTeleportAreaGroup);
@@ -46,4 +46,4 @@ void TeleportArea::deserialize(const nlohmann::json& j, ResourceManager& resourc
     if (j.contains("active")) active = j["active"].get<bool>();
 }
 
-} // namespace ne
+} // namespace saida

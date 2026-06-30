@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 // Minimal leveled logger. Header-only; streams its arguments to stdout/stderr
 // behind a tag. Also keeps a small in-memory ring of recent lines so tools (the
@@ -66,4 +66,4 @@ private:
     }
 };
 
-} // namespace ne
+} // namespace saida

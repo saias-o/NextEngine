@@ -2,14 +2,14 @@
 
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class Project;
 
 // Packages a loaded project into a standalone Windows game folder, Godot/Unity
 // "export template" style: it copies the pre-built editor-less runtime
-// (NextEngineRuntime.exe) plus the compiled shaders and the project data next to
-// it, and writes a boot manifest (game.ne) the runtime reads at startup. No
+// (SaidaEngineRuntime.exe) plus the compiled shaders and the project data next to
+// it, and writes a boot manifest (game.saida) the runtime reads at startup. No
 // recompilation — the runtime template is built once with the engine.
 class BuildExporter {
 public:
@@ -37,4 +37,4 @@ public:
     static void openInExplorer(const std::string& dir);
 };
 
-} // namespace ne
+} // namespace saida

@@ -4,7 +4,7 @@
 
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Window;
@@ -87,4 +87,4 @@ private:
     std::vector<VkSemaphore> renderFinishedSemaphores_;  // one per swap-chain image
 };
 
-} // namespace ne
+} // namespace saida

@@ -6,7 +6,7 @@
 #include <memory>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 // Registry of scene-pass render features, sorted by draw order.
 class RenderFeatureRegistry {
@@ -30,4 +30,4 @@ private:
 // Central registration avoids static-library dead stripping of feature factories.
 void registerBuiltinRenderFeatures();
 
-} // namespace ne
+} // namespace saida

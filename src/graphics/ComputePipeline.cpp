@@ -5,7 +5,7 @@
 #include <fstream>
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -75,4 +75,4 @@ void ComputePipeline::bind(VkCommandBuffer cmd) const {
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_);
 }
 
-} // namespace ne
+} // namespace saida

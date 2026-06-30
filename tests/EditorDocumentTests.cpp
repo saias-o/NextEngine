@@ -22,18 +22,18 @@ namespace {
 
 // SceneDocument: bind/find/dirty/selection lifecycle.
 void testSceneDocumentState() {
-    ne::Scene scene;
-    ne::SceneDocument document;
+    saida::Scene scene;
+    saida::SceneDocument document;
 
     // Avant bind : find renvoie toujours nullptr
-    assert(document.find(ne::kNodeInvalid) == nullptr);
+    assert(document.find(saida::kNodeInvalid) == nullptr);
     assert(!document.dirty());
 
     document.bind(&scene, nullptr);
-    assert(document.find(ne::kNodeInvalid) == nullptr);
+    assert(document.find(saida::kNodeInvalid) == nullptr);
 
-    ne::Node* node = scene.createChild<ne::Node>("A");
-    const ne::NodeId id = node->id();
+    saida::Node* node = scene.createChild<saida::Node>("A");
+    const saida::NodeId id = node->id();
     assert(document.find(id) == node);
 
     // dirty / saved / loaded
@@ -50,7 +50,7 @@ void testSceneDocumentState() {
     assert(document.selectedId() == id);
     assert(document.selectedNode() == node);
     document.clearSelection();
-    assert(document.selectedId() == ne::kNodeInvalid);
+    assert(document.selectedId() == saida::kNodeInvalid);
     assert(document.selectedNode() == nullptr);
 
     // Selection perimee : supprimer le noeud puis re-binder -> selection effacee
@@ -58,21 +58,21 @@ void testSceneDocumentState() {
     assert(document.selectedId() == id);
     scene.removeChild(node);         // node est detruit ici
     document.bind(&scene, nullptr);  // find(id) == nullptr -> clearSelection
-    assert(document.selectedId() == ne::kNodeInvalid);
+    assert(document.selectedId() == saida::kNodeInvalid);
 }
 
 // RenameNodeCommand : execute renomme, undo restaure, redo re-renomme.
 // Chaque operation marque le document dirty.
 void testRenameCommandRoundTrip() {
-    ne::Scene scene;
-    ne::SceneDocument document;
+    saida::Scene scene;
+    saida::SceneDocument document;
     document.bind(&scene, nullptr);
 
-    ne::Node* node = scene.createChild<ne::Node>("OldName");
-    const ne::NodeId id = node->id();
+    saida::Node* node = scene.createChild<saida::Node>("OldName");
+    const saida::NodeId id = node->id();
 
-    ne::CommandHistory history(document);
-    history.execute(std::make_unique<ne::RenameNodeCommand>(id, "OldName", "NewName"));
+    saida::CommandHistory history(document);
+    history.execute(std::make_unique<saida::RenameNodeCommand>(id, "OldName", "NewName"));
     assert(document.find(id)->name() == "NewName");
     assert(document.dirty());
 
@@ -87,19 +87,19 @@ void testRenameCommandRoundTrip() {
 
 // TransformCommand : execute applique la nouvelle transform, undo restitue l'ancienne.
 void testTransformCommandRoundTrip() {
-    ne::Scene scene;
-    ne::SceneDocument document;
+    saida::Scene scene;
+    saida::SceneDocument document;
     document.bind(&scene, nullptr);
 
-    ne::Node* node = scene.createChild<ne::Node>("T");
-    const ne::NodeId id = node->id();
+    saida::Node* node = scene.createChild<saida::Node>("T");
+    const saida::NodeId id = node->id();
 
-    ne::Transform oldT;  // position (0,0,0) par defaut
-    ne::Transform newT;
+    saida::Transform oldT;  // position (0,0,0) par defaut
+    saida::Transform newT;
     newT.position = {1.f, 2.f, 3.f};
 
-    ne::CommandHistory history(document);
-    history.execute(std::make_unique<ne::TransformCommand>(id, oldT, newT));
+    saida::CommandHistory history(document);
+    history.execute(std::make_unique<saida::TransformCommand>(id, oldT, newT));
 
     {
         const auto& p = document.find(id)->transform().position;
@@ -126,21 +126,21 @@ void testTransformCommandRoundTrip() {
 
 // ReparentNodeCommand : le noeud change de parent; undo restitue le parent d'origine.
 void testReparentCommandRoundTrip() {
-    ne::Scene scene;
-    ne::SceneDocument document;
+    saida::Scene scene;
+    saida::SceneDocument document;
     document.bind(&scene, nullptr);
 
-    ne::Node* parentA = scene.createChild<ne::Node>("ParentA");
-    ne::Node* child   = parentA->createChild<ne::Node>("Child");
-    ne::Node* parentB = scene.createChild<ne::Node>("ParentB");
-    const ne::NodeId childId   = child->id();
-    const ne::NodeId parentBId = parentB->id();
+    saida::Node* parentA = scene.createChild<saida::Node>("ParentA");
+    saida::Node* child   = parentA->createChild<saida::Node>("Child");
+    saida::Node* parentB = scene.createChild<saida::Node>("ParentB");
+    const saida::NodeId childId   = child->id();
+    const saida::NodeId parentBId = parentB->id();
 
     assert(parentA->children().size() == 1);
     assert(parentB->children().size() == 0);
 
-    ne::CommandHistory history(document);
-    history.execute(std::make_unique<ne::ReparentNodeCommand>(childId, parentBId));
+    saida::CommandHistory history(document);
+    history.execute(std::make_unique<saida::ReparentNodeCommand>(childId, parentBId));
 
     assert(parentA->children().size() == 0);
     assert(parentB->children().size() == 1);
@@ -157,17 +157,17 @@ void testReparentCommandRoundTrip() {
 //   - Executer une commande apres un undo vide le redo stack (historique lineaire).
 //   - clear() vide les deux piles ; undoName/redoName renvoient "" quand vides.
 void testHistoryClearAndRedoOnNew() {
-    ne::Scene scene;
-    ne::SceneDocument document;
+    saida::Scene scene;
+    saida::SceneDocument document;
     document.bind(&scene, nullptr);
 
-    ne::Node* node = scene.createChild<ne::Node>("N");
-    const ne::NodeId id = node->id();
-    ne::CommandHistory history(document);
+    saida::Node* node = scene.createChild<saida::Node>("N");
+    const saida::NodeId id = node->id();
+    saida::CommandHistory history(document);
 
-    history.execute(std::make_unique<ne::RenameNodeCommand>(id, "N", "A"));
-    history.execute(std::make_unique<ne::RenameNodeCommand>(id, "A", "B"));
-    history.execute(std::make_unique<ne::RenameNodeCommand>(id, "B", "C"));
+    history.execute(std::make_unique<saida::RenameNodeCommand>(id, "N", "A"));
+    history.execute(std::make_unique<saida::RenameNodeCommand>(id, "A", "B"));
+    history.execute(std::make_unique<saida::RenameNodeCommand>(id, "B", "C"));
     assert(history.undoCount() == 3);
     assert(history.redoCount() == 0);
 
@@ -177,7 +177,7 @@ void testHistoryClearAndRedoOnNew() {
     assert(std::string(history.redoName()) == "Rename Node");
 
     // Nouvelle commande : redo stack efface
-    history.execute(std::make_unique<ne::RenameNodeCommand>(id, "B", "D"));
+    history.execute(std::make_unique<saida::RenameNodeCommand>(id, "B", "D"));
     assert(history.redoCount() == 0);
     assert(history.undoCount() == 3);
     assert(std::string(history.undoName()) == "Rename Node");

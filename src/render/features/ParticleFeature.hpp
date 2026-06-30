@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 
@@ -56,4 +56,4 @@ private:
     std::unordered_map<ParticleSystemNode*, EmitterState> states_;
 };
 
-} // namespace ne
+} // namespace saida

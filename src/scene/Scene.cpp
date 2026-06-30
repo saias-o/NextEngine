@@ -15,7 +15,7 @@
 
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 Scene::Scene() : Node("Scene") {
 }
@@ -29,21 +29,21 @@ Scene::~Scene() {
 }
 
 void Scene::update(float dt) {
-    NE_PROFILE_FUNCTION();
+    SAIDA_PROFILE_FUNCTION();
     if (lastHierarchyVersion_ != g_hierarchyVersion) {
-        NE_PROFILE_SCOPE("Scene/FlattenHierarchy");
+        SAIDA_PROFILE_SCOPE("Scene/FlattenHierarchy");
         flattenHierarchy();
         lastHierarchyVersion_ = g_hierarchyVersion;
     }
 
-    NE_PROFILE_COUNTER("Scene/Behaviours", flatBehaviours_.size());
-    NE_PROFILE_COUNTER("Scene/Nodes", activeNodeCount_);
-    NE_PROFILE_COUNTER("Scene/MeshNodes", meshes_.size());
-    NE_PROFILE_COUNTER("Scene/Lights", lights_.size());
-    NE_PROFILE_COUNTER("Physics/Bodies", bodies_.size());
+    SAIDA_PROFILE_COUNTER("Scene/Behaviours", flatBehaviours_.size());
+    SAIDA_PROFILE_COUNTER("Scene/Nodes", activeNodeCount_);
+    SAIDA_PROFILE_COUNTER("Scene/MeshNodes", meshes_.size());
+    SAIDA_PROFILE_COUNTER("Scene/Lights", lights_.size());
+    SAIDA_PROFILE_COUNTER("Physics/Bodies", bodies_.size());
 
     {
-        NE_PROFILE_SCOPE("Scene/Behaviours");
+        SAIDA_PROFILE_SCOPE("Scene/Behaviours");
         for (auto* b : flatBehaviours_) {
             if (!b->enabled()) continue;
             if (dt > 0.0f) {
@@ -57,39 +57,39 @@ void Scene::update(float dt) {
     }
 
     {
-        NE_PROFILE_SCOPE("Scene/UpdateTransforms");
+        SAIDA_PROFILE_SCOPE("Scene/UpdateTransforms");
         updateTransforms(glm::mat4(1.0f), false);
     }
 
     // Freeze each Auto collision shape once, now that world transforms are fresh
     // (runs in edit mode too, so the editor wireframe is stable and correct).
     {
-        NE_PROFILE_SCOPE("Physics/ResolveAutoShapes");
+        SAIDA_PROFILE_SCOPE("Physics/ResolveAutoShapes");
         for (auto* body : bodies_) body->resolveAutoShapes();
     }
 
     // Physics only runs while time is advancing (i.e. in Play, not while editing).
     if (dt > 0.0f && !bodies_.empty()) {
-        NE_PROFILE_SCOPE("Physics/SceneStep");
+        SAIDA_PROFILE_SCOPE("Physics/SceneStep");
         if (!physics_) physics_ = std::make_unique<PhysicsWorld>();
         {
-            NE_PROFILE_SCOPE("Physics/SyncTo");
+            SAIDA_PROFILE_SCOPE("Physics/SyncTo");
             for (auto* body : bodies_) body->syncToPhysics(*physics_);
         }
         {
-            NE_PROFILE_SCOPE("Physics/PreStep");
+            SAIDA_PROFILE_SCOPE("Physics/PreStep");
             for (auto* body : bodies_) body->prePhysicsStep(*physics_, dt);  // characters move/slide
         }
         physics_->step(dt);
         {
-            NE_PROFILE_SCOPE("Physics/SyncFrom");
+            SAIDA_PROFILE_SCOPE("Physics/SyncFrom");
             for (auto* body : bodies_) body->syncFromPhysics(*physics_);
         }
 
         // Dispatch contact events on the main thread: sensor overlaps to Area
         // nodes, solid collisions to both bodies' collision signals.
         {
-        NE_PROFILE_SCOPE("Physics/ContactEvents");
+        SAIDA_PROFILE_SCOPE("Physics/ContactEvents");
         for (const auto& e : physics_->drainContactEvents()) {
             auto* n1 = static_cast<CollisionObjectNode*>(physics_->bodyUserData(e.a));
             auto* n2 = static_cast<CollisionObjectNode*>(physics_->bodyUserData(e.b));
@@ -104,7 +104,7 @@ void Scene::update(float dt) {
         }
 
         {
-            NE_PROFILE_SCOPE("Scene/PostPhysicsTransforms");
+            SAIDA_PROFILE_SCOPE("Scene/PostPhysicsTransforms");
             updateTransforms(glm::mat4(1.0f), false);  // propagate dynamic results down the tree
         }
     }
@@ -295,4 +295,4 @@ void Scene::deserialize(const nlohmann::json& j, ResourceManager& resources) {
     }
 }
 
-} // namespace ne
+} // namespace saida

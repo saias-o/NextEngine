@@ -22,7 +22,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace ne {
+namespace saida {
 
 namespace {
 struct MaterialData {
@@ -445,4 +445,4 @@ Texture* ResourceManager::defaultNormalTexture() {
     return defaultNormalTexture_.get();
 }
 
-} // namespace ne
+} // namespace saida

@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class Node;
 class Scene;
@@ -36,4 +36,4 @@ private:
     bool dirty_ = false;
 };
 
-} // namespace ne
+} // namespace saida

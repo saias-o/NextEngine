@@ -6,7 +6,7 @@
 #include <fstream>
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 namespace {
 
 using json = nlohmann::json;
@@ -266,7 +266,7 @@ json ParticleEffect::toJson() const {
     json emitterArray = json::array();
     for (const ParticleEmitterDesc& e : emitters) emitterArray.push_back(emitterToJson(e));
     return {
-        {"format", "NEFX"},
+        {"format", "SaidaFX"},
         {"version", version},
         {"name", name},
         {"emitters", std::move(emitterArray)}
@@ -356,7 +356,7 @@ bool ParticleEffect::applyTo(ParticleSystemNode& node, size_t emitterIndex) cons
 std::vector<std::string> ParticleEffect::validate() const {
     std::vector<std::string> errors;
     if (version <= 0 || version > kCurrentVersion) {
-        errors.push_back("unsupported NEFX version");
+        errors.push_back("unsupported SaidaFX version");
     }
     if (emitters.empty()) {
         errors.push_back("effect has no emitters");
@@ -423,4 +423,4 @@ std::vector<std::string> ParticleEffect::validate() const {
     return errors;
 }
 
-} // namespace ne
+} // namespace saida

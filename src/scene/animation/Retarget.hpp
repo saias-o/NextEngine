@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 // Name-based animation retargeting: maps a target-rig bone name → the source-clip
 // track name, so a clip authored on a differently-named skeleton (e.g. Mixamo's
@@ -35,4 +35,4 @@ private:
     std::unordered_map<std::string, std::string> map_;
 };
 
-} // namespace ne
+} // namespace saida

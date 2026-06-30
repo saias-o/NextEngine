@@ -9,7 +9,7 @@
 
 #include <cstring>
 
-namespace ne::xr {
+namespace saida::xr {
 
 XrPath Actions::path(const char* str) const {
     XrPath p = XR_NULL_PATH;
@@ -45,7 +45,7 @@ Actions::Actions(Instance& instance, XrSession session) : instance_(instance.han
     XrActionSetCreateInfo asci{};
     asci.type = XR_TYPE_ACTION_SET_CREATE_INFO;
     std::strncpy(asci.actionSetName, "nexrtk", XR_MAX_ACTION_SET_NAME_SIZE - 1);
-    std::strncpy(asci.localizedActionSetName, "NEXRTK", XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE - 1);
+    std::strncpy(asci.localizedActionSetName, "SaidaXRTK", XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE - 1);
     check(xrCreateActionSet(instance_, &asci, &actionSet_), "xrCreateActionSet");
 
     handPaths_[0] = path("/user/hand/left");
@@ -129,10 +129,10 @@ void Actions::sync(XrSession session, XrSpace space, XrTime time) {
 
     for (int i = 0; i < 2; ++i) {
         const XrPath sub = handPaths_[i];
-        const ne::XRHand hand = i == 0 ? ne::XRHand::Left : ne::XRHand::Right;
-        ne::XRHandState st;
+        const saida::XRHand hand = i == 0 ? saida::XRHand::Left : saida::XRHand::Right;
+        saida::XRHandState st;
 
-        auto locate = [&](XrSpace as, ne::XRPose& out) {
+        auto locate = [&](XrSpace as, saida::XRPose& out) {
             XrSpaceLocation loc{};
             loc.type = XR_TYPE_SPACE_LOCATION;
             if (XR_FAILED(xrLocateSpace(as, space, time, &loc))) return;
@@ -193,9 +193,9 @@ void Actions::sync(XrSession session, XrSpace space, XrTime time) {
         st.primaryButton = getBool(primary_);
         st.secondaryButton = getBool(secondary_);
 
-        if (st.active) ne::XRInput::submitHand(hand, st);
-        else ne::XRInput::clearHand(hand);
+        if (st.active) saida::XRInput::submitHand(hand, st);
+        else saida::XRInput::clearHand(hand);
     }
 }
 
-} // namespace ne::xr
+} // namespace saida::xr

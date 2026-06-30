@@ -4,7 +4,7 @@
 
 #include <vulkan/vulkan.h>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 
@@ -40,4 +40,4 @@ private:
     VkImageLayout layout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 };
 
-} // namespace ne
+} // namespace saida

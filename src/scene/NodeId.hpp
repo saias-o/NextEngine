@@ -2,11 +2,11 @@
 
 #include <cstdint>
 
-namespace ne {
+namespace saida {
 
 using NodeId = uint64_t;
 constexpr NodeId kNodeInvalid = 0;
 
 NodeId generateNodeId();
 
-} // namespace ne
+} // namespace saida

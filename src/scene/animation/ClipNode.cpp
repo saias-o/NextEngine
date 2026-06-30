@@ -1,7 +1,7 @@
 #include "scene/animation/ClipNode.hpp"
 #include <cmath>
 
-namespace ne {
+namespace saida {
 
 ClipNode::ClipNode(const AnimationClip* clip, const Rig& rig, const RetargetMap* retarget)
     : clip_(clip) {
@@ -54,4 +54,4 @@ void ClipNode::evaluate(const LocalPose& bindPose, LocalPose& outPose) const {
     }
 }
 
-} // namespace ne
+} // namespace saida

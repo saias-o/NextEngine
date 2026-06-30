@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class ScenarioActionRegistry {
 public:
@@ -18,4 +18,4 @@ public:
     static std::vector<std::string> names();
 };
 
-} // namespace ne
+} // namespace saida

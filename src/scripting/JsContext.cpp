@@ -7,7 +7,7 @@
 
 #include <unordered_map>
 
-namespace ne {
+namespace saida {
 
 namespace {
 // Raw QuickJS context → owning wrapper, so native bindings can reach the wrapper
@@ -254,4 +254,4 @@ void JsContext::logException(const std::string& filename) {
     JS_FreeValue(ctx_, exc);
 }
 
-} // namespace ne
+} // namespace saida

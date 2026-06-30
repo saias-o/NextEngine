@@ -5,9 +5,9 @@
 #include <cmath>
 
 int main() {
-    assert(std::abs(ne::applyEasing(ne::Easing::Linear, 0.25f) - 0.25f) < 1e-6f);
+    assert(std::abs(saida::applyEasing(saida::Easing::Linear, 0.25f) - 0.25f) < 1e-6f);
 
-    ne::Signal<int> signal;
+    saida::Signal<int> signal;
     int observed = 0;
     {
         auto connection = signal.connect([&](int value) { observed = value; });

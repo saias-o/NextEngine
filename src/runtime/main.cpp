@@ -1,9 +1,9 @@
-// NextEngine standalone game runtime.
+// SaidaEngine standalone game runtime.
 //
 // This is the "export template": a pre-built, editor-less player executable that
 // the editor's Build step copies next to the packaged game data. It links only
-// ne_engine (no ne_editor / ImGui), resolves all assets relative to its own
-// directory (Paths runtime root), reads a tiny boot manifest (game.ne) telling
+// saida_engine (no saida_editor / ImGui), resolves all assets relative to its own
+// directory (Paths runtime root), reads a tiny boot manifest (game.saida) telling
 // it which project + scene to launch, then runs the same engine loop a desktop
 // game uses — mirroring the standalone path already used for XR preview in
 // src/main.cpp.
@@ -54,12 +54,12 @@ int main(int argc, char** argv) {
         const fs::path root = executableDir();
 
         // Every asset/shader lookup now resolves under the exe directory.
-        ne::setRuntimeRoot(root.string());
+        saida::setRuntimeRoot(root.string());
 
         // Boot manifest: key=value text written by the editor's Build step.
-        //   project=MyGame.neproj
+        //   project=MyGame.saidaproj
         //   main_scene=scenes/main.scene
-        const fs::path manifestPath = root / "game.ne";
+        const fs::path manifestPath = root / "game.saida";
         std::ifstream manifest(manifestPath);
         if (!manifest)
             throw std::runtime_error("missing boot manifest: " + manifestPath.string());
@@ -87,15 +87,15 @@ int main(int argc, char** argv) {
 
         // Same standalone path as the XR preview: load project + scene, mount the
         // persistent World (autoloads), run unscaled (Play).
-        ne::Engine engine(nullptr, projectAbs, false);
-        if (!ne::SceneSerializer::loadIntoScene(
+        saida::Engine engine(nullptr, projectAbs, false);
+        if (!saida::SceneSerializer::loadIntoScene(
                 engine.scene(), engine.resources(), sceneAbs))
             throw std::runtime_error("failed to load main scene: " + sceneAbs);
         engine.mountWorld();
-        ne::Time::setScale(1.0f);
+        saida::Time::setScale(1.0f);
         engine.run();
     } catch (const std::exception& e) {
-        ne::Log::error(e.what());
+        saida::Log::error(e.what());
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

@@ -2,7 +2,7 @@
 
 #include "scene/Behaviour.hpp"
 
-namespace ne {
+namespace saida {
 
 BehaviourRegistry& BehaviourRegistry::instance() {
     static BehaviourRegistry registry;
@@ -18,4 +18,4 @@ std::unique_ptr<Behaviour> BehaviourRegistry::create(const std::string& typeName
     return it != factories_.end() ? it->second() : nullptr;
 }
 
-} // namespace ne
+} // namespace saida

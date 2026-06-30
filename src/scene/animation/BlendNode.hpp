@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 // BlendNode blends two input poses based on a weight factor.
 class BlendNode : public AnimNode {
@@ -30,4 +30,4 @@ private:
     mutable LocalPose tempPoseB_;
 };
 
-} // namespace ne
+} // namespace saida

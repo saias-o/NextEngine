@@ -5,7 +5,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace ne {
+namespace saida {
 
 class Node;
 
@@ -36,4 +36,4 @@ private:
     std::unordered_map<std::string, Factory> factories_;
 };
 
-} // namespace ne
+} // namespace saida

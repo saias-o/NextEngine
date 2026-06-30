@@ -4,11 +4,11 @@
 
 #include <vector>
 
-namespace ne::xr {
+namespace saida::xr {
 
 class Instance;
 
-// OpenXR action-set input layer feeding ne::XRInput.
+// OpenXR action-set input layer feeding saida::XRInput.
 class Actions {
 public:
     Actions(Instance& instance, XrSession session);
@@ -16,7 +16,7 @@ public:
     Actions(const Actions&) = delete;
     Actions& operator=(const Actions&) = delete;
 
-    // Locate hand poses in `space` and feed ne::XRInput.
+    // Locate hand poses in `space` and feed saida::XRInput.
     void sync(XrSession session, XrSpace space, XrTime time);
 
 private:
@@ -40,4 +40,4 @@ private:
     XrSpace aimSpace_[2]{};
 };
 
-} // namespace ne::xr
+} // namespace saida::xr

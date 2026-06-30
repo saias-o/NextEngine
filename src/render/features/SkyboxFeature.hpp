@@ -8,7 +8,7 @@
 
 #include <memory>
 
-namespace ne {
+namespace saida {
 
 // Equirectangular skybox. Owns its own descriptor set (the environment texture)
 // and draws a fullscreen triangle at the far plane. Handles both the mono (desktop)
@@ -35,4 +35,4 @@ private:
     AssetID currentTexture_ = kAssetInvalid;
 };
 
-} // namespace ne
+} // namespace saida

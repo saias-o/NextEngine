@@ -4,7 +4,7 @@
 
 #include "graphics/VulkanDevice.hpp"
 
-namespace ne::xr {
+namespace saida::xr {
 
 Swapchain::Swapchain(VulkanDevice& device, XrSession session, int64_t format,
                      uint32_t width, uint32_t height, VkSampleCountFlagBits samples)
@@ -69,4 +69,4 @@ void Swapchain::release() {
     check(xrReleaseSwapchainImage(swapchain_, &info), "xrReleaseSwapchainImage");
 }
 
-} // namespace ne::xr
+} // namespace saida::xr

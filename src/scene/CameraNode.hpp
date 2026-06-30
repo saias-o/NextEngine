@@ -2,7 +2,7 @@
 
 #include "scene/Node.hpp"
 
-namespace ne {
+namespace saida {
 
 // A camera placed in the scene (cf. Cinemachine 3 "CinemachineCamera"). Its world
 // transform is the view pose; its lens drives the projection. The CameraDirector
@@ -31,4 +31,4 @@ public:
     bool active = true;
 };
 
-} // namespace ne
+} // namespace saida

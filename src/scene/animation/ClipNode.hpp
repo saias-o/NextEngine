@@ -7,7 +7,7 @@
 
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 // ClipNode plays back a single immutable AnimationClip. Pass a RetargetMap to play
 // a clip whose joint names differ from the rig's (name-based retargeting); null =
@@ -38,4 +38,4 @@ private:
     std::vector<const std::vector<std::unique_ptr<AnimTrack>>*> boundTracks_;
 };
 
-} // namespace ne
+} // namespace saida

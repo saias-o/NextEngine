@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ne {
+namespace saida {
 
 enum class CreateNodeType {
     None = 0,
@@ -54,4 +54,4 @@ enum class GizmoAxis : int {
     Z = 2
 };
 
-} // namespace ne
+} // namespace saida

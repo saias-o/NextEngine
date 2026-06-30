@@ -17,7 +17,7 @@
 #include <sstream>
 #include <utility>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -243,9 +243,9 @@ void ScriptBehaviour::onReady() {
 }
 
 void ScriptBehaviour::onUpdate(float dt) {
-    NE_PROFILE_SCOPE("Scripting/Update");
+    SAIDA_PROFILE_SCOPE("Scripting/Update");
     {
-        NE_PROFILE_SCOPE("Scripting/HotReloadCheck");
+        SAIDA_PROFILE_SCOPE("Scripting/HotReloadCheck");
         checkHotReload(dt);
     }
     callHook("onUpdate", dt);
@@ -460,4 +460,4 @@ void ScriptBehaviour::setPropertyValue(ScriptProperty& property, const std::stri
     property.value = value;
 }
 
-} // namespace ne
+} // namespace saida

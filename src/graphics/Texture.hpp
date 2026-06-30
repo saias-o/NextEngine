@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Buffer;
@@ -51,4 +51,4 @@ private:
     uint32_t bindlessIndex_ = ~0u;
 };
 
-} // namespace ne
+} // namespace saida

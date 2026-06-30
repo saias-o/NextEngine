@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 // A yaw/pitch fly camera. Holds position + orientation and produces Vulkan-ready
 // view and projection matrices (the projection already flips Y for Vulkan).
@@ -42,4 +42,4 @@ private:
     glm::mat4 projection_{1.0f};
 };
 
-} // namespace ne
+} // namespace saida

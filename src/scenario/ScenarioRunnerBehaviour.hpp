@@ -13,7 +13,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class Node;
 
@@ -44,7 +44,7 @@ public:
     Signal<std::string> finished;
     Signal<std::string> failed;
 
-    NE_REFLECT_BEHAVIOUR(ScenarioRunnerBehaviour, "ScenarioRunner")
+    SAIDA_REFLECT_BEHAVIOUR(ScenarioRunnerBehaviour, "ScenarioRunner")
 
 private:
     bool loadAsset();
@@ -88,4 +88,4 @@ private:
     std::vector<Connection> stepConnections_;
 };
 
-} // namespace ne
+} // namespace saida

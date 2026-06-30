@@ -14,7 +14,7 @@
 #include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 namespace {
 // World-space bounding radius of a node's mesh (0 if it has none), so the hand
@@ -98,4 +98,4 @@ void XRDirectInteractor::load(const nlohmann::json& j) {
     if (j.contains("reach")) reach = j["reach"].get<float>();
 }
 
-} // namespace ne
+} // namespace saida

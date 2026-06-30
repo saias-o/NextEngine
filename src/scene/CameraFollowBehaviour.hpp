@@ -7,7 +7,7 @@
 
 #include <string>
 
-namespace ne {
+namespace saida {
 
 // Third-person follow camera (cf. Cinemachine 3 ThirdPersonFollow + Deoccluder).
 // Attach to a CameraNode: it orbits a target (found by group, never by name) with
@@ -42,7 +42,7 @@ public:
     float collisionMargin = 0.25f;  // keep the camera this far off the hit surface
     float minDistance = 0.6f;       // never closer than this to the pivot
 
-    NE_REFLECT_BEHAVIOUR(CameraFollowBehaviour, "CameraFollow")
+    SAIDA_REFLECT_BEHAVIOUR(CameraFollowBehaviour, "CameraFollow")
 
 private:
     glm::vec3 computeDesired(const glm::vec3& pivot) const;
@@ -53,4 +53,4 @@ private:
     bool initialized_ = false;
 };
 
-} // namespace ne
+} // namespace saida

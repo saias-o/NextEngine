@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-namespace ne {
+namespace saida {
 
 ParticleQualityBudget particleQualityBudget(QualityTier tier) {
     switch (tier) {
@@ -25,4 +25,4 @@ uint32_t particleEmitterCapacity(const ParticleSystemNode& node, const ParticleQ
     return std::min(requested, budget.maxParticlesPerEmitter);
 }
 
-} // namespace ne
+} // namespace saida

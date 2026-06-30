@@ -9,7 +9,7 @@
 
 #include "stb_image.h"
 
-namespace ne {
+namespace saida {
 namespace fs = std::filesystem;
 
 ThumbnailCache::~ThumbnailCache() { clear(); }
@@ -132,4 +132,4 @@ void ThumbnailCache::clear() {
     retired_.clear();
 }
 
-} // namespace ne
+} // namespace saida

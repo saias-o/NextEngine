@@ -2,7 +2,7 @@
 
 #include "graphics/VmaFwd.hpp"
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 
@@ -36,4 +36,4 @@ private:
     MemoryUsage memory_ = MemoryUsage::GpuOnly;
 };
 
-} // namespace ne
+} // namespace saida

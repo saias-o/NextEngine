@@ -4,7 +4,7 @@
 #include "core/Reflection.hpp"
 #include "core/Signal.hpp"
 
-namespace ne {
+namespace saida {
 
 class Node;
 
@@ -17,7 +17,7 @@ class HealthBehaviour : public Behaviour {
 public:
     void onReady() override;
 
-    NE_REFLECT_BEHAVIOUR(HealthBehaviour, "Health")
+    SAIDA_REFLECT_BEHAVIOUR(HealthBehaviour, "Health")
 
     void damage(float amount);   // reduce health; dies at <= 0
     void kill();                 // instant death
@@ -42,4 +42,4 @@ private:
 // uniform way for weapons / cars / traps / falls to hurt something.
 bool applyDamage(Node* target, float amount);
 
-} // namespace ne
+} // namespace saida

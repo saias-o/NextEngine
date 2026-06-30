@@ -10,7 +10,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace ne {
+namespace saida {
 
 namespace {
 constexpr glm::vec3 kWorldUp{0.0f, 1.0f, 0.0f};
@@ -100,4 +100,4 @@ void NpcWanderBehaviour::describe(reflect::TypeBuilder<NpcWanderBehaviour>& t) {
     t.property("gravity", &NpcWanderBehaviour::gravity).range(0.0, 50.0);
 }
 
-} // namespace ne
+} // namespace saida

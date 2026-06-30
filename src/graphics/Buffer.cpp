@@ -7,7 +7,7 @@
 #include <cstring>
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 Buffer::Buffer(VulkanDevice& device, VkDeviceSize size, VkBufferUsageFlags usage, MemoryUsage memory)
     : device_(device), size_(size), memory_(memory) {
@@ -54,4 +54,4 @@ void Buffer::flush(VkDeviceSize size, VkDeviceSize offset) {
     vmaFlushAllocation(device_.allocator(), allocation_, offset, size);
 }
 
-} // namespace ne
+} // namespace saida

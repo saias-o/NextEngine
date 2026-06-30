@@ -3,7 +3,7 @@
 #include "scene/UINode.hpp"
 #include <functional>
 
-namespace ne {
+namespace saida {
 
 class UIInteractableNode : public UINode {
 public:
@@ -42,4 +42,4 @@ protected:
     ClickCallback onClickCallback_;
 };
 
-} // namespace ne
+} // namespace saida

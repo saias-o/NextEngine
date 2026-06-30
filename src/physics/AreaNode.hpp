@@ -5,7 +5,7 @@
 
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 // A trigger volume (Godot Area3D): a sensor body that detects overlaps without
 // generating collision response. Static by default (a fixed trigger zone).
@@ -38,4 +38,4 @@ private:
     std::vector<CollisionObjectNode*> overlapping_;
 };
 
-} // namespace ne
+} // namespace saida

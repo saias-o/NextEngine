@@ -5,7 +5,7 @@
 #include <glm/mat4x4.hpp>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class Material;
 
@@ -26,4 +26,4 @@ int selectLodIndex(float screenCoverage, const std::vector<MeshLodLevel>& lods);
 // Convert MSFT_screencoverage array [1.0, t1, t2, ...] to per-level min thresholds.
 std::vector<float> coverageThresholdsFromMsft(const std::vector<float>& msftCoverage, size_t lodCount);
 
-} // namespace ne
+} // namespace saida

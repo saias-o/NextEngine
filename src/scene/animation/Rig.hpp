@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 struct Bone {
     std::string name;
@@ -37,4 +37,4 @@ private:
     std::vector<Bone> bones_;
 };
 
-} // namespace ne
+} // namespace saida

@@ -9,7 +9,7 @@
 #include <string>
 #include <utility>
 
-namespace ne {
+namespace saida {
 
 class ResourceManager;
 class SceneDocument;
@@ -204,4 +204,4 @@ private:
     SignalConnectionDef def_;
 };
 
-} // namespace ne
+} // namespace saida

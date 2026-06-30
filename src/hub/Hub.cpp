@@ -12,10 +12,10 @@
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-namespace ne {
+namespace saida {
 
 Hub::Hub() {
-    window_ = std::make_unique<Window>(1000, 600, "NextEngine Hub");
+    window_ = std::make_unique<Window>(1000, 600, "SaidaEngine Hub");
     device_ = std::make_unique<VulkanDevice>(*window_);
     swapchain_ = std::make_unique<Swapchain>(*device_, *window_);
     imgui_ = std::make_unique<ImGuiLayer>(*device_, *window_, swapchain_->colorFormat(),
@@ -23,7 +23,7 @@ Hub::Hub() {
 
     const char* appData = std::getenv("APPDATA");
     if (appData) {
-        fs::path dir = fs::path(appData) / "NextEngine";
+        fs::path dir = fs::path(appData) / "SaidaEngine";
         if (!fs::exists(dir)) {
             fs::create_directories(dir);
         }
@@ -128,9 +128,9 @@ void Hub::saveProjects() {
 }
 
 void Hub::launchProject(const std::string& path) {
-    fs::path exePath = fs::current_path() / "build" / "bin" / "NextEngine.exe";
-    if (!fs::exists(exePath)) exePath = fs::current_path() / "bin" / "NextEngine.exe";
-    if (!fs::exists(exePath)) exePath = fs::current_path() / "NextEngine.exe";
+    fs::path exePath = fs::current_path() / "build" / "bin" / "SaidaEngine.exe";
+    if (!fs::exists(exePath)) exePath = fs::current_path() / "bin" / "SaidaEngine.exe";
+    if (!fs::exists(exePath)) exePath = fs::current_path() / "SaidaEngine.exe";
     
     std::string cmd = "start \"\" \"" + exePath.string() + "\" --project \"" + path + "\"";
     std::system(cmd.c_str());
@@ -138,9 +138,9 @@ void Hub::launchProject(const std::string& path) {
 }
 
 void Hub::launchTemplate() {
-    fs::path exePath = fs::current_path() / "build" / "bin" / "NextEngine.exe";
-    if (!fs::exists(exePath)) exePath = fs::current_path() / "bin" / "NextEngine.exe";
-    if (!fs::exists(exePath)) exePath = fs::current_path() / "NextEngine.exe";
+    fs::path exePath = fs::current_path() / "build" / "bin" / "SaidaEngine.exe";
+    if (!fs::exists(exePath)) exePath = fs::current_path() / "bin" / "SaidaEngine.exe";
+    if (!fs::exists(exePath)) exePath = fs::current_path() / "SaidaEngine.exe";
     std::string cmd = "start \"\" \"" + exePath.string() + "\"";
     std::system(cmd.c_str());
     shouldClose_ = true;
@@ -153,7 +153,7 @@ void Hub::drawUI() {
     
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::Begin("NextEngine Hub", nullptr, flags);
+    ImGui::Begin("SaidaEngine Hub", nullptr, flags);
     ImGui::PopStyleVar();
 
     // Sidebar
@@ -165,7 +165,7 @@ void Hub::drawUI() {
     ImGui::Indent(20.0f);
     
     ImGui::SetWindowFontScale(1.4f);
-    ImGui::TextColored(ImVec4(0.4f, 0.6f, 0.95f, 1.0f), "NextEngine");
+    ImGui::TextColored(ImVec4(0.4f, 0.6f, 0.95f, 1.0f), "SaidaEngine");
     ImGui::SetWindowFontScale(1.0f);
     ImGui::TextDisabled("Hub v0.1");
     
@@ -472,4 +472,4 @@ void Hub::run() {
     vkDestroyCommandPool(device_->device(), pool, nullptr);
 }
 
-} // namespace ne
+} // namespace saida

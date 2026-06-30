@@ -4,7 +4,7 @@
 
 #include <stdexcept>
 
-namespace ne::xr {
+namespace saida::xr {
 
 namespace {
 void vkCheck(VkResult r, const char* what) {
@@ -76,4 +76,4 @@ VkDevice createVulkanDevice(const Instance& xr, VkPhysicalDevice physicalDevice,
     return device;
 }
 
-} // namespace ne::xr
+} // namespace saida::xr

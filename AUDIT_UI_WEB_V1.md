@@ -1,4 +1,4 @@
-# Audit UI Web V1 - NextEngine
+# Audit UI Web V1 - SaidaEngine
 
 Date : 2026-06-26  
 Scope : couche UI Web `WebCanvasNode` + RmlUi + QuickJS, rendu screen space et world space, cible PC / mobile / VR.  
@@ -206,13 +206,13 @@ Une V1 acceptable doit permettre a un utilisateur de :
 10. sauvegarder/recharger la scene sans manipulation manuelle ;
 11. disposer d'une scene de demo et d'un test automatisable.
 
-Le moteur n'a pas besoin d'etre un navigateur. La V1 doit documenter clairement : "HTML-like/RML + subset CSS RmlUi + QuickJS DOM subset NextEngine".
+Le moteur n'a pas besoin d'etre un navigateur. La V1 doit documenter clairement : "HTML-like/RML + subset CSS RmlUi + QuickJS DOM subset SaidaEngine".
 
 ## Feuille de route V1 recommandee
 
 ### Lot 1 - Stabiliser le contrat auteur
 
-Objectif : definir ce que "HTML/CSS/JS" veut dire dans NextEngine.
+Objectif : definir ce que "HTML/CSS/JS" veut dire dans SaidaEngine.
 
 Actions :
 
@@ -297,7 +297,7 @@ Objectif : panneaux UI 3D pour VR/AR et jeux desktop.
 Actions :
 
 - representer un WebCanvas world-space comme quad 3D unlit transparent ;
-- definir taille monde : largeur/hauteur en metres ou units NextEngine ;
+- definir taille monde : largeur/hauteur en metres ou units SaidaEngine ;
 - utiliser le transform du node pour position/orientation/scale ;
 - choisir rendu : pipeline transparent existant, material special UI, ou feature `WebCanvasFeature` ;
 - gerer depth test/write : par defaut depth test on, depth write off, option "always on top" ;

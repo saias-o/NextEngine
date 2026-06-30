@@ -9,7 +9,7 @@
 #include "scene/Node.hpp" // For Transform
 #include "scene/animation/Pose.hpp"
 
-namespace ne {
+namespace saida {
 
 // Targets for skeletal animation tracks
 enum class TrackTarget {
@@ -71,4 +71,4 @@ private:
     std::unordered_map<std::string, std::vector<std::unique_ptr<AnimTrack>>> boneTracks_;
 };
 
-} // namespace ne
+} // namespace saida

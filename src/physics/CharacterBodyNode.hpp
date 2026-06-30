@@ -10,7 +10,7 @@ namespace JPH {
 class CharacterVirtual;
 }
 
-namespace ne {
+namespace saida {
 
 // Jolt CharacterVirtual controller. Gameplay writes velocity; the engine moves it
 // during the physics step and updates floor state afterward.
@@ -44,4 +44,4 @@ private:
     JPH::Ref<JPH::CharacterVirtual> character_;
 };
 
-} // namespace ne
+} // namespace saida

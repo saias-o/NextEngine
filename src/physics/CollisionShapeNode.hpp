@@ -8,7 +8,7 @@
 
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 class Mesh;
 
@@ -89,4 +89,4 @@ private:
     glm::mat4 resolvedFrom_{0.0f};     // mesh-in-body matrix the detection used
 };
 
-} // namespace ne
+} // namespace saida

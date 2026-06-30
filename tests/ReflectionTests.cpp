@@ -19,12 +19,12 @@
 using nlohmann::json;
 
 int main() {
-    ne::registerReflectedTypes();
+    saida::registerReflectedTypes();
 
-    auto& reg = ne::reflect::TypeRegistry::instance();
+    auto& reg = saida::reflect::TypeRegistry::instance();
 
     // ── manifest: Rotator is present with the expected shape ──
-    const ne::reflect::TypeDesc* rotor = reg.find("Rotator");
+    const saida::reflect::TypeDesc* rotor = reg.find("Rotator");
     assert(rotor && "Rotator must be registered");
     assert(rotor->category == "behaviour");
     assert(rotor->findProperty("axis") && rotor->findProperty("axis")->kind == "vec3");
@@ -33,27 +33,27 @@ int main() {
     assert(rotor->findSignal("fullRotation") && rotor->findSignal("fullRotation")->arity == 0);
     assert(rotor->findSlot("reset"));
 
-    const ne::reflect::TypeDesc* audio = reg.find("AudioSource");
+    const saida::reflect::TypeDesc* audio = reg.find("AudioSource");
     assert(audio && audio->category == "behaviour");
     assert(audio->findProperty("audioName") &&
            audio->findProperty("audioName")->kind == "string");
-    const ne::reflect::TypeDesc* cameraFollow = reg.find("CameraFollow");
+    const saida::reflect::TypeDesc* cameraFollow = reg.find("CameraFollow");
     assert(cameraFollow && cameraFollow->category == "behaviour");
     assert(cameraFollow->findProperty("targetGroup"));
     assert(cameraFollow->findProperty("distance") &&
            cameraFollow->findProperty("distance")->hasRange);
-    const ne::reflect::TypeDesc* spawner = reg.find("Spawner");
+    const saida::reflect::TypeDesc* spawner = reg.find("Spawner");
     assert(spawner && spawner->category == "behaviour");
     assert(spawner->findProperty("scenePath") &&
            spawner->findProperty("scenePath")->kind == "asset");
 
     // Enum property surfaces labels (LightNode.bakeMode / lightType).
-    const ne::reflect::TypeDesc* light = reg.find("LightNode");
+    const saida::reflect::TypeDesc* light = reg.find("LightNode");
     if (!light || light->category != "node") return 1;
     const auto* lightType = light->findProperty("lightType");
     if (!lightType || lightType->kind != "enum" || lightType->enumLabels.size() != 3) return 1;
 
-    const ne::reflect::TypeDesc* particles = reg.find("ParticleSystem");
+    const saida::reflect::TypeDesc* particles = reg.find("ParticleSystem");
     assert(particles && particles->category == "node");
     assert(particles->findProperty("effectClass") &&
            particles->findProperty("effectClass")->enumLabels.size() == 7);
@@ -73,7 +73,7 @@ int main() {
     assert(particles->findSlot("burst"));
     assert(particles->findSlot("applyEffectPreset"));
     assert(particles->findSlot("loadEffect"));
-    assert(ne::NodeRegistry::instance().create("ParticleSystem") != nullptr);
+    assert(saida::NodeRegistry::instance().create("ParticleSystem") != nullptr);
 
     // Manifest JSON is well-formed and category-filterable.
     json full = reg.manifest();
@@ -82,7 +82,7 @@ int main() {
     assert(onlyNodes.contains("nodes") && !onlyNodes.contains("behaviours"));
 
     // ── auto save/load round-trip via reflection ──
-    ne::RotatorBehaviour src;
+    saida::RotatorBehaviour src;
     src.axis = {0.0f, 0.0f, 1.0f};
     src.speed = 123.5f;
     json saved;
@@ -90,12 +90,12 @@ int main() {
     assert(saved["speed"].get<float>() == 123.5f);
     assert(saved["axis"][2].get<float>() == 1.0f);
 
-    ne::RotatorBehaviour dst;
+    saida::RotatorBehaviour dst;
     dst.load(saved);
     assert(dst.speed == 123.5f);
     assert(dst.axis.z == 1.0f);
 
-    ne::CameraFollowBehaviour follow;
+    saida::CameraFollowBehaviour follow;
     nlohmann::json followJson;
     cameraFollow->saveTo(&follow, followJson);
     followJson["distance"] = 8.0f;
@@ -104,13 +104,13 @@ int main() {
     assert(follow.distance == 8.0f);
     assert(follow.targetGroup == "hero");
 
-    ne::RotatorBehaviour animated;
-    ne::TimelinePropertyTrack speedTrack(animated, "speed");
+    saida::RotatorBehaviour animated;
+    saida::TimelinePropertyTrack speedTrack(animated, "speed");
     speedTrack.addKey(0.0f, 10.0f);
     speedTrack.addKey(2.0f, 30.0f);
     speedTrack.evaluate(1.0f);
     assert(animated.speed == 20.0f);
-    ne::TimelinePropertyTrack axisTrack(animated, "axis");
+    saida::TimelinePropertyTrack axisTrack(animated, "axis");
     axisTrack.addKey(0.0f, nlohmann::json::array({0.0f, 1.0f, 0.0f}));
     axisTrack.addKey(1.0f, nlohmann::json::array({0.0f, 0.0f, 1.0f}));
     axisTrack.evaluate(0.5f);
@@ -118,7 +118,7 @@ int main() {
     assert(animated.axis.z == 0.5f);
 
     // Missing keys keep defaults (defensive load).
-    ne::RotatorBehaviour partial;
+    saida::RotatorBehaviour partial;
     partial.load(json{{"speed", 42.0f}});  // no "axis"
     assert(partial.speed == 42.0f);
     assert(partial.axis.y == 1.0f);  // default preserved
@@ -138,28 +138,28 @@ int main() {
     // ── slot descriptor invokes the method (no node attached: must not crash) ──
     rotor->findSlot("reset")->invoke(&src, json::array());
 
-    ne::ParticleSystemNode ps;
+    saida::ParticleSystemNode ps;
     ps.maxParticles = 777;
-    ps.effectPath = "assets/fx/test.nefx";
-    ps.effectClass = ne::ParticleSystemNode::EffectClass::Magic;
-    ps.shape = ne::ParticleSystemNode::Shape::Ring;
+    ps.effectPath = "assets/fx/test.saidafx";
+    ps.effectClass = saida::ParticleSystemNode::EffectClass::Magic;
+    ps.shape = saida::ParticleSystemNode::Shape::Ring;
     ps.noiseStrength = 2.5f;
     json particleSaved;
     particles->saveTo(&ps, particleSaved);
     assert(particleSaved["maxParticles"].get<int>() == 777);
-    assert(particleSaved["effectPath"].get<std::string>() == "assets/fx/test.nefx");
+    assert(particleSaved["effectPath"].get<std::string>() == "assets/fx/test.saidafx");
     assert(particleSaved["effectClass"].get<int>() ==
-           static_cast<int>(ne::ParticleSystemNode::EffectClass::Magic));
+           static_cast<int>(saida::ParticleSystemNode::EffectClass::Magic));
     assert(particleSaved["shape"].get<int>() ==
-           static_cast<int>(ne::ParticleSystemNode::Shape::Ring));
+           static_cast<int>(saida::ParticleSystemNode::Shape::Ring));
     assert(particleSaved["noiseStrength"].get<float>() == 2.5f);
 
-    ne::ParticleSystemNode loadedPs;
+    saida::ParticleSystemNode loadedPs;
     particles->loadFrom(&loadedPs, particleSaved);
     assert(loadedPs.maxParticles == 777);
-    assert(loadedPs.effectPath == "assets/fx/test.nefx");
-    assert(loadedPs.effectClass == ne::ParticleSystemNode::EffectClass::Magic);
-    assert(loadedPs.shape == ne::ParticleSystemNode::Shape::Ring);
+    assert(loadedPs.effectPath == "assets/fx/test.saidafx");
+    assert(loadedPs.effectClass == saida::ParticleSystemNode::EffectClass::Magic);
+    assert(loadedPs.shape == saida::ParticleSystemNode::Shape::Ring);
     assert(loadedPs.noiseStrength == 2.5f);
 
     bool particleFinished = false;
@@ -173,9 +173,9 @@ int main() {
     assert(!ps.playing);
     particles->findSlot("play")->invoke(&ps, json::array());
     assert(ps.playing);
-    ps.effectClass = ne::ParticleSystemNode::EffectClass::Explosion;
+    ps.effectClass = saida::ParticleSystemNode::EffectClass::Explosion;
     particles->findSlot("applyEffectPreset")->invoke(&ps, json::array());
-    assert(ps.effectClass == ne::ParticleSystemNode::EffectClass::Explosion);
+    assert(ps.effectClass == saida::ParticleSystemNode::EffectClass::Explosion);
     assert(ps.spawnRate == 0.0f);
     assert(!ps.looping);
 

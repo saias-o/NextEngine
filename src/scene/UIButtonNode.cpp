@@ -1,7 +1,7 @@
 #include "scene/UIButtonNode.hpp"
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 void UIButtonNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
     UIInteractableNode::serialize(j, resources);
@@ -27,4 +27,4 @@ void UIButtonNode::deserialize(const nlohmann::json& j, ResourceManager& resourc
     }
 }
 
-} // namespace ne
+} // namespace saida

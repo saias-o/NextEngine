@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <unordered_map>
 
-namespace ne {
+namespace saida {
 
 class Camera;
 class Scene;
@@ -32,4 +32,4 @@ private:
     std::unordered_map<uint64_t, glm::vec2> touchLocalPositions_;
 };
 
-} // namespace ne
+} // namespace saida

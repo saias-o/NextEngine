@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-namespace ne {
+namespace saida {
 
 // Easing curves for tweens. `applyEasing` maps a normalized time t in [0,1] to an
 // eased value (also in [0,1] for the in/out variants).
@@ -32,4 +32,4 @@ inline float applyEasing(Easing e, float t) {
     }
 }
 
-} // namespace ne
+} // namespace saida

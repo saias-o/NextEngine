@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace ne {
+namespace saida {
 
 // Offline bridge to the AutoLOD tool (autolod.exe). When enabled in project
 // settings, GLB imports run through AutoLOD first to produce a *_lod.glb asset.
@@ -19,4 +19,4 @@ public:
     static std::string resolveLoadPath(const std::string& path, bool autoGenerate);
 };
 
-} // namespace ne
+} // namespace saida

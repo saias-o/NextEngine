@@ -16,7 +16,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ne {
+namespace saida {
 
 struct UIPushConstants {
     glm::vec2 position;
@@ -68,7 +68,7 @@ UIRenderer::~UIRenderer() {
 }
 
 void UIRenderer::gatherUI(Scene& scene, glm::vec2 viewportSize) {
-    NE_PROFILE_FUNCTION();
+    SAIDA_PROFILE_FUNCTION();
     drawCmds_.clear();
     webNodesToUpdate_.clear();
     
@@ -121,8 +121,8 @@ void UIRenderer::gatherUI(Scene& scene, glm::vec2 viewportSize) {
         }
     }
 
-    NE_PROFILE_COUNTER("UI/WebCanvases", webNodesToUpdate_.size());
-    NE_PROFILE_COUNTER("UI/DrawCommands", drawCmds_.size());
+    SAIDA_PROFILE_COUNTER("UI/WebCanvases", webNodesToUpdate_.size());
+    SAIDA_PROFILE_COUNTER("UI/DrawCommands", drawCmds_.size());
 }
 
 void UIRenderer::traverseUI(UINode* node) {
@@ -173,7 +173,7 @@ void UIRenderer::traverseUI(UINode* node) {
 }
 
 void UIRenderer::updateAsyncTextures(VkCommandBuffer cmd) {
-    NE_PROFILE_FUNCTION();
+    SAIDA_PROFILE_FUNCTION();
     for (auto* wcn : webNodesToUpdate_) {
         wcn->updateTextureIfNeededAsync(cmd);
     }
@@ -181,7 +181,7 @@ void UIRenderer::updateAsyncTextures(VkCommandBuffer cmd) {
 
 void UIRenderer::recordCommands(VkCommandBuffer cmd, uint32_t width, uint32_t height,
                                 glm::vec2 viewportOffset, glm::vec2 viewportSize) {
-    NE_PROFILE_FUNCTION();
+    SAIDA_PROFILE_FUNCTION();
     if (drawCmds_.empty()) return;
     if (viewportSize.x <= 0.0f || viewportSize.y <= 0.0f) {
         viewportSize = {static_cast<float>(width), static_cast<float>(height)};
@@ -234,4 +234,4 @@ void UIRenderer::recordCommands(VkCommandBuffer cmd, uint32_t width, uint32_t he
     }
 }
 
-} // namespace ne
+} // namespace saida

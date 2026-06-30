@@ -1,11 +1,11 @@
-# NextEngine Web UI Guide
+# SaidaEngine Web UI Guide
 
 > Guide pratique pour assistants IA et contributeurs. Lis ceci avant de creer
-> ou debugger une UI Web dans NextEngine.
+> ou debugger une UI Web dans SaidaEngine.
 
 ## Objectif
 
-NextEngine veut une UI auteur aussi proche que possible de Chrome: HTML-like,
+SaidaEngine veut une UI auteur aussi proche que possible de Chrome: HTML-like,
 CSS-like, JavaScript, `querySelector`, `addEventListener`, `classList`,
 `innerHTML`, layout responsive, hot reload. Le backend actuel n'est pas un
 navigateur complet: il s'appuie sur RmlUi pour le DOM/layout/style et QuickJS

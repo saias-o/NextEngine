@@ -4,7 +4,7 @@
 #include "graphics/Material.hpp"
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 void MeshNode::setLods(std::vector<MeshLodLevel> levels) {
     lods_ = std::move(levels);
@@ -31,7 +31,7 @@ Material* MeshNode::materialForLod(int lodIndex) const {
 
 int MeshNode::selectLodIndex(float screenCoverage) const {
     if (lods_.empty()) return 0;
-    const int picked = ne::selectLodIndex(screenCoverage, lods_);
+    const int picked = saida::selectLodIndex(screenCoverage, lods_);
     if (picked == activeLodIndex_) return picked;
     if (activeLodIndex_ < 0 || activeLodIndex_ >= static_cast<int>(lods_.size()))
         return picked;
@@ -161,4 +161,4 @@ void MeshNode::deserialize(const nlohmann::json& j, ResourceManager& resources) 
     }
 }
 
-} // namespace ne
+} // namespace saida

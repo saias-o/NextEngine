@@ -26,7 +26,7 @@
 #include "editor/panels/ModelImporterPanel.hpp"
 #include "editor/panels/ProfilerPanel.hpp"
 #include "scene/GLTFLoader.hpp"
-#ifdef NE_ENABLE_MCP
+#ifdef SAIDA_ENABLE_MCP
 #include "mcp/McpBridge.hpp"
 #include <cstdlib>
 #endif
@@ -49,7 +49,7 @@
 #include <filesystem>
 #include <string>
 
-namespace ne {
+namespace saida {
 
 // Construction
 
@@ -68,21 +68,21 @@ bool intersectRayPlane(const glm::vec3& rayOrigin, const glm::vec3& rayDir, cons
 EditorUI::EditorUI() : history_(document_) {
     applyEditorStyle();
     // Default open path for the "Open Project" dialog.
-    std::strncpy(newProjectPath_, NE_PROJECT_ROOT, sizeof(newProjectPath_) - 1);
+    std::strncpy(newProjectPath_, SAIDA_PROJECT_ROOT, sizeof(newProjectPath_) - 1);
     newProjectPath_[sizeof(newProjectPath_) - 1] = '\0';
-    openBrowsePath_ = std::string(NE_PROJECT_ROOT);
+    openBrowsePath_ = std::string(SAIDA_PROJECT_ROOT);
 
     // Warm the project list in the background so the "Open Project" dialog is
     // instant on first open (no disk walk on the UI thread).
     startProjectScan(openBrowsePath_);
 
-#ifdef NE_ENABLE_MCP
+#ifdef SAIDA_ENABLE_MCP
     // Start the in-process MCP server (LLM-driven editing). Port overridable via
-    // NE_MCP_PORT; default 8765. Disabled entirely by NE_MCP=0.
-    const char* disabled = std::getenv("NE_MCP");
+    // SAIDA_MCP_PORT; default 8765. Disabled entirely by SAIDA_MCP=0.
+    const char* disabled = std::getenv("SAIDA_MCP");
     if (!disabled || std::string(disabled) != "0") {
         uint16_t port = 8765;
-        if (const char* p = std::getenv("NE_MCP_PORT")) {
+        if (const char* p = std::getenv("SAIDA_MCP_PORT")) {
             try { port = static_cast<uint16_t>(std::stoi(p)); } catch (...) {}
         }
         mcp_ = std::make_unique<McpBridge>();
@@ -207,7 +207,7 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     ctxProject_ = project;
     ctxResources_ = resources;
 
-#ifdef NE_ENABLE_MCP
+#ifdef SAIDA_ENABLE_MCP
     // Bind the document to the live scene, then service any queued MCP requests
     // on this (main) thread while all ctx pointers are valid.
     if (mcp_) {
@@ -443,7 +443,7 @@ void EditorUI::drawNewProjectDialog(Project* project) {
     ImGui::SetNextWindowSize(ImVec2(500, 0), ImGuiCond_Appearing);
 
     if (ImGui::BeginPopupModal("New Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Create a new NextEngine project.");
+        ImGui::Text("Create a new SaidaEngine project.");
         ImGui::Separator();
         ImGui::Spacing();
 
@@ -503,7 +503,7 @@ void EditorUI::loadProjectMainScene(Project* project, Scene* scene, ResourceMana
         return false;
     };
 
-    // 1. Explicit main_scene declared in the .neproj (project-relative path).
+    // 1. Explicit main_scene declared in the .saidaproj (project-relative path).
     if (!project->mainScene().empty()) {
         if (tryLoad(project->rootPath() + "/" + project->mainScene()))
             return;
@@ -538,7 +538,7 @@ void EditorUI::loadProjectMainScene(Project* project, Scene* scene, ResourceMana
     Log::info("Project '", project->name(), "': no scene found, starting with empty scene.");
 }
 
-// Open Project dialog (modal popup — background recursive .neproj scan)
+// Open Project dialog (modal popup — background recursive .saidaproj scan)
 
 namespace {
 
@@ -550,7 +550,7 @@ bool isPrunedScanDir(const std::string& name) {
            name == "node_modules" || (!name.empty() && name[0] == '.');
 }
 
-// Recursively collect every .neproj path under `root`, skipping pruned subtrees.
+// Recursively collect every .saidaproj path under `root`, skipping pruned subtrees.
 // Pure (no shared state) so it can run on a background thread.
 std::vector<std::string> scanProjectFiles(std::string root) {
     namespace fs = std::filesystem;
@@ -567,7 +567,7 @@ std::vector<std::string> scanProjectFiles(std::string root) {
                 it.disable_recursion_pending();
             continue;
         }
-        if (p.extension() == ".neproj") {
+        if (p.extension() == ".saidaproj") {
             const std::string name = p.filename().string();
             if (!name.empty() && name[0] != '.')
                 out.push_back(p.string());
@@ -637,7 +637,7 @@ void EditorUI::drawOpenProjectDialog(Project* project) {
     if (!openScanDone_ && scanning) {
         ImGui::TextDisabled("Scanning for projects…");
     } else if (openProjCache_.empty()) {
-        ImGui::TextDisabled("No .neproj files found under this directory.");
+        ImGui::TextDisabled("No .saidaproj files found under this directory.");
     } else {
         ImGui::Text("%zu project(s) found — double-click to open:%s",
                     openProjCache_.size(), scanning ? "  (refreshing…)" : "");
@@ -721,11 +721,11 @@ void EditorUI::drawSaveSceneAsDialog(Project* project, Scene* scene, ResourceMan
     }
 }
 
-// About NextEngine dialog (modal popup)
+// About SaidaEngine dialog (modal popup)
 
 void EditorUI::drawAboutWindow() {
     if (showAboutWindow_) {
-        ImGui::OpenPopup("About NextEngine");
+        ImGui::OpenPopup("About SaidaEngine");
         showAboutWindow_ = false;
     }
 
@@ -733,7 +733,7 @@ void EditorUI::drawAboutWindow() {
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(380, 0), ImGuiCond_Appearing);
 
-    if (ImGui::BeginPopupModal("About NextEngine", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("About SaidaEngine", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Spacing();
         
         // Brand logo/accent banner using C++11 raw string literal
@@ -749,7 +749,7 @@ void EditorUI::drawAboutWindow() {
         ImGui::Separator();
         ImGui::Spacing();
 
-        ImGui::Text(" NextEngine C++ Game Engine");
+        ImGui::Text(" SaidaEngine C++ Game Engine");
         ImGui::Text(" Version: "); ImGui::SameLine();
         ImGui::TextColored(ImVec4(0.30f, 0.70f, 0.35f, 1.0f), "Alpha 0.0.1"); // Sleek Green
 
@@ -762,7 +762,7 @@ void EditorUI::drawAboutWindow() {
         ImGui::Spacing();
 
         ImGui::TextDisabled(" Powered by Vulkan, GLFW, Dear ImGui, and GLM.");
-        ImGui::TextDisabled(" Copyright (c) 2026 NextEngine Contributors.");
+        ImGui::TextDisabled(" Copyright (c) 2026 SaidaEngine Contributors.");
 
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.851f, 0.576f, 0.290f, 1.0f));
@@ -770,7 +770,7 @@ void EditorUI::drawAboutWindow() {
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.751f, 0.476f, 0.190f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
         
-        if (ImGui::Button("Sponsor NextEngine (Donate)", ImVec2(ImGui::GetContentRegionAvail().x, 35.0f))) {
+        if (ImGui::Button("Sponsor SaidaEngine (Donate)", ImVec2(ImGui::GetContentRegionAvail().x, 35.0f))) {
 #ifdef _WIN32
             std::system("start https://github.com/sponsors/saias-o");
 #elif __APPLE__
@@ -1797,4 +1797,4 @@ void EditorUI::drawColliderGizmos(Camera* camera, Scene* scene) {
     });
 }
 
-} // namespace ne
+} // namespace saida

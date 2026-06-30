@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ne {
+namespace saida {
 
 class Node;
 class MeshNode;
@@ -25,4 +25,4 @@ private:
     void drawBehaviours(Node* node, EditorUI* editor);
 };
 
-} // namespace ne
+} // namespace saida

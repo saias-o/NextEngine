@@ -2,7 +2,7 @@
 
 #include "scene/Behaviour.hpp"
 
-namespace ne {
+namespace saida {
 
 class XRController;
 
@@ -24,4 +24,4 @@ private:
     XRController* controller_ = nullptr;  // cached: this interactor's hand
 };
 
-} // namespace ne
+} // namespace saida

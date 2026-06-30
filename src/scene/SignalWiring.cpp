@@ -5,7 +5,7 @@
 #include "scene/Behaviour.hpp"
 #include "scene/Node.hpp"
 
-namespace ne {
+namespace saida {
 namespace {
 
 using nlohmann::json;
@@ -78,4 +78,4 @@ void SignalWiring::apply(Node& root, const std::vector<SignalConnectionDef>& def
     }
 }
 
-} // namespace ne
+} // namespace saida

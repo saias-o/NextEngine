@@ -14,7 +14,7 @@
 #include "xr/toolkit/TeleportArea.hpp"
 #include "xr/toolkit/XRAnchor.hpp"
 
-namespace ne::xr {
+namespace saida::xr {
 
 void registerTypes() {
     // Register behaviours
@@ -31,4 +31,4 @@ void registerTypes() {
     NodeRegistry::instance().registerType<XRAnchor>("XRAnchor");
 }
 
-} // namespace ne::xr
+} // namespace saida::xr

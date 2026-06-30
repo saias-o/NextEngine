@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <glm/gtc/quaternion.hpp>
 
-namespace ne {
+namespace saida {
 
 void BlendNode::update(float deltaTime) {
     if (inputA_) inputA_->update(deltaTime);
@@ -55,4 +55,4 @@ void BlendNode::evaluate(const LocalPose& bindPose, LocalPose& outPose) const {
     }
 }
 
-} // namespace ne
+} // namespace saida

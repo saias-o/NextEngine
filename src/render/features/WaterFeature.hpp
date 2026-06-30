@@ -8,7 +8,7 @@
 #include <memory>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Buffer;
@@ -56,4 +56,4 @@ private:
     std::vector<VkDescriptorSet> sets_;             // one per frame-in-flight
 };
 
-} // namespace ne
+} // namespace saida

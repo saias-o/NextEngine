@@ -2,7 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
-namespace ne::format {
+namespace saida::format {
 
 constexpr int kLegacyVersion = 0;
 constexpr int kProjectVersion = 1;
@@ -21,4 +21,4 @@ inline bool hasIntegerVersion(const nlohmann::json& doc) {
     return doc.is_object() && doc.contains("version") && doc["version"].is_number_integer();
 }
 
-} // namespace ne::format
+} // namespace saida::format

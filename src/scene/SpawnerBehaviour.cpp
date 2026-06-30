@@ -6,7 +6,7 @@
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 void SpawnerBehaviour::onReady() {
     if (interval > 0.0f)
@@ -36,4 +36,4 @@ void SpawnerBehaviour::describe(reflect::TypeBuilder<SpawnerBehaviour>& t) {
         .range(0.0, 60.0).tooltip("seconds before spawned nodes are freed; 0 keeps them");
 }
 
-} // namespace ne
+} // namespace saida

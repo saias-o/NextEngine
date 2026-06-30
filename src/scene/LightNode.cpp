@@ -1,6 +1,6 @@
 #include "scene/LightNode.hpp"
 
-namespace ne {
+namespace saida {
 
 void LightNode::describe(reflect::TypeBuilder<LightNode>& t) {
     t.doc("A light source in the scene graph (Directional / Point / Spot).");
@@ -22,4 +22,4 @@ void LightNode::describe(reflect::TypeBuilder<LightNode>& t) {
         .enumValues({"Realtime", "Baked", "Mixed"});
 }
 
-} // namespace ne
+} // namespace saida

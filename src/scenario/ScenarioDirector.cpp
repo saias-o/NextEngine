@@ -1,6 +1,6 @@
 #include "scenario/ScenarioDirector.hpp"
 
-namespace ne {
+namespace saida {
 
 void ScenarioDirector::start(std::string scenarioPath) {
     requestedScenario_ = std::move(scenarioPath);
@@ -16,4 +16,4 @@ void ScenarioDirector::describe(reflect::TypeBuilder<ScenarioDirector>& t) {
     t.slot("stop", &ScenarioDirector::stop);
 }
 
-} // namespace ne
+} // namespace saida

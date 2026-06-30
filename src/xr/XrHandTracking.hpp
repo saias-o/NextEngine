@@ -2,7 +2,7 @@
 
 #include <openxr/openxr.h>
 
-namespace ne::xr {
+namespace saida::xr {
 
 class Instance;
 
@@ -27,4 +27,4 @@ private:
     bool lastActive_[2]{false, false};
 };
 
-} // namespace ne::xr
+} // namespace saida::xr

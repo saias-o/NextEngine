@@ -8,7 +8,7 @@
 #include <memory>
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class Window;
 class VulkanDevice;
@@ -19,7 +19,7 @@ class SceneTree;
 class ImGuiLayer;
 class Renderer;
 class Project;
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
 namespace xr { class Instance; class Session; }
 class VulkanDeviceCreator;
 #endif
@@ -61,7 +61,7 @@ public:
     void mountWorld();
     void unmountWorld();
 
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
     // Returns true and launches an isolated XR preview process when the scene
     // contains XR nodes that require OpenXR presentation. The editor calls this
     // before mountWorld() so the desktop editor never tries to drive OpenXR.
@@ -79,12 +79,12 @@ public:
 private:
     // Desktop frame loop (window present path) and XR frame loop (OpenXR session).
     void runDesktop();
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
     void runXr();
 #endif
 
     std::unique_ptr<Window> window_;
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
     std::unique_ptr<xr::Instance> xrInstance_;
     std::unique_ptr<VulkanDeviceCreator> xrCreator_;
 #endif
@@ -110,7 +110,7 @@ private:
 
     std::string playSnapshot_;  // edit doc serialized at play start, to restore on stop
 
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
     // OpenXR session — declared last so it is destroyed first (before device_ and
     // xrInstance_), since it owns Vulkan command buffers / image views.
     std::unique_ptr<xr::Session> xrSession_;
@@ -118,4 +118,4 @@ private:
     bool xrMode_ = false;
 };
 
-} // namespace ne
+} // namespace saida

@@ -3,7 +3,7 @@
 #include "scene/Node.hpp"
 #include "scene/SceneTree.hpp"
 
-namespace ne {
+namespace saida {
 
 Behaviour::~Behaviour() { cancelTimers(); }
 
@@ -43,4 +43,4 @@ void Behaviour::cancelTimers() {
     timerTree_ = nullptr;
 }
 
-} // namespace ne
+} // namespace saida

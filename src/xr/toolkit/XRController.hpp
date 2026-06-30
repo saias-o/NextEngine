@@ -3,7 +3,7 @@
 #include "scene/Node.hpp"
 #include "xr/toolkit/XRTypes.hpp"
 
-namespace ne {
+namespace saida {
 
 // Tracked hand/controller node. The internal tracker writes the grip pose locally,
 // so parenting under XROrigin composes locomotion normally.
@@ -25,4 +25,4 @@ private:
     XRHand hand_;
 };
 
-} // namespace ne
+} // namespace saida

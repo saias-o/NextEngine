@@ -7,7 +7,7 @@
 
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 GeometryRegistry::GeometryRegistry(VulkanDevice& device, VkDeviceSize maxVertices, VkDeviceSize maxIndices)
     : device_(device) {
@@ -90,4 +90,4 @@ void GeometryRegistry::free(const GeometryAllocation& alloc) {
     }
 }
 
-} // namespace ne
+} // namespace saida

@@ -1,9 +1,9 @@
 #pragma once
 
-namespace ne::xr {
+namespace saida::xr {
 
 // Registers all XR Toolkit node types and behaviours with the engine registries.
-// This decouples the core ne::Engine from the specific VR/AR toolkit types.
+// This decouples the core saida::Engine from the specific VR/AR toolkit types.
 void registerTypes();
 
-} // namespace ne::xr
+} // namespace saida::xr

@@ -5,7 +5,7 @@
 #include "core/Log.hpp"
 #include "core/Profiler.hpp"
 
-namespace ne {
+namespace saida {
 
 void Animator::setRig(Rig* rig) {
     rig_ = rig;
@@ -62,8 +62,8 @@ void Animator::play(const std::string& name, bool loop, float crossfade) {
 }
 
 void Animator::onUpdate(float dt) {
-    NE_PROFILE_SCOPE("Animation/AnimatorUpdate");
-    NE_PROFILE_COUNTER_ADD("Animation/Animators", 1);
+    SAIDA_PROFILE_SCOPE("Animation/AnimatorUpdate");
+    SAIDA_PROFILE_COUNTER_ADD("Animation/Animators", 1);
     if (!rig_) return;
 
     if (rootNode_) {
@@ -78,4 +78,4 @@ void Animator::onUpdate(float dt) {
     globalPose_.computeFrom(currentLocalPose_, *rig_, glm::mat4(1.0f));
 }
 
-} // namespace ne
+} // namespace saida

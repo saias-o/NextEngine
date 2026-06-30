@@ -5,7 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 void AudioSourceBehaviour::onReady() {
     if (!audioName.empty()) {
@@ -19,4 +19,4 @@ void AudioSourceBehaviour::describe(reflect::TypeBuilder<AudioSourceBehaviour>& 
         .tooltip("audio alias declared by the project");
 }
 
-} // namespace ne
+} // namespace saida

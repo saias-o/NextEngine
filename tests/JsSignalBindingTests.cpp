@@ -16,20 +16,20 @@
 #include <cassert>
 
 int main() {
-    ne::registerReflectedTypes();
+    saida::registerReflectedTypes();
 
-    ne::Node node("Player");
-    auto* rotor = node.addBehaviour<ne::RotatorBehaviour>();
+    saida::Node node("Player");
+    auto* rotor = node.addBehaviour<saida::RotatorBehaviour>();
 
     // A C++ listener on the same reflected signal, to observe emits from both sides.
     int cppHits = 0;
     auto cppConn = rotor->fullRotation.connect([&] { ++cppHits; });
 
-    ne::JsRuntime& runtime = ne::JsRuntime::instance();
+    saida::JsRuntime& runtime = saida::JsRuntime::instance();
 
     {
-        ne::JsContext ctx(runtime);
-        ne::JsEngineBindings::installForBehaviour(ctx, *rotor);
+        saida::JsContext ctx(runtime);
+        saida::JsEngineBindings::installForBehaviour(ctx, *rotor);
 
         // JS → C++: node.emit fires the reflected signal (C++ listener sees it).
         assert(ctx.eval("node.emit('fullRotation');"));

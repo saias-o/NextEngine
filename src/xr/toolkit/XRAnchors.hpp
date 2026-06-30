@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace ne {
+namespace saida {
 
 // Backend that actually creates / locates / destroys spatial anchors. Implemented
 // by the OpenXR layer when an anchor extension is available
@@ -30,4 +30,4 @@ public:
     static void destroy(uint64_t handle);
 };
 
-} // namespace ne
+} // namespace saida

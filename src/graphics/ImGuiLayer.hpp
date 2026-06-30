@@ -2,7 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Window;
@@ -28,4 +28,4 @@ private:
     VkFormat colorFormat_ = VK_FORMAT_UNDEFINED;  // kept alive for the backend's pipeline info
 };
 
-} // namespace ne
+} // namespace saida

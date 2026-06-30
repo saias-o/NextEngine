@@ -9,7 +9,7 @@
 #include <memory>
 #include <random>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Buffer;
@@ -112,4 +112,4 @@ private:
     std::mt19937 rng_{1234};
 };
 
-} // namespace ne
+} // namespace saida

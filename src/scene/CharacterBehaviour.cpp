@@ -14,7 +14,7 @@
 
 #include <cmath>
 
-namespace ne {
+namespace saida {
 
 namespace {
 constexpr glm::vec3 kWorldUp{0.0f, 1.0f, 0.0f};
@@ -125,4 +125,4 @@ void CharacterBehaviour::describe(reflect::TypeBuilder<CharacterBehaviour>& t) {
     t.property("jumpClip", &CharacterBehaviour::jumpClip).tooltip("animation clip name");
 }
 
-} // namespace ne
+} // namespace saida

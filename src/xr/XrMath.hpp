@@ -10,7 +10,7 @@
 
 #include <cmath>
 
-namespace ne::xr {
+namespace saida::xr {
 
 struct Transform {
     glm::vec3 position;
@@ -56,4 +56,4 @@ inline glm::mat4 projectionFromFov(const XrFovf& fov, float nearZ, float farZ) {
     return m;
 }
 
-} // namespace ne::xr
+} // namespace saida::xr

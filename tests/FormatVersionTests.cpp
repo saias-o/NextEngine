@@ -19,7 +19,7 @@ void require(bool condition) {
 }
 
 std::filesystem::path testRoot() {
-    auto root = std::filesystem::temp_directory_path() / "NextEngineFormatVersionTests";
+    auto root = std::filesystem::temp_directory_path() / "SaidaEngineFormatVersionTests";
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root);
     return root;
@@ -39,7 +39,7 @@ json readJson(const std::filesystem::path& path) {
 
 json baseScenario() {
     return {
-        {"version", ne::format::kScenarioVersion},
+        {"version", saida::format::kScenarioVersion},
         {"id", "format.test"},
         {"roles", json::object()},
         {"blackboard", json::object()},
@@ -50,9 +50,9 @@ json baseScenario() {
 void testLegacyProjectMigratesToJson() {
     const auto root = testRoot() / "LegacyProject";
     std::filesystem::create_directories(root);
-    const auto path = root / "LegacyProject.neproj";
+    const auto path = root / "LegacyProject.saidaproj";
     writeText(path,
-        "[NextEngine Project]\n"
+        "[SaidaEngine Project]\n"
         "name=LegacyProject\n"
         "engine_version=0.1.0\n"
         "main_scene=scenes/main.scene\n"
@@ -72,7 +72,7 @@ void testLegacyProjectMigratesToJson() {
         "audio_alias_click=assets/audio/click.ogg\n"
         "autoload_GameState=scripts/game_state.mjs\n");
 
-    ne::Project project;
+    saida::Project project;
     require(project.load(path.string()));
     require(project.name() == "LegacyProject");
     require(project.mainScene() == "scenes/main.scene");
@@ -86,7 +86,7 @@ void testLegacyProjectMigratesToJson() {
 
     require(project.save());
     json saved = readJson(path);
-    require(saved["version"] == ne::format::kProjectVersion);
+    require(saved["version"] == saida::format::kProjectVersion);
     require(saved["runtime"]["maxFps"] == 144);
     require(saved["runtime"]["vsync"] == true);
     require(saved["rendering"]["showColliders"] == false);
@@ -97,7 +97,7 @@ void testLegacyProjectMigratesToJson() {
 void testFutureProjectLoadsBestEffort() {
     const auto root = testRoot() / "FutureProject";
     std::filesystem::create_directories(root);
-    const auto path = root / "FutureProject.neproj";
+    const auto path = root / "FutureProject.saidaproj";
     writeText(path, json{
         {"version", 99},
         {"name", "FutureProject"},
@@ -106,7 +106,7 @@ void testFutureProjectLoadsBestEffort() {
         {"unknownFutureBlock", {{"keptByFutureEngine", true}}}
     }.dump(2));
 
-    ne::Project project;
+    saida::Project project;
     require(project.load(path.string()));
     require(project.name() == "FutureProject");
     require(project.engineVersion() == "9.9.9");
@@ -122,14 +122,14 @@ void testAssetRegistryMigratesToEnvelope() {
         {"123", {{"path", "scenes/main.scene"}, {"hash", 42}, {"type", "Scene"}}}
     }.dump(2));
 
-    ne::AssetRegistry registry;
+    saida::AssetRegistry registry;
     require(registry.load(root.string()));
     require(registry.getID("scenes/main.scene") == 123);
     require(registry.getPath(123) == "scenes/main.scene");
     require(registry.save(root.string()));
 
     json saved = readJson(path);
-    require(saved["version"] == ne::format::kAssetRegistryVersion);
+    require(saved["version"] == saida::format::kAssetRegistryVersion);
     require(saved["assets"]["123"]["path"] == "scenes/main.scene");
 }
 
@@ -141,24 +141,24 @@ void testFutureAssetRegistryIsRejected() {
         {"assets", json::object()}
     }.dump(2));
 
-    ne::AssetRegistry registry;
+    saida::AssetRegistry registry;
     require(!registry.load(root.string()));
 }
 
 void testScenarioVersioning() {
-    ne::ScenarioAsset asset;
-    std::vector<ne::ScenarioIssue> issues;
+    saida::ScenarioAsset asset;
+    std::vector<saida::ScenarioIssue> issues;
 
     json missing = baseScenario();
     missing.erase("version");
-    require(ne::ScenarioAsset::parse(missing, asset, &issues));
-    require(asset.version == ne::format::kScenarioVersion);
-    require(asset.toJson()["version"] == ne::format::kScenarioVersion);
+    require(saida::ScenarioAsset::parse(missing, asset, &issues));
+    require(asset.version == saida::format::kScenarioVersion);
+    require(asset.toJson()["version"] == saida::format::kScenarioVersion);
 
     json future = baseScenario();
     future["version"] = 99;
     issues.clear();
-    require(!ne::ScenarioAsset::parse(future, asset, &issues));
+    require(!saida::ScenarioAsset::parse(future, asset, &issues));
     require(!issues.empty());
 }
 

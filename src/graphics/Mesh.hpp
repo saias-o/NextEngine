@@ -10,7 +10,7 @@
 
 #include "graphics/GeometryRegistry.hpp"
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Buffer;
@@ -77,4 +77,4 @@ private:
     std::vector<uint32_t> collisionIndices_;
 };
 
-} // namespace ne
+} // namespace saida

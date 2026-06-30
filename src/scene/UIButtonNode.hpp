@@ -3,7 +3,7 @@
 #include "scene/UIInteractableNode.hpp"
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 class UIButtonNode : public UIInteractableNode {
 public:
@@ -40,4 +40,4 @@ private:
     glm::vec4 pressedColor_ = glm::vec4(0.6f, 0.6f, 0.6f, 1.0f);
 };
 
-} // namespace ne
+} // namespace saida

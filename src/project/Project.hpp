@@ -6,11 +6,11 @@
 #include <string>
 #include <unordered_map>
 
-namespace ne {
+namespace saida {
 
-// Represents a NextEngine project on disk. A project is a directory containing
-// a JSON `.neproj` file plus standard sub-folders (assets/, scenes/, scripts/,
-// shaders/). Legacy key=value `.neproj` files are still accepted on load.
+// Represents a SaidaEngine project on disk. A project is a directory containing
+// a JSON `.saidaproj` file plus standard sub-folders (assets/, scenes/, scripts/,
+// shaders/). Legacy key=value `.saidaproj` files are still accepted on load.
 // The Project class manages creation, loading, and saving of this structure.
 //
 // When no project is loaded, `isLoaded()` returns false and the editor should
@@ -20,14 +20,14 @@ public:
     Project() = default;
 
     // Create a new project at `parentDir/projectName/` (creates the directory
-    // structure and the .neproj file). Returns true on success.
+    // structure and the .saidaproj file). Returns true on success.
     bool create(const std::string& parentDir, const std::string& projectName);
 
-    // Load an existing project from its `.neproj` file path.
+    // Load an existing project from its `.saidaproj` file path.
     // Returns true on success.
     bool load(const std::string& neprojPath);
 
-    // Save the current project file (overwrite the .neproj).
+    // Save the current project file (overwrite the .saidaproj).
     // Returns true on success.
     bool save() const;
 
@@ -41,7 +41,7 @@ public:
     const std::string& name() const { return name_; }
     void setName(const std::string& name) { name_ = name; }
     const std::string& rootPath() const { return rootPath_; }     // project directory
-    const std::string& filePath() const { return filePath_; }     // .neproj file
+    const std::string& filePath() const { return filePath_; }     // .saidaproj file
     const std::string& engineVersion() const { return engineVersion_; }
 
     // Project-relative path to the scene loaded at startup (e.g. "scenes/main.scene").
@@ -126,4 +126,4 @@ private:
     AssetRegistry assetRegistry_;
 };
 
-} // namespace ne
+} // namespace saida

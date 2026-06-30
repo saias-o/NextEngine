@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 void OutlineFeature::createPipelines(const RenderContext& ctx) {
     std::vector<VkDescriptorSetLayout> setLayouts = {ctx.globalSetLayout};
@@ -62,4 +62,4 @@ void OutlineFeature::record(const FrameContext& fc) {
     }
 }
 
-} // namespace ne
+} // namespace saida

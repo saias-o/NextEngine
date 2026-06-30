@@ -19,7 +19,7 @@
 #include <memory>
 #include <sstream>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -321,4 +321,4 @@ void RmlUiRuntime::recordFileDependency(const std::string& pathOrUrl) {
     }
 }
 
-} // namespace ne
+} // namespace saida

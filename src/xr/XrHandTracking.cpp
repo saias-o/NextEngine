@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace ne::xr {
+namespace saida::xr {
 
 namespace {
 
@@ -153,4 +153,4 @@ void HandTracking::sync(XrSpace baseSpace, XrTime time) {
     }
 }
 
-} // namespace ne::xr
+} // namespace saida::xr

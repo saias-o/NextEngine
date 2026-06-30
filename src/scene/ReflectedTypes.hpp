@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ne {
+namespace saida {
 
 // Registers every reflection-described behaviour and node into both the global
 // TypeRegistry (the manifest the LLM reads) and the Behaviour/Node factory
@@ -12,4 +12,4 @@ namespace ne {
 // dead-stripping of per-TU self-registration on this toolchain.
 void registerReflectedTypes();
 
-} // namespace ne
+} // namespace saida

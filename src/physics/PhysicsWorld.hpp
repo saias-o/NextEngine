@@ -20,7 +20,7 @@ class JobSystem;
 class CharacterVirtual;
 } // namespace JPH
 
-namespace ne {
+namespace saida {
 
 class TriggerContactListener;
 
@@ -126,4 +126,4 @@ private:
     float accumulator_ = 0.0f;
 };
 
-} // namespace ne
+} // namespace saida

@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class WatchedFile {
 public:
@@ -22,4 +22,4 @@ private:
     bool hasWriteTime_ = false;
 };
 
-} // namespace ne
+} // namespace saida

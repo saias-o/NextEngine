@@ -5,7 +5,7 @@
 
 namespace {
 
-class ProbeBehaviour final : public ne::Behaviour {
+class ProbeBehaviour final : public saida::Behaviour {
 public:
     ProbeBehaviour(bool& ready, bool& destroyed)
         : ready_(ready), destroyed_(destroyed) {}
@@ -21,13 +21,13 @@ private:
 } // namespace
 
 int main() {
-    ne::Node node("LifecycleProbe");
-    ne::Node another("IdentityProbe");
-    assert(node.id() != ne::kNodeInvalid);
-    assert(another.id() != ne::kNodeInvalid);
+    saida::Node node("LifecycleProbe");
+    saida::Node another("IdentityProbe");
+    assert(node.id() != saida::kNodeInvalid);
+    assert(another.id() != saida::kNodeInvalid);
     assert(node.id() != another.id());
 
-    const ne::NodeId preserved = node.id();
+    const saida::NodeId preserved = node.id();
     node.assignSerializedId(preserved);
     assert(node.id() == preserved);
     node.regenerateId();

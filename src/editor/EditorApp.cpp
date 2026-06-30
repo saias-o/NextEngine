@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ne {
+namespace saida {
 
 EditorApp::EditorApp(Engine& engine) : engine_(engine) {
     Time::setScale(0.0f); // Default to editor (paused) mode
@@ -38,7 +38,7 @@ void EditorApp::applyPlayMode(bool play) {
     if (play) {
         // Some presentation modes require an isolated runtime process. The Engine
         // owns that policy; the editor only issues a generic Play request.
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
         if (engine_.launchExternalPreviewIfNeeded()) {
             return;
         }
@@ -181,4 +181,4 @@ void EditorApp::processInput(float dt) {
     if (Input::isKeyDown(KeyCode::LeftControl)) camera.position -= glm::vec3(0, 1, 0) * speed;
 }
 
-} // namespace ne
+} // namespace saida

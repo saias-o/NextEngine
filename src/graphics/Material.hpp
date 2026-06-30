@@ -9,7 +9,7 @@
 #include <string>
 #include <functional>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Texture;
@@ -46,12 +46,12 @@ struct MaterialDesc {
     }
 };
 
-} // namespace ne
+} // namespace saida
 
 namespace std {
 template <>
-struct hash<ne::MaterialDesc> {
-    size_t operator()(const ne::MaterialDesc& d) const {
+struct hash<saida::MaterialDesc> {
+    size_t operator()(const saida::MaterialDesc& d) const {
         size_t h = 0;
         auto combine = [&h](size_t v) { h ^= v + 0x9e3779b9 + (h << 6) + (h >> 2); };
         combine(d.albedoId); combine(d.normalId); combine(d.metallicRoughnessId); combine(d.emissiveId);
@@ -65,7 +65,7 @@ struct hash<ne::MaterialDesc> {
 };
 } // namespace std
 
-namespace ne {
+namespace saida {
 
 class Material {
 public:
@@ -91,4 +91,4 @@ private:
     uint32_t bindlessIndex_ = 0;
 };
 
-} // namespace ne
+} // namespace saida

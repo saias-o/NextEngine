@@ -1,6 +1,6 @@
 #include "fx/ParticlePresetLibrary.hpp"
 
-namespace ne {
+namespace saida {
 
 ParticlePreset ParticlePresetLibrary::presetFor(ParticleSystemNode::EffectClass effectClass) {
     using Effect = ParticleSystemNode::EffectClass;
@@ -180,4 +180,4 @@ void ParticlePresetLibrary::apply(ParticleSystemNode& node, ParticleSystemNode::
     node.playing = p.playing;
 }
 
-} // namespace ne
+} // namespace saida

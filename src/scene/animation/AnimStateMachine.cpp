@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <glm/gtc/quaternion.hpp>
 
-namespace ne {
+namespace saida {
 
 void AnimStateMachine::addState(std::unique_ptr<AnimState> state) {
     if (!state) return;
@@ -95,4 +95,4 @@ void AnimStateMachine::evaluate(const LocalPose& bindPose, LocalPose& outPose) c
     }
 }
 
-} // namespace ne
+} // namespace saida

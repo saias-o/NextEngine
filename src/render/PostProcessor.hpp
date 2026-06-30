@@ -7,7 +7,7 @@
 #include <memory>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class GpuProfiler;
 class Pipeline;
@@ -71,4 +71,4 @@ private:
     std::unique_ptr<Pipeline> bloomUpsamplePipeline_;
 };
 
-} // namespace ne
+} // namespace saida

@@ -5,7 +5,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 namespace {
 // Internal: registers the anchor on ready and tracks the backend pose each frame.
@@ -52,4 +52,4 @@ void XRAnchor::deserialize(const nlohmann::json& j, ResourceManager& resources) 
     if (j.contains("persistent")) persistent = j["persistent"].get<bool>();
 }
 
-} // namespace ne
+} // namespace saida

@@ -2,7 +2,7 @@
 #include "scene/UINode.hpp"
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 UINode* UICanvasNode::raycast(float mouseX, float mouseY) {
     // Parcourt les enfants à l'envers (les derniers rendus sont au-dessus)
@@ -42,4 +42,4 @@ void UICanvasNode::deserialize(const nlohmann::json& j, ResourceManager& resourc
     height_ = j.value("height", 1080.0f);
 }
 
-} // namespace ne
+} // namespace saida

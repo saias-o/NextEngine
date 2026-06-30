@@ -2,7 +2,7 @@
 
 #include "scene/Node.hpp"
 
-namespace ne {
+namespace saida {
 
 // The player rig — a logical control point for where the tracking space sits in
 // the world. The engine pushes this node's pose to the OpenXR session each frame,
@@ -29,4 +29,4 @@ public:
     void deserialize(const nlohmann::json& j, ResourceManager& resources) override;
 };
 
-} // namespace ne
+} // namespace saida

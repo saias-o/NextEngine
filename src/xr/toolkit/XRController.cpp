@@ -3,7 +3,7 @@
 
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 namespace {
 // Internal: drives the owning XRController node's local transform from XRInput.
@@ -42,4 +42,4 @@ void XRController::deserialize(const nlohmann::json& j, ResourceManager& resourc
     if (j.contains("hand")) hand_ = static_cast<XRHand>(j["hand"].get<int>());
 }
 
-} // namespace ne
+} // namespace saida

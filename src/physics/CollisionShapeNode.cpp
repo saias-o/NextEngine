@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <array>
 
-namespace ne {
+namespace saida {
 
 const char* toString(CollisionShapeType type) {
     switch (type) {
@@ -266,4 +266,4 @@ void CollisionShapeNode::deserialize(const nlohmann::json& j, ResourceManager& r
         offset = {j["offset"][0], j["offset"][1], j["offset"][2]};
 }
 
-} // namespace ne
+} // namespace saida

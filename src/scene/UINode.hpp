@@ -2,7 +2,7 @@
 
 #include "scene/Node.hpp"
 
-namespace ne {
+namespace saida {
 
 class UINode : public Node {
 public:
@@ -51,4 +51,4 @@ protected:
     float globalY_ = 0.0f;
 };
 
-} // namespace ne
+} // namespace saida

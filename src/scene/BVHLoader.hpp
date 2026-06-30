@@ -4,7 +4,7 @@
 
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class ResourceManager;
 
@@ -21,4 +21,4 @@ public:
     static AssetID load(const std::string& path, ResourceManager& resources);
 };
 
-} // namespace ne
+} // namespace saida

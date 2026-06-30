@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace ne {
+namespace saida {
 
 class ParticleSystemNode;
 
@@ -19,4 +19,4 @@ struct ParticleQualityBudget {
 ParticleQualityBudget particleQualityBudget(QualityTier tier);
 uint32_t particleEmitterCapacity(const ParticleSystemNode& node, const ParticleQualityBudget& budget);
 
-} // namespace ne
+} // namespace saida

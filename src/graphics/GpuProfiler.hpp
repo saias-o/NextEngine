@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 
@@ -63,7 +63,7 @@ private:
     uint32_t handle_ = UINT32_MAX;
 };
 
-} // namespace ne
+} // namespace saida
 
-#define NE_GPU_PROFILE_SCOPE(profiler, cmd, name) \
-    ::ne::GpuProfileScope NE_PROFILE_CONCAT(_neGpuProfileScope_, __LINE__)((profiler), (cmd), (name))
+#define SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, name) \
+    ::saida::GpuProfileScope SAIDA_PROFILE_CONCAT(_neGpuProfileScope_, __LINE__)((profiler), (cmd), (name))

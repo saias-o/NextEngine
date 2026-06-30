@@ -1,6 +1,6 @@
 #include "scene/animation/AnimBlackboard.hpp"
 
-namespace ne {
+namespace saida {
 
 void AnimBlackboard::setFloat(uint32_t paramHash, float value) {
     parameters_[paramHash] = value;
@@ -38,4 +38,4 @@ bool AnimBlackboard::getBool(std::string_view paramName, bool defaultValue) cons
     return getBool(hashString(paramName), defaultValue);
 }
 
-} // namespace ne
+} // namespace saida

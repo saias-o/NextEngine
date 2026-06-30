@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-namespace ne {
+namespace saida {
 
 namespace {
 constexpr glm::vec3 kWorldUp{0.0f, 1.0f, 0.0f};
@@ -83,4 +83,4 @@ Frustum Camera::getFrustum() const {
     return f;
 }
 
-} // namespace ne
+} // namespace saida

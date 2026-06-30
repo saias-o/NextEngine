@@ -1,4 +1,4 @@
-# NextEngine Scenario System Plan
+# SaidaEngine Scenario System Plan
 
 ## Goal
 
@@ -15,7 +15,7 @@ This prevents large gameplay behaviours full of step counters and `if` chains.
 
 ## Canonical Asset
 
-The only authoring format is JSON in `.nescenario` files.
+The only authoring format is JSON in `.saidascenario` files.
 
 ```json
 {
@@ -64,7 +64,7 @@ Rules:
 
 Core types live under `src/scenario/`:
 
-- `ScenarioAsset` parses, serializes, and validates `.nescenario`.
+- `ScenarioAsset` parses, serializes, and validates `.saidascenario`.
 - `ScenarioRunnerBehaviour` executes an asset on a node.
 - `ScenarioDirector` is an optional autoload for global scenario control.
 - `ScenarioContext` is the runner's local state: roles, blackboard, owned spawns,
@@ -111,7 +111,7 @@ invent keys.
 ## LLM Authoring Contract
 
 For a flow that has steps, objectives, branches, spawns, cinematic beats, puzzle
-state, or victory/failure conditions, author a `.nescenario`.
+state, or victory/failure conditions, author a `.saidascenario`.
 
 Do not write a `ScriptBehaviour` to orchestrate scenario steps. Scripts and C++
 behaviours are for reusable local capabilities when the action/condition registry
@@ -128,9 +128,9 @@ Stable references are:
 ## Migration
 
 The legacy `ScenarioBehaviour` / `"Scenario"` timeline has been removed. New
-content must use `"ScenarioRunner"` and `.nescenario` assets. Old scene files
+content must use `"ScenarioRunner"` and `.saidascenario` assets. Old scene files
 that still contain `"type": "Scenario"` should be migrated by creating a
-`.nescenario` file and attaching a `ScenarioRunner` to the same node.
+`.saidascenario` file and attaching a `ScenarioRunner` to the same node.
 
 ## Implementation Phases
 

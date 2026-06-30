@@ -4,7 +4,7 @@
 #include "scene/Behaviour.hpp"
 #include <string>
 
-namespace ne {
+namespace saida {
 
 // Spawns a .scene instance at this node's position on a timer — a reusable demo
 // of the gameplay primitives (instantiate + timers + lifetime/queueFree). Point
@@ -18,10 +18,10 @@ public:
     float interval = 1.0f;     // seconds between spawns (<= 0 disables)
     float lifetime = 0.0f;     // seconds before a spawned instance is freed (0 = forever)
 
-    NE_REFLECT_BEHAVIOUR(SpawnerBehaviour, "Spawner")
+    SAIDA_REFLECT_BEHAVIOUR(SpawnerBehaviour, "Spawner")
 
 private:
     void spawn();
 };
 
-} // namespace ne
+} // namespace saida

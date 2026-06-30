@@ -13,7 +13,7 @@
 #include <filesystem>
 #include <fstream>
 
-namespace ne {
+namespace saida {
 
 SceneTree::SceneTree(ResourceManager& resources) : resources_(resources) {}
 SceneTree::~SceneTree() { unmountWorld(); }
@@ -342,4 +342,4 @@ SceneTree::NodeRayHit SceneTree::raycastNodes(const glm::vec3& origin,
     return best;
 }
 
-} // namespace ne
+} // namespace saida

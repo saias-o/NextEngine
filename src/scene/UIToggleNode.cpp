@@ -1,7 +1,7 @@
 #include "scene/UIToggleNode.hpp"
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 void UIToggleNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
     UIInteractableNode::serialize(j, resources);
@@ -24,4 +24,4 @@ void UIToggleNode::deserialize(const nlohmann::json& j, ResourceManager& resourc
     }
 }
 
-} // namespace ne
+} // namespace saida

@@ -22,7 +22,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-using namespace ne;
+using namespace saida;
 
 int main() {
     // A unit cube mesh: AABB from -0.5 to +0.5 on each axis.

@@ -4,7 +4,7 @@
 #include <chrono>
 #include <random>
 
-namespace ne {
+namespace saida {
 
 NodeId generateNodeId() {
     static std::atomic<NodeId> next([] {
@@ -18,4 +18,4 @@ NodeId generateNodeId() {
     return id == kNodeInvalid ? next.fetch_add(1, std::memory_order_relaxed) : id;
 }
 
-} // namespace ne
+} // namespace saida

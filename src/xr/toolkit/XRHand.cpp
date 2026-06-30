@@ -12,7 +12,7 @@
 #include <array>
 #include <cmath>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -73,9 +73,9 @@ glm::quat rotatePositiveZTo(const glm::vec3& direction) {
 
 } // namespace
 
-XRHandNode::XRHandNode(ne::XRHand hand)
-    : Node(hand == ne::XRHand::Left ? "XR Hand (L)" : "XR Hand (R)"), hand_(hand) {
-    if (hand_ == ne::XRHand::Right)
+XRHandNode::XRHandNode(saida::XRHand hand)
+    : Node(hand == saida::XRHand::Left ? "XR Hand (L)" : "XR Hand (R)"), hand_(hand) {
+    if (hand_ == saida::XRHand::Right)
         color_ = {1.0f, 0.45f, 0.25f, 1.0f};
     addBehaviour<XRHandVisualTracker>();
 }
@@ -175,7 +175,7 @@ void XRHandNode::serialize(nlohmann::json& j, ResourceManager& resources) const 
 
 void XRHandNode::deserialize(const nlohmann::json& j, ResourceManager& resources) {
     Node::deserialize(j, resources);
-    if (j.contains("hand")) hand_ = static_cast<ne::XRHand>(j["hand"].get<int>());
+    if (j.contains("hand")) hand_ = static_cast<saida::XRHand>(j["hand"].get<int>());
     if (j.contains("color") && j["color"].is_array() && j["color"].size() == 4)
         color_ = {j["color"][0].get<float>(), j["color"][1].get<float>(),
                   j["color"][2].get<float>(), j["color"][3].get<float>()};
@@ -183,4 +183,4 @@ void XRHandNode::deserialize(const nlohmann::json& j, ResourceManager& resources
     buildVisuals(resources);
 }
 
-} // namespace ne
+} // namespace saida

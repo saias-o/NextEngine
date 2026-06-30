@@ -6,7 +6,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
-namespace ne {
+namespace saida {
 
 namespace {
 // Decompose a world matrix into position + (scale-free) rotation. Cameras are
@@ -98,4 +98,4 @@ void CameraDirector::applyTo(const State& s, Camera& out) {
     out.lookAt(s.position + forward);
 }
 
-} // namespace ne
+} // namespace saida

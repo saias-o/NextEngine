@@ -13,7 +13,7 @@
 #include "graphics/Material.hpp"     // MaterialType
 #include "render/RenderFeature.hpp"  // EyeRenderInfo, RenderContext, FrameContext, ScenePassFeature
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Swapchain;
@@ -98,7 +98,7 @@ class Renderer {
 public:
     Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
              ResourceManager& resources, ImGuiLayer& imgui);
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
     // XR constructor: no window swapchain / ImGui — presentation is owned by the
     // OpenXR session. Builds the multiview (stereo) scene/skybox/tonemap pipelines
     // and the 2-layer render targets sized to one eye. Shares all the rest of the
@@ -115,7 +115,7 @@ public:
     void setViewportRect(glm::vec2 position, glm::vec2 size);
     void clearViewportRect();
 
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
     void drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eyes,
                 Scene& scene, Project* project);
 #endif
@@ -289,7 +289,7 @@ private:
     std::array<VkImageView, 2> cachedEnvironmentView_{};
     std::array<VkSampler, 2> cachedEnvironmentSampler_{};
 
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
     // Created only by the XR constructor. The scene is rendered once into a
     // 2-layer HDR target (viewMask = 0b11, gl_ViewIndex per eye), then each layer
     // is tonemapped into the matching eye swapchain image.
@@ -346,4 +346,4 @@ private:
     bool lodMatricesValid_ = false;
 };
 
-} // namespace ne
+} // namespace saida

@@ -5,7 +5,7 @@
 
 #include <string>
 
-namespace ne {
+namespace saida {
 
 // Hitscan weapon. CharacterBody NPCs are checked manually; physics raycast is
 // used only for wall occlusion.
@@ -14,7 +14,7 @@ public:
     void onReady() override;
     void onUpdate(float dt) override;
 
-    NE_REFLECT_BEHAVIOUR(GunBehaviour, "Gun")
+    SAIDA_REFLECT_BEHAVIOUR(GunBehaviour, "Gun")
 
     float damage = 60.0f;       // per shot
     float range = 120.0f;       // max hit distance (m)
@@ -28,4 +28,4 @@ private:
     float cooldownTimer_ = 0.0f;
 };
 
-} // namespace ne
+} // namespace saida

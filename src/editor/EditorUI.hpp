@@ -13,7 +13,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-namespace ne {
+namespace saida {
 
 class Scene;
 class Camera;
@@ -164,15 +164,15 @@ private:
     std::string resolveScenePath(Project* project) const;
 
     // Scans the project's scenes/ directory and loads the appropriate entry-point
-    // scene: explicit main_scene from .neproj → scenes/main.scene → first found.
+    // scene: explicit main_scene from .saidaproj → scenes/main.scene → first found.
     void loadProjectMainScene(Project* project, Scene* scene, ResourceManager* resources);
 
-    // Kick off a background recursive scan of `root` for .neproj files. The result
+    // Kick off a background recursive scan of `root` for .saidaproj files. The result
     // is collected (into openProjCache_) on the main thread once ready, so opening
     // the dialog never blocks on the disk walk.
     void startProjectScan(const std::string& root);
 
-    std::string openBrowsePath_;                          // root for the .neproj scan
+    std::string openBrowsePath_;                          // root for the .saidaproj scan
     std::vector<std::string> openProjCache_;              // last scan result (absolute, sorted)
     std::future<std::vector<std::string>> openScanFuture_; // in-flight background scan
     bool openScanDone_ = false;                           // ≥1 scan has completed
@@ -270,10 +270,10 @@ private:
     std::string previewModelPath_;
     std::unique_ptr<Scene> previewScene_;
 
-#ifdef NE_ENABLE_MCP
+#ifdef SAIDA_ENABLE_MCP
     // In-process MCP server (dev only): polled once per frame in draw().
     std::unique_ptr<McpBridge> mcp_;
 #endif
 };
 
-} // namespace ne
+} // namespace saida

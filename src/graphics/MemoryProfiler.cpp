@@ -15,7 +15,7 @@
 #include <psapi.h>
 #endif
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -125,4 +125,4 @@ void MemoryProfiler::publish(VulkanDevice& device) {
     Profiler::instance().setMemorySnapshot(sample(device));
 }
 
-} // namespace ne
+} // namespace saida

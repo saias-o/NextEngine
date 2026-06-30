@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 inline nlohmann::json vec3ToJson(const glm::vec3& v) {
     return nlohmann::json::array({v.x, v.y, v.z});
@@ -19,4 +19,4 @@ inline glm::vec4 jsonToVec4(const nlohmann::json& j, const glm::vec4& fallback =
     return {j[0].get<float>(), j[1].get<float>(), j[2].get<float>(), j[3].get<float>()};
 }
 
-} // namespace ne
+} // namespace saida

@@ -4,7 +4,7 @@
 #include "scene/animation/Timeline.hpp"
 #include <memory>
 
-namespace ne {
+namespace saida {
 
 // PlayableDirector is a Behaviour that controls the playback of a generic Timeline.
 class PlayableDirector : public Behaviour {
@@ -26,4 +26,4 @@ private:
     bool looping_ = false;
 };
 
-} // namespace ne
+} // namespace saida

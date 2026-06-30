@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <variant>
 
-namespace ne {
+namespace saida {
 
 // Shared typed key/value store for gameplay state (cf. behaviour-tree blackboard).
 // Used as an autoload (persistent, found via tree()->autoload<Blackboard>()) or
@@ -41,4 +41,4 @@ private:
     std::unordered_map<std::string, Value> values_;
 };
 
-} // namespace ne
+} // namespace saida

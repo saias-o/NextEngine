@@ -4,7 +4,7 @@
 
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 struct ParticlePreset {
     ParticleSystemNode::EffectClass effectClass = ParticleSystemNode::EffectClass::Simple;
@@ -41,4 +41,4 @@ public:
     static void apply(ParticleSystemNode& node, ParticleSystemNode::EffectClass effectClass);
 };
 
-} // namespace ne
+} // namespace saida

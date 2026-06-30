@@ -5,9 +5,9 @@
 
 #include <vector>
 
-namespace ne { class VulkanDevice; }
+namespace saida { class VulkanDevice; }
 
-namespace ne::xr {
+namespace saida::xr {
 
 // XR color swapchain for one eye; wraps runtime images with VkImageViews.
 class Swapchain {
@@ -38,4 +38,4 @@ private:
     uint32_t height_ = 0;
 };
 
-} // namespace ne::xr
+} // namespace saida::xr

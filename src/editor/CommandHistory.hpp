@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class SceneDocument;
 
@@ -40,4 +40,4 @@ private:
     std::vector<std::unique_ptr<Command>> redoStack_;
 };
 
-} // namespace ne
+} // namespace saida

@@ -1,11 +1,11 @@
 #pragma once
 
-// MCP protocol + tool surface for NextEngine. Speaks JSON-RPC MCP
+// MCP protocol + tool surface for SaidaEngine. Speaks JSON-RPC MCP
 // (initialize / tools/list / tools/call) over the McpServer transport and turns
 // tool calls into reflection-validated, undoable scene edits routed through the
 // editor's command history. This is "the hands of the LLM".
 //
-// Editor/dev only (ne_editor, NE_ENABLE_MCP). Friend of EditorUI so tools reach
+// Editor/dev only (saida_editor, SAIDA_ENABLE_MCP). Friend of EditorUI so tools reach
 // the document + command chokepoint without widening EditorUI's public API.
 
 #include "nlohmann/json_fwd.hpp"
@@ -14,7 +14,7 @@
 #include <memory>
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class EditorUI;
 class McpServer;
@@ -40,4 +40,4 @@ private:
     std::unique_ptr<McpServer> server_;
 };
 
-} // namespace ne
+} // namespace saida

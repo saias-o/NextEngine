@@ -1,9 +1,9 @@
 #include "scene/WaterNode.hpp"
 
-namespace ne {
+namespace saida {
 
 void WaterNode::describe(reflect::TypeBuilder<WaterNode>& t) {
-    t.doc("Animated water plane (default NextEngine water). Position = centre/height, "
+    t.doc("Animated water plane (default SaidaEngine water). Position = centre/height, "
           "size = half-extent. Procedural waves + Fresnel sky reflection, no textures.");
     t.property("size", &WaterNode::size).range(1.0, 5000.0).tooltip("half-extent of the plane (m)");
     t.property("deepColor", &WaterNode::deepColor).tooltip("refracted body tint");
@@ -73,4 +73,4 @@ void WaterNode::describe(reflect::TypeBuilder<WaterNode>& t) {
         .tooltip("waves flatten below this depth so they don't clip the sand");
 }
 
-} // namespace ne
+} // namespace saida

@@ -1,6 +1,6 @@
 #include "xr/toolkit/XRPassthrough.hpp"
 
-namespace ne {
+namespace saida {
 
 namespace {
 bool g_wanted = false;
@@ -13,4 +13,4 @@ bool XRPassthrough::enabled() { return g_wanted && g_supported; }
 bool XRPassthrough::supported() { return g_supported; }
 void XRPassthrough::setSupported(bool s) { g_supported = s; }
 
-} // namespace ne
+} // namespace saida

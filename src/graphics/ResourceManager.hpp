@@ -12,7 +12,7 @@
 #include "graphics/Material.hpp"
 #include "graphics/GeometryRegistry.hpp"
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Mesh;
@@ -124,4 +124,4 @@ private:
     std::unique_ptr<Texture> defaultNormalTexture_;
 };
 
-} // namespace ne
+} // namespace saida

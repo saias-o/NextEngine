@@ -2,7 +2,7 @@
 
 #include "scene/Node.hpp"
 
-namespace ne {
+namespace saida {
 
 // A node pinned to a real-world spatial anchor (AR). On ready it registers its
 // pose with the XRAnchors backend; each frame an internal tracker writes the
@@ -21,4 +21,4 @@ public:
     void deserialize(const nlohmann::json& j, ResourceManager& resources) override;
 };
 
-} // namespace ne
+} // namespace saida

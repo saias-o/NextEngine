@@ -1,5 +1,5 @@
 {
-    "format": "NEFX",
+    "format": "SaidaFX",
     "version": 1,
     "name": "Smoke",
     "emitters": [

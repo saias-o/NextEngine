@@ -4,15 +4,15 @@
 #include "fx/ParticleEffect.hpp"
 #include "fx/ParticlePresetLibrary.hpp"
 
-namespace ne {
+namespace saida {
 
 void ParticleSystemNode::describe(reflect::TypeBuilder<ParticleSystemNode>& t) {
-    t.doc("Lightweight billboard particle emitter rendered by NEFX.");
+    t.doc("Lightweight billboard particle emitter rendered by SaidaFX.");
     t.property("effectClass", &ParticleSystemNode::effectClass)
         .enumValues({"Simple", "Fire", "Magic", "Rain", "Snow", "Smoke", "Explosion"})
         .tooltip("high-level preset family");
     t.property("effectPath", &ParticleSystemNode::effectPath)
-        .tooltip("absolute or project-resolved .nefx path to load through loadEffect");
+        .tooltip("absolute or project-resolved .saidafx path to load through loadEffect");
     t.property("maxParticles", &ParticleSystemNode::maxParticles).range(1.0, 20000.0)
         .tooltip("maximum live particles for this emitter");
     t.property("spawnRate", &ParticleSystemNode::spawnRate).range(0.0, 5000.0)
@@ -106,4 +106,4 @@ uint32_t ParticleSystemNode::consumeBurstCount() {
     return count;
 }
 
-} // namespace ne
+} // namespace saida

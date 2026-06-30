@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 ParticleRuntime::ParticleRuntime(VulkanDevice& device, const Desc& desc)
     : device_(device), desc_(desc) {
@@ -319,4 +319,4 @@ void ParticleRuntime::recordComputeBarrier(VkCommandBuffer cmd,
     vkCmdPipelineBarrier2(cmd, &dep);
 }
 
-} // namespace ne
+} // namespace saida

@@ -1,10 +1,10 @@
-# NextEngine
+# SaidaEngine
 
 > Fichier de contexte pour assistants IA (Codex & co). Lis-le en premier.
 
 ## But du projet
 
-NextEngine est un **moteur de rendu 3D léger, propre et robuste** écrit en
+SaidaEngine est un **moteur de rendu 3D léger, propre et robuste** écrit en
 **C++17 + Vulkan**, développé par étapes. La priorité n'est pas la quantité de
 fonctionnalités mais la **qualité de l'architecture** : abstractions RAII
 simples, ownership clair, code lisible. On garde le moteur « léger » — pas de
@@ -63,11 +63,11 @@ cmake --build build
 ```
 
 Les chemins d'assets et de shaders sont **absolus** (bakés par CMake :
-`NE_PROJECT_ROOT`, `NE_SHADER_DIR`), donc l'exe se lance **depuis n'importe quel
+`SAIDA_PROJECT_ROOT`, `SAIDA_SHADER_DIR`), donc l'exe se lance **depuis n'importe quel
 répertoire** :
 
 ```sh
-./build/bin/NextEngine.exe
+./build/bin/SaidaEngine.exe
 ```
 
 Pour lancer **avec les validation layers Vulkan** : `./run.sh` (depuis la racine).
@@ -82,16 +82,16 @@ les logs de démarrage passent (`GPU: ...`, `loaded '...': N vertices`) — y
 arriver signifie que l'init et le chargement ont réussi.
 
 **Localisation des assets** : `core/Paths.hpp` centralise la résolution —
-`assetPath(rel)` (sous `NE_PROJECT_ROOT` : `models/`, `assets/`) et
-`shaderPath(name)` (sous `NE_SHADER_DIR` = `build/shaders/`). Tout est absolu,
+`assetPath(rel)` (sous `SAIDA_PROJECT_ROOT` : `models/`, `assets/`) et
+`shaderPath(name)` (sous `SAIDA_SHADER_DIR` = `build/shaders/`). Tout est absolu,
 donc indépendant du cwd. (Pour packager un jeu plus tard : remplacer ces racines
 par un dossier d'assets relatif à l'exe.)
 
 ## Architecture
 
-**Split lib/exe** : le moteur compile en bibliothèque statique `ne_engine`
-(tout `src/` sauf `main.cpp`) ; l'exécutable `NextEngine` ne contient que
-`main.cpp` et linke la lib (via `ne_editor`). Conséquence : itérer le jeu ne
+**Split lib/exe** : le moteur compile en bibliothèque statique `saida_engine`
+(tout `src/` sauf `main.cpp`) ; l'exécutable `SaidaEngine` ne contient que
+`main.cpp` et linke la lib (via `saida_editor`). Conséquence : itérer le jeu ne
 recompile/relink que l'exe, jamais le moteur. Lancé directement (sans
 `--project`), l'éditeur ouvre une **scène vierge** ; le Hub passe un projet via
 `--project`. Le moteur reste sans contenu en dur : `Engine` accepte un
@@ -300,7 +300,7 @@ Le moteur est construit par étapes numérotées :
             panneau debug (FPS, caméra, réglage live des lumières). Toggle de
             capture du curseur (TAB) dans `Window` pour passer fly-cam ↔ UI.
 - [~] **Étape 8 — Couche jeu.**
-      - [x] **Split moteur (lib `ne_engine`) / jeu (exe)** : le moteur compile
+      - [x] **Split moteur (lib `saida_engine`) / jeu (exe)** : le moteur compile
             une fois, l'exe est un petit target (`main.cpp`). L'`Engine` accepte
             un `SceneSetup` optionnel pour peupler la scène ; par défaut (lancement
             direct sans `--project`) l'éditeur ouvre une scène vierge.
@@ -324,7 +324,7 @@ Le moteur est construit par étapes numérotées :
               `Node::tree()`, flag `SceneSettings::changeRenderingAtLoad`.
             - **Autoloads** (singletons persistants, enfants du World, rendus) :
               code (`registerAutoload<T>`) **et** data-driven (`autoload_*` du
-              `.neproj` + onglet éditeur). `tree()->autoload<T>()`.
+              `.saidaproj` + onglet éditeur). `tree()->autoload<T>()`.
             - **Groupes + requêtes scopées** : `addToGroup`/`tree()->firstInGroup`,
               `findBehaviourInChildren<T>`, `requireBehaviour<T>`. Pas de
               find-by-name global (volontaire).
@@ -341,7 +341,7 @@ Le moteur est construit par étapes numérotées :
               scène sur timer + lifetime/`queueFree`.
       - [ ] *À faire (couche jeu)* : runtime standalone sans éditeur (Étape 15).
 - [x] **Étape 8b — Scripting JavaScript (QuickJS).** Voir « Décision scripting »
-      ci-dessous. Objectif : un seul runtime JS léger et complet pour NextEngine :
+      ci-dessous. Objectif : un seul runtime JS léger et complet pour SaidaEngine :
       `ScriptBehaviour`, autoloads JS, bindings moteur, hot-reload, inspector et
       console/outils éditeur.
       - [x] **Fondation QuickJS vendue et compilée** : `third_party/quickjs`,
@@ -489,8 +489,8 @@ Le moteur est construit par étapes numérotées :
       Cible : PCVR Quest Link, multiview (1 passe), auto-détection du casque. *Mise en
       route casque = itérative (le rendu/tracking ne se valide que dans le casque).*
       - [x] **Fondation** : OpenXR-SDK vendu (`third_party/openxr`, release-1.1.60),
-            `openxr_loader` statique buildé + linké à `ne_engine`.
-      - [x] **Module `src/xr/` (découpé, RAII, namespace `ne::xr` pour ne pas
+            `openxr_loader` statique buildé + linké à `saida_engine`.
+      - [x] **Module `src/xr/` (découpé, RAII, namespace `saida::xr` pour ne pas
             collisionner avec les handles OpenXR)** : `XrMath.hpp` (proj/view/pose →
             GLM, conventions Vulkan Y-down + depth 0..1), `xr::Instance` (instance
             `XR_KHR_vulkan_enable2` + system HMD + PFN
@@ -512,13 +512,13 @@ Le moteur est construit par étapes numérotées :
             projection-layer + tracking, avant de brancher le rendu de scène.
       - [x] **XR Preview depuis l'éditeur** : Play sur une scène contenant un
             `XROrigin` sérialise un snapshot dans `build/xr_preview.scene` et lance
-            un second `NextEngine.exe --xr-preview`. Projet + scène transitent par
+            un second `SaidaEngine.exe --xr-preview`. Projet + scène transitent par
             `build/xr_preview.launch` (pas par la command-line Windows, donc aucun
             bug de quoting sur les chemins avec espaces). Le processus enfant exige
             OpenXR (aucun fallback Desktop silencieux) et crée le device Vulkan via
             le runtime Meta dès son démarrage ; l'éditeur reste Desktop et ouvert.
             `Input` ne dépend pas d'ImGui : `ImGuiLayer` ne lui publie que les deux
-            flags de capture clavier/souris. Les trackers internes NEXRTK sont
+            flags de capture clavier/souris. Les trackers internes SaidaXRTK sont
             explicitement masqués de l'inspecteur (aucun « Unknown Behaviour »).
       - [x] **Seam de rendu scène + multiview (Étapes A-rendu & B fusionnées)** :
             la scène est rendue **en stéréo, 1 passe multiview** (viewMask=0b11)
@@ -540,7 +540,7 @@ Le moteur est construit par étapes numérotées :
             action set + actions (grip/aim pose, trigger, squeeze, thumbstick, A/B),
             suggested bindings (Oculus Touch + Khronos simple), spaces grip/aim par
             main, attaché à la session ; `Session::syncActions()` (appelé par l'Engine
-            avant l'update) `xrSyncActions` + locate + **alimente `ne::XRInput`** →
+            avant l'update) `xrSyncActions` + locate + **alimente `saida::XRInput`** →
             grab/touch/teleport pilotés par les manettes. *À valider au casque.*
       - [x] **Hand tracking squelettique `XR_EXT_hand_tracking`** : extension
             optionnelle activée si le runtime la supporte, 26 joints par main
@@ -552,7 +552,7 @@ Le moteur est construit par étapes numérotées :
             *Compile ; disponibilité de l'extension et rendu à valider au Quest.*
       - [ ] *Suites perf/qualité XR* : MSAA multiview (+resolve par layer),
             overlay ImGui (quad/layer), culling stéréo combiné.
-      - [~] **NEXRTK — NextEngine XR Toolkit** (`src/xr/toolkit/`, namespace `ne`).
+      - [~] **SaidaXRTK — SaidaEngine XR Toolkit** (`src/xr/toolkit/`, namespace `ne`).
             Package d'interaction VR/AR dans le style moteur (behaviours + nodes +
             signaux + groupes, zéro singleton de gameplay). Lit l'état des mains via
             le **service `XRInput`**, alimenté par les action sets OpenXR et, quand
@@ -600,7 +600,7 @@ Note : l'ensemble des étapes vise à construire un unique pipeline de rendu uni
 ## Décision scripting (prise, à implémenter)
 
 Comment les développeurs écriront la logique de jeu et l'UI dynamique.
-**Décidé** : NextEngine utilise **JavaScript via QuickJS** comme unique langage
+**Décidé** : SaidaEngine utilise **JavaScript via QuickJS** comme unique langage
 de scripting moteur.
 
 - **Logique de jeu en C++ `Behaviour`** pour le moteur, les systèmes bas niveau

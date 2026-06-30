@@ -7,7 +7,7 @@
 
 // Shared XR toolkit types. Toolkit code reads XRInput, not OpenXR directly.
 
-namespace ne {
+namespace saida {
 
 // Which hand a controller / interactor represents.
 enum class XRHand { Left = 0, Right = 1 };
@@ -92,4 +92,4 @@ inline constexpr const char* kXRTouchableGroup = "xr_touchable";
 inline constexpr const char* kXROriginGroup = "xr_origin";          // the player rig
 inline constexpr const char* kXRTeleportAreaGroup = "xr_teleport_area";
 
-} // namespace ne
+} // namespace saida

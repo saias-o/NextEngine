@@ -6,10 +6,10 @@
 
 int main() {
     try {
-        ne::Hub hub;
+        saida::Hub hub;
         hub.run();
     } catch (const std::exception& e) {
-        ne::Log::error(e.what());
+        saida::Log::error(e.what());
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

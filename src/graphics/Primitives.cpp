@@ -1,6 +1,6 @@
 #include "graphics/Primitives.hpp"
 
-namespace ne {
+namespace saida {
 
 // Unit cube with per-face normals, texture UVs, and non-overlapping lightmap UVs.
 const std::vector<Vertex>& cubeVertices() {
@@ -53,4 +53,4 @@ const std::vector<uint32_t>& cubeIndices() {
     return idx;
 }
 
-} // namespace ne
+} // namespace saida

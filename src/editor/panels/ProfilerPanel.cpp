@@ -17,7 +17,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -551,7 +551,7 @@ std::vector<ProfileFrame> selectRecentFramesByDuration(const std::vector<Profile
 }
 
 std::string tracePathForFrame(uint64_t frameIndex) {
-    std::filesystem::path path = std::filesystem::path(NE_BINARY_DIR) / "profiling";
+    std::filesystem::path path = std::filesystem::path(SAIDA_BINARY_DIR) / "profiling";
     path /= "profile_" + std::to_string(frameIndex) + ".json";
     return path.string();
 }
@@ -758,4 +758,4 @@ void ProfilerPanel::draw(EditorUI* editor) {
     ImGui::End();
 }
 
-} // namespace ne
+} // namespace saida

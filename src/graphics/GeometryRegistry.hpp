@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Buffer;
@@ -52,4 +52,4 @@ private:
     VmaVirtualBlock indexBlock_ = VK_NULL_HANDLE;
 };
 
-} // namespace ne
+} // namespace saida

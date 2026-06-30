@@ -10,7 +10,7 @@
 
 #include <string>
 
-namespace ne {
+namespace saida {
 
 using json = nlohmann::json;
 
@@ -182,4 +182,4 @@ void McpServer::poll(const Handler& handler) {
     }
 }
 
-} // namespace ne
+} // namespace saida

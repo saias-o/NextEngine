@@ -4,7 +4,7 @@
 #include "physics/PhysicsWorld.hpp"  // BodyMotion + JPH::BodyID
 #include "core/Signal.hpp"
 
-namespace ne {
+namespace saida {
 
 // Base of the physics body nodes (Godot-style). Holds a Jolt body built from the
 // CollisionShape children. Subclasses declare their motion type.
@@ -84,4 +84,4 @@ private:
     void createBody(PhysicsWorld& world);
 };
 
-} // namespace ne
+} // namespace saida

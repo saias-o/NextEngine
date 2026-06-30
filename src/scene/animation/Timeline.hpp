@@ -10,7 +10,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 
-namespace ne {
+namespace saida {
 
 // Base class for a generic track in a timeline.
 class TimelineTrack {
@@ -145,4 +145,4 @@ private:
     float duration_ = 0.0f;
 };
 
-} // namespace ne
+} // namespace saida

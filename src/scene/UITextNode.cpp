@@ -1,7 +1,7 @@
 #include "scene/UITextNode.hpp"
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 void UITextNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
     UINode::serialize(j, resources);
@@ -21,4 +21,4 @@ void UITextNode::deserialize(const nlohmann::json& j, ResourceManager& resources
     }
 }
 
-} // namespace ne
+} // namespace saida

@@ -10,14 +10,14 @@
 #include <sstream>
 #include <unordered_map>
 
-namespace ne {
+namespace saida {
 
 namespace {
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-constexpr const char* kProjectExtension = ".neproj";
-constexpr const char* kProjectHeader    = "[NextEngine Project]";
+constexpr const char* kProjectExtension = ".saidaproj";
+constexpr const char* kProjectHeader    = "[SaidaEngine Project]";
 
 // Trim leading/trailing whitespace.
 std::string trim(const std::string& s) {
@@ -320,4 +320,4 @@ void Project::removeAutoload(const std::string& name) {
     autoloads_.erase(name);
 }
 
-} // namespace ne
+} // namespace saida

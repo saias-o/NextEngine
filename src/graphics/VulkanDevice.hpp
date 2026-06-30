@@ -6,7 +6,7 @@
 #include <optional>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class Window;
 class VulkanDeviceCreator;
@@ -107,4 +107,4 @@ private:
     VulkanDeviceCreator* creator_ = nullptr;  // non-null → custom/OpenXR-driven init
 };
 
-} // namespace ne
+} // namespace saida

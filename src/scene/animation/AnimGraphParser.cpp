@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <cctype>
 
-namespace ne {
+namespace saida {
 
 enum class TokenType {
     Identifier, String, Number, 
@@ -214,4 +214,4 @@ std::unique_ptr<AnimStateMachine> AnimGraphParser::parse(
     return sm;
 }
 
-} // namespace ne
+} // namespace saida

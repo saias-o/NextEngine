@@ -1,6 +1,6 @@
 #include "core/FileWatcher.hpp"
 
-namespace ne {
+namespace saida {
 
 void WatchedFile::clear() {
     path_.clear();
@@ -38,4 +38,4 @@ bool WatchedFile::readWriteTime(const std::string& path, std::filesystem::file_t
     return !ec;
 }
 
-} // namespace ne
+} // namespace saida

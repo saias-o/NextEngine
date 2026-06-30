@@ -1,7 +1,7 @@
 #include "scene/UIInteractableNode.hpp"
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 void UIInteractableNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
     UINode::serialize(j, resources);
@@ -14,4 +14,4 @@ void UIInteractableNode::deserialize(const nlohmann::json& j, ResourceManager& r
     state_ = interactable_ ? State::Normal : State::Disabled;
 }
 
-} // namespace ne
+} // namespace saida

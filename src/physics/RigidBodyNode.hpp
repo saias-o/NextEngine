@@ -2,7 +2,7 @@
 
 #include "physics/CollisionObjectNode.hpp"
 
-namespace ne {
+namespace saida {
 
 // A body integrated by the solver (gravity, forces, collisions). Set `kinematic`
 // for a body moved by code that still pushes dynamic bodies but isn't pushed back.
@@ -33,4 +33,4 @@ protected:
     }
 };
 
-} // namespace ne
+} // namespace saida

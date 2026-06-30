@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 GpuProfiler::GpuProfiler(VulkanDevice& device, uint32_t framesInFlight, uint32_t maxTimestampsPerFrame)
     : device_(device),
@@ -131,4 +131,4 @@ GpuProfileScope::~GpuProfileScope() {
     if (profiler_) profiler_->endZone(cmd_, handle_);
 }
 
-} // namespace ne
+} // namespace saida

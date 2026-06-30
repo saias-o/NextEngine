@@ -12,7 +12,7 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -298,4 +298,4 @@ void ParticleFeature::record(const FrameContext& fc) {
     runBatch(ParticleSystemNode::BlendMode::Additive, *additiveRuntime_, *additivePipeline_);
 }
 
-} // namespace ne
+} // namespace saida

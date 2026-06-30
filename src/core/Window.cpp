@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace ne {
+namespace saida {
 
 Window::Window(int width, int height, std::string title, bool visible) {
     glfwInit();
@@ -91,4 +91,4 @@ VkSurfaceKHR Window::createSurface(VkInstance instance) const {
     return surface;
 }
 
-} // namespace ne
+} // namespace saida

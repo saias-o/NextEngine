@@ -8,7 +8,7 @@
 #include <functional>
 #include <unordered_map>
 
-namespace ne {
+namespace saida {
 
 class Window;
 
@@ -115,4 +115,4 @@ private:
     static float evaluateBinding(const ActionBinding& binding);
 };
 
-} // namespace ne
+} // namespace saida

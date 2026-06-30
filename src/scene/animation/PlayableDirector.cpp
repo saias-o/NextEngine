@@ -1,7 +1,7 @@
 #include "scene/animation/PlayableDirector.hpp"
 #include <cmath>
 
-namespace ne {
+namespace saida {
 
 void PlayableDirector::onUpdate(float dt) {
     if (!isPlaying_ || !currentTimeline_) return;
@@ -47,4 +47,4 @@ void PlayableDirector::resume() {
     }
 }
 
-} // namespace ne
+} // namespace saida

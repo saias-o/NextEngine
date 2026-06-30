@@ -9,11 +9,11 @@
 #include <unordered_map>
 #include <vector>
 
-#ifndef NE_ENABLE_PROFILER
-#define NE_ENABLE_PROFILER 1
+#ifndef SAIDA_ENABLE_PROFILER
+#define SAIDA_ENABLE_PROFILER 1
 #endif
 
-namespace ne {
+namespace saida {
 
 struct ProfileEvent {
     const char* name = "";
@@ -118,23 +118,23 @@ private:
     uint32_t handle_ = UINT32_MAX;
 };
 
-} // namespace ne
+} // namespace saida
 
-#if NE_ENABLE_PROFILER
-#define NE_PROFILE_FRAME_BEGIN() ::ne::Profiler::instance().beginFrame()
-#define NE_PROFILE_FRAME_END() ::ne::Profiler::instance().endFrame()
-#define NE_PROFILE_SCOPE(name) ::ne::ProfileScope NE_PROFILE_CONCAT(_neProfileScope_, __LINE__)(name)
-#define NE_PROFILE_FUNCTION() NE_PROFILE_SCOPE(__func__)
-#define NE_PROFILE_COUNTER(name, value) ::ne::Profiler::instance().setCounter((name), static_cast<double>(value))
-#define NE_PROFILE_COUNTER_ADD(name, value) ::ne::Profiler::instance().addCounter((name), static_cast<double>(value))
+#if SAIDA_ENABLE_PROFILER
+#define SAIDA_PROFILE_FRAME_BEGIN() ::saida::Profiler::instance().beginFrame()
+#define SAIDA_PROFILE_FRAME_END() ::saida::Profiler::instance().endFrame()
+#define SAIDA_PROFILE_SCOPE(name) ::saida::ProfileScope SAIDA_PROFILE_CONCAT(_neProfileScope_, __LINE__)(name)
+#define SAIDA_PROFILE_FUNCTION() SAIDA_PROFILE_SCOPE(__func__)
+#define SAIDA_PROFILE_COUNTER(name, value) ::saida::Profiler::instance().setCounter((name), static_cast<double>(value))
+#define SAIDA_PROFILE_COUNTER_ADD(name, value) ::saida::Profiler::instance().addCounter((name), static_cast<double>(value))
 #else
-#define NE_PROFILE_FRAME_BEGIN() do {} while (false)
-#define NE_PROFILE_FRAME_END() do {} while (false)
-#define NE_PROFILE_SCOPE(name) do {} while (false)
-#define NE_PROFILE_FUNCTION() do {} while (false)
-#define NE_PROFILE_COUNTER(name, value) do {} while (false)
-#define NE_PROFILE_COUNTER_ADD(name, value) do {} while (false)
+#define SAIDA_PROFILE_FRAME_BEGIN() do {} while (false)
+#define SAIDA_PROFILE_FRAME_END() do {} while (false)
+#define SAIDA_PROFILE_SCOPE(name) do {} while (false)
+#define SAIDA_PROFILE_FUNCTION() do {} while (false)
+#define SAIDA_PROFILE_COUNTER(name, value) do {} while (false)
+#define SAIDA_PROFILE_COUNTER_ADD(name, value) do {} while (false)
 #endif
 
-#define NE_PROFILE_CONCAT_INNER(a, b) a##b
-#define NE_PROFILE_CONCAT(a, b) NE_PROFILE_CONCAT_INNER(a, b)
+#define SAIDA_PROFILE_CONCAT_INNER(a, b) a##b
+#define SAIDA_PROFILE_CONCAT(a, b) SAIDA_PROFILE_CONCAT_INNER(a, b)

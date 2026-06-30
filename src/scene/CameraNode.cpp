@@ -2,7 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 CameraNode::CameraNode() : Node("Camera") {
     // Cameras are located by the director (and by the character for camera-relative
@@ -32,4 +32,4 @@ void CameraNode::deserialize(const nlohmann::json& j, ResourceManager& resources
     if (j.contains("active")) active = j["active"].get<bool>();
 }
 
-} // namespace ne
+} // namespace saida

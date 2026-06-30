@@ -1,10 +1,10 @@
 #pragma once
 
-// NextEngine reflection — the "API the LLM reads instead of the source".
+// SaidaEngine reflection — the "API the LLM reads instead of the source".
 //
 // A behaviour/node declares its fields ONCE in a static `describe()`:
 //
-//     void RotatorBehaviour::describe(ne::reflect::TypeBuilder<RotatorBehaviour>& t) {
+//     void RotatorBehaviour::describe(saida::reflect::TypeBuilder<RotatorBehaviour>& t) {
 //         t.doc("Spins its node around a local axis.");
 //         t.property("axis",  &RotatorBehaviour::axis);
 //         t.property("speed", &RotatorBehaviour::speed).range(0, 360).tooltip("deg/s");
@@ -20,7 +20,7 @@
 // Header-only descriptors via member pointers — no external codegen step (keeps
 // the MSYS2 toolchain happy). This header pulls in nlohmann/json, so it is meant
 // to be included by leaf gameplay .cpp files (and the few headers that use the
-// NE_REFLECT_* macros), never by widely-shared engine headers.
+// SAIDA_REFLECT_* macros), never by widely-shared engine headers.
 
 #include "core/ReflectionFwd.hpp"
 #include "core/Signal.hpp"
@@ -37,7 +37,7 @@
 #include <utility>
 #include <vector>
 
-namespace ne::reflect {
+namespace saida::reflect {
 
 using json = nlohmann::json;
 
@@ -285,29 +285,29 @@ void saveObject(const T& obj, json& j) { localDesc<T>().saveTo(&obj, j); }
 template <typename T>
 void loadObject(T& obj, const json& j) { localDesc<T>().loadFrom(&obj, j); }
 
-} // namespace ne::reflect
+} // namespace saida::reflect
 
 // Macros placed in a class body. They wire typeName() + auto serialization to the
 // reflected descriptor. Put them in the class's *header* and define describe() in
 // the .cpp (which includes this header).
-#define NE_REFLECT_BEHAVIOUR(Type, NameStr)                                        \
+#define SAIDA_REFLECT_BEHAVIOUR(Type, NameStr)                                        \
 public:                                                                             \
     static constexpr const char* reflectName() { return NameStr; }                  \
     const char* typeName() const override { return NameStr; }                       \
-    static void describe(ne::reflect::TypeBuilder<Type>& t);                         \
-    void save(nlohmann::json& j) const override { ne::reflect::saveObject(*this, j); } \
-    void load(const nlohmann::json& j) override { ne::reflect::loadObject(*this, j); }
+    static void describe(saida::reflect::TypeBuilder<Type>& t);                         \
+    void save(nlohmann::json& j) const override { saida::reflect::saveObject(*this, j); } \
+    void load(const nlohmann::json& j) override { saida::reflect::loadObject(*this, j); }
 
-#define NE_REFLECT_NODE(Type, NameStr)                                              \
+#define SAIDA_REFLECT_NODE(Type, NameStr)                                              \
 public:                                                                             \
     static constexpr const char* reflectName() { return NameStr; }                  \
     const char* typeName() const override { return NameStr; }                       \
-    static void describe(ne::reflect::TypeBuilder<Type>& t);                         \
-    void serialize(nlohmann::json& j, ne::ResourceManager& r) const override {       \
-        ne::Node::serialize(j, r);                                                   \
-        ne::reflect::saveObject(*this, j);                                           \
+    static void describe(saida::reflect::TypeBuilder<Type>& t);                         \
+    void serialize(nlohmann::json& j, saida::ResourceManager& r) const override {       \
+        saida::Node::serialize(j, r);                                                   \
+        saida::reflect::saveObject(*this, j);                                           \
     }                                                                                \
-    void deserialize(const nlohmann::json& j, ne::ResourceManager& r) override {     \
-        ne::Node::deserialize(j, r);                                                 \
-        ne::reflect::loadObject(*this, j);                                           \
+    void deserialize(const nlohmann::json& j, saida::ResourceManager& r) override {     \
+        saida::Node::deserialize(j, r);                                                 \
+        saida::reflect::loadObject(*this, j);                                           \
     }

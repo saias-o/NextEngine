@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <filesystem>
 
-namespace ne {
+namespace saida {
 
 using AssetID = uint64_t;
 
@@ -80,4 +80,4 @@ private:
     std::unordered_map<std::string, LocalCacheEntry> localCache_;
 };
 
-} // namespace ne
+} // namespace saida

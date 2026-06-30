@@ -22,7 +22,7 @@
 #include <fstream>
 #include <unordered_set>
 
-namespace ne {
+namespace saida {
 
 namespace {
 using json = nlohmann::json;
@@ -328,4 +328,4 @@ bool SceneSerializer::loadIntoScene(Scene& scene, ResourceManager& resources,
     }
 }
 
-} // namespace ne
+} // namespace saida

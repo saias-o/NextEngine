@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <cstdint>
 
-namespace ne {
+namespace saida {
 
 // Compile-time or runtime string hashing (FNV-1a 32-bit)
 constexpr uint32_t hashString(std::string_view str) {
@@ -38,4 +38,4 @@ private:
     std::unordered_map<uint32_t, float> parameters_;
 };
 
-} // namespace ne
+} // namespace saida

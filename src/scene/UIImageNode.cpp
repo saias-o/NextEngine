@@ -1,7 +1,7 @@
 #include "scene/UIImageNode.hpp"
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 void UIImageNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
     UINode::serialize(j, resources);
@@ -22,4 +22,4 @@ void UIImageNode::deserialize(const nlohmann::json& j, ResourceManager& resource
     }
 }
 
-} // namespace ne
+} // namespace saida

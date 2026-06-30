@@ -2,7 +2,7 @@
 
 #include "physics/CollisionObjectNode.hpp"
 
-namespace ne {
+namespace saida {
 
 // Immovable collider — level geometry, floors, walls. Never integrated.
 class StaticBodyNode : public CollisionObjectNode {
@@ -16,4 +16,4 @@ public:
     void deserialize(const nlohmann::json& j, ResourceManager& resources) override;
 };
 
-} // namespace ne
+} // namespace saida

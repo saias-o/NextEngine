@@ -9,7 +9,7 @@
 
 #include <algorithm>
 
-namespace ne {
+namespace saida {
 
 RenderFeatureRegistry& RenderFeatureRegistry::instance() {
     static RenderFeatureRegistry registry;
@@ -43,4 +43,4 @@ void registerBuiltinRenderFeatures() {
     r.add(300, [] { return std::make_unique<DebugLinesFeature>(); }); // overlay, no depth
 }
 
-} // namespace ne
+} // namespace saida

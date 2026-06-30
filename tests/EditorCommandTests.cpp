@@ -10,11 +10,11 @@
 
 namespace {
 
-class CountingCommand final : public ne::Command {
+class CountingCommand final : public saida::Command {
 public:
     explicit CountingCommand(int& value) : value_(value) {}
-    void execute(ne::SceneDocument&) override { ++value_; }
-    void undo(ne::SceneDocument&) override { --value_; }
+    void execute(saida::SceneDocument&) override { ++value_; }
+    void undo(saida::SceneDocument&) override { --value_; }
 
 private:
     int& value_;
@@ -23,8 +23,8 @@ private:
 // History budget: pushing past the cap keeps the most recent commands and the
 // undo/redo stacks stay consistent.
 void testHistoryBudget() {
-    ne::SceneDocument document;
-    ne::CommandHistory history(document);
+    saida::SceneDocument document;
+    saida::CommandHistory history(document);
     int value = 0;
 
     for (int i = 0; i < 300; ++i)
@@ -42,18 +42,18 @@ void testHistoryBudget() {
 // SetPropertyCommand resolves its node by id every time and is a clean undo/redo
 // round-trip, even though it carries only type-erased apply closures.
 void testSetPropertyCommand() {
-    ne::Scene scene;
-    ne::SceneDocument document;
+    saida::Scene scene;
+    saida::SceneDocument document;
     document.bind(&scene, nullptr);
 
-    ne::Node* node = scene.createChild<ne::Node>("Original");
-    const ne::NodeId id = node->id();
+    saida::Node* node = scene.createChild<saida::Node>("Original");
+    const saida::NodeId id = node->id();
 
-    ne::CommandHistory history(document);
-    history.execute(std::make_unique<ne::SetPropertyCommand>(
+    saida::CommandHistory history(document);
+    history.execute(std::make_unique<saida::SetPropertyCommand>(
         id, "Rename",
-        [](ne::Node& n) { n.setName("Original"); },
-        [](ne::Node& n) { n.setName("Edited"); }));
+        [](saida::Node& n) { n.setName("Original"); },
+        [](saida::Node& n) { n.setName("Edited"); }));
 
     assert(document.find(id)->name() == "Edited");
     assert(document.dirty());

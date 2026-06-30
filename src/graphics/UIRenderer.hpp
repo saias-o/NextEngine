@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class ResourceManager;
@@ -53,4 +53,4 @@ private:
     bool loggedWebCanvasGather_ = false;
 };
 
-} // namespace ne
+} // namespace saida

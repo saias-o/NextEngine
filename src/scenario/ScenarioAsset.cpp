@@ -10,7 +10,7 @@
 #include <set>
 #include <sstream>
 
-namespace ne {
+namespace saida {
 namespace {
 
 using json = nlohmann::json;
@@ -282,4 +282,4 @@ int ScenarioAsset::stepIndex(const std::string& stepId) const {
     return -1;
 }
 
-} // namespace ne
+} // namespace saida

@@ -5,7 +5,7 @@
 #include <string_view>
 #include <unordered_map>
 
-namespace ne {
+namespace saida {
 
 class Rig;
 class AnimationClip;
@@ -21,4 +21,4 @@ public:
         const Rig& rig);
 };
 
-} // namespace ne
+} // namespace saida

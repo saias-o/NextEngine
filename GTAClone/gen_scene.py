@@ -70,7 +70,7 @@ def invisible_wall(name, pos, half):
 
 
 def water():
-    # NextEngine's default animated water. Surrounds the island; sits just below the
+    # SaidaEngine's default animated water. Surrounds the island; sits just below the
     # shore. Procedural waves + sky reflection — fully parameterized (see WaterNode).
     # Look/feel comes entirely from the WaterNode defaults (single source of truth);
     # the scene only places the plane. Tweak in the inspector, or edit the defaults.

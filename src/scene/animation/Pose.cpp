@@ -1,6 +1,6 @@
 #include "scene/animation/Pose.hpp"
 
-namespace ne {
+namespace saida {
 
 void GlobalPose::computeFrom(const LocalPose& localPose, const Rig& rig, const glm::mat4& baseTransform) {
     size_t boneCount = rig.bones().size();
@@ -23,4 +23,4 @@ void GlobalPose::computeFrom(const LocalPose& localPose, const Rig& rig, const g
     }
 }
 
-} // namespace ne
+} // namespace saida

@@ -1,7 +1,7 @@
 #include "scene/UIColorNode.hpp"
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 void UIColorNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
     UINode::serialize(j, resources);
@@ -16,4 +16,4 @@ void UIColorNode::deserialize(const nlohmann::json& j, ResourceManager& resource
     }
 }
 
-} // namespace ne
+} // namespace saida

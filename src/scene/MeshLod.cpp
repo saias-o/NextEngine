@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -67,4 +67,4 @@ std::vector<float> coverageThresholdsFromMsft(const std::vector<float>& msftCove
     return thresholds;
 }
 
-} // namespace ne
+} // namespace saida

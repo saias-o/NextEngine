@@ -3,7 +3,7 @@
 
 #include <algorithm>
 
-namespace ne {
+namespace saida {
 
 void CommandHistory::execute(std::unique_ptr<Command> command) {
     if (!command) return;
@@ -47,4 +47,4 @@ void CommandHistory::clear() {
     redoStack_.clear();
 }
 
-} // namespace ne
+} // namespace saida

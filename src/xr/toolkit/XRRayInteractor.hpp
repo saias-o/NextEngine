@@ -5,7 +5,7 @@
 
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 class XRController;
 class TeleportArea;
@@ -46,4 +46,4 @@ private:
     glm::vec2 uiPressedLocal_{0.0f};
 };
 
-} // namespace ne
+} // namespace saida

@@ -2,7 +2,7 @@
 
 #include "scene/Node.hpp"
 
-namespace ne {
+namespace saida {
 
 class UINode;
 
@@ -30,4 +30,4 @@ private:
     float height_ = 1080.0f;
 };
 
-} // namespace ne
+} // namespace saida

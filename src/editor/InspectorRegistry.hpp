@@ -4,7 +4,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace ne {
+namespace saida {
 
 class Behaviour;
 class EditorUI;
@@ -31,4 +31,4 @@ private:
     std::unordered_map<std::string, Drawer> drawers_;
 };
 
-} // namespace ne
+} // namespace saida

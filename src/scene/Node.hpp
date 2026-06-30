@@ -14,7 +14,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
-namespace ne {
+namespace saida {
 
 class Mesh;
 class Material;
@@ -208,4 +208,4 @@ public:
     static uint32_t g_transformVersion;
 };
 
-} // namespace ne
+} // namespace saida

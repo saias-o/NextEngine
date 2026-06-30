@@ -1,6 +1,6 @@
 #include "core/Paths.hpp"
 
-namespace ne {
+namespace saida {
 
 namespace {
 // Directory of the shipped game executable, set once at runtime startup.
@@ -12,4 +12,4 @@ void setRuntimeRoot(const std::string& dir) { g_runtimeRoot = dir; }
 
 const std::string& runtimeRoot() { return g_runtimeRoot; }
 
-} // namespace ne
+} // namespace saida

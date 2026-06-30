@@ -7,7 +7,7 @@
 #include <vector>
 #include "scene/animation/AnimBlackboard.hpp"
 
-namespace ne {
+namespace saida {
 
 enum class ConditionOp {
     Equals,
@@ -114,4 +114,4 @@ private:
     mutable LocalPose tempPosePrevious_;
 };
 
-} // namespace ne
+} // namespace saida

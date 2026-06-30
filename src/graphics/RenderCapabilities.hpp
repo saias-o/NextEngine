@@ -2,7 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
-namespace ne {
+namespace saida {
 
 // Quality tier derived from GPU capabilities.
 enum class QualityTier {
@@ -47,4 +47,4 @@ struct RenderCapabilities {
     QualityTier tier = QualityTier::Low;
 };
 
-} // namespace ne
+} // namespace saida

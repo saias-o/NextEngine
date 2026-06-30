@@ -9,7 +9,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 void XRGrabbable::onReady() {
     node()->addToGroup(kXRGrabbableGroup);
@@ -94,4 +94,4 @@ void XRGrabbable::load(const nlohmann::json& j) {
     if (j.contains("snapToHand")) snapToHand = j["snapToHand"].get<bool>();
 }
 
-} // namespace ne
+} // namespace saida

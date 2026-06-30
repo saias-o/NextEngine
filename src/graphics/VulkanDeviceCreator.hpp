@@ -2,7 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
-namespace ne {
+namespace saida {
 
 // Interface used by VulkanDevice to delegate Vulkan instance, physical device
 // and logical device creation in non-desktop environments (like OpenXR).
@@ -24,4 +24,4 @@ public:
     virtual bool requiresSurface() const = 0;
 };
 
-} // namespace ne
+} // namespace saida

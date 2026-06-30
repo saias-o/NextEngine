@@ -14,7 +14,7 @@
 #include <cmath>
 #include <filesystem>
 
-namespace ne {
+namespace saida {
 namespace {
 
 using json = nlohmann::json;
@@ -148,7 +148,7 @@ std::string ScenarioRunnerBehaviour::resolveScenarioPath() const {
     if (node())
         if (SceneTree* t = node()->tree()) return t->resolveProjectPath(scenarioPath);
     if (std::filesystem::exists(path)) return std::filesystem::absolute(path).string();
-    return (std::filesystem::path(NE_PROJECT_ROOT) / path).string();
+    return (std::filesystem::path(SAIDA_PROJECT_ROOT) / path).string();
 }
 
 void ScenarioRunnerBehaviour::resetRuntime() {
@@ -496,8 +496,8 @@ void ScenarioRunnerBehaviour::cleanupOwned() {
 }
 
 void ScenarioRunnerBehaviour::describe(reflect::TypeBuilder<ScenarioRunnerBehaviour>& t) {
-    t.doc("Runs a declarative .nescenario asset. Use this for quests, tutorials, puzzles, waves, cinematics and missions.");
-    t.property("scenarioPath", &ScenarioRunnerBehaviour::scenarioPath).asset().tooltip("project-relative .nescenario file");
+    t.doc("Runs a declarative .saidascenario asset. Use this for quests, tutorials, puzzles, waves, cinematics and missions.");
+    t.property("scenarioPath", &ScenarioRunnerBehaviour::scenarioPath).asset().tooltip("project-relative .saidascenario file");
     t.property("autoStart", &ScenarioRunnerBehaviour::autoStart);
     t.property("cleanupOnStop", &ScenarioRunnerBehaviour::cleanupOnStop);
     t.signal("started", &ScenarioRunnerBehaviour::started);
@@ -510,4 +510,4 @@ void ScenarioRunnerBehaviour::describe(reflect::TypeBuilder<ScenarioRunnerBehavi
     t.slot("resume", &ScenarioRunnerBehaviour::resume);
 }
 
-} // namespace ne
+} // namespace saida

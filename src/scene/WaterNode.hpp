@@ -5,7 +5,7 @@
 
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 // Reflected data for the dedicated procedural water pipeline.
 // The node position is the plane center; `size` is its half-extent in metres.
@@ -13,7 +13,7 @@ class WaterNode : public Node {
 public:
     WaterNode() : Node("Water") {}
 
-    NE_REFLECT_NODE(WaterNode, "Water")
+    SAIDA_REFLECT_NODE(WaterNode, "Water")
 
     // Analytic shore shape used by the water shaders.
     enum class ShoreMode { None = 0, Beach = 1, Lake = 2 };
@@ -74,4 +74,4 @@ public:
     float waveFlatten = 1.5f;      // waves flatten below this depth (m) so they don't clip the sand
 };
 
-} // namespace ne
+} // namespace saida

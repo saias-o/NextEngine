@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ne {
+namespace saida {
 
 class EditorUI;
 class Project;
@@ -12,4 +12,4 @@ public:
     void draw(EditorUI* editor, Project* project, Scene* scene, ResourceManager* resources);
 };
 
-} // namespace ne
+} // namespace saida

@@ -2,7 +2,7 @@
 #include "scene/Node.hpp"
 #include "core/Log.hpp"
 
-namespace ne {
+namespace saida {
 
 NodeRegistry& NodeRegistry::instance() {
     static NodeRegistry registry;
@@ -24,4 +24,4 @@ std::unique_ptr<Node> NodeRegistry::create(const std::string& typeName) const {
     return nullptr;
 }
 
-} // namespace ne
+} // namespace saida

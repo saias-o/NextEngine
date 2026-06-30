@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace ne {
+namespace saida {
 
 enum class KeyCode : uint16_t {
     Unknown = 0,
@@ -55,4 +55,4 @@ enum class InputEvent : uint8_t {
     Released
 };
 
-} // namespace ne
+} // namespace saida

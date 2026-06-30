@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -212,4 +212,4 @@ void Pipeline::bind(VkCommandBuffer cmd) const {
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
 }
 
-} // namespace ne
+} // namespace saida

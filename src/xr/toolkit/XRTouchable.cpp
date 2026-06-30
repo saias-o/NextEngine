@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 void XRTouchable::onReady() {
     node()->addToGroup(kXRTouchableGroup);
@@ -41,4 +41,4 @@ void XRTouchable::load(const nlohmann::json& j) {
     if (j.contains("touchRadius")) touchRadius = j["touchRadius"].get<float>();
 }
 
-} // namespace ne
+} // namespace saida

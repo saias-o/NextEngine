@@ -6,7 +6,7 @@
 #include "scene/Node.hpp" // For Transform structure
 #include "scene/animation/Rig.hpp"
 
-namespace ne {
+namespace saida {
 
 struct LocalPose {
     std::vector<Transform> localTransforms;
@@ -31,4 +31,4 @@ struct GlobalPose {
     void computeFrom(const LocalPose& localPose, const Rig& rig, const glm::mat4& baseTransform = glm::mat4(1.0f));
 };
 
-} // namespace ne
+} // namespace saida

@@ -6,7 +6,7 @@
 
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 StorageImage::StorageImage(VulkanDevice& device, uint32_t width, uint32_t height,
                            VkFormat format, VkImageUsageFlags usage)
@@ -54,4 +54,4 @@ void StorageImage::transition(VkCommandBuffer cmd, VkImageLayout newLayout,
     layout_ = newLayout;
 }
 
-} // namespace ne
+} // namespace saida

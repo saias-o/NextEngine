@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 enum class ParticleModuleType {
     SpawnRate,
@@ -64,4 +64,4 @@ ParticleSystemNode::EffectClass particleEffectClassFromString(const std::string&
 const char* toString(ParticleSystemNode::BlendMode blendMode);
 ParticleSystemNode::BlendMode particleBlendModeFromString(const std::string& text);
 
-} // namespace ne
+} // namespace saida

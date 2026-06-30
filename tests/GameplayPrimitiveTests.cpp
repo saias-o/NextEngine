@@ -15,7 +15,7 @@
 using json = nlohmann::json;
 
 static void testBlackboard() {
-    ne::Blackboard bb;
+    saida::Blackboard bb;
     std::string lastKey;
     auto conn = bb.changed.connect([&](std::string k) { lastKey = k; });
 
@@ -29,16 +29,16 @@ static void testBlackboard() {
     // Round-trip through save/load.
     json saved;
     bb.save(saved);
-    ne::Blackboard restored;
+    saida::Blackboard restored;
     restored.load(saved);
     assert(restored.number("health") == 80.0);
     assert(restored.boolean("alert"));
 }
 
 static void testStateMachinePredicateAndTimeout() {
-    ne::Node npc("NPC");
-    auto* bb = npc.addBehaviour<ne::Blackboard>();
-    auto* sm = npc.addBehaviour<ne::StateMachineBehaviour>();
+    saida::Node npc("NPC");
+    auto* bb = npc.addBehaviour<saida::Blackboard>();
+    auto* sm = npc.addBehaviour<saida::StateMachineBehaviour>();
 
     json cfg = {
         {"initialState", "patrol"},
@@ -68,8 +68,8 @@ static void testStateMachinePredicateAndTimeout() {
 }
 
 static void testStateMachineTrigger() {
-    ne::Node n("G");
-    auto* sm = n.addBehaviour<ne::StateMachineBehaviour>();
+    saida::Node n("G");
+    auto* sm = n.addBehaviour<saida::StateMachineBehaviour>();
     sm->load({{"initialState", "idle"},
               {"states", {"idle", "go"}},
               {"transitions", json::array({{{"from", "idle"}, {"to", "go"}, {"trigger", "jump"}}})}});
@@ -82,7 +82,7 @@ static void testStateMachineTrigger() {
 }
 
 int main() {
-    ne::registerReflectedTypes();
+    saida::registerReflectedTypes();
     testBlackboard();
     testStateMachinePredicateAndTimeout();
     testStateMachineTrigger();

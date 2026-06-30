@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class Mesh;
 class Material;
@@ -75,4 +75,4 @@ private:
     bool meshEnabled_ = true;
 };
 
-} // namespace ne
+} // namespace saida

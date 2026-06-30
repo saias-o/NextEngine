@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the BeachDemo project — a stylised sunset beach showcasing NextEngine's
+"""Generate the BeachDemo project — a stylised sunset beach showcasing SaidaEngine's
 analytic shore water (WaterNode shoreMode = Beach).
 
 Run once from anywhere:   python BeachDemo/gen_beach.py
@@ -9,7 +9,7 @@ It writes, next to itself:
   * asset_registry.json       — maps the sky texture id -> file (absolute path, so it
                                 loads whatever the working directory is)
   * scenes/beach.scene        — the scene (sand, sea, palms, rocks, sunset lights)
-  * BeachDemo.neproj          — the project (main_scene = scenes/beach.scene)
+  * BeachDemo.saidaproj          — the project (main_scene = scenes/beach.scene)
 
 Only the built-in "cube" mesh is used for props, so no external art is required.
 The sky is the one generated texture.
@@ -308,8 +308,8 @@ def main():
         json.dump(build_scene(), f, indent=2)
     print("wrote scenes/beach.scene")
 
-    with open(os.path.join(HERE, "BeachDemo.neproj"), "w") as f:
-        f.write("[NextEngine Project]\n")
+    with open(os.path.join(HERE, "BeachDemo.saidaproj"), "w") as f:
+        f.write("[SaidaEngine Project]\n")
         f.write("name=BeachDemo\n")
         f.write("engine_version=0.1.0\n")
         f.write("main_scene=scenes/beach.scene\n")
@@ -317,7 +317,7 @@ def main():
         f.write("shadow_resolution=2048\n")
         f.write("shadow_dist=120\n")
         f.write("shadow_soft=1\n")
-    print("wrote BeachDemo.neproj")
+    print("wrote BeachDemo.saidaproj")
 
 
 if __name__ == "__main__":

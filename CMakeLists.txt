@@ -6,25 +6,25 @@ if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
         FORCE)
 endif()
 
-project(NextEngine LANGUAGES C CXX)
+project(SaidaEngine LANGUAGES C CXX)
 
 include(CTest)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(NE_APP_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin)
-set(NE_TEST_OUTPUT_DIR ${CMAKE_BINARY_DIR}/tests)
+set(SAIDA_APP_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin)
+set(SAIDA_TEST_OUTPUT_DIR ${CMAKE_BINARY_DIR}/tests)
 
-function(ne_app_target target)
+function(saida_app_target target)
     set_target_properties(${target} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${NE_APP_OUTPUT_DIR}
+        RUNTIME_OUTPUT_DIRECTORY ${SAIDA_APP_OUTPUT_DIR}
     )
 endfunction()
 
-function(ne_test_target target)
+function(saida_test_target target)
     set_target_properties(${target} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${NE_TEST_OUTPUT_DIR}
+        RUNTIME_OUTPUT_DIRECTORY ${SAIDA_TEST_OUTPUT_DIR}
     )
 endfunction()
 
@@ -135,15 +135,15 @@ set(DOUBLE_PRECISION OFF)                        # 32-bit positions: smaller/fas
 add_subdirectory(third_party/jolt/Build ${CMAKE_BINARY_DIR}/jolt)
 
 # ── LLM-native MCP server (Étape 13) ────────────────────────────────────────
-# In-process MCP server for LLM-driven editing. Compiled into ne_editor only,
+# In-process MCP server for LLM-driven editing. Compiled into saida_editor only,
 # so the shipped runtime never links it. Set OFF for a pure no-MCP editor.
-option(NE_ENABLE_MCP "Enable the in-process MCP server (Étape 13)" ON)
+option(SAIDA_ENABLE_MCP "Enable the in-process MCP server (Étape 13)" ON)
 
 # ── OpenXR (vendored, loader only) ──────────────────────────────────────────
-# Set NE_ENABLE_XR=OFF to produce a pure-desktop build with no OpenXR dependency.
-option(NE_ENABLE_XR "Enable OpenXR support (Étape 14)" ON)
+# Set SAIDA_ENABLE_XR=OFF to produce a pure-desktop build with no OpenXR dependency.
+option(SAIDA_ENABLE_XR "Enable OpenXR support (Étape 14)" ON)
 
-if(NE_ENABLE_XR)
+if(SAIDA_ENABLE_XR)
     # Build just the static openxr_loader from the pre-generated SDK repo (no Python
     # generation, no API layers/tests). The loader finds the active runtime (Quest
     # Link / Oculus) via the registry at runtime. Headers are propagated by the target.
@@ -213,7 +213,7 @@ add_subdirectory(third_party/rmlui ${CMAKE_BINARY_DIR}/rmlui)
 # ── Engine library ──────────────────────────────────────────────────────────
 # Everything reusable lives here and compiles once. Game and editor targets link
 # it, so changing application code does not recompile the engine.
-add_library(ne_engine STATIC
+add_library(saida_engine STATIC
     src/Engine.cpp
     src/core/FileWatcher.cpp
     src/core/Window.cpp
@@ -298,7 +298,7 @@ add_library(ne_engine STATIC
     src/render/features/SkyboxFeature.cpp
     src/render/features/DebugLinesFeature.cpp
     src/render/GIVolume.cpp
-    # XR sources are added conditionally below via target_sources (NE_ENABLE_XR)
+    # XR sources are added conditionally below via target_sources (SAIDA_ENABLE_XR)
     src/project/Project.cpp
     src/project/AssetRegistry.cpp
     src/graphics/VmaUsage.cpp
@@ -338,13 +338,13 @@ add_library(ne_engine STATIC
 # LLM-generated behaviours (written by the MCP write_cpp_behaviour tool). Globbed
 # with CONFIGURE_DEPENDS so Ninja re-globs on build when a new file appears — no
 # manual CMake edit needed. Registered centrally in scene/ReflectedTypes.cpp.
-file(GLOB NE_GENERATED_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/generated/*.cpp)
-if(NE_GENERATED_SOURCES)
-    target_sources(ne_engine PRIVATE ${NE_GENERATED_SOURCES})
+file(GLOB SAIDA_GENERATED_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/generated/*.cpp)
+if(SAIDA_GENERATED_SOURCES)
+    target_sources(saida_engine PRIVATE ${SAIDA_GENERATED_SOURCES})
 endif()
 
 # PUBLIC: propagated to anything linking the engine (the game/editor exe).
-target_include_directories(ne_engine PUBLIC
+target_include_directories(saida_engine PUBLIC
     src
     third_party/vma
     third_party/tinyobjloader
@@ -354,12 +354,12 @@ target_include_directories(ne_engine PUBLIC
     third_party/json
     third_party/miniaudio
 )
-target_link_libraries(ne_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt quickjs RmlUi::RmlUi)
+target_link_libraries(saida_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt quickjs RmlUi::RmlUi)
 if(WIN32)
-    target_link_libraries(ne_engine PUBLIC winmm psapi)
+    target_link_libraries(saida_engine PUBLIC winmm psapi)
 endif()
-if(NE_ENABLE_XR)
-    target_sources(ne_engine PRIVATE
+if(SAIDA_ENABLE_XR)
+    target_sources(saida_engine PRIVATE
         src/xr/XrInstance.cpp
         src/xr/XrVulkanBinding.cpp
         src/xr/XrRegistration.cpp
@@ -380,25 +380,25 @@ if(NE_ENABLE_XR)
         src/xr/toolkit/XRAnchors.cpp
         src/xr/toolkit/XRAnchor.cpp
     )
-    target_link_libraries(ne_engine PUBLIC openxr_loader)
+    target_link_libraries(saida_engine PUBLIC openxr_loader)
 endif()
-add_dependencies(ne_engine Shaders)
+add_dependencies(saida_engine Shaders)
 
 # Absolute paths baked at configure time so the exe runs from any cwd; and GLM
 # conventions (radians, Vulkan 0..1 depth) — PUBLIC so game code sees them too.
-target_compile_definitions(ne_engine PUBLIC
-    NE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
-    NE_BINARY_DIR="${CMAKE_BINARY_DIR}"
-    NE_RUNTIME_DIR="${NE_APP_OUTPUT_DIR}"
-    NE_SHADER_DIR="${SHADER_OUT_DIR}"
+target_compile_definitions(saida_engine PUBLIC
+    SAIDA_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+    SAIDA_BINARY_DIR="${CMAKE_BINARY_DIR}"
+    SAIDA_RUNTIME_DIR="${SAIDA_APP_OUTPUT_DIR}"
+    SAIDA_SHADER_DIR="${SHADER_OUT_DIR}"
     GLM_FORCE_RADIANS
     GLM_FORCE_DEPTH_ZERO_TO_ONE)
-if(NE_ENABLE_XR)
-    target_compile_definitions(ne_engine PUBLIC NE_ENABLE_XR)
+if(SAIDA_ENABLE_XR)
+    target_compile_definitions(saida_engine PUBLIC SAIDA_ENABLE_XR)
 endif()
 
 # Warnings for the engine's own sources (third-party TUs override this with -w).
-target_compile_options(ne_engine PRIVATE -Wall -Wextra)
+target_compile_options(saida_engine PRIVATE -Wall -Wextra)
 set_source_files_properties(
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
@@ -419,13 +419,13 @@ set_source_files_properties(
 # on iostream/exception symbols; bonus: self-contained exe. PUBLIC so the link
 # options propagate to executables linking the engine.
 if (MINGW)
-    target_link_options(ne_engine PUBLIC -static -static-libgcc -static-libstdc++)
+    target_link_options(saida_engine PUBLIC -static -static-libgcc -static-libstdc++)
 endif()
 
 # ── Editor library ──────────────────────────────────────────────────────────
 # The editor (UI panels, commands, input/camera control) lives on top of the
-# engine, not inside it — so a shipped game can link ne_engine without it.
-add_library(ne_editor STATIC
+# engine, not inside it — so a shipped game can link saida_engine without it.
+add_library(saida_editor STATIC
     src/editor/EditorApp.cpp
     src/editor/EditorUI.cpp
     src/editor/BuildExporter.cpp
@@ -442,156 +442,156 @@ add_library(ne_editor STATIC
     src/editor/panels/ModelImporterPanel.cpp
     src/editor/panels/ProfilerPanel.cpp
 )
-target_link_libraries(ne_editor PUBLIC ne_engine)
-target_compile_options(ne_editor PRIVATE -Wall -Wextra)
+target_link_libraries(saida_editor PUBLIC saida_engine)
+target_compile_options(saida_editor PRIVATE -Wall -Wextra)
 
-if(NE_ENABLE_MCP)
-    target_sources(ne_editor PRIVATE
+if(SAIDA_ENABLE_MCP)
+    target_sources(saida_editor PRIVATE
         src/mcp/McpServer.cpp
         src/mcp/McpBridge.cpp
     )
-    target_compile_definitions(ne_editor PUBLIC NE_ENABLE_MCP)
+    target_compile_definitions(saida_editor PUBLIC SAIDA_ENABLE_MCP)
     if(WIN32)
-        target_link_libraries(ne_editor PUBLIC ws2_32)
+        target_link_libraries(saida_editor PUBLIC ws2_32)
     endif()
 endif()
 
 if (BUILD_TESTING)
-    add_executable(ne_core_tests tests/CoreTests.cpp)
-    ne_test_target(ne_core_tests)
-    target_include_directories(ne_core_tests PRIVATE src)
-    target_compile_options(ne_core_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_core_tests COMMAND $<TARGET_FILE:ne_core_tests>)
+    add_executable(saida_core_tests tests/CoreTests.cpp)
+    saida_test_target(saida_core_tests)
+    target_include_directories(saida_core_tests PRIVATE src)
+    target_compile_options(saida_core_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_core_tests COMMAND $<TARGET_FILE:saida_core_tests>)
 
-    add_executable(ne_scene_lifecycle_tests tests/SceneLifecycleTests.cpp)
-    ne_test_target(ne_scene_lifecycle_tests)
-    target_link_libraries(ne_scene_lifecycle_tests PRIVATE ne_engine)
-    target_compile_options(ne_scene_lifecycle_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_scene_lifecycle_tests COMMAND $<TARGET_FILE:ne_scene_lifecycle_tests>)
+    add_executable(saida_scene_lifecycle_tests tests/SceneLifecycleTests.cpp)
+    saida_test_target(saida_scene_lifecycle_tests)
+    target_link_libraries(saida_scene_lifecycle_tests PRIVATE saida_engine)
+    target_compile_options(saida_scene_lifecycle_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_scene_lifecycle_tests COMMAND $<TARGET_FILE:saida_scene_lifecycle_tests>)
 
-    add_executable(ne_reflection_tests tests/ReflectionTests.cpp)
-    ne_test_target(ne_reflection_tests)
-    target_link_libraries(ne_reflection_tests PRIVATE ne_engine)
-    target_compile_options(ne_reflection_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_reflection_tests COMMAND $<TARGET_FILE:ne_reflection_tests>)
+    add_executable(saida_reflection_tests tests/ReflectionTests.cpp)
+    saida_test_target(saida_reflection_tests)
+    target_link_libraries(saida_reflection_tests PRIVATE saida_engine)
+    target_compile_options(saida_reflection_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_reflection_tests COMMAND $<TARGET_FILE:saida_reflection_tests>)
 
-    add_executable(ne_particle_effect_tests tests/ParticleEffectTests.cpp)
-    ne_test_target(ne_particle_effect_tests)
-    target_link_libraries(ne_particle_effect_tests PRIVATE ne_engine)
-    target_compile_options(ne_particle_effect_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_particle_effect_tests COMMAND $<TARGET_FILE:ne_particle_effect_tests>)
+    add_executable(saida_particle_effect_tests tests/ParticleEffectTests.cpp)
+    saida_test_target(saida_particle_effect_tests)
+    target_link_libraries(saida_particle_effect_tests PRIVATE saida_engine)
+    target_compile_options(saida_particle_effect_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_particle_effect_tests COMMAND $<TARGET_FILE:saida_particle_effect_tests>)
 
-    add_executable(ne_signal_wiring_tests tests/SignalWiringTests.cpp)
-    ne_test_target(ne_signal_wiring_tests)
-    target_link_libraries(ne_signal_wiring_tests PRIVATE ne_engine)
-    target_compile_options(ne_signal_wiring_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_signal_wiring_tests COMMAND $<TARGET_FILE:ne_signal_wiring_tests>)
+    add_executable(saida_signal_wiring_tests tests/SignalWiringTests.cpp)
+    saida_test_target(saida_signal_wiring_tests)
+    target_link_libraries(saida_signal_wiring_tests PRIVATE saida_engine)
+    target_compile_options(saida_signal_wiring_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_signal_wiring_tests COMMAND $<TARGET_FILE:saida_signal_wiring_tests>)
 
-    add_executable(ne_js_signal_tests tests/JsSignalBindingTests.cpp)
-    ne_test_target(ne_js_signal_tests)
-    target_link_libraries(ne_js_signal_tests PRIVATE ne_engine)
-    target_compile_options(ne_js_signal_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_js_signal_tests COMMAND $<TARGET_FILE:ne_js_signal_tests>)
+    add_executable(saida_js_signal_tests tests/JsSignalBindingTests.cpp)
+    saida_test_target(saida_js_signal_tests)
+    target_link_libraries(saida_js_signal_tests PRIVATE saida_engine)
+    target_compile_options(saida_js_signal_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_js_signal_tests COMMAND $<TARGET_FILE:saida_js_signal_tests>)
 
-    add_executable(ne_gameplay_primitive_tests tests/GameplayPrimitiveTests.cpp)
-    ne_test_target(ne_gameplay_primitive_tests)
-    target_link_libraries(ne_gameplay_primitive_tests PRIVATE ne_engine)
-    target_compile_options(ne_gameplay_primitive_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_gameplay_primitive_tests COMMAND $<TARGET_FILE:ne_gameplay_primitive_tests>)
+    add_executable(saida_gameplay_primitive_tests tests/GameplayPrimitiveTests.cpp)
+    saida_test_target(saida_gameplay_primitive_tests)
+    target_link_libraries(saida_gameplay_primitive_tests PRIVATE saida_engine)
+    target_compile_options(saida_gameplay_primitive_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_gameplay_primitive_tests COMMAND $<TARGET_FILE:saida_gameplay_primitive_tests>)
 
-    add_executable(ne_scenario_system_tests tests/ScenarioSystemTests.cpp)
-    ne_test_target(ne_scenario_system_tests)
-    target_link_libraries(ne_scenario_system_tests PRIVATE ne_engine)
-    target_compile_options(ne_scenario_system_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_scenario_system_tests COMMAND $<TARGET_FILE:ne_scenario_system_tests>)
+    add_executable(saida_scenario_system_tests tests/ScenarioSystemTests.cpp)
+    saida_test_target(saida_scenario_system_tests)
+    target_link_libraries(saida_scenario_system_tests PRIVATE saida_engine)
+    target_compile_options(saida_scenario_system_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_scenario_system_tests COMMAND $<TARGET_FILE:saida_scenario_system_tests>)
 
-    add_executable(ne_format_version_tests tests/FormatVersionTests.cpp)
-    ne_test_target(ne_format_version_tests)
-    target_link_libraries(ne_format_version_tests PRIVATE ne_engine)
-    target_compile_options(ne_format_version_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_format_version_tests COMMAND $<TARGET_FILE:ne_format_version_tests>)
+    add_executable(saida_format_version_tests tests/FormatVersionTests.cpp)
+    saida_test_target(saida_format_version_tests)
+    target_link_libraries(saida_format_version_tests PRIVATE saida_engine)
+    target_compile_options(saida_format_version_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_format_version_tests COMMAND $<TARGET_FILE:saida_format_version_tests>)
 
-    add_executable(ne_physics_character_tests tests/PhysicsCharacterTest.cpp)
-    ne_test_target(ne_physics_character_tests)
-    target_link_libraries(ne_physics_character_tests PRIVATE ne_engine)
-    add_test(NAME ne_physics_character_tests COMMAND $<TARGET_FILE:ne_physics_character_tests>)
+    add_executable(saida_physics_character_tests tests/PhysicsCharacterTest.cpp)
+    saida_test_target(saida_physics_character_tests)
+    target_link_libraries(saida_physics_character_tests PRIVATE saida_engine)
+    add_test(NAME saida_physics_character_tests COMMAND $<TARGET_FILE:saida_physics_character_tests>)
 
-    add_executable(ne_collision_auto_tests tests/CollisionAutoShapeTest.cpp)
-    ne_test_target(ne_collision_auto_tests)
-    target_link_libraries(ne_collision_auto_tests PRIVATE ne_engine)
-    add_test(NAME ne_collision_auto_tests COMMAND $<TARGET_FILE:ne_collision_auto_tests>)
+    add_executable(saida_collision_auto_tests tests/CollisionAutoShapeTest.cpp)
+    saida_test_target(saida_collision_auto_tests)
+    target_link_libraries(saida_collision_auto_tests PRIVATE saida_engine)
+    add_test(NAME saida_collision_auto_tests COMMAND $<TARGET_FILE:saida_collision_auto_tests>)
 
-    add_executable(ne_editor_command_tests tests/EditorCommandTests.cpp)
-    ne_test_target(ne_editor_command_tests)
-    target_link_libraries(ne_editor_command_tests PRIVATE ne_editor)
-    target_compile_options(ne_editor_command_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_editor_command_tests COMMAND $<TARGET_FILE:ne_editor_command_tests>)
+    add_executable(saida_editor_command_tests tests/EditorCommandTests.cpp)
+    saida_test_target(saida_editor_command_tests)
+    target_link_libraries(saida_editor_command_tests PRIVATE saida_editor)
+    target_compile_options(saida_editor_command_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_editor_command_tests COMMAND $<TARGET_FILE:saida_editor_command_tests>)
 
-    add_executable(ne_editor_document_tests tests/EditorDocumentTests.cpp)
-    ne_test_target(ne_editor_document_tests)
-    target_link_libraries(ne_editor_document_tests PRIVATE ne_editor)
-    target_compile_options(ne_editor_document_tests PRIVATE -Wall -Wextra)
-    add_test(NAME ne_editor_document_tests COMMAND $<TARGET_FILE:ne_editor_document_tests>)
+    add_executable(saida_editor_document_tests tests/EditorDocumentTests.cpp)
+    saida_test_target(saida_editor_document_tests)
+    target_link_libraries(saida_editor_document_tests PRIVATE saida_editor)
+    target_compile_options(saida_editor_document_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_editor_document_tests COMMAND $<TARGET_FILE:saida_editor_document_tests>)
 
 endif()
 
 # ── Editor executable (the app the Hub launches) ────────────────────────────
 # Thin target: just the entry point, linking the editor. Launched directly it
 # opens an empty scene; the Hub passes a project via --project to load content.
-add_executable(NextEngine
+add_executable(SaidaEngine
     src/main.cpp
 )
-ne_app_target(NextEngine)
-target_link_libraries(NextEngine PRIVATE ne_editor)
-target_compile_options(NextEngine PRIVATE -Wall -Wextra)
-add_dependencies(NextEngine Shaders)
+saida_app_target(SaidaEngine)
+target_link_libraries(SaidaEngine PRIVATE saida_editor)
+target_compile_options(SaidaEngine PRIVATE -Wall -Wextra)
+add_dependencies(SaidaEngine Shaders)
 
 if (WIN32)
     # Copy glfw
-    add_custom_command(TARGET NextEngine POST_BUILD
+    add_custom_command(TARGET SaidaEngine POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:glfw>"
-        "$<TARGET_FILE_DIR:NextEngine>"
+        "$<TARGET_FILE_DIR:SaidaEngine>"
     )
 endif()
 
 # ── Standalone game runtime (export template) ───────────────────────────────
-# Editor-less player: links ne_engine only (no ImGui/editor). The editor's Build
-# step copies this exe next to the packaged game data; it reads game.ne at
+# Editor-less player: links saida_engine only (no ImGui/editor). The editor's Build
+# step copies this exe next to the packaged game data; it reads game.saida at
 # startup and runs the project's main scene. Built once with the engine.
-add_executable(NextEngineRuntime
+add_executable(SaidaEngineRuntime
     src/runtime/main.cpp
 )
-ne_app_target(NextEngineRuntime)
-target_link_libraries(NextEngineRuntime PRIVATE ne_engine)
-target_compile_options(NextEngineRuntime PRIVATE -Wall -Wextra)
-add_dependencies(NextEngineRuntime Shaders)
+saida_app_target(SaidaEngineRuntime)
+target_link_libraries(SaidaEngineRuntime PRIVATE saida_engine)
+target_compile_options(SaidaEngineRuntime PRIVATE -Wall -Wextra)
+add_dependencies(SaidaEngineRuntime Shaders)
 
 if (WIN32)
-    add_custom_command(TARGET NextEngineRuntime POST_BUILD
+    add_custom_command(TARGET SaidaEngineRuntime POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:glfw>"
-        "$<TARGET_FILE_DIR:NextEngineRuntime>"
+        "$<TARGET_FILE_DIR:SaidaEngineRuntime>"
     )
 endif()
 
 # Building the editor also builds the runtime template, so the Build button
-# always has a fresh NextEngineRuntime.exe to package.
-add_dependencies(NextEngine NextEngineRuntime)
+# always has a fresh SaidaEngineRuntime.exe to package.
+add_dependencies(SaidaEngine SaidaEngineRuntime)
 
 # ── Hub executable ──────────────────────────────────────────────────────────
-add_executable(NextEngineHub
+add_executable(SaidaEngineHub
     src/hub/main.cpp
     src/hub/Hub.cpp
 )
-ne_app_target(NextEngineHub)
-target_link_libraries(NextEngineHub PRIVATE ne_engine)
-target_compile_options(NextEngineHub PRIVATE -Wall -Wextra)
+saida_app_target(SaidaEngineHub)
+target_link_libraries(SaidaEngineHub PRIVATE saida_engine)
+target_compile_options(SaidaEngineHub PRIVATE -Wall -Wextra)
 
 if (WIN32)
-    add_custom_command(TARGET NextEngineHub POST_BUILD
+    add_custom_command(TARGET SaidaEngineHub POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:glfw>"
-        "$<TARGET_FILE_DIR:NextEngineHub>"
+        "$<TARGET_FILE_DIR:SaidaEngineHub>"
     )
 endif()

@@ -3,7 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <openxr/openxr.h>
 
-namespace ne::xr {
+namespace saida::xr {
 
 // Throw a std::runtime_error (with the XrResult name) when `r` is a failure.
 void check(XrResult r, const char* what);
@@ -36,4 +36,4 @@ private:
     bool handTrackingSupported_ = false;
 };
 
-} // namespace ne::xr
+} // namespace saida::xr

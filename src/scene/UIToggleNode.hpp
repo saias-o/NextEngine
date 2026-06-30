@@ -3,7 +3,7 @@
 #include "scene/UIInteractableNode.hpp"
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 class UIToggleNode : public UIInteractableNode {
 public:
@@ -49,4 +49,4 @@ private:
     glm::vec4 offColor_ = glm::vec4(0.8f, 0.2f, 0.2f, 1.0f); // Rouge par défaut
 };
 
-} // namespace ne
+} // namespace saida

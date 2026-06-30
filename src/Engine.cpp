@@ -46,7 +46,7 @@
 #include "scene/animation/Animator.hpp"
 #include "scripting/ScriptBehaviour.hpp"
 #include "ui/RmlUiRuntime.hpp"
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
 #include "xr/XrInstance.hpp"
 #include "xr/XrSession.hpp"
 #include "xr/XrVulkanBinding.hpp"
@@ -74,7 +74,7 @@ extern "C" __declspec(dllimport) unsigned int __stdcall timeEndPeriod(unsigned i
 #endif
 #endif
 
-namespace ne {
+namespace saida {
 
 namespace {
 constexpr uint32_t kWidth = 1600;
@@ -121,13 +121,13 @@ public:
 Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool requireXr) {
     // The XR process currently has no desktop mirror swapchain. Keep its host
     // GLFW window hidden instead of presenting a misleading unrendered surface.
-    window_ = std::make_unique<Window>(kWidth, kHeight, "NextEngine", !requireXr);
+    window_ = std::make_unique<Window>(kWidth, kHeight, "SaidaEngine", !requireXr);
     Input::bind(window_.get());
 
     // Process roles are explicit: the editor always owns a desktop Vulkan/ImGui
     // path, while the --xr preview process requires OpenXR from startup. A Vulkan
     // device cannot be converted from one presentation owner to the other later.
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
     if (requireXr) {
         try {
             xrInstance_ = std::make_unique<xr::Instance>();
@@ -172,8 +172,8 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     BehaviourRegistry::instance().registerType<Animator>("Animator");
     BehaviourRegistry::instance().registerType<LODGroupBehaviour>("LOD Group");
     BehaviourRegistry::instance().registerType<ScriptBehaviour>("ScriptBehaviour");
-#ifdef NE_ENABLE_XR
-    ne::xr::registerTypes();
+#ifdef SAIDA_ENABLE_XR
+    saida::xr::registerTypes();
 #endif
 
     // Register built-in nodes
@@ -212,7 +212,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
         renderer_ = std::make_unique<Renderer>(*device_, *swapchain_, *window_,
             *resources_, *imgui_);
     }
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
     else {
         renderer_ = std::make_unique<Renderer>(*device_, *window_, *resources_,
             xrSession_->eyeExtent(), static_cast<VkFormat>(xrSession_->colorFormat()),
@@ -226,7 +226,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     camera_.pitch = -15.0f;
 }
 
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
 bool Engine::launchExternalPreviewIfNeeded() {
     bool xrScene = false;
     scene_->traverse([&](Node& node, const glm::mat4&) {
@@ -235,19 +235,19 @@ bool Engine::launchExternalPreviewIfNeeded() {
     if (!xrScene) return false;
 
     if (!project_->isLoaded()) {
-        Log::error("XR Preview requires a loaded .neproj project");
+        Log::error("XR Preview requires a loaded .saidaproj project");
         return true;
     }
 
     const std::filesystem::path scenePath =
-        std::filesystem::path(NE_BINARY_DIR) / "xr_preview.scene";
+        std::filesystem::path(SAIDA_BINARY_DIR) / "xr_preview.scene";
     if (!SceneSerializer::saveToFile(*scene_, *resources_, scenePath.string())) {
         Log::error("XR Preview could not serialize the current scene");
         return true;
     }
 
     const std::filesystem::path executable =
-        std::filesystem::path(NE_RUNTIME_DIR) / "NextEngine.exe";
+        std::filesystem::path(SAIDA_RUNTIME_DIR) / "SaidaEngine.exe";
     if (!std::filesystem::exists(executable)) {
         Log::error("XR Preview executable not found: ", executable.string());
         return true;
@@ -257,7 +257,7 @@ bool Engine::launchExternalPreviewIfNeeded() {
     // spaces. Keep the child command line path-free and transfer launch data via
     // a fixed manifest next to the executable.
     const std::filesystem::path manifestPath =
-        std::filesystem::path(NE_BINARY_DIR) / "xr_preview.launch";
+        std::filesystem::path(SAIDA_BINARY_DIR) / "xr_preview.launch";
     {
         std::ofstream manifest(manifestPath, std::ios::trunc);
         if (!manifest) {
@@ -291,7 +291,7 @@ bool Engine::launchExternalPreviewIfNeeded() {
 #endif  // _WIN32
     return true;
 }
-#endif  // NE_ENABLE_XR
+#endif  // SAIDA_ENABLE_XR
 
 Engine::~Engine() {
     unmountWorld();  // tear down the World (and its physics) before subsystems
@@ -349,7 +349,7 @@ void Engine::unmountWorld() {
 }
 
 void Engine::run() {
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
     if (xrMode_) { runXr(); return; }
 #endif
     runDesktop();
@@ -374,12 +374,12 @@ void Engine::runDesktop() {
     Profiler::instance().setThreadName("Main");
     double last = glfwGetTime();
     while (!window_->shouldClose()) {
-        NE_PROFILE_FRAME_BEGIN();
+        SAIDA_PROFILE_FRAME_BEGIN();
         {
-        NE_PROFILE_SCOPE("Frame");
+        SAIDA_PROFILE_SCOPE("Frame");
 
         {
-            NE_PROFILE_SCOPE("Window/PollEvents");
+            SAIDA_PROFILE_SCOPE("Window/PollEvents");
             window_->pollEvents();
         }
 
@@ -408,7 +408,7 @@ void Engine::runDesktop() {
             uiViewportSize = renderViewportSize_;
         }
         {
-            NE_PROFILE_SCOPE("UI/Interaction");
+            SAIDA_PROFILE_SCOPE("UI/Interaction");
             if (uiInteraction_.update(*activeScene, camera_, uiMouse, uiViewportSize,
                                       isLeftDown, isLeftPressed, isLeftReleased)) {
                 Input::consumeMouse();
@@ -416,11 +416,11 @@ void Engine::runDesktop() {
         }
 
         {
-            NE_PROFILE_SCOPE("ImGui/BeginFrame");
+            SAIDA_PROFILE_SCOPE("ImGui/BeginFrame");
             imgui_->beginFrame();
         }
         if (onFrame_) {
-            NE_PROFILE_SCOPE("Editor/OnFrame");
+            SAIDA_PROFILE_SCOPE("Editor/OnFrame");
             onFrame_(realDt);              // application: its input + UI
         }
 
@@ -429,7 +429,7 @@ void Engine::runDesktop() {
         // callback boundary.
         activeScene = sceneOverride_ ? sceneOverride_ : scene_.get();
         {
-            NE_PROFILE_SCOPE("Scene/Update");
+            SAIDA_PROFILE_SCOPE("Scene/Update");
             activeScene->update(Time::delta());     // behaviours: scaled time (pausable)
         }
 
@@ -437,7 +437,7 @@ void Engine::runDesktop() {
         // The director picks the highest-priority active CameraNode and blends; with
         // no camera it returns false and the editor camera stays in control.
         if (sceneTree_->mounted()) {
-            NE_PROFILE_SCOPE("Scene/CameraDirector");
+            SAIDA_PROFILE_SCOPE("Scene/CameraDirector");
             cameraDirector_.update(*activeScene, camera_, Time::delta());
         }
 
@@ -445,18 +445,18 @@ void Engine::runDesktop() {
         // done — never mutate the tree mid-update. The World object identity is
         // stable across scene swaps, so sceneOverride_ stays valid.
         if (sceneTree_->mounted()) {
-            NE_PROFILE_SCOPE("SceneTree/Deferred");
+            SAIDA_PROFILE_SCOPE("SceneTree/Deferred");
             sceneTree_->applyDeferred();
             sceneTree_->tickTimers(Time::delta());  // scaled dt → frozen on pause
             if (sceneTree_->quitRequested()) window_->close();
         }
 
         {
-            NE_PROFILE_SCOPE("Audio/Update");
+            SAIDA_PROFILE_SCOPE("Audio/Update");
             AudioManager::get().update();      // update audio spatialization
         }
         {
-            NE_PROFILE_SCOPE("ImGui/EndFrame");
+            SAIDA_PROFILE_SCOPE("ImGui/EndFrame");
             imgui_->endFrame();  // finalize draw data even if the frame is skipped (resize)
         }
 
@@ -464,22 +464,22 @@ void Engine::runDesktop() {
             MemoryProfiler::publish(*device_);
         }
         {
-            NE_PROFILE_SCOPE("Renderer/DrawFrame");
+            SAIDA_PROFILE_SCOPE("Renderer/DrawFrame");
             renderer_->drawFrame(*activeScene, camera_, project_.get());
         }
 
         const int maxFps = project_ ? project_->maxFps() : Project::kDefaultMaxFps;
         if (maxFps > 0) {
-            NE_PROFILE_SCOPE("Frame/Throttle");
+            SAIDA_PROFILE_SCOPE("Frame/Throttle");
             sleepUntil(frameStart + 1.0 / static_cast<double>(maxFps));
         }
         }
-        NE_PROFILE_FRAME_END();
+        SAIDA_PROFILE_FRAME_END();
     }
     vkDeviceWaitIdle(device_->device());
 }
 
-#ifdef NE_ENABLE_XR
+#ifdef SAIDA_ENABLE_XR
 void Engine::runXr() {
     // XR loop: paced by xrWaitFrame (inside renderFrame), not GLFW. The window
     // still exists (mirror/host) so we keep pumping it to stay responsive.
@@ -558,6 +558,6 @@ void Engine::runXr() {
     }
     vkDeviceWaitIdle(device_->device());
 }
-#endif  // NE_ENABLE_XR
+#endif  // SAIDA_ENABLE_XR
 
-} // namespace ne
+} // namespace saida

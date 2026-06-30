@@ -11,7 +11,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-namespace ne {
+namespace saida {
 
 // Note the quaternion component order differs: glm::quat is (w,x,y,z), Jolt's
 // Quat ctor is (x,y,z,w).
@@ -34,4 +34,4 @@ static constexpr JPH::BroadPhaseLayer MOVING(1);
 static constexpr JPH::uint NUM_LAYERS = 2;
 } // namespace BroadPhaseLayers
 
-} // namespace ne
+} // namespace saida

@@ -3,7 +3,7 @@
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
 
-namespace ne {
+namespace saida {
 
 void SceneDocument::bind(Scene* scene, ResourceManager* resources) {
     scene_ = scene;
@@ -29,4 +29,4 @@ void SceneDocument::markLoaded() {
     clearSelection();
 }
 
-} // namespace ne
+} // namespace saida

@@ -2,7 +2,7 @@
 
 #include "scene/animation/Pose.hpp"
 
-namespace ne {
+namespace saida {
 
 // AnimNode is the base class for any node in the animation graph (FSM, Blend Tree, etc.).
 // It follows a Data-Oriented/functional approach where evaluation outputs a LocalPose.
@@ -18,4 +18,4 @@ public:
     virtual void evaluate(const LocalPose& bindPose, LocalPose& outPose) const = 0;
 };
 
-} // namespace ne
+} // namespace saida

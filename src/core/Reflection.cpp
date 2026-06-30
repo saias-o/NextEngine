@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace ne::reflect {
+namespace saida::reflect {
 
 TypeRegistry& TypeRegistry::instance() {
     static TypeRegistry registry;
@@ -83,4 +83,4 @@ json TypeRegistry::manifestFor(const std::string& typeName) const {
     return json(nullptr);
 }
 
-} // namespace ne::reflect
+} // namespace saida::reflect

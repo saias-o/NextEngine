@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 // Owns the GLFW window and reports framebuffer resize events.
 class Window {
@@ -63,4 +63,4 @@ private:
     bool cursorCaptured_ = false;
 };
 
-} // namespace ne
+} // namespace saida

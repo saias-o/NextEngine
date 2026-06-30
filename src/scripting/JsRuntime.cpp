@@ -11,7 +11,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace ne {
+namespace saida {
 
 namespace {
 constexpr size_t kJsMemoryLimit = 64ull * 1024ull * 1024ull;
@@ -114,4 +114,4 @@ void JsRuntime::endModuleDependencyCapture() {
     gModuleDependencyCapture = nullptr;
 }
 
-} // namespace ne
+} // namespace saida

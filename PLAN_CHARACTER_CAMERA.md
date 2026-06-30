@@ -5,13 +5,13 @@
 > Respecte le contrat moteur : **nodes + behaviours + signaux + services**, pas
 > de manager de gameplay, pas de singleton gameplay.
 
-## Inspiration Cinemachine 3 → naming NextEngine
+## Inspiration Cinemachine 3 → naming SaidaEngine
 
 Cinemachine 3 a simplifié le vocabulaire de CM2. On reprend ses concepts avec un
 naming **clair et court**, aligné sur les conventions du moteur (`MeshNode`,
 `LightNode`, `…Behaviour`).
 
-| Concept Cinemachine 3            | NextEngine                  | Rôle |
+| Concept Cinemachine 3            | SaidaEngine                  | Rôle |
 |----------------------------------|-----------------------------|------|
 | `CinemachineCamera` (la vcam)    | **`CameraNode`**            | Une caméra placée dans la scène (pose + lens + priorité). |
 | `CinemachineBrain`               | **`CameraDirector`**        | Choisit la caméra active (priorité) et **blende** entre les caméras. |

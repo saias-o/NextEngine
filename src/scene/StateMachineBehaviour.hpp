@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class Blackboard;
 
@@ -59,4 +59,4 @@ private:
     bool started_ = false;
 };
 
-} // namespace ne
+} // namespace saida

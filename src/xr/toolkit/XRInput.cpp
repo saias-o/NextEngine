@@ -1,6 +1,6 @@
 #include "xr/toolkit/XRInput.hpp"
 
-namespace ne {
+namespace saida {
 
 namespace {
 // Double-buffered hand state: `current` is this frame, `previous` last frame.
@@ -72,4 +72,4 @@ void XRInput::clearHand(XRHand h) {
 
 void XRInput::submitHead(const XRPose& pose) { g_head = pose; }
 
-} // namespace ne
+} // namespace saida

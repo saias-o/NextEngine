@@ -6,7 +6,7 @@
 #include <cmath>
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 XROrigin::XROrigin() : Node("XROrigin") {
     addToGroup(kXROriginGroup);
@@ -42,4 +42,4 @@ void XROrigin::deserialize(const nlohmann::json& j, ResourceManager& resources) 
     if (j.contains("yawDegrees")) yawDegrees = j["yawDegrees"].get<float>();
 }
 
-} // namespace ne
+} // namespace saida

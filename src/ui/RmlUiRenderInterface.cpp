@@ -11,7 +11,7 @@
 #include <cstring>
 #include <filesystem>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -287,4 +287,4 @@ Rml::TextureHandle RmlUiRenderInterface::addTexture(Rml::Vector2i size, std::vec
     return handle;
 }
 
-} // namespace ne
+} // namespace saida

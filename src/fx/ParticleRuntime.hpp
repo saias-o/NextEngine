@@ -8,13 +8,13 @@
 #include <memory>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class Buffer;
 class ComputePipeline;
 class VulkanDevice;
 
-// GPU backing store for NEFX. The CPU uploads compact emitter records only; the
+// GPU backing store for SaidaFX. The CPU uploads compact emitter records only; the
 // GPU keeps particle state alive across frames, compacts survivors, recycles dead
 // slots, and writes the indirect draw command consumed by the renderer.
 class ParticleRuntime {
@@ -125,4 +125,4 @@ private:
     std::unique_ptr<ComputePipeline> finalizePipeline_;
 };
 
-} // namespace ne
+} // namespace saida

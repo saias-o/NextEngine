@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class Node;
 
@@ -32,4 +32,4 @@ private:
     std::vector<Connection> connections_;
 };
 
-} // namespace ne
+} // namespace saida

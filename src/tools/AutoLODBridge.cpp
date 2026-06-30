@@ -8,17 +8,17 @@
 #include <cctype>
 #include <filesystem>
 
-namespace ne {
+namespace saida {
 
 namespace fs = std::filesystem;
 
 std::string AutoLODBridge::exePath() {
-#ifdef NE_AUTOLOD_EXE
-    return NE_AUTOLOD_EXE;
+#ifdef SAIDA_AUTOLOD_EXE
+    return SAIDA_AUTOLOD_EXE;
 #else
-    const fs::path candidate = fs::path(NE_PROJECT_ROOT) / "build" / "autolod" / "autolod.exe";
+    const fs::path candidate = fs::path(SAIDA_PROJECT_ROOT) / "build" / "autolod" / "autolod.exe";
     if (fs::exists(candidate)) return candidate.string();
-    const fs::path alt = fs::path(NE_PROJECT_ROOT) / "autolod" / "build" / "autolod.exe";
+    const fs::path alt = fs::path(SAIDA_PROJECT_ROOT) / "autolod" / "build" / "autolod.exe";
     if (fs::exists(alt)) return alt.string();
     return {};
 #endif
@@ -78,4 +78,4 @@ std::string AutoLODBridge::resolveLoadPath(const std::string& path, bool autoGen
     return path;
 }
 
-} // namespace ne
+} // namespace saida

@@ -3,7 +3,7 @@
 #include "editor/EditorUI.hpp"
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class Scene;
 
@@ -12,4 +12,4 @@ public:
     void draw(EditorUI* editor, Scene* previewScene, const std::string& modelPath);
 };
 
-} // namespace ne
+} // namespace saida

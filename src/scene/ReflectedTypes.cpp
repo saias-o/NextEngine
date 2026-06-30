@@ -5,7 +5,7 @@
 #include "scene/BehaviourRegistry.hpp"
 #include "scene/NodeRegistry.hpp"
 
-// Reflected types (each declares a static describe() and the NE_REFLECT_* macro).
+// Reflected types (each declares a static describe() and the SAIDA_REFLECT_* macro).
 #include "scene/Blackboard.hpp"
 #include "scene/CameraFollowBehaviour.hpp"
 #include "scene/CharacterBehaviour.hpp"
@@ -22,9 +22,9 @@
 #include "generated/VehicleBehaviour.hpp"
 #include "generated/NpcWanderBehaviour.hpp"
 #include "generated/GunBehaviour.hpp"
-// <<NE_MCP_INCLUDES>>  (write_cpp_behaviour inserts generated #includes above this line)
+// <<SAIDA_MCP_INCLUDES>>  (write_cpp_behaviour inserts generated #includes above this line)
 
-namespace ne {
+namespace saida {
 namespace {
 
 // Copy the reflected descriptor into the global registry under its public name,
@@ -70,7 +70,7 @@ void registerReflectedTypes() {
     registerNode<LightNode>();
     registerNode<WaterNode>();
     registerNode<ParticleSystemNode>();
-    // <<NE_MCP_REGISTER>>  (write_cpp_behaviour inserts registerBehaviour<T>() calls above this line)
+    // <<SAIDA_MCP_REGISTER>>  (write_cpp_behaviour inserts registerBehaviour<T>() calls above this line)
 }
 
-} // namespace ne
+} // namespace saida

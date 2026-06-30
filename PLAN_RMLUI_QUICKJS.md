@@ -1,6 +1,6 @@
 # Plan : RmlUi + QuickJS — UI HTML/CSS/JS + Scripting Global
 
-> **Contexte** : Le moteur NextEngine utilise actuellement **Ultralight** (propriétaire, closed-source, ~18 Mo)
+> **Contexte** : Le moteur SaidaEngine utilise actuellement **Ultralight** (propriétaire, closed-source, ~18 Mo)
 > pour rendre du HTML/CSS/JS dans des textures Vulkan. Cela contredit la philosophie du moteur
 > (libre, open-source, léger, LLM-native). Par ailleurs, l'Étape 8b prévoyait Lua pour le scripting
 > de gameplay — on le remplace par **JavaScript via QuickJS**, langage bien plus LLM-friendly,
@@ -77,7 +77,7 @@
   set(RMLUI_LUA_BINDINGS OFF CACHE BOOL "" FORCE)       # On utilise QuickJS, pas Lua
   set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)         # Lib statique
   add_subdirectory(third_party/rmlui)
-  target_link_libraries(ne_engine PUBLIC rmlui)
+  target_link_libraries(saida_engine PUBLIC rmlui)
   ```
 - **Dépendance freetype** : RmlUi a besoin de **freetype** pour le rendu texte.
   - Vendre freetype dans `third_party/freetype/`
@@ -124,7 +124,7 @@ struct JSRuntime;
 struct JSContext;
 typedef struct JSValue JSValue; // ou uint64_t selon la version
 
-namespace ne {
+namespace saida {
 
 class Node;
 class Behaviour;
@@ -163,7 +163,7 @@ private:
     std::unordered_map<JSContext*, Node*> contextNodes_;  // ctx → node associé
 };
 
-} // namespace ne
+} // namespace saida
 ```
 
 ### 1.2 — Implémentation
@@ -177,7 +177,7 @@ private:
 #include <fstream>
 #include <sstream>
 
-namespace ne {
+namespace saida {
 
 JSEngine& JSEngine::get() {
     static JSEngine instance;
@@ -263,7 +263,7 @@ Node* JSEngine::getContextNode(JSContext* ctx) {
     return it != contextNodes_.end() ? it->second : nullptr;
 }
 
-} // namespace ne
+} // namespace saida
 ```
 
 ### 1.3 — Intégration dans Engine::run
@@ -293,25 +293,25 @@ Ils créent un objet global `ne` avec des sous-objets :
 
 ```javascript
 // Ce que voit un script JS :
-ne.log("hello");                              // → ne::Log::info()
-ne.warn("oops");                              // → ne::Log::warn()
-ne.error("bad");                              // → ne::Log::error()
+ne.log("hello");                              // → saida::Log::info()
+ne.warn("oops");                              // → saida::Log::warn()
+ne.error("bad");                              // → saida::Log::error()
 
 // --- Time ---
-ne.time.delta                                 // → ne::Time::delta()
-ne.time.elapsed                               // → ne::Time::elapsed()
-ne.time.scale                                 // → ne::Time::scale()  (getter)
-ne.time.scale = 0.5                           // → ne::Time::setScale() (setter)
+ne.time.delta                                 // → saida::Time::delta()
+ne.time.elapsed                               // → saida::Time::elapsed()
+ne.time.scale                                 // → saida::Time::scale()  (getter)
+ne.time.scale = 0.5                           // → saida::Time::setScale() (setter)
 
 // --- Input ---
-ne.input.isActionHeld("jump")                 // → ne::Input::isActionHeld()
-ne.input.isActionJustPressed("fire")          // → ne::Input::isActionJustPressed()
-ne.input.getAxis("move_left", "move_right")   // → ne::Input::getAxis()
-ne.input.getVector("left","right","down","up") // → ne::Input::getVector()  [retourne {x,y}]
-ne.input.mouseDelta                           // → ne::Input::mouseDelta() [retourne {x,y}]
-ne.input.mousePosition                        // → ne::Input::mousePosition()
-ne.input.isKeyDown("Space")                   // → ne::Input::isKeyDown(KeyCode::Space)
-ne.input.bindKey("jump", "Space")             // → ne::Input::bindKey()
+ne.input.isActionHeld("jump")                 // → saida::Input::isActionHeld()
+ne.input.isActionJustPressed("fire")          // → saida::Input::isActionJustPressed()
+ne.input.getAxis("move_left", "move_right")   // → saida::Input::getAxis()
+ne.input.getVector("left","right","down","up") // → saida::Input::getVector()  [retourne {x,y}]
+ne.input.mouseDelta                           // → saida::Input::mouseDelta() [retourne {x,y}]
+ne.input.mousePosition                        // → saida::Input::mousePosition()
+ne.input.isKeyDown("Space")                   // → saida::Input::isKeyDown(KeyCode::Space)
+ne.input.bindKey("jump", "Space")             // → saida::Input::bindKey()
 
 // --- Node (self) — disponible dans un ScriptBehaviour ---
 self.name                                     // → node()->name()
@@ -367,7 +367,7 @@ self.emit("custom_signal", data)                      // → émet un signal cus
 #include "audio/AudioManager.hpp"
 #include <quickjs.h>
 
-namespace ne {
+namespace saida {
 
 // ========================================================================
 // Helpers pour convertir glm <-> JS
@@ -565,7 +565,7 @@ void installJSBindings(JSContext* ctx) {
     JS_FreeValue(ctx, global);
 }
 
-} // namespace ne
+} // namespace saida
 ```
 
 ### 2.3 — Bindings à implémenter (liste complète)
@@ -645,7 +645,7 @@ délègue `onReady`, `onUpdate`, `onDestroy` etc. à des fonctions JS.
 struct JSContext;
 typedef uint64_t JSValue;  // ou la bonne typedef selon quickjs-ng
 
-namespace ne {
+namespace saida {
 
 // A Behaviour whose logic lives in a .js file. Delegates onReady/onUpdate/etc.
 // to JS functions defined in the script. Hot-reloadable: when the file changes,
@@ -704,7 +704,7 @@ private:
     bool contextReady_ = false;
 };
 
-} // namespace ne
+} // namespace saida
 ```
 
 ### 3.2 — Implémentation
@@ -720,7 +720,7 @@ private:
 #include <quickjs.h>
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 ScriptBehaviour::~ScriptBehaviour() {
     teardownContext();
@@ -840,7 +840,7 @@ void ScriptBehaviour::onDrawInspector() {
     // (l'éditeur appelle ça pour l'inspecteur)
 }
 
-} // namespace ne
+} // namespace saida
 ```
 
 ### 3.3 — Enregistrement dans le BehaviourRegistry
@@ -940,7 +940,7 @@ et tu les rends via Vulkan.
 #include <memory>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Buffer;
@@ -1017,7 +1017,7 @@ private:
     std::unique_ptr<Texture> whiteTexture_;
 };
 
-} // namespace ne
+} // namespace saida
 ```
 
 **Points clés d'implémentation** :
@@ -1043,11 +1043,11 @@ S'en inspirer fortement. Les shaders `shaders/ui.vert` et `shaders/ui.frag` sont
 ```cpp
 class RmlSystemInterface : public Rml::SystemInterface {
 public:
-    double GetElapsedTime() override { return (double)ne::Time::elapsed(); }
+    double GetElapsedTime() override { return (double)saida::Time::elapsed(); }
     bool LogMessage(Rml::Log::Type type, const Rml::String& message) override {
-        if (type >= Rml::Log::LT_ERROR) ne::Log::error("[RmlUi] {}", message);
-        else if (type >= Rml::Log::LT_WARNING) ne::Log::warn("[RmlUi] {}", message);
-        else ne::Log::info("[RmlUi] {}", message);
+        if (type >= Rml::Log::LT_ERROR) saida::Log::error("[RmlUi] {}", message);
+        else if (type >= Rml::Log::LT_WARNING) saida::Log::warn("[RmlUi] {}", message);
+        else saida::Log::info("[RmlUi] {}", message);
         return true;
     }
 };
@@ -1135,7 +1135,7 @@ Le `WebCanvasNode` passe d'Ultralight à RmlUi + QuickJS. L'API publique reste s
 namespace Rml { class Context; class ElementDocument; }
 struct JSContext;
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Texture;
@@ -1210,7 +1210,7 @@ private:
     std::vector<std::string> startupScripts_;
 };
 
-} // namespace ne
+} // namespace saida
 ```
 
 ### 5.2 — Rendu ScreenSpace vs WorldSpace
@@ -1369,8 +1369,8 @@ set(SCRIPTING_SOURCES
     src/scripting/ScriptBehaviour.cpp
     src/scripting/FileWatcher.cpp
 )
-# Ajouter au target ne_engine
-target_sources(ne_engine PRIVATE ${SCRIPTING_SOURCES})
+# Ajouter au target saida_engine
+target_sources(saida_engine PRIVATE ${SCRIPTING_SOURCES})
 
 # UI RmlUi
 set(UI_RMLUI_SOURCES
@@ -1380,9 +1380,9 @@ set(UI_RMLUI_SOURCES
     src/ui/RmlJSBridge.cpp
     src/ui/UIInteractionSystem.cpp
 )
-target_sources(ne_engine PRIVATE ${UI_RMLUI_SOURCES})
+target_sources(saida_engine PRIVATE ${UI_RMLUI_SOURCES})
 
-target_link_libraries(ne_engine PUBLIC rmlui quickjs freetype)
+target_link_libraries(saida_engine PUBLIC rmlui quickjs freetype)
 ```
 
 ---

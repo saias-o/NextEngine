@@ -8,7 +8,7 @@
 
 #include <algorithm>
 
-namespace ne {
+namespace saida {
 
 void DebugLinesFeature::createPipelines(const RenderContext& ctx) {
     if (ctx.stereo()) return;  // editor-only aid; not drawn in XR
@@ -66,4 +66,4 @@ void DebugLinesFeature::record(const FrameContext& fc) {
     vkCmdDraw(fc.cmd, count, 1, 0, 0);
 }
 
-} // namespace ne
+} // namespace saida

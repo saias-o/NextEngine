@@ -5,7 +5,7 @@
 
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class XRController;
 
@@ -38,4 +38,4 @@ private:
     std::vector<XRController*> touchers_;  // controllers currently inside
 };
 
-} // namespace ne
+} // namespace saida

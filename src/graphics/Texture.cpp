@@ -11,7 +11,7 @@
 
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -89,7 +89,7 @@ uint64_t mipChainBytes(uint32_t width, uint32_t height, uint32_t bytesPerPixel, 
 } // namespace
 
 Texture::Texture(VulkanDevice& device, const std::string& path, bool srgb) : device_(device) {
-    NE_PROFILE_SCOPE("Resource/LoadTextureFile");
+    SAIDA_PROFILE_SCOPE("Resource/LoadTextureFile");
     int texWidth, texHeight, texChannels;
     bool isHdr = stbi_is_hdr(path.c_str());
     VkFormat format;
@@ -154,7 +154,7 @@ Texture::Texture(VulkanDevice& device, const std::string& path, bool srgb) : dev
 
 Texture::Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, uint32_t height, VkFormat format, bool genMipmaps)
     : device_(device), width_(width), height_(height) {
-    NE_PROFILE_SCOPE("Resource/CreateMemoryTexture");
+    SAIDA_PROFILE_SCOPE("Resource/CreateMemoryTexture");
     mipLevels_ = 1; 
     if (genMipmaps && (width > 1 || height > 1)) {
         mipLevels_ = static_cast<uint32_t>(std::floor(std::log2(std::max(width_, height_)))) + 1;
@@ -326,7 +326,7 @@ void Texture::generateMipmaps() {
 }
 
 void Texture::updatePixels(const uint8_t* pixels, size_t size) {
-    NE_PROFILE_SCOPE("Texture/UpdatePixels");
+    SAIDA_PROFILE_SCOPE("Texture/UpdatePixels");
     if (size != static_cast<size_t>(width_ * height_ * 4)) {
         throw std::runtime_error("updatePixels size mismatch");
     }
@@ -348,7 +348,7 @@ void Texture::updatePixels(const uint8_t* pixels, size_t size) {
 }
 
 void Texture::updatePixelsAsync(VkCommandBuffer cmd, Buffer& stagingBuffer, uint32_t width, uint32_t height) {
-    NE_PROFILE_SCOPE("Texture/UpdatePixelsAsync");
+    SAIDA_PROFILE_SCOPE("Texture/UpdatePixelsAsync");
     if (width != width_ || height != height_) {
         throw std::runtime_error("updatePixelsAsync size mismatch");
     }
@@ -397,4 +397,4 @@ void Texture::updatePixelsAsync(VkCommandBuffer cmd, Buffer& stagingBuffer, uint
                          0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-} // namespace ne
+} // namespace saida

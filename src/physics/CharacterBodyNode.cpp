@@ -8,7 +8,7 @@
 
 #include <nlohmann/json.hpp>
 
-namespace ne {
+namespace saida {
 
 CharacterBodyNode::CharacterBodyNode() : CollisionObjectNode("CharacterBody") {}
 
@@ -90,4 +90,4 @@ void CharacterBodyNode::deserialize(const nlohmann::json& j, ResourceManager& re
     if (j.contains("maxSlopeAngle")) maxSlopeAngle = j["maxSlopeAngle"].get<float>();
 }
 
-} // namespace ne
+} // namespace saida

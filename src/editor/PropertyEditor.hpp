@@ -13,7 +13,7 @@
 
 #include <imgui.h>
 
-namespace ne {
+namespace saida {
 
 // Inspector helper that turns live ImGui edits into one undoable command.
 // Commands re-resolve nodes by id, so they survive scene reconstruction.
@@ -163,4 +163,4 @@ private:
     Node* node_;
 };
 
-} // namespace ne
+} // namespace saida

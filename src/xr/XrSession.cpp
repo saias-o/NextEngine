@@ -14,7 +14,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace ne::xr {
+namespace saida::xr {
 
 Session::Session(Instance& instance, VulkanDevice& device)
     : instance_(instance), device_(device) {
@@ -26,7 +26,7 @@ Session::Session(Instance& instance, VulkanDevice& device)
     colorFormat_ = chooseColorFormat();
     createSwapchains();
     createCommandResources();
-    actions_ = std::make_unique<Actions>(instance_, session_);  // feeds ne::XRInput
+    actions_ = std::make_unique<Actions>(instance_, session_);  // feeds saida::XRInput
     if (instance_.handTrackingSupported()) {
         try {
             handTracking_ = std::make_unique<HandTracking>(instance_, session_);
@@ -386,4 +386,4 @@ void Session::renderFrame(const RenderFrameFn& render) {
     check(xrEndFrame(session_, &endInfo), "xrEndFrame");
 }
 
-} // namespace ne::xr
+} // namespace saida::xr

@@ -12,7 +12,7 @@
 // (VulkanDevice::capabilities()). They keep the upcoming async-compute GI passes
 // readable instead of re-rolling barrier boilerplate everywhere.
 
-namespace ne {
+namespace saida {
 
 // Build a synchronization2 image barrier (does not record it).
 inline VkImageMemoryBarrier2 imageBarrier2(
@@ -121,4 +121,4 @@ private:
     VkSemaphore handle_ = VK_NULL_HANDLE;
 };
 
-} // namespace ne
+} // namespace saida

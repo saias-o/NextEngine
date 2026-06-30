@@ -32,7 +32,7 @@
 #include <cctype>
 #include <algorithm>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -794,4 +794,4 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
     }
 }
 
-} // namespace ne
+} // namespace saida

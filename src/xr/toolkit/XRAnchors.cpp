@@ -1,6 +1,6 @@
 #include "xr/toolkit/XRAnchors.hpp"
 
-namespace ne {
+namespace saida {
 
 namespace {
 XRAnchorBackend* g_backend = nullptr;
@@ -21,4 +21,4 @@ void XRAnchors::destroy(uint64_t handle) {
     if (g_backend && handle) g_backend->destroy(handle);
 }
 
-} // namespace ne
+} // namespace saida

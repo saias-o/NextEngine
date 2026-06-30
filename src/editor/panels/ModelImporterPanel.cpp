@@ -8,7 +8,7 @@
 
 #include <imgui.h>
 
-namespace ne {
+namespace saida {
 
 void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::string& modelPath) {
     if (!editor->showModelImporter_) return;
@@ -87,4 +87,4 @@ void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::
     if (closeRequested) editor->closeModelImporter();
 }
 
-} // namespace ne
+} // namespace saida

@@ -15,7 +15,7 @@
 #include <cstddef>
 #include <stdexcept>
 
-namespace ne {
+namespace saida {
 
 namespace {
 constexpr uint32_t kMaxBloomLevels = 6;
@@ -287,7 +287,7 @@ void PostProcessor::recordBloom(VkCommandBuffer cmd, const SceneSettings& settin
     const bool enabled = settings.bloomEnabled && settings.bloomIntensity > 0.0f && settings.bloomRadius > 0.0f;
 
     {
-        NE_GPU_PROFILE_SCOPE(profiler, cmd, "Post/BloomDownsample");
+        SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, "Post/BloomDownsample");
         bloomDownsamplePipeline_->bind(cmd);
         for (size_t i = 0; i < bloom_.size(); ++i) {
             Target& target = bloom_[i];
@@ -316,7 +316,7 @@ void PostProcessor::recordBloom(VkCommandBuffer cmd, const SceneSettings& settin
     if (!enabled || bloom_.size() < 2) return;
 
     {
-        NE_GPU_PROFILE_SCOPE(profiler, cmd, "Post/BloomUpsample");
+        SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, "Post/BloomUpsample");
         bloomUpsamplePipeline_->bind(cmd);
         for (size_t reverse = bloom_.size() - 1; reverse > 0; --reverse) {
             size_t targetIndex = reverse - 1;
@@ -341,4 +341,4 @@ void PostProcessor::recordBloom(VkCommandBuffer cmd, const SceneSettings& settin
     }
 }
 
-} // namespace ne
+} // namespace saida

@@ -1,10 +1,10 @@
-# NextEngine
+# SaidaEngine
 
 > Fichier de contexte pour assistants IA (Claude Code & co). Lis-le en premier.
 
 ## But du projet
 
-NextEngine est un **moteur de rendu 3D léger, propre et robuste** écrit en
+SaidaEngine est un **moteur de rendu 3D léger, propre et robuste** écrit en
 **C++17 + Vulkan**, développé par étapes. La priorité n'est pas la quantité de
 fonctionnalités mais la **qualité de l'architecture** : abstractions RAII
 simples, ownership clair, code lisible. On garde le moteur « léger » — pas de
@@ -63,11 +63,11 @@ cmake --build build
 ```
 
 Les chemins d'assets et de shaders sont **absolus** (bakés par CMake :
-`NE_PROJECT_ROOT`, `NE_SHADER_DIR`), donc l'exe se lance **depuis n'importe quel
+`SAIDA_PROJECT_ROOT`, `SAIDA_SHADER_DIR`), donc l'exe se lance **depuis n'importe quel
 répertoire** :
 
 ```sh
-./build/bin/NextEngine.exe
+./build/bin/SaidaEngine.exe
 ```
 
 Pour lancer **avec les validation layers Vulkan** : `./run.sh` (depuis la racine).
@@ -82,16 +82,16 @@ les logs de démarrage passent (`GPU: ...`, `loaded '...': N vertices`) — y
 arriver signifie que l'init et le chargement ont réussi.
 
 **Localisation des assets** : `core/Paths.hpp` centralise la résolution —
-`assetPath(rel)` (sous `NE_PROJECT_ROOT` : `models/`, `assets/`) et
-`shaderPath(name)` (sous `NE_SHADER_DIR` = `build/shaders/`). Tout est absolu,
+`assetPath(rel)` (sous `SAIDA_PROJECT_ROOT` : `models/`, `assets/`) et
+`shaderPath(name)` (sous `SAIDA_SHADER_DIR` = `build/shaders/`). Tout est absolu,
 donc indépendant du cwd. (Pour packager un jeu plus tard : remplacer ces racines
 par un dossier d'assets relatif à l'exe.)
 
 ## Architecture
 
-**Split lib/exe** : le moteur compile en bibliothèque statique `ne_engine`
-(tout `src/` sauf `main.cpp`) ; l'exécutable `NextEngine` ne contient que
-`main.cpp` et linke la lib (via `ne_editor`). Conséquence : itérer le jeu ne
+**Split lib/exe** : le moteur compile en bibliothèque statique `saida_engine`
+(tout `src/` sauf `main.cpp`) ; l'exécutable `SaidaEngine` ne contient que
+`main.cpp` et linke la lib (via `saida_editor`). Conséquence : itérer le jeu ne
 recompile/relink que l'exe, jamais le moteur. Lancé directement (sans
 `--project`), l'éditeur ouvre une **scène vierge** ; le Hub passe un projet via
 `--project`. Le moteur reste sans contenu en dur : `Engine` accepte un
@@ -259,7 +259,7 @@ Le moteur est construit par étapes numérotées. **Détails des tâches restant
 - [x] **Étape 11 — Simulation Physique.** Jolt Physics, nodes (StaticBody/RigidBody/CharacterBody/Area), auto-détection colliders, triggers, raycasting, éditeur Physics.
 - [~] **Étape 12 — UI 2D (Screen & World Space).** 95% : RmlUi + QuickJS, Ultralight supprimé, `WebCanvasNode` avec rendu CPU réel, hot-reload transactionnel. **Future** : backend GPU/Vulkan (→ [TODO.md](TODO.md)).
 - [x] **Étape 13 — Intégration LLM Native.** 95% : M1-M6 complets (réflexion+manifeste, signaux data-driven, serveur MCP, outils code+validation, primitives FSM/Blackboard/Scénario, token-opt). **Manque** : inspecteur behaviours réfléchis, world model, skills, agents autonomes (→ [TODO.md](TODO.md)).
-- [~] **Étape 14 — XR / OpenXR.** 85% : OpenXR SDK, module `src/xr/`, VulkanDevice/Engine integration, multiview stereo 1-pass, controllers (action sets). **NEXRTK** 75% : Phase 1-3 complets (interaction, locomotion, anchors&passthrough). **Manque** : hand tracking, MSAA multiview, ImGui overlay, Renderer DRY refactor, anchor backends (→ [TODO.md](TODO.md)).
+- [~] **Étape 14 — XR / OpenXR.** 85% : OpenXR SDK, module `src/xr/`, VulkanDevice/Engine integration, multiview stereo 1-pass, controllers (action sets). **SaidaXRTK** 75% : Phase 1-3 complets (interaction, locomotion, anchors&passthrough). **Manque** : hand tracking, MSAA multiview, ImGui overlay, Renderer DRY refactor, anchor backends (→ [TODO.md](TODO.md)).
 - [~] **Étape 15 — Build & Release Windows.** 80% : export-template pipeline, runtime dédié, packager, UI Build Settings. **Manque** : version management, executable metadata/icon, LTO build optimization (→ [TODO.md](TODO.md)).
 
 **Voir [TODO.md](TODO.md) pour les tâches restantes détaillées par priorité.**
@@ -269,7 +269,7 @@ Note : l'ensemble des étapes vise à construire un unique pipeline de rendu uni
 ## Décision scripting (prise, à implémenter)
 
 Comment les développeurs écriront la logique de jeu et l'UI dynamique.
-**Décidé** : NextEngine utilise **JavaScript via QuickJS** comme unique langage
+**Décidé** : SaidaEngine utilise **JavaScript via QuickJS** comme unique langage
 de scripting moteur.
 
 - **Logique de jeu en C++ `Behaviour`** pour le moteur, les systèmes bas niveau

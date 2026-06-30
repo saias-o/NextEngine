@@ -10,7 +10,7 @@
 #include <nlohmann/json.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-namespace ne {
+namespace saida {
 namespace {
 
 size_t childIndex(const Node& parent, const Node* child) {
@@ -281,4 +281,4 @@ void ConnectSignalCommand::undo(SceneDocument& document) {
     document.markDirty();
 }
 
-} // namespace ne
+} // namespace saida

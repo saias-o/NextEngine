@@ -9,7 +9,7 @@
 #include <variant>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 struct ScriptProperty {
     enum class Type {
@@ -86,4 +86,4 @@ private:
     bool loaded_ = false;
 };
 
-} // namespace ne
+} // namespace saida

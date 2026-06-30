@@ -23,7 +23,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 namespace {
 constexpr VkFormat kIrradianceFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -386,7 +386,7 @@ void GIVolume::createVoxelResources(VkDescriptorSetLayout materialSetLayout) {
 }
 
 void GIVolume::voxelize(VkCommandBuffer cmd, Scene& scene, GpuProfiler* profiler) {
-    NE_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Voxelize");
+    SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Voxelize");
     const uint32_t res = static_cast<uint32_t>(desc_.voxelResolution);
     glm::vec3 extent = worldExtent();
     glm::vec3 center = desc_.origin + extent * 0.5f;
@@ -577,7 +577,7 @@ void GIVolume::update(VkCommandBuffer cmd, VkDescriptorSet globalSet, GpuProfile
 
     // --- 1. Trace ---
     {
-        NE_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Trace");
+        SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Trace");
         tracePipeline_->bind(cmd);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tracePipeline_->layout(), 0, 1, &globalSet, 0, nullptr);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tracePipeline_->layout(), 1, 1, &giSet, 0, nullptr);
@@ -591,7 +591,7 @@ void GIVolume::update(VkCommandBuffer cmd, VkDescriptorSet globalSet, GpuProfile
 
     // --- 2. Blend (irradiance then visibility) ---
     {
-        NE_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Blend");
+        SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Blend");
         blendPipeline_->bind(cmd);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, blendPipeline_->layout(), 0, 1, &globalSet, 0, nullptr);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, blendPipeline_->layout(), 1, 1, &giSet, 0, nullptr);
@@ -608,7 +608,7 @@ void GIVolume::update(VkCommandBuffer cmd, VkDescriptorSet globalSet, GpuProfile
 
     // --- 3. Border copy ---
     {
-        NE_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Borders");
+        SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Borders");
         borderPipeline_->bind(cmd);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, borderPipeline_->layout(), 0, 1, &globalSet, 0, nullptr);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, borderPipeline_->layout(), 1, 1, &giSet, 0, nullptr);
@@ -625,4 +625,4 @@ void GIVolume::update(VkCommandBuffer cmd, VkDescriptorSet globalSet, GpuProfile
     computeBarrier(cmd, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
 }
 
-} // namespace ne
+} // namespace saida

@@ -8,7 +8,7 @@
 
 #include <algorithm>
 
-namespace ne {
+namespace saida {
 
 struct AudioEngineState {
     ma_engine engine;
@@ -257,4 +257,4 @@ AudioID AudioManager::generateID() {
     return nextID_++;
 }
 
-} // namespace ne
+} // namespace saida

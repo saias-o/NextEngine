@@ -9,9 +9,9 @@
 #include <memory>
 #include <vector>
 
-namespace ne { class VulkanDevice; }
+namespace saida { class VulkanDevice; }
 
-namespace ne::xr {
+namespace saida::xr {
 
 class Instance;
 class Swapchain;
@@ -89,7 +89,7 @@ private:
 
     std::vector<XrViewConfigurationView> viewConfigs_;
     std::vector<std::unique_ptr<Swapchain>> swapchains_;
-    std::unique_ptr<Actions> actions_;   // OpenXR action-set input → ne::XRInput
+    std::unique_ptr<Actions> actions_;   // OpenXR action-set input → saida::XRInput
     std::unique_ptr<HandTracking> handTracking_; // optional XR_EXT_hand_tracking
     XrTime lastDisplayTime_ = 0;         // for locating action poses next frame
     int64_t colorFormat_ = 0;
@@ -121,4 +121,4 @@ private:
     float originYaw_ = 0.0f;
 };
 
-} // namespace ne::xr
+} // namespace saida::xr

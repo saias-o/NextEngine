@@ -10,7 +10,7 @@
 #include <cctype>
 #include <cstring>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -28,7 +28,7 @@ const char* fileIcon(const std::filesystem::path& path) {
     if (ext == ".html" || ext == ".htm" || ext == ".css" || ext == ".js") return "[Web]";
     if (ext == ".lua")   return "[Lua]";
     if (ext == ".bvh")   return "[Anim]";
-    if (ext == ".neproj") return "[Proj]";
+    if (ext == ".saidaproj") return "[Proj]";
     if (ext == ".scene") return "[Sc]";
     return "[F]";
 }
@@ -390,4 +390,4 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
     ImGui::End();
 }
 
-} // namespace ne
+} // namespace saida

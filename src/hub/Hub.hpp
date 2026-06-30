@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 class Hub {
 public:
@@ -52,4 +52,4 @@ private:
     char renameBuf_[128] = "";
 };
 
-} // namespace ne
+} // namespace saida

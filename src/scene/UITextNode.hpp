@@ -4,7 +4,7 @@
 #include <string>
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 class UITextNode : public UINode {
 public:
@@ -30,4 +30,4 @@ private:
     glm::vec4 color_ = glm::vec4(1.0f); // Blanc
 };
 
-} // namespace ne
+} // namespace saida

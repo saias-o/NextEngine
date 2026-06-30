@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <limits>
 
-namespace ne {
+namespace saida {
 
 void XRRayInteractor::onReady() {
     controller_ = dynamic_cast<XRController*>(node());
@@ -146,4 +146,4 @@ void XRRayInteractor::load(const nlohmann::json& j) {
     if (j.contains("aimThreshold")) aimThreshold = j["aimThreshold"].get<float>();
 }
 
-} // namespace ne
+} // namespace saida

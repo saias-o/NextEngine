@@ -3,7 +3,7 @@
 #include "scene/UINode.hpp"
 #include "graphics/ResourceManager.hpp"
 
-namespace ne {
+namespace saida {
 
 class UIImageNode : public UINode {
 public:
@@ -21,4 +21,4 @@ private:
     AssetID texture_ = 0;
 };
 
-} // namespace ne
+} // namespace saida

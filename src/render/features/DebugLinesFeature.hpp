@@ -7,7 +7,7 @@
 #include <memory>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 // Editor debug aid (desktop/mono only): draws skeleton bones as lines from every
 // Animator when SceneSettings::showSkeletons is on. Owns a per-frame dynamic vertex
@@ -23,4 +23,4 @@ private:
     std::vector<std::unique_ptr<Buffer>> buffers_;  // one per frame in flight
 };
 
-} // namespace ne
+} // namespace saida

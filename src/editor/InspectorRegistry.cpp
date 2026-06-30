@@ -20,7 +20,7 @@
 #include <variant>
 #include <vector>
 
-namespace ne {
+namespace saida {
 namespace {
 
 // Small helper: an ImGui text field bound to a std::string; returns true on edit.
@@ -58,9 +58,9 @@ void registerBuiltins(InspectorRegistry& reg) {
         if (changed) ed.markDirty();
 
         if (ImGui::Button("Validate")) {
-            ne::ScenarioAsset asset;
-            std::vector<ne::ScenarioIssue> issues;
-            ne::ScenarioAsset::loadFromFile(s.scenarioPath, asset, &issues);
+            saida::ScenarioAsset asset;
+            std::vector<saida::ScenarioIssue> issues;
+            saida::ScenarioAsset::loadFromFile(s.scenarioPath, asset, &issues);
             if (issues.empty()) ImGui::OpenPopup("ScenarioValidPopup");
         }
         ImGui::SameLine();
@@ -178,4 +178,4 @@ bool InspectorRegistry::draw(Behaviour& b, EditorUI& editor) const {
     return true;
 }
 
-} // namespace ne
+} // namespace saida

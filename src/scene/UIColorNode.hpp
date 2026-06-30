@@ -3,7 +3,7 @@
 #include "scene/UINode.hpp"
 #include <glm/glm.hpp>
 
-namespace ne {
+namespace saida {
 
 class UIColorNode : public UINode {
 public:
@@ -21,4 +21,4 @@ private:
     glm::vec4 color_ = glm::vec4(1.0f); // Blanc opaque par défaut
 };
 
-} // namespace ne
+} // namespace saida

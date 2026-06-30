@@ -3,7 +3,7 @@
 #include <vulkan/vulkan.h>
 #include "graphics/VulkanDeviceCreator.hpp"
 
-namespace ne::xr {
+namespace saida::xr {
 
 class Instance;
 
@@ -26,4 +26,4 @@ VkPhysicalDevice pickPhysicalDevice(const Instance& xr, VkInstance vulkanInstanc
 VkDevice createVulkanDevice(const Instance& xr, VkPhysicalDevice physicalDevice,
                             const VkDeviceCreateInfo& ci);
 
-} // namespace ne::xr
+} // namespace saida::xr

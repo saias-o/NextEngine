@@ -9,7 +9,7 @@
 
 #include <imgui.h>
 
-namespace ne {
+namespace saida {
 
 class VulkanDevice;
 class Texture;
@@ -71,4 +71,4 @@ private:
     int generatedThisFrame_ = 0;
 };
 
-} // namespace ne
+} // namespace saida

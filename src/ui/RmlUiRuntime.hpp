@@ -7,7 +7,7 @@ namespace Rml {
 class RenderInterface;
 }
 
-namespace ne {
+namespace saida {
 
 class RmlUiRenderInterface;
 
@@ -25,4 +25,4 @@ private:
     static bool initialized_;
 };
 
-} // namespace ne
+} // namespace saida

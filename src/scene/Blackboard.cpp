@@ -2,7 +2,7 @@
 
 #include "core/Reflection.hpp"
 
-namespace ne {
+namespace saida {
 
 void Blackboard::setNumber(std::string key, double value) {
     values_[key] = value;
@@ -71,4 +71,4 @@ void Blackboard::load(const nlohmann::json& j) {
     }
 }
 
-} // namespace ne
+} // namespace saida

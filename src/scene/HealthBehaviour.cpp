@@ -6,7 +6,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 
-namespace ne {
+namespace saida {
 
 void HealthBehaviour::onReady() {
     health_ = maxHealth;
@@ -67,4 +67,4 @@ void HealthBehaviour::describe(reflect::TypeBuilder<HealthBehaviour>& t) {
     t.slot("kill", &HealthBehaviour::kill);
 }
 
-} // namespace ne
+} // namespace saida

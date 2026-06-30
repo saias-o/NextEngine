@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 namespace {
 
@@ -152,9 +152,9 @@ void VulkanDevice::createInstance() {
 
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "NextEngine";
+    appInfo.pApplicationName = "SaidaEngine";
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.pEngineName = "NextEngine";
+    appInfo.pEngineName = "SaidaEngine";
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.apiVersion = requestedApi;
 
@@ -624,4 +624,4 @@ void VulkanDevice::endSingleTimeCommands(VkCommandBuffer cmd) const {
     vkFreeCommandBuffers(device_, commandPool_, 1, &cmd);
 }
 
-} // namespace ne
+} // namespace saida

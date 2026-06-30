@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 namespace detail {
 struct SignalBlockBase {
@@ -95,4 +95,4 @@ private:
     std::shared_ptr<Block> block_;
 };
 
-} // namespace ne
+} // namespace saida

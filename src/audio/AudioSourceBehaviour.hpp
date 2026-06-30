@@ -4,7 +4,7 @@
 #include "scene/Behaviour.hpp"
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class AudioSourceBehaviour : public Behaviour {
 public:
@@ -12,7 +12,7 @@ public:
 
     std::string audioName = "default_sound";
 
-    NE_REFLECT_BEHAVIOUR(AudioSourceBehaviour, "AudioSource")
+    SAIDA_REFLECT_BEHAVIOUR(AudioSourceBehaviour, "AudioSource")
 };
 
-} // namespace ne
+} // namespace saida

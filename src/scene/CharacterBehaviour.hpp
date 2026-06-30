@@ -5,7 +5,7 @@
 
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class Animator;
 
@@ -17,7 +17,7 @@ public:
     void onReady() override;
     void onUpdate(float dt) override;
 
-    NE_REFLECT_BEHAVIOUR(CharacterBehaviour, "Character")
+    SAIDA_REFLECT_BEHAVIOUR(CharacterBehaviour, "Character")
 
     float moveSpeed = 5.0f;
     float sprintMultiplier = 1.8f;  // speed factor while holding Sprint (Shift)
@@ -42,4 +42,4 @@ private:
     Animator* animator_ = nullptr;  // cached child Animator (found lazily)
 };
 
-} // namespace ne
+} // namespace saida

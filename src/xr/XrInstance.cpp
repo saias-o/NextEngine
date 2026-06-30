@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace ne::xr {
+namespace saida::xr {
 
 namespace {
 
@@ -50,10 +50,10 @@ bool createInstanceAndSystem(XrInstance& outInstance, XrSystemId& outSystem,
 
     XrInstanceCreateInfo ci{};
     ci.type = XR_TYPE_INSTANCE_CREATE_INFO;
-    std::strncpy(ci.applicationInfo.applicationName, "NextEngine",
+    std::strncpy(ci.applicationInfo.applicationName, "SaidaEngine",
                  XR_MAX_APPLICATION_NAME_SIZE - 1);
     ci.applicationInfo.applicationVersion = 1;
-    std::strncpy(ci.applicationInfo.engineName, "NextEngine",
+    std::strncpy(ci.applicationInfo.engineName, "SaidaEngine",
                  XR_MAX_ENGINE_NAME_SIZE - 1);
     ci.applicationInfo.engineVersion = 1;
     ci.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
@@ -123,4 +123,4 @@ void Instance::loadFunctions() {
     load("xrCreateVulkanDeviceKHR", pfnCreateVulkanDevice);
 }
 
-} // namespace ne::xr
+} // namespace saida::xr

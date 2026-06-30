@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 
-namespace ne {
+namespace saida {
 
 class Node;
 class Scene;
@@ -34,4 +34,4 @@ public:
                                                        NodeIdPolicy idPolicy = NodeIdPolicy::Regenerate);
 };
 
-} // namespace ne
+} // namespace saida

@@ -13,7 +13,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace ne {
+namespace saida {
 
 uint32_t Node::g_hierarchyVersion = 1;
 uint32_t Node::g_transformVersion = 1;
@@ -273,4 +273,4 @@ void Node::deserialize(const nlohmann::json& j, ResourceManager& resources) {
     // because it needs to use NodeRegistry to instantiate polymorphic children.
 }
 
-} // namespace ne
+} // namespace saida

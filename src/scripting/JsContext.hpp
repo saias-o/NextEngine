@@ -9,7 +9,7 @@
 
 struct JSContext;
 
-namespace ne {
+namespace saida {
 
 class JsRuntime;
 
@@ -65,4 +65,4 @@ private:
     std::vector<SignalSubscription> signalSubs_;
 };
 
-} // namespace ne
+} // namespace saida

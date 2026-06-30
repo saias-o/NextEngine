@@ -13,7 +13,7 @@
 
 #include <vector>
 
-namespace ne {
+namespace saida {
 
 CollisionObjectNode::~CollisionObjectNode() {
     detachFromPhysics();
@@ -164,4 +164,4 @@ void CollisionObjectNode::deserializeCommon(const nlohmann::json& j) {
     if (j.contains("restitution")) restitution = j["restitution"].get<float>();
 }
 
-} // namespace ne
+} // namespace saida

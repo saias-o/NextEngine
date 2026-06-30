@@ -3,7 +3,7 @@
 #include <iterator>
 #include <glm/gtc/quaternion.hpp> // Required for slerp
 
-namespace ne {
+namespace saida {
 
 template <typename T>
 static T interpolate(const T& a, const T& b, float t);
@@ -103,4 +103,4 @@ std::vector<std::string> AnimationClip::boneNames() const {
     return names;
 }
 
-} // namespace ne
+} // namespace saida

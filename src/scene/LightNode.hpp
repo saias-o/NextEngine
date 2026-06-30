@@ -8,7 +8,7 @@
 #include <string>
 #include <utility>
 
-namespace ne {
+namespace saida {
 
 enum class LightType {
     Directional,  // infinitely far; uses `direction`
@@ -31,7 +31,7 @@ public:
     explicit LightNode(std::string name, LightType type = LightType::Directional)
         : Node(std::move(name)), type(type) {}
 
-    NE_REFLECT_NODE(LightNode, "LightNode")
+    SAIDA_REFLECT_NODE(LightNode, "LightNode")
 
     LightNode* asLight() override { return this; }
     const LightNode* asLightConst() const override { return this; }
@@ -58,4 +58,4 @@ public:
     LightBakeMode bakeMode = LightBakeMode::Realtime;
 };
 
-} // namespace ne
+} // namespace saida
