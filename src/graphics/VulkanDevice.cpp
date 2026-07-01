@@ -323,7 +323,7 @@ void VulkanDevice::queryCapabilities() {
     if (props.apiVersion < api) api = props.apiVersion;
     capabilities_.apiVersion = api;
     capabilities_.discreteGpu = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-    capabilities_.maxSamples = maxUsableSampleCount();
+    capabilities_.maxSamples = static_cast<uint32_t>(maxUsableSampleCount());
 
     // Modern feature query (core Vulkan 1.1/1.2/1.3 feature structs). Only valid
     // to chain when the device exposes at least 1.3; otherwise leave caps false.

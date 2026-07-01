@@ -3,6 +3,8 @@
 #include "graphics/RenderCapabilities.hpp"
 #include "graphics/VmaFwd.hpp"
 
+#include <vulkan/vulkan.h>  // was pulled in transitively via RenderCapabilities before 16.3
+
 #include <optional>
 #include <vector>
 
