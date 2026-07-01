@@ -3,6 +3,7 @@
 #include "render/RenderFeature.hpp"
 #include "graphics/Pipeline.hpp"
 #include "project/AssetRegistry.hpp"
+#include "rhi/Rhi.hpp"
 
 #include <glm/glm.hpp>
 
@@ -29,9 +30,8 @@ private:
     bool stereo_ = false;
 
     std::unique_ptr<Pipeline> pipeline_;
-    VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool pool_ = VK_NULL_HANDLE;
-    VkDescriptorSet set_ = VK_NULL_HANDLE;
+    std::unique_ptr<rhi::BindGroupLayout> setLayout_;
+    std::unique_ptr<rhi::BindGroup> set_;
     AssetID currentTexture_ = kAssetInvalid;
 };
 

@@ -3,6 +3,7 @@
 #include "core/Paths.hpp"
 #include "graphics/Buffer.hpp"
 #include "graphics/VulkanDevice.hpp"
+#include "rhi/vulkan/Format.hpp"
 #include "scene/Scene.hpp"
 #include "scene/Node.hpp"
 #include "scene/WaterNode.hpp"
@@ -16,11 +17,7 @@
 
 namespace saida {
 
-WaterFeature::~WaterFeature() {
-    if (!device_) return;
-    if (pool_) vkDestroyDescriptorPool(device_->device(), pool_, nullptr);
-    if (setLayout_) vkDestroyDescriptorSetLayout(device_->device(), setLayout_, nullptr);
-}
+WaterFeature::~WaterFeature() = default;
 
 void WaterFeature::createPipelines(const RenderContext& ctx) {
     device_ = &ctx.device;
@@ -29,27 +26,10 @@ void WaterFeature::createPipelines(const RenderContext& ctx) {
     // set 1: the per-node water UBO array (vertex needs it for waves + shore flatten,
     // fragment for shading), one buffer + set per frame-in-flight so a frame never
     // rewrites data the GPU is still reading.
-    VkDescriptorSetLayoutBinding uboBinding{};
-    uboBinding.binding = 0;
-    uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboBinding.descriptorCount = 1;
-    uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &uboBinding;
-    if (vkCreateDescriptorSetLayout(device_->device(), &layoutInfo, nullptr, &setLayout_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create water descriptor set layout");
-
-    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frames};
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = frames;
-    if (vkCreateDescriptorPool(device_->device(), &poolInfo, nullptr, &pool_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create water descriptor pool");
+    setLayout_ = std::make_unique<rhi::BindGroupLayout>(*device_,
+        std::vector<rhi::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::UniformBuffer, rhi::ShaderStages::Vertex | rhi::ShaderStages::Fragment},
+        });
 
     ubos_.resize(frames);
     sets_.resize(frames);
@@ -58,40 +38,31 @@ void WaterFeature::createPipelines(const RenderContext& ctx) {
         ubos_[i] = std::make_unique<Buffer>(*device_, bufSize,
             rhi::BufferUsage::Uniform, MemoryUsage::HostVisible);
 
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = pool_;
-        allocInfo.descriptorSetCount = 1;
-        allocInfo.pSetLayouts = &setLayout_;
-        if (vkAllocateDescriptorSets(device_->device(), &allocInfo, &sets_[i]) != VK_SUCCESS)
-            throw std::runtime_error("failed to allocate water descriptor set");
-
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = ubos_[i]->handle();
-        bufferInfo.offset = 0;
-        bufferInfo.range = bufSize;
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = sets_[i];
-        write.dstBinding = 0;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        write.descriptorCount = 1;
-        write.pBufferInfo = &bufferInfo;
-        vkUpdateDescriptorSets(device_->device(), 1, &write, 0, nullptr);
+        rhi::BindGroupEntry entry;
+        entry.binding = 0;
+        entry.buffer = ubos_[i].get();
+        entry.range = bufSize;
+        sets_[i] = std::make_unique<rhi::BindGroup>(*setLayout_, std::vector<rhi::BindGroupEntry>{entry});
     }
 
     // set 0 = global (camera + lighting + env); set 1 = the water UBO array. Look/feel
     // is data; the per-draw push is just the node index + time. Procedural grid (no
     // vertex input), depth-tested + depth-writing, two-sided, and ALPHA-BLENDED so the
     // shore can dissolve into the wet sand.
-    std::vector<VkDescriptorSetLayout> setLayouts = {ctx.globalSetLayout, setLayout_};
-    std::vector<VkFormat> colorFormats = {ctx.colorFormat};
     const char* vert = ctx.stereo() ? "multiview.water.vert.spv" : "water.vert.spv";
-    pipeline_ = std::make_unique<Pipeline>(ctx.device,
-        shaderPath(vert), shaderPath("water.frag.spv"),
-        colorFormats, ctx.depthFormat, setLayouts, ctx.samples,
-        false, true, sizeof(Push), true, VK_COMPARE_OP_LESS, VK_CULL_MODE_NONE,
-        true, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, ctx.viewMask);
+    Pipeline::Desc desc;
+    desc.vertPath = shaderPath(vert);
+    desc.fragPath = shaderPath("water.frag.spv");
+    desc.colorFormats = {rhi::vulkan::fromVk(ctx.colorFormat)};
+    desc.depthFormat = rhi::vulkan::fromVk(ctx.depthFormat);
+    desc.bindGroupLayouts = {&ctx.globalSetLayout, setLayout_.get()};
+    desc.samples = static_cast<uint32_t>(ctx.samples);
+    desc.vertexInput = false;
+    desc.cullMode = rhi::CullMode::None;
+    desc.blendMode = rhi::BlendMode::Alpha;
+    desc.pushConstantSize = sizeof(Push);
+    desc.viewMask = ctx.viewMask;
+    pipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
 }
 
 void WaterFeature::record(const FrameContext& fc) {
@@ -132,7 +103,7 @@ void WaterFeature::record(const FrameContext& fc) {
     ubos_[frame]->write(packed.data(), sizeof(GpuWater) * waterCount);
 
     pipeline_->bind(fc.cmd);
-    VkDescriptorSet bound[2] = {fc.globalSet, sets_[frame]};
+    VkDescriptorSet bound[2] = {fc.globalSet, sets_[frame]->handle()};
     vkCmdBindDescriptorSets(fc.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout(),
         0, 2, bound, 0, nullptr);
 

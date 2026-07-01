@@ -1,5 +1,7 @@
 #pragma once
 
+#include "rhi/Rhi.hpp"
+
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
@@ -66,11 +68,10 @@ public:
     uint32_t framesInFlight() const { return desc_.framesInFlight; }
     uint32_t maxParticles() const { return desc_.maxParticles; }
 
-    VkDescriptorSetLayout renderSetLayout() const { return renderSetLayout_; }
+    rhi::BindGroupLayout& renderSetLayout() const { return *renderSetLayout_; }
     VkDescriptorSet renderSet(uint32_t parity) const;
     VkBuffer indirectBuffer() const;
 
-    VkDescriptorSetLayout computeSetLayout() const { return computeSetLayout_; }
     GpuEmitter* mappedEmitters(uint32_t frame) const;
     void flushEmitters(uint32_t frame, uint32_t count);
     void reset();
@@ -104,19 +105,17 @@ private:
     bool initialized_ = false;
     uint32_t aliveReadParity_ = 0;
 
-    VkDescriptorSetLayout renderSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool renderPool_ = VK_NULL_HANDLE;
+    std::unique_ptr<rhi::BindGroupLayout> renderSetLayout_;
     std::unique_ptr<Buffer> simParticleBuffer_;
     std::array<std::unique_ptr<Buffer>, 2> aliveIndexBuffers_;
     std::unique_ptr<Buffer> deadIndexBuffer_;
     std::unique_ptr<Buffer> counterBuffer_;
     std::unique_ptr<Buffer> indirectBuffer_;
-    std::vector<VkDescriptorSet> renderSets_;
+    std::vector<std::unique_ptr<rhi::BindGroup>> renderSets_;
 
-    VkDescriptorSetLayout computeSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool computePool_ = VK_NULL_HANDLE;
+    std::unique_ptr<rhi::BindGroupLayout> computeSetLayout_;
     std::vector<std::unique_ptr<Buffer>> emitterBuffers_;
-    std::vector<VkDescriptorSet> computeSets_;
+    std::vector<std::unique_ptr<rhi::BindGroup>> computeSets_;
 
     std::unique_ptr<ComputePipeline> initPipeline_;
     std::unique_ptr<ComputePipeline> preparePipeline_;

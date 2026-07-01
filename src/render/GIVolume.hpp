@@ -1,6 +1,7 @@
 #pragma once
 
 #include "graphics/StorageImage.hpp"
+#include "rhi/Rhi.hpp"
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -37,7 +38,7 @@ struct GIVolumeDesc {
 class GIVolume {
 public:
     GIVolume(VulkanDevice& device, const GIVolumeDesc& desc,
-             VkDescriptorSetLayout materialSetLayout, VkDescriptorSetLayout globalSetLayout);
+             rhi::BindGroupLayout& materialSetLayout, rhi::BindGroupLayout& globalSetLayout);
     ~GIVolume();
     GIVolume(const GIVolume&) = delete;
     GIVolume& operator=(const GIVolume&) = delete;
@@ -73,8 +74,8 @@ public:
 private:
     void createSampler();
     void fillConstant();  // P0: clear atlases to a constant via a one-time command
-    void createVoxelResources(VkDescriptorSetLayout materialSetLayout);
-    void createComputeResources(VkDescriptorSetLayout globalSetLayout);
+    void createVoxelResources(rhi::BindGroupLayout& materialSetLayout);
+    void createComputeResources(rhi::BindGroupLayout& globalSetLayout);
 
     glm::ivec2 atlasSize(int texels) const {
         int rows = (desc_.probeCount() + probesPerRow_ - 1) / probesPerRow_;
@@ -95,17 +96,15 @@ private:
     VmaAllocation voxelAllocation_ = VK_NULL_HANDLE;
     VkImageView voxelView_ = VK_NULL_HANDLE;
     std::unique_ptr<Buffer> voxelUbo_;          // origin/extent/res + 3 axis VPs
-    VkDescriptorSetLayout voxelSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool voxelPool_ = VK_NULL_HANDLE;
-    VkDescriptorSet voxelSet_ = VK_NULL_HANDLE;
+    std::unique_ptr<rhi::BindGroupLayout> voxelSetLayout_;
+    std::unique_ptr<rhi::BindGroup> voxelSet_;
     VkPipeline voxelPipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout voxelPipelineLayout_ = VK_NULL_HANDLE;
 
     // --- DDGI update (P2): trace -> blend -> borders ---
     std::unique_ptr<Buffer> raysBuffer_;        // numProbes * raysPerProbe * 2 vec4
-    VkDescriptorSetLayout giComputeSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool giComputePool_ = VK_NULL_HANDLE;
-    std::array<VkDescriptorSet, 2> giComputeSets_{};  // one per ping-pong parity
+    std::unique_ptr<rhi::BindGroupLayout> giComputeSetLayout_;
+    std::array<std::unique_ptr<rhi::BindGroup>, 2> giComputeSets_;  // one per ping-pong parity
     std::unique_ptr<ComputePipeline> tracePipeline_;
     std::unique_ptr<ComputePipeline> blendPipeline_;
     std::unique_ptr<ComputePipeline> borderPipeline_;

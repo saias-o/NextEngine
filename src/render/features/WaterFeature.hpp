@@ -2,6 +2,7 @@
 
 #include "render/RenderFeature.hpp"
 #include "graphics/Pipeline.hpp"
+#include "rhi/Rhi.hpp"
 
 #include <glm/glm.hpp>
 
@@ -50,10 +51,9 @@ private:
     std::unique_ptr<Pipeline> pipeline_;
 
     // set 1: a UBO array of GpuWater, double-buffered per frame-in-flight.
-    VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool pool_ = VK_NULL_HANDLE;
+    std::unique_ptr<rhi::BindGroupLayout> setLayout_;
     std::vector<std::unique_ptr<Buffer>> ubos_;     // one per frame-in-flight
-    std::vector<VkDescriptorSet> sets_;             // one per frame-in-flight
+    std::vector<std::unique_ptr<rhi::BindGroup>> sets_;  // one per frame-in-flight
 };
 
 } // namespace saida

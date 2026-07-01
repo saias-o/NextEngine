@@ -3,6 +3,7 @@
 #include "core/Camera.hpp"
 #include "core/Paths.hpp"
 #include "graphics/VulkanDevice.hpp"
+#include "rhi/vulkan/Format.hpp"
 #include "scene/Scene.hpp"
 
 #include <glm/gtc/constants.hpp>
@@ -123,21 +124,26 @@ void ParticleFeature::createPipelines(const RenderContext& ctx) {
     alphaRuntime_ = std::make_unique<ParticleRuntime>(ctx.device, runtimeDesc);
     additiveRuntime_ = std::make_unique<ParticleRuntime>(ctx.device, runtimeDesc);
 
-    std::vector<VkDescriptorSetLayout> setLayouts = {ctx.globalSetLayout, alphaRuntime_->renderSetLayout()};
-    std::vector<VkFormat> colorFormats = {ctx.colorFormat};
     const char* vert = ctx.stereo() ? "multiview.particle_render.vert.spv" : "particle_render.vert.spv";
 
-    alphaPipeline_ = std::make_unique<Pipeline>(ctx.device,
-        shaderPath(vert), shaderPath("particle_render.frag.spv"),
-        colorFormats, ctx.depthFormat, setLayouts, ctx.samples,
-        false, true, sizeof(Push), false, VK_COMPARE_OP_LESS, VK_CULL_MODE_NONE,
-        BlendMode::Alpha, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, ctx.viewMask);
+    Pipeline::Desc desc;
+    desc.vertPath = shaderPath(vert);
+    desc.fragPath = shaderPath("particle_render.frag.spv");
+    desc.colorFormats = {rhi::vulkan::fromVk(ctx.colorFormat)};
+    desc.depthFormat = rhi::vulkan::fromVk(ctx.depthFormat);
+    desc.bindGroupLayouts = {&ctx.globalSetLayout, &alphaRuntime_->renderSetLayout()};
+    desc.samples = static_cast<uint32_t>(ctx.samples);
+    desc.vertexInput = false;
+    desc.depthWrite = false;
+    desc.cullMode = rhi::CullMode::None;
+    desc.pushConstantSize = sizeof(Push);
+    desc.viewMask = ctx.viewMask;
 
-    additivePipeline_ = std::make_unique<Pipeline>(ctx.device,
-        shaderPath(vert), shaderPath("particle_render.frag.spv"),
-        colorFormats, ctx.depthFormat, setLayouts, ctx.samples,
-        false, true, sizeof(Push), false, VK_COMPARE_OP_LESS, VK_CULL_MODE_NONE,
-        BlendMode::Additive, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, ctx.viewMask);
+    desc.blendMode = rhi::BlendMode::Alpha;
+    alphaPipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
+
+    desc.blendMode = rhi::BlendMode::Additive;
+    additivePipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
 }
 
 void ParticleFeature::record(const FrameContext& fc) {

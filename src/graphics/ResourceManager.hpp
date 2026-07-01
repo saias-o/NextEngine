@@ -11,6 +11,7 @@
 #include "project/AssetRegistry.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/GeometryRegistry.hpp"
+#include "rhi/Rhi.hpp"
 
 namespace saida {
 
@@ -24,7 +25,6 @@ class AnimationClip;
 // Loads and caches GPU resources. Owns material set 1 layout/pool.
 class ResourceManager {
 public:
-    static constexpr uint32_t kMaxMaterials = 64; // Max CPU-path fallback materials
     static constexpr uint32_t kMaxBindlessTextures = 8192;
     static constexpr uint32_t kMaxBindlessMaterials = 4096;
     ResourceManager(VulkanDevice& device, AssetRegistry* registry = nullptr);
@@ -63,8 +63,8 @@ public:
     Texture* defaultWhiteTexture();
     Texture* defaultNormalTexture();
 
-    VkDescriptorSetLayout materialSetLayout() const { return materialSetLayout_; }
-    
+    rhi::BindGroupLayout& materialSetLayout() const { return *materialSetLayout_; }
+
     // Global bindless texture/material table. Pipelines choose the set index.
     VkDescriptorSetLayout globalMaterialSetLayout() const { return globalMaterialSetLayout_; }
     VkDescriptorSet globalMaterialSet() const { return globalMaterialSet_; }
@@ -84,8 +84,6 @@ public:
                                   uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx, uint32_t emissiveIdx);
 
 private:
-    void createMaterialSetLayout();
-    void createMaterialPool();
     Mesh* createMesh(AssetID id, const std::vector<Vertex>& vertices,
                      const std::vector<uint32_t>& indices);
     void ensureDefaultTextures();
@@ -93,9 +91,8 @@ private:
 
     VulkanDevice& device_;
     AssetRegistry* registry_;
-    VkDescriptorSetLayout materialSetLayout_ = VK_NULL_HANDLE;
-    std::vector<VkDescriptorPool> materialPools_;
-    
+    std::unique_ptr<rhi::BindGroupLayout> materialSetLayout_;
+
     // Global Bindless resources
     VkDescriptorSetLayout globalMaterialSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool globalMaterialPool_ = VK_NULL_HANDLE;
@@ -107,11 +104,6 @@ private:
     std::unique_ptr<GeometryRegistry> geometryRegistry_;
 
     void createGlobalBindlessResources();
-    VkDescriptorPool createNewPool();
-
-public:
-    VkDescriptorSet allocateMaterialSet(VkDescriptorSetLayout layout);
-private:
 
     std::unordered_map<AssetID, std::unique_ptr<Mesh>> meshes_;
     std::unordered_map<AssetID, std::unique_ptr<Texture>> textures_;

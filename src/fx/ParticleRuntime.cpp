@@ -20,24 +20,14 @@ ParticleRuntime::ParticleRuntime(VulkanDevice& device, const Desc& desc)
     createComputeResources();
 }
 
-ParticleRuntime::~ParticleRuntime() {
-    finalizePipeline_.reset();
-    simPipeline_.reset();
-    emitPipeline_.reset();
-    preparePipeline_.reset();
-    initPipeline_.reset();
-    if (computePool_) vkDestroyDescriptorPool(device_.device(), computePool_, nullptr);
-    if (computeSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), computeSetLayout_, nullptr);
-    if (renderPool_) vkDestroyDescriptorPool(device_.device(), renderPool_, nullptr);
-    if (renderSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), renderSetLayout_, nullptr);
-}
+ParticleRuntime::~ParticleRuntime() = default;
 
 uint32_t ParticleRuntime::frameIndex(uint32_t frame) const {
     return std::min(frame, desc_.framesInFlight - 1);
 }
 
 VkDescriptorSet ParticleRuntime::renderSet(uint32_t parity) const {
-    return renderSets_[std::min<uint32_t>(parity, 1u)];
+    return renderSets_[std::min<uint32_t>(parity, 1u)]->handle();
 }
 
 VkBuffer ParticleRuntime::indirectBuffer() const {
@@ -128,71 +118,19 @@ uint32_t ParticleRuntime::recordCompute(VkCommandBuffer cmd, uint32_t frame,
 }
 
 void ParticleRuntime::createRenderResources() {
-    std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
-    VkDescriptorSetLayoutBinding& particlesBinding = bindings[0];
-    particlesBinding.binding = 0;
-    particlesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    particlesBinding.descriptorCount = 1;
-    particlesBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutBinding& aliveBinding = bindings[1];
-    aliveBinding.binding = 1;
-    aliveBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    aliveBinding.descriptorCount = 1;
-    aliveBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-    if (vkCreateDescriptorSetLayout(device_.device(), &layoutInfo, nullptr, &renderSetLayout_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create particle render set layout");
-
-    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4};
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 2;
-    if (vkCreateDescriptorPool(device_.device(), &poolInfo, nullptr, &renderPool_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create particle render descriptor pool");
-
+    renderSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Vertex},
+            {1, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Vertex},
+        });
     renderSets_.resize(2);
-    for (uint32_t i = 0; i < 2; ++i) {
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = renderPool_;
-        allocInfo.descriptorSetCount = 1;
-        allocInfo.pSetLayouts = &renderSetLayout_;
-        if (vkAllocateDescriptorSets(device_.device(), &allocInfo, &renderSets_[i]) != VK_SUCCESS)
-            throw std::runtime_error("failed to allocate particle render descriptor set");
-    }
 }
 
 void ParticleRuntime::createComputeResources() {
-    std::array<VkDescriptorSetLayoutBinding, 7> bindings{};
-    for (uint32_t i = 0; i < static_cast<uint32_t>(bindings.size()); ++i) {
-        bindings[i].binding = i;
-        bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        bindings[i].descriptorCount = 1;
-        bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    }
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-    if (vkCreateDescriptorSetLayout(device_.device(), &layoutInfo, nullptr, &computeSetLayout_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create particle compute set layout");
-
-    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, desc_.framesInFlight * 14};
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = desc_.framesInFlight * 2;
-    if (vkCreateDescriptorPool(device_.device(), &poolInfo, nullptr, &computePool_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create particle compute descriptor pool");
+    std::vector<rhi::BindGroupLayoutEntry> computeEntries;
+    for (uint32_t i = 0; i < 7; ++i)
+        computeEntries.push_back({i, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute});
+    computeSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_, computeEntries);
 
     emitterBuffers_.resize(desc_.framesInFlight);
     computeSets_.resize(desc_.framesInFlight * 2);
@@ -221,56 +159,30 @@ void ParticleRuntime::createComputeResources() {
 
         for (uint32_t parity = 0; parity < 2; ++parity) {
             const uint32_t setIndex = i * 2 + parity;
-            VkDescriptorSetAllocateInfo allocInfo{};
-            allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            allocInfo.descriptorPool = computePool_;
-            allocInfo.descriptorSetCount = 1;
-            allocInfo.pSetLayouts = &computeSetLayout_;
-            if (vkAllocateDescriptorSets(device_.device(), &allocInfo, &computeSets_[setIndex]) != VK_SUCCESS)
-                throw std::runtime_error("failed to allocate particle compute descriptor set");
-
             const uint32_t writeParity = 1u - parity;
-            std::array<VkDescriptorBufferInfo, 7> infos{};
-            infos[0] = {simParticleBuffer_->handle(), 0, particleSize};
-            infos[1] = {aliveIndexBuffers_[parity]->handle(), 0, indexSize};
-            infos[2] = {aliveIndexBuffers_[writeParity]->handle(), 0, indexSize};
-            infos[3] = {deadIndexBuffer_->handle(), 0, indexSize};
-            infos[4] = {counterBuffer_->handle(), 0, counterSize};
-            infos[5] = {emitterBuffers_[i]->handle(), 0, emitterSize};
-            infos[6] = {indirectBuffer_->handle(), 0, sizeof(VkDrawIndirectCommand)};
 
-            std::array<VkWriteDescriptorSet, 7> writes{};
-            for (uint32_t b = 0; b < static_cast<uint32_t>(writes.size()); ++b) {
-                writes[b].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[b].dstSet = computeSets_[setIndex];
-                writes[b].dstBinding = b;
-                writes[b].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                writes[b].descriptorCount = 1;
-                writes[b].pBufferInfo = &infos[b];
-            }
-            vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            std::vector<rhi::BindGroupEntry> entries(7);
+            entries[0] = {0, simParticleBuffer_.get(), 0, particleSize};
+            entries[1] = {1, aliveIndexBuffers_[parity].get(), 0, indexSize};
+            entries[2] = {2, aliveIndexBuffers_[writeParity].get(), 0, indexSize};
+            entries[3] = {3, deadIndexBuffer_.get(), 0, indexSize};
+            entries[4] = {4, counterBuffer_.get(), 0, counterSize};
+            entries[5] = {5, emitterBuffers_[i].get(), 0, emitterSize};
+            entries[6] = {6, indirectBuffer_.get(), 0, sizeof(VkDrawIndirectCommand)};
+            computeSets_[setIndex] = std::make_unique<rhi::BindGroup>(*computeSetLayout_, entries);
         }
     }
 
     const VkDeviceSize particleSizeRender = sizeof(SimParticle) * desc_.maxParticles;
     const VkDeviceSize indexSizeRender = sizeof(uint32_t) * desc_.maxParticles;
     for (uint32_t parity = 0; parity < 2; ++parity) {
-        std::array<VkDescriptorBufferInfo, 2> infos{};
-        infos[0] = {simParticleBuffer_->handle(), 0, particleSizeRender};
-        infos[1] = {aliveIndexBuffers_[parity]->handle(), 0, indexSizeRender};
-        std::array<VkWriteDescriptorSet, 2> writes{};
-        for (uint32_t b = 0; b < static_cast<uint32_t>(writes.size()); ++b) {
-            writes[b].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[b].dstSet = renderSets_[parity];
-            writes[b].dstBinding = b;
-            writes[b].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            writes[b].descriptorCount = 1;
-            writes[b].pBufferInfo = &infos[b];
-        }
-        vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        std::vector<rhi::BindGroupEntry> entries(2);
+        entries[0] = {0, simParticleBuffer_.get(), 0, particleSizeRender};
+        entries[1] = {1, aliveIndexBuffers_[parity].get(), 0, indexSizeRender};
+        renderSets_[parity] = std::make_unique<rhi::BindGroup>(*renderSetLayout_, entries);
     }
 
-    std::vector<VkDescriptorSetLayout> setLayouts = {computeSetLayout_};
+    std::vector<VkDescriptorSetLayout> setLayouts = {computeSetLayout_->handle()};
     initPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("particle_init.comp.spv"),
         setLayouts, sizeof(ComputePush));
     preparePipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("particle_prepare.comp.spv"),
@@ -285,7 +197,7 @@ void ParticleRuntime::createComputeResources() {
 
 VkDescriptorSet ParticleRuntime::computeSet(uint32_t frame, uint32_t readParity) const {
     const uint32_t f = frameIndex(frame);
-    return computeSets_[f * 2 + std::min<uint32_t>(readParity, 1u)];
+    return computeSets_[f * 2 + std::min<uint32_t>(readParity, 1u)]->handle();
 }
 
 void ParticleRuntime::recordInit(VkCommandBuffer cmd) const {

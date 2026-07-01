@@ -4,6 +4,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include <stdexcept>
+
 // Vulkan backend: rhi::Format <-> VkFormat. Kept in the rhi/vulkan/ backend layer
 // so the neutral rhi/Format.hpp stays free of Vulkan types (Étape 16.3).
 
@@ -28,6 +30,30 @@ inline VkFormat toVk(Format f) {
         case Format::Depth32FloatStencil8: return VK_FORMAT_D32_SFLOAT_S8_UINT;
     }
     return VK_FORMAT_UNDEFINED;
+}
+
+// Reverse mapping, used only at the temporary Swapchain/HDR/depth coutures where a
+// VkFormat is queried at runtime (device caps, swapchain surface format) and fed
+// into a neutral Pipeline::Desc. Disappears once 16.3.f neutralises those queries.
+inline Format fromVk(VkFormat f) {
+    switch (f) {
+        case VK_FORMAT_UNDEFINED:            return Format::Undefined;
+        case VK_FORMAT_R8G8B8A8_UNORM:       return Format::RGBA8Unorm;
+        case VK_FORMAT_R8G8B8A8_SRGB:        return Format::RGBA8Srgb;
+        case VK_FORMAT_B8G8R8A8_UNORM:       return Format::BGRA8Unorm;
+        case VK_FORMAT_B8G8R8A8_SRGB:        return Format::BGRA8Srgb;
+        case VK_FORMAT_R16G16_SFLOAT:        return Format::RG16Float;
+        case VK_FORMAT_R16G16B16A16_SFLOAT:  return Format::RGBA16Float;
+        case VK_FORMAT_R32G32_SFLOAT:        return Format::RG32Float;
+        case VK_FORMAT_R32G32B32_SFLOAT:     return Format::RGB32Float;
+        case VK_FORMAT_R32G32B32A32_SFLOAT:  return Format::RGBA32Float;
+        case VK_FORMAT_R32G32B32A32_SINT:    return Format::RGBA32Sint;
+        case VK_FORMAT_D16_UNORM:            return Format::Depth16;
+        case VK_FORMAT_D32_SFLOAT:           return Format::Depth32Float;
+        case VK_FORMAT_D24_UNORM_S8_UINT:    return Format::Depth24Stencil8;
+        case VK_FORMAT_D32_SFLOAT_S8_UINT:   return Format::Depth32FloatStencil8;
+        default: throw std::runtime_error("rhi::vulkan::fromVk: unmapped VkFormat");
+    }
 }
 
 } // namespace saida::rhi::vulkan

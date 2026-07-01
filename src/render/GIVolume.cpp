@@ -96,7 +96,7 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code
 }
 
 GIVolume::GIVolume(VulkanDevice& device, const GIVolumeDesc& desc,
-                   VkDescriptorSetLayout materialSetLayout, VkDescriptorSetLayout globalSetLayout)
+                   rhi::BindGroupLayout& materialSetLayout, rhi::BindGroupLayout& globalSetLayout)
     : device_(device), desc_(desc) {
     // Lay probes out in a roughly square 2D atlas.
     probesPerRow_ = std::max(1, static_cast<int>(std::ceil(std::sqrt(
@@ -123,13 +123,9 @@ GIVolume::GIVolume(VulkanDevice& device, const GIVolumeDesc& desc,
 }
 
 GIVolume::~GIVolume() {
-    // Compute pipelines destroy themselves (unique_ptr<ComputePipeline>).
-    if (giComputePool_) vkDestroyDescriptorPool(device_.device(), giComputePool_, nullptr);
-    if (giComputeSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), giComputeSetLayout_, nullptr);
+    // Compute pipelines + bind groups destroy themselves (unique_ptr).
     if (voxelPipeline_) vkDestroyPipeline(device_.device(), voxelPipeline_, nullptr);
     if (voxelPipelineLayout_) vkDestroyPipelineLayout(device_.device(), voxelPipelineLayout_, nullptr);
-    if (voxelPool_) vkDestroyDescriptorPool(device_.device(), voxelPool_, nullptr);
-    if (voxelSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), voxelSetLayout_, nullptr);
     if (voxelView_) vkDestroyImageView(device_.device(), voxelView_, nullptr);
     if (voxelImage_) vmaDestroyImage(device_.allocator(), voxelImage_, voxelAllocation_);
     if (sampler_) vkDestroySampler(device_.device(), sampler_, nullptr);
@@ -189,7 +185,7 @@ void GIVolume::fillConstant() {
     device_.endSingleTimeCommands(cmd);
 }
 
-void GIVolume::createVoxelResources(VkDescriptorSetLayout materialSetLayout) {
+void GIVolume::createVoxelResources(rhi::BindGroupLayout& materialSetLayout) {
     const uint32_t res = static_cast<uint32_t>(desc_.voxelResolution);
 
     // 3D albedo grid.
@@ -223,65 +219,22 @@ void GIVolume::createVoxelResources(VkDescriptorSetLayout materialSetLayout) {
         rhi::BufferUsage::Uniform, MemoryUsage::HostVisible);
 
     // Descriptor set: binding 0 = storage image, binding 1 = UBO.
-    std::array<VkDescriptorSetLayoutBinding, 2> b{};
-    b[0].binding = 0;
-    b[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    b[0].descriptorCount = 1;
-    b[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    b[1].binding = 1;
-    b[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    b[1].descriptorCount = 1;
-    b[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    voxelSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::StorageImage, rhi::ShaderStages::Fragment},
+            {1, rhi::BindingType::UniformBuffer, rhi::ShaderStages::Vertex | rhi::ShaderStages::Fragment},
+        });
 
-    VkDescriptorSetLayoutCreateInfo layoutCI{};
-    layoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutCI.bindingCount = static_cast<uint32_t>(b.size());
-    layoutCI.pBindings = b.data();
-    if (vkCreateDescriptorSetLayout(device_.device(), &layoutCI, nullptr, &voxelSetLayout_) != VK_SUCCESS)
-        throw std::runtime_error("GIVolume: failed to create voxel set layout");
-
-    std::array<VkDescriptorPoolSize, 2> ps{};
-    ps[0].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    ps[0].descriptorCount = 1;
-    ps[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    ps[1].descriptorCount = 1;
-    VkDescriptorPoolCreateInfo poolCI{};
-    poolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolCI.poolSizeCount = static_cast<uint32_t>(ps.size());
-    poolCI.pPoolSizes = ps.data();
-    poolCI.maxSets = 1;
-    if (vkCreateDescriptorPool(device_.device(), &poolCI, nullptr, &voxelPool_) != VK_SUCCESS)
-        throw std::runtime_error("GIVolume: failed to create voxel descriptor pool");
-
-    VkDescriptorSetAllocateInfo ai{};
-    ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    ai.descriptorPool = voxelPool_;
-    ai.descriptorSetCount = 1;
-    ai.pSetLayouts = &voxelSetLayout_;
-    if (vkAllocateDescriptorSets(device_.device(), &ai, &voxelSet_) != VK_SUCCESS)
-        throw std::runtime_error("GIVolume: failed to allocate voxel descriptor set");
-
-    VkDescriptorImageInfo imgInfo{};
-    imgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;  // storage image is written in GENERAL
-    imgInfo.imageView = voxelView_;
-    VkDescriptorBufferInfo bufInfo{};
-    bufInfo.buffer = voxelUbo_->handle();
-    bufInfo.offset = 0;
-    bufInfo.range = sizeof(VoxelUBOData);
-    std::array<VkWriteDescriptorSet, 2> w{};
-    w[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    w[0].dstSet = voxelSet_;
-    w[0].dstBinding = 0;
-    w[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    w[0].descriptorCount = 1;
-    w[0].pImageInfo = &imgInfo;
-    w[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    w[1].dstSet = voxelSet_;
-    w[1].dstBinding = 1;
-    w[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    w[1].descriptorCount = 1;
-    w[1].pBufferInfo = &bufInfo;
-    vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(w.size()), w.data(), 0, nullptr);
+    rhi::BindGroupEntry voxelImageEntry;
+    voxelImageEntry.binding = 0;
+    voxelImageEntry.view = voxelView_;
+    voxelImageEntry.textureState = rhi::ResourceState::StorageReadWrite;
+    rhi::BindGroupEntry uboEntry;
+    uboEntry.binding = 1;
+    uboEntry.buffer = voxelUbo_.get();
+    uboEntry.range = sizeof(VoxelUBOData);
+    voxelSet_ = std::make_unique<rhi::BindGroup>(*voxelSetLayout_,
+        std::vector<rhi::BindGroupEntry>{voxelImageEntry, uboEntry});
 
     // --- Voxelize pipeline (attachment-less raster; writes only via imageStore). ---
     auto vertCode = readFile(shaderPath("voxelize.vert.spv"));
@@ -348,7 +301,7 @@ void GIVolume::createVoxelResources(VkDescriptorSetLayout materialSetLayout) {
     push.offset = 0;
     push.size = sizeof(VoxelPush);
 
-    std::array<VkDescriptorSetLayout, 2> setLayouts = {voxelSetLayout_, materialSetLayout};
+    std::array<VkDescriptorSetLayout, 2> setLayouts = {voxelSetLayout_->handle(), materialSetLayout.handle()};
     VkPipelineLayoutCreateInfo plCI{};
     plCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     plCI.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
@@ -435,8 +388,9 @@ void GIVolume::voxelize(VkCommandBuffer cmd, Scene& scene, GpuProfiler* profiler
     vkCmdBeginRendering(cmd, &rp);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, voxelPipeline_);
+    VkDescriptorSet voxelSetHandle = voxelSet_->handle();
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, voxelPipelineLayout_,
-        0, 1, &voxelSet_, 0, nullptr);
+        0, 1, &voxelSetHandle, 0, nullptr);
 
     VkViewport viewport{};
     viewport.width = static_cast<float>(res);
@@ -475,72 +429,41 @@ void GIVolume::voxelize(VkCommandBuffer cmd, Scene& scene, GpuProfiler* profiler
     cmdImageBarrier(cmd, toRead);
 }
 
-void GIVolume::createComputeResources(VkDescriptorSetLayout globalSetLayout) {
+void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
     const int probeCount = desc_.probeCount();
     raysBuffer_ = std::make_unique<Buffer>(device_,
         static_cast<VkDeviceSize>(probeCount) * desc_.raysPerProbe * sizeof(RayData),
         rhi::BufferUsage::Storage, MemoryUsage::GpuOnly);
 
     // Set layout: 0=rays SSBO, 1/2=write irr/vis (storage img), 3/4=prev irr/vis.
-    std::array<VkDescriptorSetLayoutBinding, 5> b{};
-    b[0].binding = 0; b[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    for (int i = 1; i < 5; ++i) b[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    for (int i = 0; i < 5; ++i) { b[i].binding = i; b[i].descriptorCount = 1; b[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT; }
-
-    VkDescriptorSetLayoutCreateInfo lci{};
-    lci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    lci.bindingCount = static_cast<uint32_t>(b.size());
-    lci.pBindings = b.data();
-    if (vkCreateDescriptorSetLayout(device_.device(), &lci, nullptr, &giComputeSetLayout_) != VK_SUCCESS)
-        throw std::runtime_error("GIVolume: failed to create compute set layout");
-
-    std::array<VkDescriptorPoolSize, 2> ps{};
-    ps[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;  ps[0].descriptorCount = 2;
-    ps[1].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;   ps[1].descriptorCount = 2 * 4;
-    VkDescriptorPoolCreateInfo pci{};
-    pci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pci.poolSizeCount = static_cast<uint32_t>(ps.size());
-    pci.pPoolSizes = ps.data();
-    pci.maxSets = 2;
-    if (vkCreateDescriptorPool(device_.device(), &pci, nullptr, &giComputePool_) != VK_SUCCESS)
-        throw std::runtime_error("GIVolume: failed to create compute descriptor pool");
-
-    std::array<VkDescriptorSetLayout, 2> layouts = {giComputeSetLayout_, giComputeSetLayout_};
-    VkDescriptorSetAllocateInfo ai{};
-    ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    ai.descriptorPool = giComputePool_;
-    ai.descriptorSetCount = 2;
-    ai.pSetLayouts = layouts.data();
-    if (vkAllocateDescriptorSets(device_.device(), &ai, giComputeSets_.data()) != VK_SUCCESS)
-        throw std::runtime_error("GIVolume: failed to allocate compute sets");
+    giComputeSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute},
+            {1, rhi::BindingType::StorageImage, rhi::ShaderStages::Compute},
+            {2, rhi::BindingType::StorageImage, rhi::ShaderStages::Compute},
+            {3, rhi::BindingType::StorageImage, rhi::ShaderStages::Compute},
+            {4, rhi::BindingType::StorageImage, rhi::ShaderStages::Compute},
+        });
 
     // Parity p: write = atlas[p], prev = atlas[1-p].
     for (int p = 0; p < 2; ++p) {
-        VkDescriptorBufferInfo rays{raysBuffer_->handle(), 0, VK_WHOLE_SIZE};
-        auto imgInfo = [](VkImageView v) {
-            VkDescriptorImageInfo i{}; i.imageLayout = VK_IMAGE_LAYOUT_GENERAL; i.imageView = v; return i;
+        rhi::BindGroupEntry raysEntry;
+        raysEntry.binding = 0;
+        raysEntry.buffer = raysBuffer_.get();
+        auto imgEntry = [](uint32_t binding, VkImageView v) {
+            rhi::BindGroupEntry e; e.binding = binding; e.view = v;
+            e.textureState = rhi::ResourceState::StorageReadWrite;
+            return e;
         };
-        VkDescriptorImageInfo wi = imgInfo(irradiance_[p]->view());
-        VkDescriptorImageInfo wv = imgInfo(visibility_[p]->view());
-        VkDescriptorImageInfo pi = imgInfo(irradiance_[1 - p]->view());
-        VkDescriptorImageInfo pv = imgInfo(visibility_[1 - p]->view());
-
-        std::array<VkWriteDescriptorSet, 5> w{};
-        for (int i = 0; i < 5; ++i) {
-            w[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            w[i].dstSet = giComputeSets_[p];
-            w[i].dstBinding = i;
-            w[i].descriptorCount = 1;
-        }
-        w[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; w[0].pBufferInfo = &rays;
-        w[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;  w[1].pImageInfo = &wi;
-        w[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;  w[2].pImageInfo = &wv;
-        w[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;  w[3].pImageInfo = &pi;
-        w[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;  w[4].pImageInfo = &pv;
-        vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(w.size()), w.data(), 0, nullptr);
+        rhi::BindGroupEntry wi = imgEntry(1, irradiance_[p]->view());
+        rhi::BindGroupEntry wv = imgEntry(2, visibility_[p]->view());
+        rhi::BindGroupEntry pi = imgEntry(3, irradiance_[1 - p]->view());
+        rhi::BindGroupEntry pv = imgEntry(4, visibility_[1 - p]->view());
+        giComputeSets_[p] = std::make_unique<rhi::BindGroup>(*giComputeSetLayout_,
+            std::vector<rhi::BindGroupEntry>{raysEntry, wi, wv, pi, pv});
     }
 
-    std::vector<VkDescriptorSetLayout> setLayouts = {globalSetLayout, giComputeSetLayout_};
+    std::vector<VkDescriptorSetLayout> setLayouts = {globalSetLayout.handle(), giComputeSetLayout_->handle()};
     tracePipeline_  = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_trace.comp.spv"),  setLayouts, sizeof(TracePush));
     blendPipeline_  = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_blend.comp.spv"),  setLayouts, sizeof(BlendPush));
     borderPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_borders.comp.spv"), setLayouts, sizeof(BorderPush));
@@ -565,7 +488,7 @@ void computeBarrier(VkCommandBuffer cmd, VkPipelineStageFlags2 dstStage) {
 
 void GIVolume::update(VkCommandBuffer cmd, VkDescriptorSet globalSet, GpuProfiler* profiler) {
     const int probeCount = desc_.probeCount();
-    VkDescriptorSet giSet = giComputeSets_[curr_];
+    VkDescriptorSet giSet = giComputeSets_[curr_]->handle();
 
     // Make the previous frame's atlas writes (read as "prev") visible to compute.
     computeBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);

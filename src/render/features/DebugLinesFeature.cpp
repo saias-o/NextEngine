@@ -2,6 +2,7 @@
 
 #include "core/Paths.hpp"
 #include "graphics/Mesh.hpp"
+#include "rhi/vulkan/Format.hpp"
 #include "scene/Scene.hpp"
 #include "scene/Node.hpp"
 #include "scene/animation/Animator.hpp"
@@ -13,15 +14,20 @@ namespace saida {
 void DebugLinesFeature::createPipelines(const RenderContext& ctx) {
     if (ctx.stereo()) return;  // editor-only aid; not drawn in XR
 
-    std::vector<VkDescriptorSetLayout> setLayouts = {ctx.globalSetLayout};
-    std::vector<VkFormat> colorFormats = {ctx.colorFormat};
     // Lines into the HDR target; depth test off so the skeleton shows through the
     // mesh. Reuses set 0 (camera) + the standard Vertex layout.
-    pipeline_ = std::make_unique<Pipeline>(ctx.device,
-        shaderPath("debug_line.vert.spv"), shaderPath("debug_line.frag.spv"),
-        colorFormats, ctx.depthFormat, setLayouts, ctx.samples,
-        true, false, 0, false, VK_COMPARE_OP_LESS, VK_CULL_MODE_NONE, false,
-        VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
+    Pipeline::Desc desc;
+    desc.vertPath = shaderPath("debug_line.vert.spv");
+    desc.fragPath = shaderPath("debug_line.frag.spv");
+    desc.colorFormats = {rhi::vulkan::fromVk(ctx.colorFormat)};
+    desc.depthFormat = rhi::vulkan::fromVk(ctx.depthFormat);
+    desc.bindGroupLayouts = {&ctx.globalSetLayout};
+    desc.samples = static_cast<uint32_t>(ctx.samples);
+    desc.depthTest = false;
+    desc.depthWrite = false;
+    desc.cullMode = rhi::CullMode::None;
+    desc.topology = rhi::Topology::LineList;
+    pipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
 
     buffers_.reserve(ctx.framesInFlight);
     for (uint32_t i = 0; i < ctx.framesInFlight; ++i)

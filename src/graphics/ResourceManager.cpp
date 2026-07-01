@@ -42,8 +42,14 @@ struct MaterialData {
 ResourceManager::ResourceManager(VulkanDevice& device, AssetRegistry* registry)
     : device_(device), registry_(registry) {
     geometryRegistry_ = std::make_unique<GeometryRegistry>(device_);
-    createMaterialSetLayout();
-    materialPools_.push_back(createNewPool());
+    materialSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // albedo
+            {1, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // normal
+            {2, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // metallic/roughness
+            {3, rhi::BindingType::UniformBuffer, rhi::ShaderStages::Fragment},         // params
+            {4, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // emissive
+        });
     createGlobalBindlessResources();
     ensureDefaultTextures();
 }
@@ -56,72 +62,9 @@ ResourceManager::~ResourceManager() {
     meshes_.clear();
     rigs_.clear();
     animations_.clear();
-    for (auto pool : materialPools_) {
-        vkDestroyDescriptorPool(device_.device(), pool, nullptr);
-    }
-    vkDestroyDescriptorSetLayout(device_.device(), materialSetLayout_, nullptr);
+    materialSetLayout_.reset();
     if (globalMaterialSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), globalMaterialSetLayout_, nullptr);
     if (globalMaterialPool_) vkDestroyDescriptorPool(device_.device(), globalMaterialPool_, nullptr);
-}
-
-void ResourceManager::createMaterialSetLayout() {
-    VkDescriptorSetLayoutBinding albedoBinding{};
-    albedoBinding.binding = 0;
-    albedoBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    albedoBinding.descriptorCount = 1;
-    albedoBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding normalBinding{};
-    normalBinding.binding = 1;
-    normalBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    normalBinding.descriptorCount = 1;
-    normalBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding mrBinding{};
-    mrBinding.binding = 2;
-    mrBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    mrBinding.descriptorCount = 1;
-    mrBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding paramsBinding{};
-    paramsBinding.binding = 3;
-    paramsBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    paramsBinding.descriptorCount = 1;
-    paramsBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding emissiveBinding{};
-    emissiveBinding.binding = 4;
-    emissiveBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    emissiveBinding.descriptorCount = 1;
-    emissiveBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings = {albedoBinding, normalBinding, mrBinding, paramsBinding, emissiveBinding};
-
-    VkDescriptorSetLayoutCreateInfo ci{};
-    ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    ci.bindingCount = static_cast<uint32_t>(bindings.size());
-    ci.pBindings = bindings.data();
-    if (vkCreateDescriptorSetLayout(device_.device(), &ci, nullptr, &materialSetLayout_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create material descriptor set layout");
-}
-
-VkDescriptorPool ResourceManager::createNewPool() {
-    std::array<VkDescriptorPoolSize, 2> sizes{};
-    sizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    sizes[0].descriptorCount = kMaxMaterials * 4; // 4 textures per material now
-    sizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    sizes[1].descriptorCount = kMaxMaterials;
-
-    VkDescriptorPoolCreateInfo ci{};
-    ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    ci.poolSizeCount = static_cast<uint32_t>(sizes.size());
-    ci.pPoolSizes = sizes.data();
-    ci.maxSets = kMaxMaterials;
-    
-    VkDescriptorPool newPool = VK_NULL_HANDLE;
-    if (vkCreateDescriptorPool(device_.device(), &ci, nullptr, &newPool) != VK_SUCCESS)
-        throw std::runtime_error("failed to create material pool");
-    return newPool;
 }
 
 void ResourceManager::createGlobalBindlessResources() {
@@ -279,27 +222,6 @@ uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const
     }
 
     return index;
-}
-
-VkDescriptorSet ResourceManager::allocateMaterialSet(VkDescriptorSetLayout layout) {
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = materialPools_.back();
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &layout;
-
-    VkDescriptorSet set = VK_NULL_HANDLE;
-    VkResult result = vkAllocateDescriptorSets(device_.device(), &allocInfo, &set);
-    if (result == VK_ERROR_OUT_OF_POOL_MEMORY || result == VK_ERROR_FRAGMENTED_POOL) {
-        materialPools_.push_back(createNewPool());
-        allocInfo.descriptorPool = materialPools_.back();
-        if (vkAllocateDescriptorSets(device_.device(), &allocInfo, &set) != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate material descriptor set even after creating new pool");
-        }
-    } else if (result != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate material descriptor set");
-    }
-    return set;
 }
 
 Mesh* ResourceManager::createMesh(AssetID id, const std::vector<Vertex>& vertices,

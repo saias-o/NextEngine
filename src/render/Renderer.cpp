@@ -17,6 +17,7 @@
 #include "graphics/Swapchain.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "graphics/ResourceManager.hpp"
+#include "rhi/vulkan/Format.hpp"
 #include "render/GIVolume.hpp"
 #include "render/PostProcessor.hpp"
 #include "graphics/UIRenderer.hpp"
@@ -186,8 +187,7 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
     createUniformBuffers();
     shadowMap_ = std::make_unique<ShadowMap>(device_);
     gi_ = std::make_unique<GIVolume>(device_, giDescForTier(device_.capabilities().tier),
-                                     resources_.materialSetLayout(), globalSetLayout_);
-    createGlobalDescriptorPool();
+                                     resources_.materialSetLayout(), *globalSetLayout_);
     createGlobalDescriptorSets();
     createCommandBuffers();
     createSyncObjects();
@@ -210,8 +210,7 @@ Renderer::Renderer(VulkanDevice& device, Window& window, ResourceManager& resour
     createUniformBuffers();
     shadowMap_ = std::make_unique<ShadowMap>(device_);
     gi_ = std::make_unique<GIVolume>(device_, giDescForTier(device_.capabilities().tier),
-                                     resources_.materialSetLayout(), globalSetLayout_);
-    createGlobalDescriptorPool();
+                                     resources_.materialSetLayout(), *globalSetLayout_);
     createGlobalDescriptorSets();
     // ... plus the XR-specific stereo targets + multiview pipelines.
     createXrTargets();
@@ -232,17 +231,12 @@ Renderer::~Renderer() {
     if (xrMode_) {
         for (auto& post : xrPostProcessors_) post.reset();
         cleanupXrTargets();
-        if (xrTonemapPool_) vkDestroyDescriptorPool(device_.device(), xrTonemapPool_, nullptr);
     }
 #endif
-    vkDestroyDescriptorPool(device_.device(), globalPool_, nullptr);
-    vkDestroyDescriptorSetLayout(device_.device(), globalSetLayout_, nullptr);
     cleanupHdrResources();
     if (tonemapDepthSampler_) vkDestroySampler(device_.device(), tonemapDepthSampler_, nullptr);
     if (tonemapSampler_) vkDestroySampler(device_.device(), tonemapSampler_, nullptr);
-    if (tonemapPool_) vkDestroyDescriptorPool(device_.device(), tonemapPool_, nullptr);
-    if (tonemapSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), tonemapSetLayout_, nullptr);
-    
+
     if (cullingSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), cullingSetLayout_, nullptr);
     if (cullingPool_) vkDestroyDescriptorPool(device_.device(), cullingPool_, nullptr);
     // pipeline_ and the buffers are torn down by their destructors.
@@ -278,91 +272,37 @@ VkRect2D Renderer::activeRenderRect() const {
 }
 
 void Renderer::createGlobalSetLayout() {
-    // Set 0: camera UBO (vertex) + lighting UBO (fragment), shared by all draws.
-    VkDescriptorSetLayoutBinding cameraBinding{};
-    cameraBinding.binding = 0;
-    cameraBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    cameraBinding.descriptorCount = 1;
-    cameraBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutBinding lightingBinding{};
-    lightingBinding.binding = 1;
-    lightingBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    lightingBinding.descriptorCount = 1;
-    lightingBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Binding 2: shadow map array (sampled in the fragment shader and DDGI trace).
-    VkDescriptorSetLayoutBinding shadowBinding{};
-    shadowBinding.binding = 2;
-    shadowBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    shadowBinding.descriptorCount = 1;
-    shadowBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Binding 3: Global SSBO for bone matrices
-    VkDescriptorSetLayoutBinding boneBinding{};
-    boneBinding.binding = 3;
-    boneBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    boneBinding.descriptorCount = 1;
-    boneBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    // Bindings 4/5: DDGI irradiance + visibility atlases (sampled in the fragment
-    // shader for indirect diffuse — the single GI primitive).
-    VkDescriptorSetLayoutBinding giIrradianceBinding{};
-    giIrradianceBinding.binding = 4;
-    giIrradianceBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    giIrradianceBinding.descriptorCount = 1;
-    giIrradianceBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
-
-    VkDescriptorSetLayoutBinding giVisibilityBinding{};
-    giVisibilityBinding.binding = 5;
-    giVisibilityBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    giVisibilityBinding.descriptorCount = 1;
-    giVisibilityBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Binding 6: voxelized scene albedo (debug view + DDGI trace).
-    VkDescriptorSetLayoutBinding giVoxelBinding{};
-    giVoxelBinding.binding = 6;
-    giVoxelBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    giVoxelBinding.descriptorCount = 1;
-    giVoxelBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Binding 7: canonical environment map for image-based lighting. The same
-    // equirectangular texture is sampled by desktop, XR and mobile shaders.
-    VkDescriptorSetLayoutBinding environmentBinding{};
-    environmentBinding.binding = 7;
-    environmentBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    environmentBinding.descriptorCount = 1;
-    environmentBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
-
-    std::array<VkDescriptorSetLayoutBinding, 8> bindings = {
-        cameraBinding, lightingBinding, shadowBinding, boneBinding,
-        giIrradianceBinding, giVisibilityBinding, giVoxelBinding,
-        environmentBinding};
-
-    VkDescriptorSetLayoutCreateInfo ci{};
-    ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    ci.bindingCount = static_cast<uint32_t>(bindings.size());
-    ci.pBindings = bindings.data();
-    if (vkCreateDescriptorSetLayout(device_.device(), &ci, nullptr, &globalSetLayout_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create global descriptor set layout");
+    // Set 0: camera + lighting + shadow array + bone SSBO + DDGI atlases + env map.
+    globalSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::UniformBuffer, rhi::ShaderStages::Vertex},                       // camera
+            {1, rhi::BindingType::UniformBuffer, rhi::ShaderStages::Fragment | rhi::ShaderStages::Compute},  // lighting
+            {2, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment | rhi::ShaderStages::Compute},  // shadow array
+            {3, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Vertex},                        // bone matrices
+            {4, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment | rhi::ShaderStages::Compute},  // GI irradiance
+            {5, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment | rhi::ShaderStages::Compute},  // GI visibility
+            {6, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment | rhi::ShaderStages::Compute},  // GI voxel
+            {7, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment | rhi::ShaderStages::Compute},  // environment
+        });
 }
 
-void Renderer::createPipeline(VkDescriptorSetLayout materialSetLayout) {
+void Renderer::createPipeline(rhi::BindGroupLayout& materialSetLayout) {
     bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
-    
+
     std::string vertShader = useGpuDriven ? "bindless.shader.vert.spv" : "shader.vert.spv";
     std::string fragShader = useGpuDriven ? "bindless.shader.frag.spv" : "shader.frag.spv";
-    
+
     // Classic path: set 0 = global, set 1 = material.
-    // Dormant GPU-driven path: set 0 = global, set 1 = bindless material data,
-    // set 2 = culling/instance data.
+    // Dormant GPU-driven path: set 0 = global, set 1 = bindless material data
+    // (raw Vulkan, out of RHI scope until 16.4's caps.bindless fallback), set 2
+    // = culling/instance data.
     std::vector<VkDescriptorSetLayout> setLayouts;
     if (useGpuDriven) {
-        setLayouts = {globalSetLayout_, resources_.globalMaterialSetLayout(), cullingSetLayout_};
+        setLayouts = {globalSetLayout_->handle(), resources_.globalMaterialSetLayout(), cullingSetLayout_};
     } else {
-        setLayouts = {globalSetLayout_, materialSetLayout};
+        setLayouts = {globalSetLayout_->handle(), materialSetLayout.handle()};
     }
-        
+
     std::vector<VkFormat> colorFormats = {VK_FORMAT_R16G16B16A16_SFLOAT};
     pipeline_ = std::make_unique<Pipeline>(device_, shaderPath(vertShader),
         shaderPath(fragShader), colorFormats, swapchain_->depthFormat(), setLayouts,
@@ -372,11 +312,14 @@ void Renderer::createPipeline(VkDescriptorSetLayout materialSetLayout) {
     // layout as Lit, only the fragment differs → the draw loop swaps pipelines
     // per material with no other change. Always built against the classic
     // (non-bindless) 3-set layout used by the per-object draw path.
-    std::vector<VkDescriptorSetLayout> classicLayouts = {
-        globalSetLayout_, materialSetLayout};
-    unlitPipeline_ = std::make_unique<Pipeline>(device_, shaderPath("shader.vert.spv"),
-        shaderPath("unlit.frag.spv"), colorFormats, swapchain_->depthFormat(), classicLayouts,
-        swapchain_->samples());
+    Pipeline::Desc unlitDesc;
+    unlitDesc.vertPath = shaderPath("shader.vert.spv");
+    unlitDesc.fragPath = shaderPath("unlit.frag.spv");
+    unlitDesc.colorFormats = {rhi::vulkan::fromVk(VK_FORMAT_R16G16B16A16_SFLOAT)};
+    unlitDesc.depthFormat = rhi::vulkan::fromVk(swapchain_->depthFormat());
+    unlitDesc.bindGroupLayouts = {globalSetLayout_.get(), &materialSetLayout};
+    unlitDesc.samples = static_cast<uint32_t>(swapchain_->samples());
+    unlitPipeline_ = std::make_unique<Pipeline>(device_, unlitDesc);
 }
 
 void Renderer::createWebCanvasWorldPipeline() {
@@ -563,200 +506,84 @@ void Renderer::createCullingPipeline() {
     cullingPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("culling.comp.spv"), plLayouts, pushConstantSize);
 }
 
-void Renderer::createGlobalDescriptorPool() {
-    std::array<VkDescriptorPoolSize, 3> poolSizes{};
-    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight) * 2;  // camera + lighting
-    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight) * 5;  // shadow + GI + environment
-    poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight);  // bone matrices SSBO
+void Renderer::rebuildGlobalSet(int frame) {
+    rhi::BindGroupEntry cameraEntry;
+    cameraEntry.binding = 0;
+    cameraEntry.buffer = uniformBuffers_[frame].get();
+    cameraEntry.range = sizeof(UniformBufferObject);
 
-    VkDescriptorPoolCreateInfo ci{};
-    ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    ci.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-    ci.pPoolSizes = poolSizes.data();
-    ci.maxSets = static_cast<uint32_t>(kMaxFramesInFlight);
-    if (vkCreateDescriptorPool(device_.device(), &ci, nullptr, &globalPool_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create global descriptor pool");
+    rhi::BindGroupEntry lightEntry;
+    lightEntry.binding = 1;
+    lightEntry.buffer = lightingBuffers_[frame].get();
+    lightEntry.range = sizeof(LightingUBO);
+
+    rhi::BindGroupEntry shadowEntry;
+    shadowEntry.binding = 2;
+    shadowEntry.view = shadowMap_->arrayView();
+    shadowEntry.sampler = shadowMap_->sampler();
+    shadowEntry.textureState = rhi::ResourceState::DepthRead;
+
+    rhi::BindGroupEntry boneEntry;
+    boneEntry.binding = 3;
+    boneEntry.buffer = boneMatricesBuffers_[frame].get();
+    boneEntry.range = 4 * 1024 * 1024; // 4MB
+
+    // Atlases live in GENERAL (compute-written, fragment-sampled).
+    rhi::BindGroupEntry giIrradianceEntry;
+    giIrradianceEntry.binding = 4;
+    giIrradianceEntry.view = gi_->irradianceView();
+    giIrradianceEntry.sampler = gi_->sampler();
+    giIrradianceEntry.textureState = rhi::ResourceState::StorageReadWrite;
+
+    rhi::BindGroupEntry giVisibilityEntry;
+    giVisibilityEntry.binding = 5;
+    giVisibilityEntry.view = gi_->visibilityView();
+    giVisibilityEntry.sampler = gi_->sampler();
+    giVisibilityEntry.textureState = rhi::ResourceState::StorageReadWrite;
+
+    rhi::BindGroupEntry giVoxelEntry;
+    giVoxelEntry.binding = 6;
+    giVoxelEntry.view = gi_->voxelView();
+    giVoxelEntry.sampler = gi_->sampler();
+
+    Texture* environment = resources_.defaultWhiteTexture();
+    rhi::BindGroupEntry environmentEntry;
+    environmentEntry.binding = 7;
+    environmentEntry.view = environment->imageView();
+    environmentEntry.sampler = environment->sampler();
+
+    globalGroups_[frame] = std::make_unique<rhi::BindGroup>(*globalSetLayout_,
+        std::vector<rhi::BindGroupEntry>{cameraEntry, lightEntry, shadowEntry, boneEntry,
+            giIrradianceEntry, giVisibilityEntry, giVoxelEntry, environmentEntry});
+
+    cachedGiIrradianceView_[frame] = gi_->irradianceView();
+    cachedGiVisibilityView_[frame] = gi_->visibilityView();
+    cachedGiSampler_[frame] = gi_->sampler();
+    cachedEnvironmentView_[frame] = environment->imageView();
+    cachedEnvironmentSampler_[frame] = environment->sampler();
 }
 
 void Renderer::createGlobalDescriptorSets() {
-    std::vector<VkDescriptorSetLayout> layouts(kMaxFramesInFlight, globalSetLayout_);
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = globalPool_;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(kMaxFramesInFlight);
-    allocInfo.pSetLayouts = layouts.data();
-
-    globalSets_.resize(kMaxFramesInFlight);
-    if (vkAllocateDescriptorSets(device_.device(), &allocInfo, globalSets_.data()) != VK_SUCCESS)
-        throw std::runtime_error("failed to allocate global descriptor sets");
-
-    for (int i = 0; i < kMaxFramesInFlight; i++) {
-        VkDescriptorBufferInfo cameraInfo{};
-        cameraInfo.buffer = uniformBuffers_[i]->handle();
-        cameraInfo.offset = 0;
-        cameraInfo.range = sizeof(UniformBufferObject);
-
-        VkDescriptorBufferInfo lightInfo{};
-        lightInfo.buffer = lightingBuffers_[i]->handle();
-        lightInfo.offset = 0;
-        lightInfo.range = sizeof(LightingUBO);
-
-        VkDescriptorImageInfo shadowInfo{};
-        shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        shadowInfo.imageView = shadowMap_->arrayView();
-        shadowInfo.sampler = shadowMap_->sampler();
-
-        VkDescriptorBufferInfo boneInfo{};
-        boneInfo.buffer = boneMatricesBuffers_[i]->handle();
-        boneInfo.offset = 0;
-        boneInfo.range = 4 * 1024 * 1024; // 4MB
-
-        // Atlases live in GENERAL (compute-written, fragment-sampled).
-        VkDescriptorImageInfo giIrradianceInfo{};
-        giIrradianceInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        giIrradianceInfo.imageView = gi_->irradianceView();
-        giIrradianceInfo.sampler = gi_->sampler();
-
-        VkDescriptorImageInfo giVisibilityInfo{};
-        giVisibilityInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        giVisibilityInfo.imageView = gi_->visibilityView();
-        giVisibilityInfo.sampler = gi_->sampler();
-
-        VkDescriptorImageInfo giVoxelInfo{};
-        giVoxelInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        giVoxelInfo.imageView = gi_->voxelView();
-        giVoxelInfo.sampler = gi_->sampler();
-
-        Texture* fallbackEnvironment = resources_.defaultWhiteTexture();
-        VkDescriptorImageInfo environmentInfo{};
-        environmentInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        environmentInfo.imageView = fallbackEnvironment->imageView();
-        environmentInfo.sampler = fallbackEnvironment->sampler();
-
-        std::array<VkWriteDescriptorSet, 8> writes{};
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = globalSets_[i];
-        writes[0].dstBinding = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[0].descriptorCount = 1;
-        writes[0].pBufferInfo = &cameraInfo;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = globalSets_[i];
-        writes[1].dstBinding = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[1].descriptorCount = 1;
-        writes[1].pBufferInfo = &lightInfo;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = globalSets_[i];
-        writes[2].dstBinding = 2;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[2].descriptorCount = 1;
-        writes[2].pImageInfo = &shadowInfo;
-
-        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[3].dstSet = globalSets_[i];
-        writes[3].dstBinding = 3;
-        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[3].descriptorCount = 1;
-        writes[3].pBufferInfo = &boneInfo;
-
-        writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[4].dstSet = globalSets_[i];
-        writes[4].dstBinding = 4;
-        writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[4].descriptorCount = 1;
-        writes[4].pImageInfo = &giIrradianceInfo;
-
-        writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[5].dstSet = globalSets_[i];
-        writes[5].dstBinding = 5;
-        writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[5].descriptorCount = 1;
-        writes[5].pImageInfo = &giVisibilityInfo;
-
-        writes[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[6].dstSet = globalSets_[i];
-        writes[6].dstBinding = 6;
-        writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[6].descriptorCount = 1;
-        writes[6].pImageInfo = &giVoxelInfo;
-
-        writes[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[7].dstSet = globalSets_[i];
-        writes[7].dstBinding = 7;
-        writes[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[7].descriptorCount = 1;
-        writes[7].pImageInfo = &environmentInfo;
-
-        vkUpdateDescriptorSets(device_.device(),
-            static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-    }
+    globalGroups_.resize(kMaxFramesInFlight);
+    for (int i = 0; i < kMaxFramesInFlight; i++) rebuildGlobalSet(i);
 }
 
 void Renderer::updateGlobalShadowDescriptor() {
-    for (int i = 0; i < kMaxFramesInFlight; i++) {
-        VkDescriptorImageInfo shadowInfo{};
-        shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        shadowInfo.imageView = shadowMap_->arrayView();
-        shadowInfo.sampler = shadowMap_->sampler();
-
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = globalSets_[i];
-        write.dstBinding = 2;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = &shadowInfo;
-
-        vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
-    }
+    // The shadow map array view changes on resize; every frame slot samples the
+    // same array, so every slot's bind group is stale and must be rebuilt.
+    for (int i = 0; i < kMaxFramesInFlight; i++) rebuildGlobalSet(i);
 }
 
 void Renderer::updateGIDescriptors() {
     // After GIVolume::beginFrame() the "current" atlas (sampled by the lighting
-    // pass) can change; re-point set 0 bindings 4/5 only when this frame slot is
-    // stale. Safe: drawFrame already waited on this frame's fence.
-    VkImageView irrView = gi_->irradianceView();
-    VkImageView visView = gi_->visibilityView();
-    VkSampler sampler = gi_->sampler();
-    if (cachedGiIrradianceView_[currentFrame_] == irrView &&
-        cachedGiVisibilityView_[currentFrame_] == visView &&
-        cachedGiSampler_[currentFrame_] == sampler) {
+    // pass) can change; rebuild this frame slot's bind group only when stale.
+    // Safe: drawFrame already waited on this frame's fence.
+    if (cachedGiIrradianceView_[currentFrame_] == gi_->irradianceView() &&
+        cachedGiVisibilityView_[currentFrame_] == gi_->visibilityView() &&
+        cachedGiSampler_[currentFrame_] == gi_->sampler()) {
         return;
     }
-
-    VkDescriptorImageInfo irr{};
-    irr.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-    irr.imageView = irrView;
-    irr.sampler = sampler;
-    VkDescriptorImageInfo vis{};
-    vis.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-    vis.imageView = visView;
-    vis.sampler = sampler;
-
-    std::array<VkWriteDescriptorSet, 2> writes{};
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = globalSets_[currentFrame_];
-    writes[0].dstBinding = 4;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[0].descriptorCount = 1;
-    writes[0].pImageInfo = &irr;
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = globalSets_[currentFrame_];
-    writes[1].dstBinding = 5;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[1].descriptorCount = 1;
-    writes[1].pImageInfo = &vis;
-    vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-
-    cachedGiIrradianceView_[currentFrame_] = irrView;
-    cachedGiVisibilityView_[currentFrame_] = visView;
-    cachedGiSampler_[currentFrame_] = sampler;
+    rebuildGlobalSet(currentFrame_);
 }
 
 void Renderer::updateEnvironmentDescriptor(Scene& scene) {
@@ -767,27 +594,11 @@ void Renderer::updateEnvironmentDescriptor(Scene& scene) {
         }
     }
 
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = environment->imageView();
-    imageInfo.sampler = environment->sampler();
-
-    if (cachedEnvironmentView_[currentFrame_] == imageInfo.imageView &&
-        cachedEnvironmentSampler_[currentFrame_] == imageInfo.sampler) {
+    if (cachedEnvironmentView_[currentFrame_] == environment->imageView() &&
+        cachedEnvironmentSampler_[currentFrame_] == environment->sampler()) {
         return;
     }
-
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = globalSets_[currentFrame_];
-    write.dstBinding = 7;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.descriptorCount = 1;
-    write.pImageInfo = &imageInfo;
-    vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
-
-    cachedEnvironmentView_[currentFrame_] = imageInfo.imageView;
-    cachedEnvironmentSampler_[currentFrame_] = imageInfo.sampler;
+    rebuildGlobalSet(currentFrame_);
 }
 
 bool Renderer::shouldUpdateRealtimeGI(bool dirty) const {
@@ -1236,55 +1047,12 @@ void Renderer::cleanupHdrResources() {
 }
 
 void Renderer::createTonemapPipeline() {
-    VkDescriptorSetLayoutBinding hdrBinding{};
-    hdrBinding.binding = 0;
-    hdrBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    hdrBinding.descriptorCount = 1;
-    hdrBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding depthBinding{};
-    depthBinding.binding = 1;
-    depthBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    depthBinding.descriptorCount = 1;
-    depthBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding bloomBinding{};
-    bloomBinding.binding = 2;
-    bloomBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bloomBinding.descriptorCount = 1;
-    bloomBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings{hdrBinding, depthBinding, bloomBinding};
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(device_.device(), &layoutInfo, nullptr, &tonemapSetLayout_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create tonemap descriptor set layout");
-
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 3;
-
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 1;
-
-    if (vkCreateDescriptorPool(device_.device(), &poolInfo, nullptr, &tonemapPool_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create tonemap descriptor pool");
-
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = tonemapPool_;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &tonemapSetLayout_;
-
-    if (vkAllocateDescriptorSets(device_.device(), &allocInfo, &tonemapSet_) != VK_SUCCESS)
-        throw std::runtime_error("failed to allocate tonemap descriptor set");
+    tonemapSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // HDR
+            {1, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // depth (AO)
+            {2, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // bloom
+        });
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -1304,48 +1072,41 @@ void Renderer::createTonemapPipeline() {
     if (vkCreateSampler(device_.device(), &samplerInfo, nullptr, &tonemapDepthSampler_) != VK_SUCCESS)
         throw std::runtime_error("failed to create tonemap depth sampler");
 
-    std::vector<VkDescriptorSetLayout> setLayouts = {tonemapSetLayout_};
-    std::vector<VkFormat> colorFormats = {swapchain_->colorFormat()};
-    
-    tonemapPipeline_ = std::make_unique<Pipeline>(device_, shaderPath("tonemap.vert.spv"),
-        shaderPath("tonemap.frag.spv"), colorFormats, VK_FORMAT_UNDEFINED, setLayouts,
-        VK_SAMPLE_COUNT_1_BIT, false, false, sizeof(TonemapPushConstants));
+    Pipeline::Desc tonemapDesc;
+    tonemapDesc.vertPath = shaderPath("tonemap.vert.spv");
+    tonemapDesc.fragPath = shaderPath("tonemap.frag.spv");
+    tonemapDesc.colorFormats = {rhi::vulkan::fromVk(swapchain_->colorFormat())};
+    tonemapDesc.bindGroupLayouts = {tonemapSetLayout_.get()};
+    tonemapDesc.vertexInput = false;
+    tonemapDesc.depthTest = false;
+    tonemapDesc.pushConstantSize = sizeof(TonemapPushConstants);
+    tonemapPipeline_ = std::make_unique<Pipeline>(device_, tonemapDesc);
 
     updateTonemapDescriptorSet();
 }
 
 void Renderer::updateTonemapDescriptorSet() {
-    if (!tonemapSet_ || !hdrView_ || !swapchain_ || !tonemapSampler_ || !tonemapDepthSampler_ || !postProcessor_) {
+    if (!tonemapSetLayout_ || !hdrView_ || !swapchain_ || !tonemapSampler_ || !tonemapDepthSampler_ || !postProcessor_) {
         return;
     }
 
-    VkDescriptorImageInfo hdrInfo{};
-    hdrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    hdrInfo.imageView = hdrView_;
-    hdrInfo.sampler = tonemapSampler_;
+    rhi::BindGroupEntry hdrEntry;
+    hdrEntry.binding = 0;
+    hdrEntry.view = hdrView_;
+    hdrEntry.sampler = tonemapSampler_;
 
-    VkDescriptorImageInfo depthInfo{};
-    depthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    depthInfo.imageView = depthResolveView_ ? depthResolveView_ : swapchain_->depthView();
-    depthInfo.sampler = tonemapDepthSampler_;
+    rhi::BindGroupEntry depthEntry;
+    depthEntry.binding = 1;
+    depthEntry.view = depthResolveView_ ? depthResolveView_ : swapchain_->depthView();
+    depthEntry.sampler = tonemapDepthSampler_;
 
-    VkDescriptorImageInfo bloomInfo{};
-    bloomInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    bloomInfo.imageView = postProcessor_->bloomView();
-    bloomInfo.sampler = postProcessor_->bloomSampler();
+    rhi::BindGroupEntry bloomEntry;
+    bloomEntry.binding = 2;
+    bloomEntry.view = postProcessor_->bloomView();
+    bloomEntry.sampler = postProcessor_->bloomSampler();
 
-    std::array<VkWriteDescriptorSet, 3> writes{};
-    for (uint32_t i = 0; i < writes.size(); ++i) {
-        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[i].dstSet = tonemapSet_;
-        writes[i].dstBinding = i;
-        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[i].descriptorCount = 1;
-    }
-    writes[0].pImageInfo = &hdrInfo;
-    writes[1].pImageInfo = &depthInfo;
-    writes[2].pImageInfo = &bloomInfo;
-    vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    tonemapSet_ = std::make_unique<rhi::BindGroup>(*tonemapSetLayout_,
+        std::vector<rhi::BindGroupEntry>{hdrEntry, depthEntry, bloomEntry});
 }
 
 void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
@@ -1417,9 +1178,10 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
     VkRect2D scissor = renderRect;
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
+    VkDescriptorSet tonemapSetHandle = tonemapSet_->handle();
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, tonemapPipeline_->layout(),
-        0, 1, &tonemapSet_, 0, nullptr);
-        
+        0, 1, &tonemapSetHandle, 0, nullptr);
+
     TonemapPushConstants push = tonemapPushConstants(scene.settings(), camera.projection());
     push.sourceRect = sourceRect;
     {
@@ -1450,7 +1212,7 @@ void Renderer::buildFeatures(uint32_t viewMask, VkFormat depthFormat,
     // (water, skybox, debug lines, …) plug in through the registry, so this never
     // names or includes a concrete effect — adding one touches no Renderer code.
     features_ = RenderFeatureRegistry::instance().build();
-    RenderContext ctx{device_, resources_, globalSetLayout_,
+    RenderContext ctx{device_, resources_, *globalSetLayout_,
                       VK_FORMAT_R16G16B16A16_SFLOAT, depthFormat, samples,
                       viewMask, static_cast<uint32_t>(kMaxFramesInFlight)};
     for (auto& f : features_) f->createPipelines(ctx);
@@ -1468,9 +1230,10 @@ void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, boo
     Pipeline* activePipeline = firstPipeline;
     uint64_t drawCalls = 0;
     uint64_t triangles = 0;
+    VkDescriptorSet globalSet = globalGroups_[currentFrame_]->handle();
     activePipeline->bind(cmd);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline->layout(),
-                            0, 1, &globalSets_[currentFrame_], 0, nullptr);
+                            0, 1, &globalSet, 0, nullptr);
 
     for (const auto& draw : currentDraws_) {
         Pipeline* want = scenePipelineFor(draw.materialType);
@@ -1484,7 +1247,7 @@ void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, boo
         if (want != activePipeline) {
             want->bind(cmd);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, want->layout(),
-                                    0, 1, &globalSets_[currentFrame_], 0, nullptr);
+                                    0, 1, &globalSet, 0, nullptr);
             activePipeline = want;
             lastMaterial = nullptr;
         }
@@ -1595,7 +1358,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     if (giUpdateThisFrame_) {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
         gi_->voxelize(cmd, scene, gpuProfiler);
-        gi_->update(cmd, globalSets_[currentFrame_], gpuProfiler);
+        gi_->update(cmd, globalGroups_[currentFrame_]->handle(), gpuProfiler);
     }
 
     bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
@@ -1769,8 +1532,9 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     if (useGpuDriven) {
         pipeline_->bind(cmd);
         // Set 0: per-frame global data (camera + lighting), shared by every object.
+        VkDescriptorSet globalSet = globalGroups_[currentFrame_]->handle();
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
-            0, 1, &globalSets_[currentFrame_], 0, nullptr);
+            0, 1, &globalSet, 0, nullptr);
 
         // Set 1: Bindless Textures + MaterialData SSBO
         VkDescriptorSet globalMaterialSet = resources_.globalMaterialSet();
@@ -1820,7 +1584,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     }
 
     // Scene-pass features are recorded after opaque meshes.
-    FrameContext fc{cmd, currentFrame_, globalSets_[currentFrame_], scene,
+    FrameContext fc{cmd, currentFrame_, globalGroups_[currentFrame_]->handle(), scene,
                     Time::elapsed(), false, &camera, nullptr, false, extent,
                     currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
     {
@@ -2106,21 +1870,21 @@ void Renderer::createXrPipelines() {
     const uint32_t viewMask = xrViewMask(xrViewCount_);
     const std::vector<VkFormat> hdrColor = {hdrFormat};
 
-    std::vector<VkDescriptorSetLayout> sceneLayouts = {
-        globalSetLayout_, resources_.materialSetLayout()};
-    xrScenePipeline_ = std::make_unique<Pipeline>(device_,
-        shaderPath("multiview.shader.vert.spv"), shaderPath("shader.frag.spv"),
-        hdrColor, depthFormat, sceneLayouts, VK_SAMPLE_COUNT_1_BIT,
-        true, true, 0, true, VK_COMPARE_OP_LESS, VK_CULL_MODE_BACK_BIT, false,
-        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, viewMask);
+    Pipeline::Desc sceneDesc;
+    sceneDesc.colorFormats = {rhi::vulkan::fromVk(hdrFormat)};
+    sceneDesc.depthFormat = rhi::vulkan::fromVk(depthFormat);
+    sceneDesc.bindGroupLayouts = {globalSetLayout_.get(), &resources_.materialSetLayout()};
+    sceneDesc.samples = 1;
+    sceneDesc.viewMask = viewMask;
+
+    sceneDesc.vertPath = shaderPath("multiview.shader.vert.spv");
+    sceneDesc.fragPath = shaderPath("shader.frag.spv");
+    xrScenePipeline_ = std::make_unique<Pipeline>(device_, sceneDesc);
 
     // Unlit multiview variant — same vertex shader + layout as the lit scene
     // pipeline, only the fragment differs (no per-eye data, so no MULTIVIEW frag).
-    xrUnlitPipeline_ = std::make_unique<Pipeline>(device_,
-        shaderPath("multiview.shader.vert.spv"), shaderPath("unlit.frag.spv"),
-        hdrColor, depthFormat, sceneLayouts, VK_SAMPLE_COUNT_1_BIT,
-        true, true, 0, true, VK_COMPARE_OP_LESS, VK_CULL_MODE_BACK_BIT, false,
-        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, viewMask);
+    sceneDesc.fragPath = shaderPath("unlit.frag.spv");
+    xrUnlitPipeline_ = std::make_unique<Pipeline>(device_, sceneDesc);
 
     if (resources_.globalMaterialSetLayout()) {
         std::vector<VkDescriptorSetLayout> webLayouts = {resources_.globalMaterialSetLayout()};
@@ -2136,23 +1900,12 @@ void Renderer::createXrPipelines() {
     buildFeatures(viewMask, depthFormat, VK_SAMPLE_COUNT_1_BIT);
 
     {
-        VkDescriptorSetLayoutBinding hdrBinding{};
-        hdrBinding.binding = 0;
-        hdrBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        hdrBinding.descriptorCount = 1;
-        hdrBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        VkDescriptorSetLayoutBinding depthBinding = hdrBinding;
-        depthBinding.binding = 1;
-        VkDescriptorSetLayoutBinding bloomBinding = hdrBinding;
-        bloomBinding.binding = 2;
-        std::array<VkDescriptorSetLayoutBinding, 3> tonemapBindings{
-            hdrBinding, depthBinding, bloomBinding};
-        VkDescriptorSetLayoutCreateInfo lci{};
-        lci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        lci.bindingCount = static_cast<uint32_t>(tonemapBindings.size());
-        lci.pBindings = tonemapBindings.data();
-        if (vkCreateDescriptorSetLayout(device_.device(), &lci, nullptr, &tonemapSetLayout_) != VK_SUCCESS)
-            throw std::runtime_error("XR: failed to create tonemap set layout");
+        tonemapSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+            std::vector<rhi::BindGroupLayoutEntry>{
+                {0, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // HDR
+                {1, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // depth (AO)
+                {2, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // bloom
+            });
 
         VkSamplerCreateInfo sci{};
         sci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -2170,70 +1923,43 @@ void Renderer::createXrPipelines() {
         if (vkCreateSampler(device_.device(), &sci, nullptr, &tonemapDepthSampler_) != VK_SUCCESS)
             throw std::runtime_error("XR: failed to create tonemap depth sampler");
 
-        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, xrViewCount_ * 3};
-        VkDescriptorPoolCreateInfo pci{};
-        pci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        pci.poolSizeCount = 1;
-        pci.pPoolSizes = &ps;
-        pci.maxSets = xrViewCount_;
-        if (vkCreateDescriptorPool(device_.device(), &pci, nullptr, &xrTonemapPool_) != VK_SUCCESS)
-            throw std::runtime_error("XR: failed to create tonemap pool");
-
-        // One descriptor set per eye, each pinned to that eye's HDR layer view.
-        for (uint32_t i = 0; i < xrViewCount_; ++i) {
-            VkDescriptorSetAllocateInfo asi{};
-            asi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            asi.descriptorPool = xrTonemapPool_;
-            asi.descriptorSetCount = 1;
-            asi.pSetLayouts = &tonemapSetLayout_;
-            if (vkAllocateDescriptorSets(device_.device(), &asi, &xrTonemapSets_[i]) != VK_SUCCESS)
-                throw std::runtime_error("XR: failed to allocate tonemap set");
-
-        }
         updateXrTonemapDescriptorSets();
 
-        std::vector<VkDescriptorSetLayout> setLayouts = {tonemapSetLayout_};
-        std::vector<VkFormat> colorFormats = {xrColorFormat_};
-        xrTonemapPipeline_ = std::make_unique<Pipeline>(device_,
-            shaderPath("tonemap.vert.spv"), shaderPath("tonemap.frag.spv"),
-            colorFormats, VK_FORMAT_UNDEFINED, setLayouts, VK_SAMPLE_COUNT_1_BIT,
-            false, false, sizeof(TonemapPushConstants));
+        Pipeline::Desc xrTonemapDesc;
+        xrTonemapDesc.vertPath = shaderPath("tonemap.vert.spv");
+        xrTonemapDesc.fragPath = shaderPath("tonemap.frag.spv");
+        xrTonemapDesc.colorFormats = {rhi::vulkan::fromVk(xrColorFormat_)};
+        xrTonemapDesc.bindGroupLayouts = {tonemapSetLayout_.get()};
+        xrTonemapDesc.vertexInput = false;
+        xrTonemapDesc.depthTest = false;
+        xrTonemapDesc.pushConstantSize = sizeof(TonemapPushConstants);
+        xrTonemapPipeline_ = std::make_unique<Pipeline>(device_, xrTonemapDesc);
     }
 }
 
 void Renderer::updateXrTonemapDescriptorSets() {
-    if (!tonemapSampler_ || !tonemapDepthSampler_) return;
+    if (!tonemapSetLayout_ || !tonemapSampler_ || !tonemapDepthSampler_) return;
     const uint32_t n = std::min<uint32_t>(xrViewCount_, 2);
     for (uint32_t i = 0; i < n; ++i) {
-        if (!xrTonemapSets_[i] || !xrPostProcessors_[i]) continue;
+        if (!xrPostProcessors_[i]) continue;
 
-        VkDescriptorImageInfo hdrInfo{};
-        hdrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        hdrInfo.imageView = xrHdrLayerViews_[i];
-        hdrInfo.sampler = tonemapSampler_;
+        rhi::BindGroupEntry hdrEntry;
+        hdrEntry.binding = 0;
+        hdrEntry.view = xrHdrLayerViews_[i];
+        hdrEntry.sampler = tonemapSampler_;
 
-        VkDescriptorImageInfo depthInfo{};
-        depthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        depthInfo.imageView = xrDepthLayerViews_[i];
-        depthInfo.sampler = tonemapDepthSampler_;
+        rhi::BindGroupEntry depthEntry;
+        depthEntry.binding = 1;
+        depthEntry.view = xrDepthLayerViews_[i];
+        depthEntry.sampler = tonemapDepthSampler_;
 
-        VkDescriptorImageInfo bloomInfo{};
-        bloomInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        bloomInfo.imageView = xrPostProcessors_[i]->bloomView();
-        bloomInfo.sampler = xrPostProcessors_[i]->bloomSampler();
+        rhi::BindGroupEntry bloomEntry;
+        bloomEntry.binding = 2;
+        bloomEntry.view = xrPostProcessors_[i]->bloomView();
+        bloomEntry.sampler = xrPostProcessors_[i]->bloomSampler();
 
-        std::array<VkWriteDescriptorSet, 3> writes{};
-        for (uint32_t binding = 0; binding < writes.size(); ++binding) {
-            writes[binding].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[binding].dstSet = xrTonemapSets_[i];
-            writes[binding].dstBinding = binding;
-            writes[binding].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            writes[binding].descriptorCount = 1;
-        }
-        writes[0].pImageInfo = &hdrInfo;
-        writes[1].pImageInfo = &depthInfo;
-        writes[2].pImageInfo = &bloomInfo;
-        vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        xrTonemapSets_[i] = std::make_unique<rhi::BindGroup>(*tonemapSetLayout_,
+            std::vector<rhi::BindGroupEntry>{hdrEntry, depthEntry, bloomEntry});
     }
 }
 
@@ -2324,7 +2050,7 @@ void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
     recordMeshDraws(cmd, xrScenePipeline_.get(), true);
 
     // passthrough is forwarded so the skybox skips itself.
-    FrameContext fc{cmd, currentFrame_, globalSets_[currentFrame_], scene,
+    FrameContext fc{cmd, currentFrame_, globalGroups_[currentFrame_]->handle(), scene,
                     Time::elapsed(), true, nullptr, &eyes, passthrough, xrExtent_,
                     currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
     recordFeatures(fc);
@@ -2429,8 +2155,9 @@ void Renderer::recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
         VkRect2D sc{};
         sc.extent = eye.extent;
         vkCmdSetScissor(cmd, 0, 1, &sc);
+        VkDescriptorSet xrTonemapSetHandle = xrTonemapSets_[i]->handle();
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            xrTonemapPipeline_->layout(), 0, 1, &xrTonemapSets_[i], 0, nullptr);
+            xrTonemapPipeline_->layout(), 0, 1, &xrTonemapSetHandle, 0, nullptr);
         TonemapPushConstants push = tonemapPushConstants(scene.settings(), eye.projection);
         {
             SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/Tonemap");
@@ -2501,7 +2228,7 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
         GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
         gi_->voxelize(cmd, scene, gpuProfiler);
-        gi_->update(cmd, globalSets_[currentFrame_], gpuProfiler);
+        gi_->update(cmd, globalGroups_[currentFrame_]->handle(), gpuProfiler);
     }
     recordShadowPasses(cmd);
 

@@ -5,6 +5,7 @@
 #include "graphics/VulkanDevice.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Texture.hpp"
+#include "rhi/vulkan/Format.hpp"
 #include "scene/Scene.hpp"
 
 #include <algorithm>
@@ -13,57 +14,35 @@
 
 namespace saida {
 
-SkyboxFeature::~SkyboxFeature() {
-    if (!device_) return;
-    if (pool_) vkDestroyDescriptorPool(device_->device(), pool_, nullptr);
-    if (setLayout_) vkDestroyDescriptorSetLayout(device_->device(), setLayout_, nullptr);
-}
+SkyboxFeature::~SkyboxFeature() = default;
 
 void SkyboxFeature::createPipelines(const RenderContext& ctx) {
     device_ = &ctx.device;
     resources_ = &ctx.resources;
     stereo_ = ctx.stereo();
 
-    VkDescriptorSetLayoutBinding samplerBinding{};
-    samplerBinding.binding = 0;
-    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerBinding.descriptorCount = 1;
-    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    setLayout_ = std::make_unique<rhi::BindGroupLayout>(*device_,
+        std::vector<rhi::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},
+        });
 
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &samplerBinding;
-    if (vkCreateDescriptorSetLayout(device_->device(), &layoutInfo, nullptr, &setLayout_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create skybox descriptor set layout");
-
-    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 1;
-    if (vkCreateDescriptorPool(device_->device(), &poolInfo, nullptr, &pool_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create skybox descriptor pool");
-
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = pool_;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &setLayout_;
-    if (vkAllocateDescriptorSets(device_->device(), &allocInfo, &set_) != VK_SUCCESS)
-        throw std::runtime_error("failed to allocate skybox descriptor set");
-
-    std::vector<VkDescriptorSetLayout> setLayouts = {setLayout_};
-    std::vector<VkFormat> colorFormats = {ctx.colorFormat};
     // Depth test on (LEQUAL — sky is at z=1), no depth write, two-sided.
     const char* frag = stereo_ ? "multiview.skybox.frag.spv" : "skybox.frag.spv";
     const uint32_t pushSize = stereo_ ? sizeof(StereoPush) : sizeof(MonoPush);
-    pipeline_ = std::make_unique<Pipeline>(ctx.device,
-        shaderPath("skybox.vert.spv"), shaderPath(frag),
-        colorFormats, ctx.depthFormat, setLayouts, ctx.samples,
-        false, true, pushSize, false, VK_COMPARE_OP_LESS_OR_EQUAL, VK_CULL_MODE_NONE,
-        false, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, ctx.viewMask);
+    Pipeline::Desc desc;
+    desc.vertPath = shaderPath("skybox.vert.spv");
+    desc.fragPath = shaderPath(frag);
+    desc.colorFormats = {rhi::vulkan::fromVk(ctx.colorFormat)};
+    desc.depthFormat = rhi::vulkan::fromVk(ctx.depthFormat);
+    desc.bindGroupLayouts = {setLayout_.get()};
+    desc.samples = static_cast<uint32_t>(ctx.samples);
+    desc.vertexInput = false;
+    desc.depthWrite = false;
+    desc.depthCompare = rhi::CompareOp::LessOrEqual;
+    desc.cullMode = rhi::CullMode::None;
+    desc.pushConstantSize = pushSize;
+    desc.viewMask = ctx.viewMask;
+    pipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
 }
 
 void SkyboxFeature::record(const FrameContext& fc) {
@@ -74,25 +53,19 @@ void SkyboxFeature::record(const FrameContext& fc) {
     Texture* tex = resources_->getTexture(settings.skyboxTexture);
     if (!tex) return;
 
-    if (settings.skyboxTexture != currentTexture_) {
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = tex->imageView();
-        imageInfo.sampler = tex->sampler();
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = set_;
-        write.dstBinding = 0;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(device_->device(), 1, &write, 0, nullptr);
+    if (settings.skyboxTexture != currentTexture_ || !set_) {
+        rhi::BindGroupEntry entry;
+        entry.binding = 0;
+        entry.view = tex->imageView();
+        entry.sampler = tex->sampler();
+        set_ = std::make_unique<rhi::BindGroup>(*setLayout_, std::vector<rhi::BindGroupEntry>{entry});
         currentTexture_ = settings.skyboxTexture;
     }
 
     pipeline_->bind(fc.cmd);
+    VkDescriptorSet setHandle = set_->handle();
     vkCmdBindDescriptorSets(fc.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout(),
-        0, 1, &set_, 0, nullptr);
+        0, 1, &setHandle, 0, nullptr);
 
     if (!stereo_) {
         glm::mat4 view = fc.camera->view();

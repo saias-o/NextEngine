@@ -1,5 +1,7 @@
 #pragma once
 
+#include "rhi/Rhi.hpp"
+
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
@@ -54,7 +56,7 @@ struct EyeRenderInfo {
 struct RenderContext {
     VulkanDevice& device;
     ResourceManager& resources;
-    VkDescriptorSetLayout globalSetLayout;  // set 0: camera + lighting + environment
+    rhi::BindGroupLayout& globalSetLayout;  // set 0: camera + lighting + environment
     VkFormat colorFormat;                   // HDR color attachment
     VkFormat depthFormat;
     VkSampleCountFlagBits samples;

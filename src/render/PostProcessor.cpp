@@ -6,6 +6,7 @@
 #include "graphics/MemoryProfiler.hpp"
 #include "graphics/Pipeline.hpp"
 #include "graphics/VulkanDevice.hpp"
+#include "rhi/vulkan/Format.hpp"
 #include "scene/Scene.hpp"
 
 #include "vk_mem_alloc.h"
@@ -181,18 +182,23 @@ void PostProcessor::updateDescriptorSets() {
 }
 
 void PostProcessor::createPipelines() {
-    std::vector<VkDescriptorSetLayout> layouts{inputLayout_->handle()};
-    std::vector<VkFormat> colorFormats{hdrFormat_};
-    bloomDownsamplePipeline_ = std::make_unique<Pipeline>(device_,
-        shaderPath("tonemap.vert.spv"), shaderPath("bloom_downsample.frag.spv"),
-        colorFormats, VK_FORMAT_UNDEFINED, layouts, VK_SAMPLE_COUNT_1_BIT,
-        false, false, sizeof(BloomPush), false, VK_COMPARE_OP_LESS,
-        VK_CULL_MODE_NONE, BlendMode::None);
-    bloomUpsamplePipeline_ = std::make_unique<Pipeline>(device_,
-        shaderPath("tonemap.vert.spv"), shaderPath("bloom_upsample.frag.spv"),
-        colorFormats, VK_FORMAT_UNDEFINED, layouts, VK_SAMPLE_COUNT_1_BIT,
-        false, false, sizeof(BloomPush), false, VK_COMPARE_OP_LESS,
-        VK_CULL_MODE_NONE, BlendMode::Additive);
+    Pipeline::Desc desc;
+    desc.vertPath = shaderPath("tonemap.vert.spv");
+    desc.colorFormats = {rhi::vulkan::fromVk(hdrFormat_)};
+    desc.bindGroupLayouts = {inputLayout_.get()};
+    desc.vertexInput = false;
+    desc.depthTest = false;
+    desc.depthWrite = false;
+    desc.cullMode = rhi::CullMode::None;
+    desc.pushConstantSize = sizeof(BloomPush);
+
+    desc.fragPath = shaderPath("bloom_downsample.frag.spv");
+    desc.blendMode = rhi::BlendMode::None;
+    bloomDownsamplePipeline_ = std::make_unique<Pipeline>(device_, desc);
+
+    desc.fragPath = shaderPath("bloom_upsample.frag.spv");
+    desc.blendMode = rhi::BlendMode::Additive;
+    bloomUpsamplePipeline_ = std::make_unique<Pipeline>(device_, desc);
 }
 
 void PostProcessor::transitionTarget(VkCommandBuffer cmd, Target& target, VkImageLayout newLayout,

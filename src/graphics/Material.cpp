@@ -41,77 +41,34 @@ Material::Material(VulkanDevice& device, ResourceManager& manager, const Materia
         rhi::BufferUsage::Uniform, MemoryUsage::HostVisible);
     paramsBuffer_->write(&params, sizeof(params));
 
-    // 1. Classic Path: Allocate local descriptor set and write it
-    descriptorSet_ = manager.allocateMaterialSet(manager.materialSetLayout());
+    // 1. Classic Path: set 1 (albedo/normal/metallic-roughness/params/emissive).
+    rhi::BindGroupEntry albedoEntry;
+    albedoEntry.binding = 0;
+    albedoEntry.view = albedo_->imageView();
+    albedoEntry.sampler = albedo_->sampler();
 
-    VkDescriptorImageInfo albedoInfo{};
-    albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    albedoInfo.imageView = albedo_->imageView();
-    albedoInfo.sampler = albedo_->sampler();
+    rhi::BindGroupEntry normalEntry;
+    normalEntry.binding = 1;
+    normalEntry.view = normalMap_->imageView();
+    normalEntry.sampler = normalMap_->sampler();
 
-    VkDescriptorImageInfo normalInfo{};
-    normalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    normalInfo.imageView = normalMap_->imageView();
-    normalInfo.sampler = normalMap_->sampler();
+    rhi::BindGroupEntry mrEntry;
+    mrEntry.binding = 2;
+    mrEntry.view = metallicRoughnessMap_->imageView();
+    mrEntry.sampler = metallicRoughnessMap_->sampler();
 
-    VkDescriptorImageInfo mrInfo{};
-    mrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    mrInfo.imageView = metallicRoughnessMap_->imageView();
-    mrInfo.sampler = metallicRoughnessMap_->sampler();
+    rhi::BindGroupEntry paramsEntry;
+    paramsEntry.binding = 3;
+    paramsEntry.buffer = paramsBuffer_.get();
+    paramsEntry.range = sizeof(MaterialParams);
 
-    VkDescriptorImageInfo emissiveInfo{};
-    emissiveInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    emissiveInfo.imageView = emissiveMap_->imageView();
-    emissiveInfo.sampler = emissiveMap_->sampler();
+    rhi::BindGroupEntry emissiveEntry;
+    emissiveEntry.binding = 4;
+    emissiveEntry.view = emissiveMap_->imageView();
+    emissiveEntry.sampler = emissiveMap_->sampler();
 
-    VkDescriptorBufferInfo bufferInfo{};
-    bufferInfo.buffer = paramsBuffer_->handle();
-    bufferInfo.offset = 0;
-    bufferInfo.range = sizeof(MaterialParams);
-
-    std::array<VkWriteDescriptorSet, 5> writes{};
-    
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = descriptorSet_;
-    writes[0].dstBinding = 0;
-    writes[0].dstArrayElement = 0;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[0].descriptorCount = 1;
-    writes[0].pImageInfo = &albedoInfo;
-
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = descriptorSet_;
-    writes[1].dstBinding = 1;
-    writes[1].dstArrayElement = 0;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[1].descriptorCount = 1;
-    writes[1].pImageInfo = &normalInfo;
-
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = descriptorSet_;
-    writes[2].dstBinding = 2;
-    writes[2].dstArrayElement = 0;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[2].descriptorCount = 1;
-    writes[2].pImageInfo = &mrInfo;
-
-    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[3].dstSet = descriptorSet_;
-    writes[3].dstBinding = 3;
-    writes[3].dstArrayElement = 0;
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[3].descriptorCount = 1;
-    writes[3].pBufferInfo = &bufferInfo;
-
-    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[4].dstSet = descriptorSet_;
-    writes[4].dstBinding = 4;
-    writes[4].dstArrayElement = 0;
-    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[4].descriptorCount = 1;
-    writes[4].pImageInfo = &emissiveInfo;
-
-    vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    descriptorSet_ = std::make_unique<rhi::BindGroup>(manager.materialSetLayout(),
+        std::vector<rhi::BindGroupEntry>{albedoEntry, normalEntry, mrEntry, paramsEntry, emissiveEntry});
 
     // 2. GPU-Driven Path: Register into global MaterialData SSBO
     if (device_.capabilities().descriptorIndexing) {
@@ -125,6 +82,6 @@ Material::Material(VulkanDevice& device, ResourceManager& manager, const Materia
     }
 }
 
-Material::~Material() = default;  // paramsBuffer_ RAII; set freed with the pool
+Material::~Material() = default;  // paramsBuffer_ / descriptorSet_ RAII
 
 } // namespace saida

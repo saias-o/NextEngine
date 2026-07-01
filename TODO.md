@@ -71,28 +71,31 @@
   - [x] 16.3.a — `src/rhi/` créé : `rhi::Capabilities` backend-neutre (`maxSamples` → uint32, plus de `Vk*`), `RenderCapabilities` devient un shim d'alias (consommateurs inchangés), `Rhi.hpp` ancre le backend compile-time. Build + 14/14 tests OK. (flags web `bindless`/`pushConstants` : ajoutés quand un consommateur les lira, 16.3.e)
   - [x] 16.3.b — `rhi::Buffer` : API de construction neutre (`rhi::BufferUsage` au lieu de `VkBufferUsageFlags`, tailles `uint64_t`), aliasé dans `Rhi.hpp`. 27 sites convertis (mapping 1:1). `handle()` reste Vulkan (backend-interne, dé-Vulkanisé en 16.3.e avec le CommandEncoder). Build + 14/14 tests OK.
   - [x] 16.3.c — `rhi::Texture` : `rhi::Format` neutre (+ mapping `rhi/vulkan/Format.hpp`), constructeur mémoire dé-Vulkanisé, `rhi::Texture` aliasé, 5 sites convertis. Sampler embarqué dans Texture. Build + 14/14 tests OK.
-  - [~] 16.3.d — `rhi::BindGroup(Layout)` + desc neutre `Pipeline`. **Fait (types
-    + pilotes)** : `rhi/BindGroup.hpp` + `rhi/vulkan/BindGroup.{hpp,cpp}` (pool
-    Vulkan caché growable, groupes **immutables** — on recrée au lieu de
+  - [x] 16.3.d — `rhi::BindGroup(Layout)` + desc neutre `Pipeline`. **Terminé** :
+    `rhi/BindGroup.hpp` + `rhi/vulkan/BindGroup.{hpp,cpp}` (pool Vulkan caché
+    growable, groupes **immutables** — on recrée au lieu de
     `vkUpdateDescriptorSets`), `Pipeline::Desc` neutre (+ depth-only sans
     fragment, depth bias, `pushConstantStages`), enums neutres
-    (`rhi/PipelineState.hpp`, `rhi/ShaderStages.hpp`), pilote **PostProcessor**
-    (layout/pool/sets → BindGroup(Layout)). **Reste — mécanique, pattern établi
-    = PostProcessor.cpp :**
-    - [ ] d.a/d.b — convertir les créations de descriptors restantes (~20
-      fichiers : `grep -l VkDescriptorSetLayout src`) : UIRenderer, Renderer
-      (global/tonemap/culling), GIVolume, ParticleRuntime, features. Gotchas :
-      `BindGroupEntry.textureState = DepthRead` pour la shadow map échantillonnée ;
-      recréer les groups **seulement quand les vues changent** (garder les gardes
-      de vues cachées du Renderer) ; l'interop avec les ctors legacy passe par
-      `BindGroupLayout::handle()`.
-    - [ ] d.c — convertir les 17 sites `make_unique<Pipeline>` legacy vers
-      `Pipeline::Desc` (formats `rhi::Format`, layouts `BindGroupLayout*`), puis
-      supprimer les ctors legacy et `Pipeline::BuildInfo` devient le seul chemin.
+    (`rhi/PipelineState.hpp`, `rhi/ShaderStages.hpp`), `rhi::vulkan::fromVk`
+    (Format.hpp) pour les coutures Swapchain/HDR encore en `VkFormat` runtime.
+    - [x] d.a/d.b — toutes les créations de descriptors converties en
+      `BindGroup(Layout)` : `ResourceManager`/`Material` (set 1 matériau),
+      `Renderer` (set global 8 bindings avec `rebuildGlobalSet()`, set tonemap
+      desktop+XR), `GIVolume` (voxel set + compute sets ping-pong),
+      `ParticleRuntime` (render sets + compute sets), et les features
+      Skybox/Water/Particle. `UIRenderer` et le culling GPU-driven dormant de
+      `Renderer` n'avaient pas de set propre (déjà hors périmètre, cf. ci-dessous).
+    - [x] d.c — 13 des 17 sites `make_unique<Pipeline>` legacy convertis vers
+      `Pipeline::Desc` (features, PostProcessor, `unlitPipeline_`/tonemap/XR de
+      Renderer). Les ctors legacy **restent** (pas supprimés) : 4 sites mêlent
+      encore le set bindless brut (`pipeline_` GPU-driven dormant,
+      `webCanvasWorldPipeline_`/XR, `UIRenderer`) — cf. note bindless.
     - ⚠ **Hors périmètre v1 (décidé)** : le set bindless UPDATE_AFTER_BIND
-      (ResourceManager.cpp:148) reste Vulkan brut — c'est le chemin
-      `caps.bindless` de 16.4 (fallback bind-group-par-texture) ; ne pas
-      l'abstraire avant.
+      (`ResourceManager::globalMaterialSetLayout_`) et tout ce qui le consomme
+      (culling GPU-driven dormant — `useGpuDriven` toujours `false` —,
+      WebCanvas world-space, `UIRenderer`) restent Vulkan brut ; c'est le chemin
+      `caps.bindless` de 16.4 (fallback bind-group-par-texture). Ne pas
+      l'abstraire avant, et ne pas convertir le culling GPU-driven (code mort).
   - [~] 16.3.e — `rhi::CommandEncoder` / passes / `ResourceState`. **Fait (clé de
     voûte + pilote ShadowMap, e.a)** : `rhi/CommandTypes.hpp`,
     `rhi/vulkan/CommandEncoder.{hpp,cpp}`, `rhi/vulkan/Convert.hpp` (table

@@ -12,6 +12,7 @@
 #include "project/AssetRegistry.hpp"
 #include "graphics/Material.hpp"     // MaterialType
 #include "render/RenderFeature.hpp"  // EyeRenderInfo, RenderContext, FrameContext, ScenePassFeature
+#include "rhi/Rhi.hpp"
 
 namespace saida {
 
@@ -145,7 +146,7 @@ private:
     TonemapPushConstants tonemapPushConstants(const SceneSettings& settings,
                                               const glm::mat4& projection) const;
     void createGlobalSetLayout();
-    void createPipeline(VkDescriptorSetLayout materialSetLayout);
+    void createPipeline(rhi::BindGroupLayout& materialSetLayout);
     void createWebCanvasWorldPipeline();
     // The scene pipeline for a material's shading model (desktop / XR). Both
     // variants share an identical descriptor-set + push-constant layout, so the
@@ -161,8 +162,11 @@ private:
     void recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
                            Scene& scene, const Camera& camera);
     void createUniformBuffers();
-    void createGlobalDescriptorPool();
     void createGlobalDescriptorSets();
+    // Rebuilds this frame's global bind group from its current inputs (camera/
+    // lighting/bone buffers + shadow/GI/environment views). Bind groups are
+    // immutable (PLAN_RHI §7.4): re-pointing any binding means recreating.
+    void rebuildGlobalSet(int frame);
     void createCommandBuffers();
     void createSyncObjects();
     void createGpuDrivenBuffers();
@@ -216,9 +220,8 @@ private:
 
     // Tonemap pipeline
     std::unique_ptr<Pipeline> tonemapPipeline_;
-    VkDescriptorSetLayout tonemapSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool tonemapPool_ = VK_NULL_HANDLE;
-    VkDescriptorSet tonemapSet_ = VK_NULL_HANDLE;
+    std::unique_ptr<rhi::BindGroupLayout> tonemapSetLayout_;
+    std::unique_ptr<rhi::BindGroup> tonemapSet_;
     VkSampler tonemapSampler_ = VK_NULL_HANDLE;
     VkSampler tonemapDepthSampler_ = VK_NULL_HANDLE;
     float exposure_ = 1.0f;
@@ -231,9 +234,8 @@ private:
                        VkSampleCountFlagBits samples);
     void recordFeatures(const FrameContext& fc);
 
-    VkDescriptorSetLayout globalSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool globalPool_ = VK_NULL_HANDLE;
-    std::vector<VkDescriptorSet> globalSets_;
+    std::unique_ptr<rhi::BindGroupLayout> globalSetLayout_;
+    std::vector<std::unique_ptr<rhi::BindGroup>> globalGroups_;
     std::vector<std::unique_ptr<Buffer>> uniformBuffers_;
     std::vector<std::unique_ptr<Buffer>> lightingBuffers_;
     std::vector<std::unique_ptr<Buffer>> boneMatricesBuffers_;
@@ -334,8 +336,7 @@ private:
     std::array<VkImageView, 2> xrDepthLayerViews_{};   // per-layer, tonemap depth source
     uint64_t xrTrackedBytes_ = 0;
 
-    VkDescriptorPool xrTonemapPool_ = VK_NULL_HANDLE;
-    std::array<VkDescriptorSet, 2> xrTonemapSets_{};   // one per eye layer
+    std::array<std::unique_ptr<rhi::BindGroup>, 2> xrTonemapSets_;   // one per eye layer
     std::array<std::unique_ptr<PostProcessor>, 2> xrPostProcessors_;
 #else
     bool xrMode_ = false; // fallback for non-XR builds

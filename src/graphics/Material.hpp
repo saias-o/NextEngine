@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 
 #include "project/AssetRegistry.hpp"
+#include "rhi/Rhi.hpp"
 
 #include <memory>
 #include <string>
@@ -74,7 +75,7 @@ public:
     Material(const Material&) = delete;
     Material& operator=(const Material&) = delete;
 
-    VkDescriptorSet descriptorSet() const { return descriptorSet_; }
+    VkDescriptorSet descriptorSet() const { return descriptorSet_->handle(); }
     uint32_t bindlessIndex() const { return bindlessIndex_; }
     const MaterialDesc& desc() const { return desc_; }
     Texture* texture() const { return albedo_; }
@@ -87,7 +88,7 @@ private:
     Texture* metallicRoughnessMap_;
     Texture* emissiveMap_;
     std::unique_ptr<Buffer> paramsBuffer_;
-    VkDescriptorSet descriptorSet_ = VK_NULL_HANDLE;  // freed with the pool
+    std::unique_ptr<rhi::BindGroup> descriptorSet_;
     uint32_t bindlessIndex_ = 0;
 };
 
