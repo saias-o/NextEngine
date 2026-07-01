@@ -387,7 +387,7 @@ AssetID ResourceManager::registerMemoryTexture(const uint8_t* data, size_t size,
         return kAssetInvalid;
     }
     
-    VkFormat format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+    rhi::Format format = srgb ? rhi::Format::RGBA8Srgb : rhi::Format::RGBA8Unorm;
     auto tex = std::make_unique<Texture>(device_, pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), format);
     ensureBindlessTextureIndex(tex.get());
     stbi_image_free(pixels);
@@ -425,12 +425,12 @@ AssetID ResourceManager::meshId(const Mesh* mesh) const {
 void ResourceManager::ensureDefaultTextures() {
     if (!defaultWhiteTexture_) {
         uint8_t whitePixels[] = {255, 255, 255, 255};
-        defaultWhiteTexture_ = std::make_unique<Texture>(device_, whitePixels, 1, 1, VK_FORMAT_R8G8B8A8_SRGB);
+        defaultWhiteTexture_ = std::make_unique<Texture>(device_, whitePixels, 1, 1, rhi::Format::RGBA8Srgb);
         ensureBindlessTextureIndex(defaultWhiteTexture_.get());
     }
     if (!defaultNormalTexture_) {
         const uint8_t normalPixel[4] = {128, 128, 255, 255}; // 0.5, 0.5, 1.0 flat normal
-        defaultNormalTexture_ = std::make_unique<Texture>(device_, normalPixel, 1, 1, VK_FORMAT_R8G8B8A8_SRGB);
+        defaultNormalTexture_ = std::make_unique<Texture>(device_, normalPixel, 1, 1, rhi::Format::RGBA8Srgb);
         ensureBindlessTextureIndex(defaultNormalTexture_.get());
     }
 }

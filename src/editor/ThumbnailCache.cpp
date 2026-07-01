@@ -98,7 +98,7 @@ bool ThumbnailCache::generate(VulkanDevice& device, const std::string& path,
 
     out.texture = std::make_unique<Texture>(
         device, thumb.data(), static_cast<uint32_t>(tw), static_cast<uint32_t>(th),
-        VK_FORMAT_R8G8B8A8_SRGB, /*generateMipmaps=*/true);
+        rhi::Format::RGBA8Srgb, /*generateMipmaps=*/true);
     out.imguiId = (ImTextureID)ImGui_ImplVulkan_AddTexture(
         out.texture->sampler(), out.texture->imageView(),
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);

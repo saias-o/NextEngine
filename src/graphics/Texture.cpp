@@ -4,6 +4,7 @@
 #include "graphics/Buffer.hpp"
 #include "graphics/MemoryProfiler.hpp"
 #include "graphics/VulkanDevice.hpp"
+#include "rhi/vulkan/Format.hpp"
 
 #include <cmath>
 #include "stb_image.h"
@@ -152,9 +153,10 @@ Texture::Texture(VulkanDevice& device, const std::string& path, bool srgb) : dev
     createSampler();
 }
 
-Texture::Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, uint32_t height, VkFormat format, bool genMipmaps)
+Texture::Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, uint32_t height, rhi::Format fmt, bool genMipmaps)
     : device_(device), width_(width), height_(height) {
     SAIDA_PROFILE_SCOPE("Resource/CreateMemoryTexture");
+    const VkFormat format = rhi::vulkan::toVk(fmt);
     mipLevels_ = 1; 
     if (genMipmaps && (width > 1 || height > 1)) {
         mipLevels_ = static_cast<uint32_t>(std::floor(std::log2(std::max(width_, height_)))) + 1;

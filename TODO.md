@@ -70,8 +70,8 @@
   - [x] Design + décision d'archi (compile-time backend alias, ce qu'on n'abstrait pas)
   - [x] 16.3.a — `src/rhi/` créé : `rhi::Capabilities` backend-neutre (`maxSamples` → uint32, plus de `Vk*`), `RenderCapabilities` devient un shim d'alias (consommateurs inchangés), `Rhi.hpp` ancre le backend compile-time. Build + 14/14 tests OK. (flags web `bindless`/`pushConstants` : ajoutés quand un consommateur les lira, 16.3.e)
   - [x] 16.3.b — `rhi::Buffer` : API de construction neutre (`rhi::BufferUsage` au lieu de `VkBufferUsageFlags`, tailles `uint64_t`), aliasé dans `Rhi.hpp`. 27 sites convertis (mapping 1:1). `handle()` reste Vulkan (backend-interne, dé-Vulkanisé en 16.3.e avec le CommandEncoder). Build + 14/14 tests OK.
-  - [ ] 16.3.c — `rhi::Texture` / `Sampler` / `ShaderModule`
-  - [ ] 16.3.d — `rhi::Pipeline` / `BindGroup(Layout)`
+  - [x] 16.3.c — `rhi::Texture` : `rhi::Format` neutre (+ mapping `rhi/vulkan/Format.hpp`), constructeur mémoire dé-Vulkanisé, `rhi::Texture` aliasé, 5 sites convertis. Sampler embarqué dans Texture. Build + 14/14 tests OK.
+  - [ ] 16.3.d — `rhi::Pipeline` / `BindGroup(Layout)` / `ShaderModule` (couplé au Pipeline, rattaché ici)
   - [ ] 16.3.e — `rhi::CommandEncoder` / passes (le gros : `Renderer` cesse de toucher `Vk*`)
   - [ ] 16.3.f — `rhi::Device` / `Surface` (couture présentation)
 - [ ] **16.4 — Backend WebGPU** : implémenter `rhi/webgpu/*` (Dawn / `webgpu.h` Emscripten), chemin minimal Lit + tonemap d'abord.

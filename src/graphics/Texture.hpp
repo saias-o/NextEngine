@@ -1,6 +1,7 @@
 #pragma once
 
 #include "graphics/VmaFwd.hpp"
+#include "rhi/Format.hpp"
 
 #include <cstdint>
 #include <string>
@@ -15,7 +16,7 @@ class Buffer;
 class Texture {
 public:
     Texture(VulkanDevice& device, const std::string& path, bool srgb = true);
-    Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, uint32_t height, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB, bool generateMipmaps = true);
+    Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, uint32_t height, rhi::Format format = rhi::Format::RGBA8Srgb, bool generateMipmaps = true);
     ~Texture();
     Texture(const Texture&) = delete;
     Texture& operator=(const Texture&) = delete;

@@ -10,7 +10,9 @@
 
 #include "rhi/Capabilities.hpp"
 #include "rhi/BufferUsage.hpp"
-#include "graphics/Buffer.hpp"  // Vulkan backend's Buffer (aliased below)
+#include "rhi/Format.hpp"
+#include "graphics/Buffer.hpp"   // Vulkan backend's Buffer (aliased below)
+#include "graphics/Texture.hpp"  // Vulkan backend's Texture (aliased below)
 
 namespace saida::rhi {
 
@@ -21,5 +23,9 @@ namespace saida::rhi {
 // construction API. The WebGPU backend (16.4) will provide its own Buffer with
 // the same surface, selected here under Emscripten.
 using Buffer = saida::Buffer;
+
+// 16.3.c — Texture: the Vulkan wrapper (image + view + sampler). Construction API
+// is neutral (rhi::Format); handle accessors stay backend-internal for now.
+using Texture = saida::Texture;
 
 } // namespace saida::rhi

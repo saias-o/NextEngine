@@ -1285,7 +1285,7 @@ void WebCanvasNode::createPlaceholderTexture() {
         }
     }
 
-    texture_ = std::make_unique<Texture>(*device_, pixels.data(), w, h, VK_FORMAT_R8G8B8A8_SRGB, false);
+    texture_ = std::make_unique<Texture>(*device_, pixels.data(), w, h, rhi::Format::RGBA8Srgb, false);
     stagingBuffer_.reset();
     markUiDirty();
 }
