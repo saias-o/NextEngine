@@ -96,3 +96,123 @@ la couture RHI complète et le desktop prouvé intact.
 - Pas de render-graph AAA, pas de barrier-tracking automatique générique.
 - Pas de dispatch virtuel : backend au compile-time.
 - Pas d'abstraction de la logique de rendu — seulement des ressources/commandes.
+
+## 7. Design 16.3.d/e/f (le gros morceau)
+
+État des lieux mesuré : ~236 sites `vkCmd*`/`VkCommandBuffer` dans render+graphics+fx,
+23 fichiers créant des `VkDescriptorSetLayout`, 17 sites de construction de `Pipeline`.
+Non découpable *naïvement* — mais découpable avec la règle d'interop ci-dessous.
+
+### 7.1 La règle d'interop qui rend e découpable
+
+`rhi::vulkan::CommandEncoder` est une **vue non-possédante** sur un
+`VkCommandBuffer` (trivialement copiable, zéro état), avec un **escape hatch**
+`handle()` réservé à la migration :
+
+```cpp
+class CommandEncoder {           // backend vulkan
+public:
+    explicit CommandEncoder(VkCommandBuffer cmd);
+    VkCommandBuffer handle() const;   // escape hatch — usage décroissant, 0 à la fin de e
+    ...
+};
+```
+
+Conséquence : le `Renderer` garde son `VkCommandBuffer` pendant toute la
+migration ; chaque sous-système converti prend un `rhi::CommandEncoder`, les
+autres continuent en `Vk*`. **Chaque commit reste desktop-vert.** Côté WebGPU
+(16.4) la même classe enveloppera `WGPUCommandEncoder` — sans `handle()` Vulkan,
+ce qui est correct puisque plus aucun appelant ne l'utilisera.
+
+### 7.2 Encodeurs de passe (formes WebGPU, mapping 1:1 dynamic rendering)
+
+```cpp
+auto rp = enc.beginRenderPass(desc);   // vkCmdBeginRendering + viewport/scissor
+rp.setPipeline(pipe); rp.setBindGroup(0, set); rp.setPushConstants(...);
+rp.setVertexBuffer(...); rp.setIndexBuffer(...);
+rp.draw(...); rp.drawIndexed(...); rp.drawIndexedIndirect(...);
+rp.end();                              // vkCmdEndRendering
+
+auto cp = enc.beginComputePass();
+cp.setPipeline(...); cp.setBindGroup(...); cp.dispatch(x, y, z); cp.end();
+```
+
+`RenderPassDesc` : attachements couleur (view, loadOp/clear, resolve), depth
+(view, load/store, readOnly), extent, viewMask. Copies (staging) : `enc.copyBufferToBuffer`,
+`enc.copyBufferToTexture` + `Device::withSingleTimeEncoder(fn)` remplace
+begin/endSingleTimeCommands chez les appelants.
+
+### 7.3 Sync : transitions explicites mais neutres (pas de tracking)
+
+Les barriers restent **explicites** (esprit §6 : pas de tracking automatique),
+mais exprimées en états neutres — mapping mécanique 1:1 des barriers manuelles
+actuelles (GpuSync.hpp) :
+
+```cpp
+enum class ResourceState { Undefined, ShaderRead, ColorAttachment, DepthWrite,
+                           DepthRead, StorageReadWrite, CopySrc, CopyDst, Present };
+enc.transition(view/texture, oldState, newState, baseLayer, layerCount);
+enc.storageBarrier();   // compute→compute (cmdComputeToComputeBarrier)
+```
+
+Backend Vulkan : mappe vers layout+stage+access (ce que GpuSync construit à la
+main aujourd'hui). Backend WebGPU : **no-op** (le driver trace). L'ancien état
+reste fourni par l'appelant (PostProcessor trace déjà le layout de ses targets —
+il continue, en `ResourceState`).
+
+### 7.4 `rhi::BindGroupLayout` / `rhi::BindGroup` (16.3.d)
+
+- `BindGroupLayout` : builder neutre `{binding, BindingType {UniformBuffer,
+  StorageBuffer, CombinedImageSampler, SampledTexture, Sampler, StorageImage},
+  visibility, count}` → enveloppe `vkCreateDescriptorSetLayout`.
+- `BindGroup` : créé depuis layout + entrées `{binding, buffer|texture|view+sampler}`.
+  Pool Vulkan **caché** dans le backend (pool interne au layout, growable) —
+  WebGPU n'a pas de pools. **Immutable** : pour changer un binding, on recrée
+  (les re-points actuels — GI atlas, tonemap — sont rares ; recréer est correct
+  et simple). Les 23 fichiers se convertissent par lots, build vert à chaque lot
+  (la création est indépendante du bind, qui reste `Vk*` jusqu'à e).
+- Wrinkle 16.4 connu (noté en 16.2) : les shaders web séparent texture/sampler et
+  poussent les push constants en UBO set 3 → les layouts web divergeront. On ne
+  le résout pas ici ; le type neutre couvre les deux styles, le backend WebGPU
+  décrira ses layouts aux quelques sites globaux concernés.
+
+### 7.5 `rhi::Pipeline` neutre (fin de d)
+
+Constructeur → desc neutre : formats `rhi::Format`, `samples` uint32, enums
+neutres `CompareOp`/`CullMode`/`Topology` (+ `BlendMode` déjà neutre), layouts
+`rhi::BindGroupLayout*`, viewMask (multiview = desktop/XR-only, caps en 16.4).
+`bind()` reste Vulkan jusqu'à e (il devient `rp.setPipeline`). Idem
+`ComputePipeline`. Les conversions `VkFormat↔rhi::Format` aux coutures
+Swapchain/HDR sont temporaires et disparaissent en f.
+
+### 7.6 Ordre de conversion (lots-commits, desktop-vert à chaque commit)
+
+- **d.a** — types `BindGroupLayout`/`BindGroup` + conversion graphics/ (UIRenderer,
+  ResourceManager, tonemap/culling du Renderer côté *création* seulement).
+- **d.b** — conversion render/features + GIVolume + ParticleRuntime + PostProcessor.
+- **d.c** — desc neutre `Pipeline`/`ComputePipeline` (17 sites).
+- **e.a** — `CommandEncoder` + `ResourceState` + pass encoders ; **pilote : ShadowMap**
+  (petit : 6 vkCmd, mais complet — barriers, depth-only pass layerée, et sa
+  `DrawGeometryFn` traverse la frontière Renderer → bon test d'ergonomie).
+  Inclut la conversion du pipeline brut de ShadowMap vers `rhi::Pipeline`.
+- **e.b** — copies/staging : Texture, Mesh, uploads Buffer, `withSingleTimeEncoder`.
+- **e.c** — features (Skybox, Water, DebugLines, Outline, Particle) + UIRenderer
+  (`FrameContext.cmd` devient un encoder).
+- **e.d** — PostProcessor (le test de vérité des transitions).
+- **e.e** — GIVolume (compute chains, storageBarrier).
+- **e.f** — ParticleRuntime (indirect draw).
+- **e.g** — Renderer (les ~51 sites : tonemap, culling + fallback
+  `drawIndexedIndirectCount` derrière `caps.drawIndirectCount`, ImGui via
+  escape hatch — l'éditeur est desktop-only, jamais compilé web).
+- **f** — `rhi::Device` (VulkanDevice) + `rhi::Surface` (Swapchain, acquire/present,
+  sémaphores/fences cachés). Les conversions Format aux coutures disparaissent.
+
+### 7.7 Cas particuliers (décidés)
+
+- **GpuProfiler** (timestamps) : outillage desktop — prend l'encoder et utilise
+  `handle()` en interne ; exclu du build web, pas d'abstraction.
+- **TimelineSemaphore/GpuSync.hpp** : infrastructure dormante (zéro usage hors
+  header) — ne pas abstraire ; les helpers barrier sont absorbés par 7.3.
+- **ImGuiLayer** : éditeur desktop-only → escape hatch permanent, assumé.
+- **XR** : chemins `drawXr` sous `SAIDA_ENABLE_XR`, convertis avec e.g via les
+  mêmes encoders (le multiview passe par `RenderPassDesc.viewMask`).

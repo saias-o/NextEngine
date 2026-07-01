@@ -71,9 +71,17 @@
   - [x] 16.3.a — `src/rhi/` créé : `rhi::Capabilities` backend-neutre (`maxSamples` → uint32, plus de `Vk*`), `RenderCapabilities` devient un shim d'alias (consommateurs inchangés), `Rhi.hpp` ancre le backend compile-time. Build + 14/14 tests OK. (flags web `bindless`/`pushConstants` : ajoutés quand un consommateur les lira, 16.3.e)
   - [x] 16.3.b — `rhi::Buffer` : API de construction neutre (`rhi::BufferUsage` au lieu de `VkBufferUsageFlags`, tailles `uint64_t`), aliasé dans `Rhi.hpp`. 27 sites convertis (mapping 1:1). `handle()` reste Vulkan (backend-interne, dé-Vulkanisé en 16.3.e avec le CommandEncoder). Build + 14/14 tests OK.
   - [x] 16.3.c — `rhi::Texture` : `rhi::Format` neutre (+ mapping `rhi/vulkan/Format.hpp`), constructeur mémoire dé-Vulkanisé, `rhi::Texture` aliasé, 5 sites convertis. Sampler embarqué dans Texture. Build + 14/14 tests OK.
-  - [ ] 16.3.d — `rhi::Pipeline` / `BindGroup(Layout)` / `ShaderModule` (couplé au Pipeline, rattaché ici)
-  - [ ] 16.3.e — `rhi::CommandEncoder` / passes (le gros : `Renderer` cesse de toucher `Vk*`)
-  - [ ] 16.3.f — `rhi::Device` / `Surface` (couture présentation)
+  - [ ] 16.3.d — `rhi::BindGroup(Layout)` + desc neutre `Pipeline`/`ComputePipeline`.
+    Design détaillé : PLAN_RHI.md §7. Lots : **d.a** types + graphics/, **d.b**
+    render/+fx, **d.c** Pipeline desc neutre (17 sites).
+  - [ ] 16.3.e — `rhi::CommandEncoder` / passes / `ResourceState` (le gros, ~236
+    sites). Clé : encoder = vue non-possédante sur `VkCommandBuffer` avec escape
+    hatch → migration sous-système par sous-système, desktop-vert à chaque commit
+    (PLAN_RHI.md §7.1). Lots : **e.a** encoder + pilote ShadowMap, **e.b**
+    copies/staging, **e.c** features+UIRenderer, **e.d** PostProcessor, **e.e**
+    GIVolume, **e.f** ParticleRuntime, **e.g** Renderer (+XR).
+  - [ ] 16.3.f — `rhi::Device` / `Surface` (couture présentation, sync cachée ;
+    les conversions `VkFormat↔rhi::Format` temporaires disparaissent)
 - [ ] **16.4 — Backend WebGPU** : implémenter `rhi/webgpu/*` (Dawn / `webgpu.h` Emscripten), chemin minimal Lit + tonemap d'abord.
 - [ ] **16.5 — Parité rendu** : shadows → DDGI → particules GPU → post-process, une feature à la fois.
 - [ ] **16.6 — Packaging web** : intégration au `BuildExporter`/packager, en-têtes COOP/COEP (threads/SharedArrayBuffer), Brotli, optimisation taille WASM (LTO / `-Oz` / `wasm-opt`).
