@@ -1,5 +1,7 @@
 #pragma once
 
+#include "rhi/Rhi.hpp"
+
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
@@ -63,10 +65,12 @@ private:
 
     std::vector<Target> bloom_;
     VkSampler linearSampler_ = VK_NULL_HANDLE;
-    VkDescriptorSetLayout inputSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
-    std::vector<VkDescriptorSet> downsampleSets_;
-    std::vector<VkDescriptorSet> upsampleSets_;
+    // Pilot conversion of 16.3.d: descriptor layout/pool/sets behind rhi::.
+    // Groups are immutable — re-pointing an input (setHdrInput, target resize)
+    // recreates them. The layout must outlive the groups (it owns their pool).
+    std::unique_ptr<rhi::BindGroupLayout> inputLayout_;
+    std::vector<std::unique_ptr<rhi::BindGroup>> downsampleGroups_;
+    std::vector<std::unique_ptr<rhi::BindGroup>> upsampleGroups_;
     std::unique_ptr<Pipeline> bloomDownsamplePipeline_;
     std::unique_ptr<Pipeline> bloomUpsamplePipeline_;
 };

@@ -9,9 +9,16 @@
 // recording, not the render logic.
 
 #include "rhi/Capabilities.hpp"
+#include "rhi/BindGroup.hpp"
 #include "rhi/BufferUsage.hpp"
+#include "rhi/CommandTypes.hpp"
 #include "rhi/Format.hpp"
+#include "rhi/PipelineState.hpp"
+#include "rhi/ShaderStages.hpp"
+#include "rhi/vulkan/BindGroup.hpp"
+#include "rhi/vulkan/CommandEncoder.hpp"
 #include "graphics/Buffer.hpp"   // Vulkan backend's Buffer (aliased below)
+#include "graphics/Pipeline.hpp" // Vulkan backend's Pipeline (aliased below)
 #include "graphics/Texture.hpp"  // Vulkan backend's Texture (aliased below)
 
 namespace saida::rhi {
@@ -27,5 +34,21 @@ using Buffer = saida::Buffer;
 // 16.3.c — Texture: the Vulkan wrapper (image + view + sampler). Construction API
 // is neutral (rhi::Format); handle accessors stay backend-internal for now.
 using Texture = saida::Texture;
+
+// 16.3.d — Pipeline (neutral Desc), bind groups (descriptor sets behind a
+// pool-free API).
+using Pipeline = saida::Pipeline;
+using BindGroupLayout = vulkan::BindGroupLayout;
+using BindGroup = vulkan::BindGroup;
+using BindGroupEntry = vulkan::BindGroupEntry;
+
+// 16.3.e — Command recording: encoder + pass encoders (sync expressed as
+// neutral ResourceState transitions, hidden barriers in the backend).
+using CommandEncoder = vulkan::CommandEncoder;
+using RenderPassEncoder = vulkan::RenderPassEncoder;
+using ComputePassEncoder = vulkan::ComputePassEncoder;
+using RenderPassDesc = vulkan::RenderPassDesc;
+using ColorAttachment = vulkan::ColorAttachment;
+using DepthAttachment = vulkan::DepthAttachment;
 
 } // namespace saida::rhi

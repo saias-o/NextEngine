@@ -1541,13 +1541,14 @@ void Renderer::recordWorldWebCanvases(VkCommandBuffer cmd, Scene& scene, const C
 }
 
 void Renderer::recordShadowPasses(VkCommandBuffer cmd) {
-    shadowMap_->record(cmd, shadowCount_,
-        [this](VkCommandBuffer c, VkPipelineLayout layout, int layer) {
+    rhi::CommandEncoder encoder(cmd);  // non-owning view; coexists with raw recording (16.3.e)
+    shadowMap_->record(encoder, shadowCount_,
+        [this](rhi::RenderPassEncoder& rp, int layer) {
             for (const ShadowDraw& draw : shadowDraws_) {
                 glm::mat4 mvp = shadowMatrices_[layer] * draw.world;
-                vkCmdPushConstants(c, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
-                draw.mesh->bind(c);
-                draw.mesh->draw(c);
+                rp.setPushConstants(&mvp, sizeof(mvp));
+                draw.mesh->bind(rp.handle());  // Mesh joins the encoder in 16.3.e.c
+                draw.mesh->draw(rp.handle());
             }
         });
 }

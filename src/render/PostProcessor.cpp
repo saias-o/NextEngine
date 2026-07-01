@@ -38,8 +38,9 @@ PostProcessor::PostProcessor(VulkanDevice& device, VkExtent2D extent, VkFormat h
 PostProcessor::~PostProcessor() {
     bloomUpsamplePipeline_.reset();
     bloomDownsamplePipeline_.reset();
-    if (descriptorPool_) vkDestroyDescriptorPool(device_.device(), descriptorPool_, nullptr);
-    if (inputSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), inputSetLayout_, nullptr);
+    downsampleGroups_.clear();  // groups return their sets to the layout's pool
+    upsampleGroups_.clear();
+    inputLayout_.reset();
     if (linearSampler_) vkDestroySampler(device_.device(), linearSampler_, nullptr);
     destroyTargets();
 }
@@ -146,84 +147,41 @@ void PostProcessor::createSampler() {
 }
 
 void PostProcessor::createDescriptorResources() {
-    VkDescriptorSetLayoutBinding input{};
-    input.binding = 0;
-    input.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    input.descriptorCount = 1;
-    input.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &input;
-    if (vkCreateDescriptorSetLayout(device_.device(), &layoutInfo, nullptr, &inputSetLayout_) != VK_SUCCESS) {
-        throw std::runtime_error("PostProcessor: failed to create descriptor layout");
-    }
-
-    const uint32_t setCount = static_cast<uint32_t>(bloom_.size() * 2u);
-    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, setCount};
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = setCount;
-    if (vkCreateDescriptorPool(device_.device(), &poolInfo, nullptr, &descriptorPool_) != VK_SUCCESS) {
-        throw std::runtime_error("PostProcessor: failed to create descriptor pool");
-    }
-
-    std::vector<VkDescriptorSetLayout> layouts(setCount, inputSetLayout_);
-    std::vector<VkDescriptorSet> sets(setCount);
-    VkDescriptorSetAllocateInfo alloc{};
-    alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    alloc.descriptorPool = descriptorPool_;
-    alloc.descriptorSetCount = setCount;
-    alloc.pSetLayouts = layouts.data();
-    if (vkAllocateDescriptorSets(device_.device(), &alloc, sets.data()) != VK_SUCCESS) {
-        throw std::runtime_error("PostProcessor: failed to allocate descriptor sets");
-    }
-
-    downsampleSets_.assign(sets.begin(), sets.begin() + static_cast<std::ptrdiff_t>(bloom_.size()));
-    upsampleSets_.assign(sets.begin() + static_cast<std::ptrdiff_t>(bloom_.size()), sets.end());
+    inputLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},
+        });
     updateDescriptorSets();
 }
 
 void PostProcessor::updateDescriptorSets() {
-    if (!descriptorPool_ || bloom_.empty() || !linearSampler_) return;
+    if (!inputLayout_ || bloom_.empty() || !linearSampler_) return;
 
-    std::vector<VkDescriptorImageInfo> infos;
-    infos.reserve(bloom_.size() * 2u);
-    std::vector<VkWriteDescriptorSet> writes;
-    writes.reserve(bloom_.size() * 2u);
+    // Bind groups are immutable: rebuild them against the current inputs. Callers
+    // only re-point inputs while the GPU is idle (HDR/target recreation), the
+    // same contract the old vkUpdateDescriptorSets path relied on.
+    downsampleGroups_.clear();
+    upsampleGroups_.clear();
 
-    auto addWrite = [&](VkDescriptorSet set, VkImageView view) {
-        VkDescriptorImageInfo info{};
-        info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        info.imageView = view;
-        info.sampler = linearSampler_;
-        infos.push_back(info);
-
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = set;
-        write.dstBinding = 0;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = &infos.back();
-        writes.push_back(write);
+    auto makeGroup = [&](VkImageView view) {
+        rhi::BindGroupEntry entry;
+        entry.binding = 0;
+        entry.view = view;
+        entry.sampler = linearSampler_;
+        return std::make_unique<rhi::BindGroup>(*inputLayout_,
+                                                std::vector<rhi::BindGroupEntry>{entry});
     };
 
     for (size_t i = 0; i < bloom_.size(); ++i) {
-        addWrite(downsampleSets_[i], i == 0 ? hdrInputView_ : bloom_[i - 1].view);
+        downsampleGroups_.push_back(makeGroup(i == 0 ? hdrInputView_ : bloom_[i - 1].view));
     }
     for (size_t i = 0; i < bloom_.size(); ++i) {
-        addWrite(upsampleSets_[i], bloom_[std::min(i + 1, bloom_.size() - 1)].view);
+        upsampleGroups_.push_back(makeGroup(bloom_[std::min(i + 1, bloom_.size() - 1)].view));
     }
-
-    vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
 void PostProcessor::createPipelines() {
-    std::vector<VkDescriptorSetLayout> layouts{inputSetLayout_};
+    std::vector<VkDescriptorSetLayout> layouts{inputLayout_->handle()};
     std::vector<VkFormat> colorFormats{hdrFormat_};
     bloomDownsamplePipeline_ = std::make_unique<Pipeline>(device_,
         shaderPath("tonemap.vert.spv"), shaderPath("bloom_downsample.frag.spv"),
@@ -295,8 +253,9 @@ void PostProcessor::recordBloom(VkCommandBuffer cmd, const SceneSettings& settin
                 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
             beginFullscreenPass(cmd, target, true);
+            VkDescriptorSet downsampleSet = downsampleGroups_[i]->handle();
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                bloomDownsamplePipeline_->layout(), 0, 1, &downsampleSets_[i], 0, nullptr);
+                bloomDownsamplePipeline_->layout(), 0, 1, &downsampleSet, 0, nullptr);
             BloomPush push{};
             push.sourceRect = (i == 0) ? sourceRect : glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
             push.params = glm::vec4(std::max(settings.bloomThreshold, 0.0f),
@@ -325,8 +284,9 @@ void PostProcessor::recordBloom(VkCommandBuffer cmd, const SceneSettings& settin
                 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
             beginFullscreenPass(cmd, target, false);
+            VkDescriptorSet upsampleSet = upsampleGroups_[targetIndex]->handle();
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                bloomUpsamplePipeline_->layout(), 0, 1, &upsampleSets_[targetIndex], 0, nullptr);
+                bloomUpsamplePipeline_->layout(), 0, 1, &upsampleSet, 0, nullptr);
             BloomPush push{};
             push.sourceRect = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
             push.params = glm::vec4(0.0f, 0.0f, std::max(settings.bloomRadius, 0.0f), 0.0f);

@@ -71,17 +71,55 @@
   - [x] 16.3.a — `src/rhi/` créé : `rhi::Capabilities` backend-neutre (`maxSamples` → uint32, plus de `Vk*`), `RenderCapabilities` devient un shim d'alias (consommateurs inchangés), `Rhi.hpp` ancre le backend compile-time. Build + 14/14 tests OK. (flags web `bindless`/`pushConstants` : ajoutés quand un consommateur les lira, 16.3.e)
   - [x] 16.3.b — `rhi::Buffer` : API de construction neutre (`rhi::BufferUsage` au lieu de `VkBufferUsageFlags`, tailles `uint64_t`), aliasé dans `Rhi.hpp`. 27 sites convertis (mapping 1:1). `handle()` reste Vulkan (backend-interne, dé-Vulkanisé en 16.3.e avec le CommandEncoder). Build + 14/14 tests OK.
   - [x] 16.3.c — `rhi::Texture` : `rhi::Format` neutre (+ mapping `rhi/vulkan/Format.hpp`), constructeur mémoire dé-Vulkanisé, `rhi::Texture` aliasé, 5 sites convertis. Sampler embarqué dans Texture. Build + 14/14 tests OK.
-  - [ ] 16.3.d — `rhi::BindGroup(Layout)` + desc neutre `Pipeline`/`ComputePipeline`.
-    Design détaillé : PLAN_RHI.md §7. Lots : **d.a** types + graphics/, **d.b**
-    render/+fx, **d.c** Pipeline desc neutre (17 sites).
-  - [ ] 16.3.e — `rhi::CommandEncoder` / passes / `ResourceState` (le gros, ~236
-    sites). Clé : encoder = vue non-possédante sur `VkCommandBuffer` avec escape
-    hatch → migration sous-système par sous-système, desktop-vert à chaque commit
-    (PLAN_RHI.md §7.1). Lots : **e.a** encoder + pilote ShadowMap, **e.b**
-    copies/staging, **e.c** features+UIRenderer, **e.d** PostProcessor, **e.e**
-    GIVolume, **e.f** ParticleRuntime, **e.g** Renderer (+XR).
-  - [ ] 16.3.f — `rhi::Device` / `Surface` (couture présentation, sync cachée ;
-    les conversions `VkFormat↔rhi::Format` temporaires disparaissent)
+  - [~] 16.3.d — `rhi::BindGroup(Layout)` + desc neutre `Pipeline`. **Fait (types
+    + pilotes)** : `rhi/BindGroup.hpp` + `rhi/vulkan/BindGroup.{hpp,cpp}` (pool
+    Vulkan caché growable, groupes **immutables** — on recrée au lieu de
+    `vkUpdateDescriptorSets`), `Pipeline::Desc` neutre (+ depth-only sans
+    fragment, depth bias, `pushConstantStages`), enums neutres
+    (`rhi/PipelineState.hpp`, `rhi/ShaderStages.hpp`), pilote **PostProcessor**
+    (layout/pool/sets → BindGroup(Layout)). **Reste — mécanique, pattern établi
+    = PostProcessor.cpp :**
+    - [ ] d.a/d.b — convertir les créations de descriptors restantes (~20
+      fichiers : `grep -l VkDescriptorSetLayout src`) : UIRenderer, Renderer
+      (global/tonemap/culling), GIVolume, ParticleRuntime, features. Gotchas :
+      `BindGroupEntry.textureState = DepthRead` pour la shadow map échantillonnée ;
+      recréer les groups **seulement quand les vues changent** (garder les gardes
+      de vues cachées du Renderer) ; l'interop avec les ctors legacy passe par
+      `BindGroupLayout::handle()`.
+    - [ ] d.c — convertir les 17 sites `make_unique<Pipeline>` legacy vers
+      `Pipeline::Desc` (formats `rhi::Format`, layouts `BindGroupLayout*`), puis
+      supprimer les ctors legacy et `Pipeline::BuildInfo` devient le seul chemin.
+    - ⚠ **Hors périmètre v1 (décidé)** : le set bindless UPDATE_AFTER_BIND
+      (ResourceManager.cpp:148) reste Vulkan brut — c'est le chemin
+      `caps.bindless` de 16.4 (fallback bind-group-par-texture) ; ne pas
+      l'abstraire avant.
+  - [~] 16.3.e — `rhi::CommandEncoder` / passes / `ResourceState`. **Fait (clé de
+    voûte + pilote ShadowMap, e.a)** : `rhi/CommandTypes.hpp`,
+    `rhi/vulkan/CommandEncoder.{hpp,cpp}`, `rhi/vulkan/Convert.hpp` (table
+    ResourceState→layout/stage/access, volontairement conservative). L'encoder
+    est une **vue non-possédante** sur le VkCommandBuffer (escape hatch
+    `handle()`) → coexistence converti/brut dans la même frame, un sous-système
+    par commit. Les pass encoders posent viewport/scissor plein cadre par défaut
+    et mémorisent layout+pushStages au `setPipeline` (`setPushConstants` sans
+    paramètre de stage). ShadowMap : plus un seul `vkCmd*`, pipeline brut →
+    `Pipeline::Desc`, `DrawGeometryFn(RenderPassEncoder&, layer)`. **Reste —
+    mécanique, pattern = ShadowMap.cpp + Renderer::recordShadowPasses :**
+    - [ ] e.b — copies/staging : Texture, Mesh, uploads Buffer,
+      `Device::withSingleTimeEncoder` (remplace begin/endSingleTimeCommands chez
+      les appelants).
+    - [ ] e.c — features (FrameContext.cmd → encoder) + UIRenderer +
+      `Mesh::bind/draw(RenderPassEncoder&)`.
+    - [ ] e.d — PostProcessor (transitions : `transition()` + états trackés dans
+      `Target.layout` convertis en `ResourceState`).
+    - [ ] e.e — GIVolume (compute : `beginComputePass`, `storageBarrier`).
+    - [ ] e.f — ParticleRuntime (indirect draw).
+    - [ ] e.g — Renderer (~50 sites ; fallback `drawIndexedIndirectCount`
+      derrière `caps.drawIndirectCount` ; ImGui/GpuProfiler restent sur
+      `handle()`, assumé desktop-only).
+  - [ ] 16.3.f — `rhi::Device` / `Surface` (couture présentation, sync
+    acquire/present cachée) **+ création neutre des render targets** (HDR,
+    shadow array, bloom — encore VMA brut). **Design à faire d'abord** (pas
+    mécanique — session dédiée), ensuite conversion.
 - [ ] **16.4 — Backend WebGPU** : implémenter `rhi/webgpu/*` (Dawn / `webgpu.h` Emscripten), chemin minimal Lit + tonemap d'abord.
 - [ ] **16.5 — Parité rendu** : shadows → DDGI → particules GPU → post-process, une feature à la fois.
 - [ ] **16.6 — Packaging web** : intégration au `BuildExporter`/packager, en-têtes COOP/COEP (threads/SharedArrayBuffer), Brotli, optimisation taille WASM (LTO / `-Oz` / `wasm-opt`).

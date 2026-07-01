@@ -348,6 +348,8 @@ add_library(saida_engine STATIC
     src/scene/animation/Retarget.cpp
     src/ui/UIInteractionSystem.cpp
     src/audio/AudioManager.cpp
+    src/rhi/vulkan/BindGroup.cpp
+    src/rhi/vulkan/CommandEncoder.cpp
     src/graphics/VulkanDevice.cpp
     src/graphics/Swapchain.cpp
     src/graphics/Buffer.cpp
