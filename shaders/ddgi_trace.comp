@@ -13,7 +13,7 @@ struct Ray {
 };
 layout(std430, set = 1, binding = 0) buffer RaysBuffer { Ray rays[]; };
 
-layout(push_constant) uniform Push {
+PUSH_QUALIFIER Push {
     mat4 randomRot;     // per-frame rotation of the Fibonacci ray set (temporal coverage)
     int raysPerProbe;
     int probeCount;
@@ -72,7 +72,7 @@ void main() {
         tMax[axis] += tDelta[axis];
         if (cell[axis] < 0 || cell[axis] >= res) break;
 
-        vec4 v = texelFetch(giVoxels, cell, 0);
+        vec4 v = texelFetch(TEX3D(giVoxels), cell, 0);
         if (v.a > 0.5) {
             hit = true;
             hitDist = tEnter;

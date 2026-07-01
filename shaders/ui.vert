@@ -1,10 +1,13 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "web_compat.glsl"
 
 // Fullscreen-style UI quad generated without a VBO (triangle strip).
 // Indices: 0, 1, 2, 3
 // Positions: (0,0), (1,0), (0,1), (1,1)
 
-layout(push_constant) uniform PushConstants {
+PUSH_QUALIFIER PushConstants {
     vec2 position;    // Top-left position in pixels
     vec2 size;        // Width and height in pixels
     vec2 screenSize;  // Framebuffer size in pixels

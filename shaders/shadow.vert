@@ -1,7 +1,10 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "web_compat.glsl"
 
 // Depth-only shadow pass. mvp = lightViewProj * model.
-layout(push_constant) uniform PushConstants {
+PUSH_QUALIFIER PushConstants {
     mat4 mvp;
 } push;
 

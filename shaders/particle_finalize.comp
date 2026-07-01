@@ -1,4 +1,7 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "web_compat.glsl"
 
 layout(local_size_x = 1) in;
 
@@ -41,7 +44,7 @@ layout(std430, set = 0, binding = 6) buffer IndirectBuffer {
     uint firstInstance;
 } drawCmd;
 
-layout(push_constant) uniform Push {
+PUSH_QUALIFIER Push {
     uint particleCount;
     uint emitterCount;
     uint emitCount;

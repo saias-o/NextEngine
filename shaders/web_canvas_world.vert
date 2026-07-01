@@ -1,15 +1,18 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
 #ifdef MULTIVIEW
 #extension GL_EXT_multiview : require
 #endif
+
+#include "web_compat.glsl"
 
 layout(set = 0, binding = 0) uniform CameraUBO {
     mat4 view[2];
     mat4 proj[2];
 } cam;
 
-layout(push_constant) uniform PushConstants {
+PUSH_QUALIFIER PushConstants {
     mat4 model;
     vec4 params; // x = worldWidth, y = worldHeight, z = textureId, w = alpha
 } push;

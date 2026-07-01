@@ -30,9 +30,9 @@ layout(std430, set = 1, binding = 1) readonly buffer MaterialBuffer {
 #else
 
 // Set 1: per-material data.
-layout(set = 1, binding = 0) uniform sampler2D texAlbedo;
-layout(set = 1, binding = 1) uniform sampler2D texNormal;
-layout(set = 1, binding = 2) uniform sampler2D texMetallicRoughness;
+DECL_TEX2D(1, 0, 5, texAlbedo);
+DECL_TEX2D(1, 1, 6, texNormal);
+DECL_TEX2D(1, 2, 7, texMetallicRoughness);
 layout(set = 1, binding = 3) uniform MaterialUBO {
     vec4 baseColor;
     float metallic;
@@ -41,11 +41,11 @@ layout(set = 1, binding = 3) uniform MaterialUBO {
     float _pad;
     vec4 emissive;
 } material;
-layout(set = 1, binding = 4) uniform sampler2D texEmissive;
+DECL_TEX2D(1, 4, 8, texEmissive);
 
 #endif
 
-layout(push_constant) uniform PushConstants {
+PUSH_QUALIFIER PushConstants {
     mat4 model;
     vec4 params;
 } push;
@@ -78,7 +78,7 @@ void main() {
     float matRoughness = material.roughness;
     float matAO = material.ao;
     vec4 matEmissive = material.emissive;
-    vec4 albedoSample = texture(texAlbedo, fragTexCoord);
+    vec4 albedoSample = texture(TEX2D(texAlbedo), fragTexCoord);
 #endif
 
     vec3 albedo = albedoSample.rgb * fragColor * baseColor.rgb;
@@ -88,7 +88,7 @@ void main() {
         float res = float(lights.giAtlas.w);
         vec3 uvw = giVolumeUVW(fragWorldPos);
         vec3 snapped = (floor(uvw * res) + 0.5) / res;
-        outColor = vec4(texture(giVoxels, snapped).rgb, 1.0);
+        outColor = vec4(texture(TEX3D(giVoxels), snapped).rgb, 1.0);
         return;
     }
 
@@ -100,7 +100,7 @@ void main() {
 #ifdef BINDLESS
     vec3 normalSample = texture(globalTextures[nonuniformEXT(mat.normalTexIdx)], fragTexCoord).xyz;
 #else
-    vec3 normalSample = texture(texNormal, fragTexCoord).xyz;
+    vec3 normalSample = texture(TEX2D(texNormal), fragTexCoord).xyz;
 #endif
     if (abs(normalSample.x - 0.5) > 0.01 || abs(normalSample.y - 0.5) > 0.01) {
         vec3 tangentNormal = normalSample * 2.0 - 1.0;
@@ -110,7 +110,7 @@ void main() {
 #ifdef BINDLESS
     vec3 mrSample = texture(globalTextures[nonuniformEXT(mat.metallicRoughnessTexIdx)], fragTexCoord).rgb;
 #else
-    vec3 mrSample = texture(texMetallicRoughness, fragTexCoord).rgb;
+    vec3 mrSample = texture(TEX2D(texMetallicRoughness), fragTexCoord).rgb;
 #endif
     float roughness = mrSample.g * matRoughness;
     float metallic = mrSample.b * matMetallic;
@@ -126,7 +126,7 @@ void main() {
 #ifdef BINDLESS
     vec3 emissive = texture(globalTextures[nonuniformEXT(mat.emissiveTexIdx)], fragTexCoord).rgb * matEmissive.rgb;
 #else
-    vec3 emissive = texture(texEmissive, fragTexCoord).rgb * material.emissive.rgb;
+    vec3 emissive = texture(TEX2D(texEmissive), fragTexCoord).rgb * material.emissive.rgb;
 #endif
 
     outColor = vec4(lit + emissive, albedoSample.a * baseColor.a);

@@ -1,8 +1,11 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
 #ifdef MULTIVIEW
 #extension GL_EXT_multiview : require
 #endif
+
+#include "web_compat.glsl"
 
 // Camera is an array of 2 (left/right eye). Mono/desktop uses index 0; the XR
 // multiview variant selects per-eye via gl_ViewIndex. One layout for both paths.
@@ -11,7 +14,7 @@ layout(set = 0, binding = 0) uniform CameraUBO {
     mat4 proj[2];
 } cam;
 
-layout(push_constant) uniform PushConstants {
+PUSH_QUALIFIER PushConstants {
     mat4 model;
     vec4 params;  // y = boneOffset
 } push;

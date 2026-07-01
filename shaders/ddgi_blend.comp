@@ -15,7 +15,7 @@ layout(set = 1, binding = 2, rg16f)   uniform image2D writeVis;
 layout(set = 1, binding = 3, rgba16f) uniform readonly image2D prevIrr;
 layout(set = 1, binding = 4, rg16f)   uniform readonly image2D prevVis;
 
-layout(push_constant) uniform Push {
+PUSH_QUALIFIER Push {
     int mode;          // 0 = irradiance, 1 = visibility
     int raysPerProbe;
     int probeCount;

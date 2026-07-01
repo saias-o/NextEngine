@@ -1,12 +1,15 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "web_compat.glsl"
 
 // HDR -> LDR tonemap pass with AO, fog and bloom.
 
-layout(set = 0, binding = 0) uniform sampler2D hdrInput;
-layout(set = 0, binding = 1) uniform sampler2D depthInput;
-layout(set = 0, binding = 2) uniform sampler2D bloomInput;
+DECL_TEX2D(0, 0, 3, hdrInput);
+DECL_TEX2D(0, 1, 4, depthInput);
+DECL_TEX2D(0, 2, 5, bloomInput);
 
-layout(push_constant) uniform PushConstants {
+PUSH_QUALIFIER PushConstants {
     mat4 invProjection;
     vec4 aoParams;        // x enabled, y radius, z intensity, w power
     vec4 fogColor;        // rgb = linear HDR fog color
@@ -29,15 +32,15 @@ vec2 sourceUV(vec2 viewportUV) {
 }
 
 vec4 sampleHdr(vec2 viewportUV) {
-    return texture(hdrInput, sourceUV(viewportUV));
+    return texture(TEX2D(hdrInput), sourceUV(viewportUV));
 }
 
 float sampleDepth(vec2 viewportUV) {
-    return texture(depthInput, sourceUV(viewportUV)).r;
+    return texture(TEX2D(depthInput), sourceUV(viewportUV)).r;
 }
 
 vec2 viewportTexel() {
-    vec2 sourcePixels = vec2(textureSize(hdrInput, 0)) * max(push.sourceRect.zw, vec2(1e-6));
+    vec2 sourcePixels = vec2(textureSize(TEX2D(hdrInput), 0)) * max(push.sourceRect.zw, vec2(1e-6));
     return 1.0 / max(sourcePixels, vec2(1.0));
 }
 
@@ -119,7 +122,7 @@ float ambientOcclusion(vec2 uv) {
 vec3 bloom(vec2 uv) {
     if (push.bloomParams.x < 0.5 || push.bloomParams.z <= 0.0)
         return vec3(0.0);
-    return texture(bloomInput, clamp(uv, vec2(0.0), vec2(1.0))).rgb * push.bloomParams.z;
+    return texture(TEX2D(bloomInput), clamp(uv, vec2(0.0), vec2(1.0))).rgb * push.bloomParams.z;
 }
 
 vec3 applyFog(vec3 color, vec2 uv) {

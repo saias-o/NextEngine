@@ -1,8 +1,11 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
 #ifdef MULTIVIEW
 #extension GL_EXT_multiview : require
 #endif
+
+#include "web_compat.glsl"
 
 layout(set = 0, binding = 0) uniform CameraUBO {
     mat4 view[2];
@@ -13,7 +16,7 @@ layout(std140, set = 0, binding = 3) readonly buffer BoneBuffer {
     mat4 boneMatrices[];
 };
 
-layout(push_constant) uniform PushConstants {
+PUSH_QUALIFIER PushConstants {
     mat4 model;
     vec4 color;
     vec4 params;  // x widthPx, y boneOffset, zw viewport size

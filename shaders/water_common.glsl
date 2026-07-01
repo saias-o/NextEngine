@@ -1,5 +1,7 @@
 // Shared water UBO layout and analytic shore helpers.
 
+#include "web_compat.glsl"
+
 const int WATER_MAX = 8;  // must match kMaxWaters in WaterFeature
 
 struct GpuWater {
@@ -21,7 +23,7 @@ layout(set = 1, binding = 0) uniform WaterBlock {
     GpuWater items[WATER_MAX];
 } waters;
 
-layout(push_constant) uniform WaterPush {
+PUSH_QUALIFIER WaterPush {
     uint index;   // which entry in waters.items this draw uses
     float time;   // animation clock (s)
 } push;

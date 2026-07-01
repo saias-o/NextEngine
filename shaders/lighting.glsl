@@ -1,6 +1,7 @@
 // Shared PBR lighting math for the scene shaders.
 
 #include "ddgi_common.glsl"
+#include "web_compat.glsl"
 
 const float PI = 3.14159265359;
 const int MAX_LIGHTS = 16;
@@ -29,20 +30,20 @@ layout(set = 0, binding = 1) uniform LightingUBO {
     vec4 environmentParams; // x enabled, y diffuse intensity, z specular intensity, w rotation
 } lights;
 
-layout(set = 0, binding = 2) uniform sampler2DArrayShadow shadowMap;
+DECL_SHADOW2DARRAY(0, 2, 8, shadowMap);
 
 // DDGI atlases: one octahedral tile per probe, laid out in a 2D atlas. Irradiance
 // holds incident radiance (rgb), visibility holds (mean dist, mean dist^2) for the
 // Chebyshev occlusion test. Both are LINEAR + CLAMP sampled.
-layout(set = 0, binding = 4) uniform sampler2D giIrradiance;
-layout(set = 0, binding = 5) uniform sampler2D giVisibility;
+DECL_TEX2D(0, 4, 9,  giIrradiance);
+DECL_TEX2D(0, 5, 10, giVisibility);
 
 // Voxelized scene albedo (the GI ray-march source). Sampled here only for the
 // debug visualization; the DDGI update compute pass reads it directly.
-layout(set = 0, binding = 6) uniform sampler3D giVoxels;
+DECL_TEX3D(0, 6, 11, giVoxels);
 
 // Canonical equirectangular environment. Reused by skybox, IBL and DDGI misses.
-layout(set = 0, binding = 7) uniform sampler2D iblEnvironment;
+DECL_TEX2D(0, 7, 12, iblEnvironment);
 
 const float INV_TWO_PI = 0.15915494309;
 const float INV_PI = 0.31830988618;
@@ -87,8 +88,8 @@ vec3 sampleIrradianceVolume(vec3 wp, vec3 N, vec3 V) {
     ivec3 base    = ivec3(floor(gridF));
     vec3  frac    = gridF - vec3(base);
 
-    vec2 irrAtlas = vec2(textureSize(giIrradiance, 0));
-    vec2 visAtlas = vec2(textureSize(giVisibility, 0));
+    vec2 irrAtlas = vec2(textureSize(TEX2D(giIrradiance), 0));
+    vec2 visAtlas = vec2(textureSize(TEX2D(giVisibility), 0));
     int  irrT     = lights.giAtlas.x;
     int  visT     = lights.giAtlas.y;
 
@@ -114,7 +115,7 @@ vec3 sampleIrradianceVolume(vec3 wp, vec3 N, vec3 V) {
         wDir *= wDir;
 
         // 3. Chebyshev visibility from the probe.
-        vec2  vis  = texture(giVisibility, giProbeUV(idx, -dir, visT, visAtlas)).rg;
+        vec2  vis  = texture(TEX2D(giVisibility), giProbeUV(idx, -dir, visT, visAtlas)).rg;
         float mean = vis.x;
         float wVis = 1.0;
         if (dist > mean) {
@@ -125,7 +126,7 @@ vec3 sampleIrradianceVolume(vec3 wp, vec3 N, vec3 V) {
         }
 
         float w   = wTri * wDir * wVis + 1e-4;   // epsilon avoids all-zero weights
-        vec3  irr = texture(giIrradiance, giProbeUV(idx, N, irrT, irrAtlas)).rgb;
+        vec3  irr = texture(TEX2D(giIrradiance), giProbeUV(idx, N, irrT, irrAtlas)).rgb;
         sumIrr += irr * w;
         sumW   += w;
     }
@@ -151,12 +152,12 @@ float shadowFactor(int idx, vec3 worldPos, float ndotl) {
         return 1.0;
     float bias = clamp(0.0015 * tan(acos(clamp(ndotl, 0.0, 1.0))), 0.0, 0.004);
     float depthRef = proj.z - bias;
-    vec2 texel = 1.0 / vec2(textureSize(shadowMap, 0).xy);
+    vec2 texel = 1.0 / vec2(textureSize(SHADOW2DARRAY(shadowMap), 0).xy);
     float sum = 0.0;
     float softness = lights.shadowParams.x;
     for (int x = -1; x <= 1; ++x)
         for (int y = -1; y <= 1; ++y)
-            sum += texture(shadowMap, vec4(uv + vec2(x, y) * texel * softness, float(idx), depthRef));
+            sum += texture(SHADOW2DARRAY(shadowMap), vec4(uv + vec2(x, y) * texel * softness, float(idx), depthRef));
     return sum / 9.0;
 }
 
@@ -210,11 +211,11 @@ vec2 environmentUV(vec3 dir) {
 }
 
 float environmentMaxLod() {
-    return max(float(textureQueryLevels(iblEnvironment) - 1), 0.0);
+    return max(float(textureQueryLevels(TEX2D(iblEnvironment)) - 1), 0.0);
 }
 
 vec3 sampleEnvironmentLod(vec3 dir, float lod) {
-    return textureLod(iblEnvironment, environmentUV(dir), lod).rgb;
+    return textureLod(TEX2D(iblEnvironment), environmentUV(dir), lod).rgb;
 }
 
 vec3 environmentMissRadiance(vec3 dir) {

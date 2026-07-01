@@ -1,4 +1,7 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "web_compat.glsl"
 
 // Scene voxelization for DDGI: render once per dominant axis into a 3D albedo grid.
 
@@ -9,7 +12,7 @@ layout(set = 0, binding = 1) uniform VoxelUBO {
     mat4 axisVP[3]; // orthographic view-proj per dominant axis
 } vox;
 
-layout(push_constant) uniform Push {
+PUSH_QUALIFIER Push {
     mat4 model;
     uint axis;
 } push;

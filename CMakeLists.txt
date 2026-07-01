@@ -79,6 +79,29 @@ set(SHADERS
 file(GLOB SHADER_INCLUDES ${SHADER_DIR}/*.glsl)
 
 set(SHADER_SPIRV "")
+# Web (WGSL) set: shaders converted to the web shading model (separate textures +
+# samplers + UBO, via web_compat.glsl). A -DWEB variant is compiled and then
+# transpiled to WGSL only for these. The list grows as the port proceeds
+# (Étape 16.2); web is mono — no bindless, no multiview. web.<name>.spv is built
+# on demand by the WebShaders target below.
+set(WEB_READY_SHADERS
+    shader.vert shader.frag unlit.frag
+    shadow.vert
+    tonemap.vert tonemap.frag
+    bloom_downsample.frag bloom_upsample.frag
+    skybox.vert skybox.frag
+    outline.vert outline.frag
+    voxelize.vert voxelize.frag
+    debug_line.vert debug_line.frag
+    ui.vert ui.frag
+    water.vert water.frag
+    web_canvas_world.vert web_canvas_world.frag
+    particle_render.vert particle_render.frag
+    culling.comp
+    ddgi_trace.comp ddgi_blend.comp ddgi_borders.comp
+    particle_init.comp particle_prepare.comp particle_emit.comp
+    particle_sim.comp particle_finalize.comp)
+set(SHADER_SPIRV_WEB "")
 foreach(SHADER ${SHADERS})
     get_filename_component(SHADER_NAME ${SHADER} NAME)
     set(SPIRV_OUTPUT ${SHADER_OUT_DIR}/${SHADER_NAME}.spv)
@@ -89,7 +112,19 @@ foreach(SHADER ${SHADERS})
         COMMENT "Compiling ${SHADER_NAME} -> ${SHADER_NAME}.spv"
     )
     list(APPEND SHADER_SPIRV ${SPIRV_OUTPUT})
-    
+
+    # Web variant (-DWEB): separate samplers + UBO, transpilable to WGSL by naga.
+    if(SHADER_NAME IN_LIST WEB_READY_SHADERS)
+        set(WEB_SPV_OUTPUT ${SHADER_OUT_DIR}/web.${SHADER_NAME}.spv)
+        add_custom_command(
+            OUTPUT ${WEB_SPV_OUTPUT}
+            COMMAND ${GLSLC} -I ${SHADER_DIR} -DWEB ${SHADER} -o ${WEB_SPV_OUTPUT}
+            DEPENDS ${SHADER} ${SHADER_INCLUDES}
+            COMMENT "Compiling web.${SHADER_NAME} -> web.${SHADER_NAME}.spv"
+        )
+        list(APPEND SHADER_SPIRV_WEB ${WEB_SPV_OUTPUT})
+    endif()
+
     if(SHADER_NAME STREQUAL "shader.vert" OR SHADER_NAME STREQUAL "shader.frag")
         set(BINDLESS_OUTPUT ${SHADER_OUT_DIR}/bindless.${SHADER_NAME}.spv)
         add_custom_command(
@@ -119,6 +154,39 @@ foreach(SHADER ${SHADERS})
 endforeach()
 
 add_custom_target(Shaders DEPENDS ${SHADER_SPIRV})
+
+# ── Web shaders: SPIR-V → WGSL (Étape 16.2) ─────────────────────────────────
+# Browsers' WebGPU only accepts WGSL, so the web build transpiles the very same
+# SPIR-V we already produce with glslc. Uses `naga` (cargo install naga-cli).
+# This is a separate on-demand target — desktop builds never trigger it — and is
+# skipped entirely (with a notice) when naga isn't installed, so configuring the
+# project never requires the web toolchain. Validate with:
+#   cmake --build build --target WebShaders
+find_program(NAGA naga)
+if(NAGA)
+    set(WGSL_OUT_DIR ${SHADER_OUT_DIR}/wgsl)
+    file(MAKE_DIRECTORY ${WGSL_OUT_DIR})
+    set(SHADER_WGSL "")
+    foreach(SPV ${SHADER_SPIRV_WEB})
+        get_filename_component(SPV_NAME ${SPV} NAME)             # web.shader.vert.spv
+        string(REGEX REPLACE "^web\\." "" WGSL_NAME ${SPV_NAME}) # shader.vert.spv
+        string(REGEX REPLACE "\\.spv$" ".wgsl" WGSL_NAME ${WGSL_NAME})  # shader.vert.wgsl
+        set(WGSL_OUTPUT ${WGSL_OUT_DIR}/${WGSL_NAME})
+        add_custom_command(
+            OUTPUT ${WGSL_OUTPUT}
+            COMMAND ${NAGA} ${SPV} ${WGSL_OUTPUT}
+            DEPENDS ${SPV}
+            COMMENT "Transpiling ${WGSL_NAME} (web) -> WGSL"
+        )
+        list(APPEND SHADER_WGSL ${WGSL_OUTPUT})
+    endforeach()
+    add_custom_target(WebShaders DEPENDS ${SHADER_WGSL})
+    add_dependencies(WebShaders Shaders)
+    message(STATUS "naga found (${NAGA}): WebShaders target enabled (SPIR-V -> WGSL)")
+else()
+    message(STATUS "naga not found - web shader (WGSL) generation disabled "
+                   "(install with: cargo install naga-cli)")
+endif()
 
 # ── Jolt Physics (vendored) ─────────────────────────────────────────────────
 # Only the static `Jolt` lib is built — the samples/tests/unit-test targets are
@@ -180,6 +248,14 @@ endif()
 if (MINGW)
     target_link_libraries(quickjs PUBLIC m)
 endif()
+
+# ── meshoptimizer (vendored, static) ────────────────────────────────────────
+# Geometry compression/optimization (Étape 16 — Export Web). Runtime needs the
+# decoders (EXT_meshopt_compression GLBs); the editor's import also uses the
+# encoders/optimizers. Header + .cpp only, no executables. v0.22.
+file(GLOB MESHOPT_SOURCES ${CMAKE_SOURCE_DIR}/third_party/meshoptimizer/src/*.cpp)
+add_library(meshoptimizer STATIC ${MESHOPT_SOURCES})
+target_include_directories(meshoptimizer PUBLIC third_party/meshoptimizer/src)
 
 # Freetype is used only by RmlUi's font engine. Disable optional compression /
 # shaping dependencies so the engine remains easy to build from source.
@@ -249,6 +325,8 @@ add_library(saida_engine STATIC
     src/scene/BVHLoader.cpp
     src/scene/BehaviourRegistry.cpp
     src/scene/NodeRegistry.cpp
+    src/scene/GltfMeshopt.cpp
+    src/tools/MeshoptGlbExporter.cpp
     src/scene/WebCanvasNode.cpp
     src/scene/UINode.cpp
     src/scene/UICanvasNode.cpp
@@ -354,7 +432,7 @@ target_include_directories(saida_engine PUBLIC
     third_party/json
     third_party/miniaudio
 )
-target_link_libraries(saida_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt quickjs RmlUi::RmlUi)
+target_link_libraries(saida_engine PUBLIC Vulkan::Vulkan glfw glm::glm Jolt quickjs RmlUi::RmlUi meshoptimizer)
 if(WIN32)
     target_link_libraries(saida_engine PUBLIC winmm psapi)
 endif()
@@ -510,6 +588,12 @@ if (BUILD_TESTING)
     target_link_libraries(saida_format_version_tests PRIVATE saida_engine)
     target_compile_options(saida_format_version_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_format_version_tests COMMAND $<TARGET_FILE:saida_format_version_tests>)
+
+    add_executable(saida_meshopt_export_tests tests/MeshoptExportTests.cpp)
+    saida_test_target(saida_meshopt_export_tests)
+    target_link_libraries(saida_meshopt_export_tests PRIVATE saida_engine)
+    target_compile_options(saida_meshopt_export_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_meshopt_export_tests COMMAND $<TARGET_FILE:saida_meshopt_export_tests>)
 
     add_executable(saida_physics_character_tests tests/PhysicsCharacterTest.cpp)
     saida_test_target(saida_physics_character_tests)

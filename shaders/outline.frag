@@ -1,6 +1,9 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
-layout(push_constant) uniform PushConstants {
+#include "web_compat.glsl"
+
+PUSH_QUALIFIER PushConstants {
     mat4 model;
     vec4 color;
     vec4 params;

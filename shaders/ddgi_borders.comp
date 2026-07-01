@@ -10,7 +10,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 layout(set = 1, binding = 1, rgba16f) uniform image2D writeIrr;
 layout(set = 1, binding = 2, rg16f)   uniform image2D writeVis;
 
-layout(push_constant) uniform Push {
+PUSH_QUALIFIER Push {
     int mode;        // 0 = irradiance, 1 = visibility
     int probeCount;
 } pc;

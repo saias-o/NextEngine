@@ -1,15 +1,18 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
 #ifdef MULTIVIEW
 #extension GL_EXT_multiview : require
 #endif
+
+#include "web_compat.glsl"
 
 layout(location = 0) in vec2 inUV;
 layout(location = 1) in vec4 clipPos;
 
 layout(location = 0) out vec4 outColor;
 
-layout(set = 0, binding = 0) uniform sampler2D skyboxTex;
+DECL_TEX2D(0, 0, 1, skyboxTex);
 
 // Mono uses a single inverse view-proj; the XR multiview variant carries one per
 // eye and picks it with gl_ViewIndex.
@@ -21,7 +24,7 @@ layout(push_constant) uniform PushConsts {
 } push;
 #define INV_VIEW_PROJ push.invViewProj[gl_ViewIndex]
 #else
-layout(push_constant) uniform PushConsts {
+PUSH_QUALIFIER PushConsts {
     mat4 invViewProj;
     float exposure;
     float rotation;
@@ -48,7 +51,7 @@ void main() {
     uv *= vec2(INV_TWO_PI, INV_PI);
     uv += 0.5;
     
-    vec3 color = texture(skyboxTex, uv).rgb * push.exposure;
+    vec3 color = texture(TEX2D(skyboxTex), uv).rgb * push.exposure;
     
     // Write out HDR color. Tonemapping will handle it later.
     outColor = vec4(color, 1.0);

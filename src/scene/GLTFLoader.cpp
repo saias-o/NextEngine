@@ -1,4 +1,5 @@
 #include "scene/GLTFLoader.hpp"
+#include "scene/GltfMeshopt.hpp"
 #include "core/Profiler.hpp"
 #include "scene/Scene.hpp"
 #include "scene/MeshNode.hpp"
@@ -25,6 +26,7 @@
 #include <cstring>
 #include <cmath>
 #include <filesystem>
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -221,7 +223,14 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
         cgltf_free(data);
         return false;
     }
-    
+
+    // Decode meshopt-compressed buffer views in place (decoded data is owned by
+    // `data` and released by the cgltf_free below).
+    if (!decodeMeshoptBuffers(data)) {
+        cgltf_free(data);
+        return false;
+    }
+
     std::filesystem::path basePath = std::filesystem::path(loadPath).parent_path();
 
     // 1. Load Materials

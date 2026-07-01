@@ -1,4 +1,7 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "web_compat.glsl"
 
 // Writes surface albedo into the 3D voxel grid; overlapping writes are harmless.
 
@@ -12,7 +15,7 @@ layout(set = 0, binding = 1) uniform VoxelUBO {
 } vox;
 
 // Set 1 = material (same layout as the main pass; we only read albedo + baseColor).
-layout(set = 1, binding = 0) uniform sampler2D texAlbedo;
+DECL_TEX2D(1, 0, 5, texAlbedo);
 layout(set = 1, binding = 3) uniform MaterialUBO {
     vec4 baseColor;
     float metallic;
@@ -32,6 +35,6 @@ void main() {
         return;
     ivec3 c = clamp(ivec3(g * vec3(vox.res.xyz)), ivec3(0), vox.res.xyz - 1);
 
-    vec3 albedo = texture(texAlbedo, vUV).rgb * vColor * material.baseColor.rgb;
+    vec3 albedo = texture(TEX2D(texAlbedo), vUV).rgb * vColor * material.baseColor.rgb;
     imageStore(voxelAlbedo, c, vec4(albedo, 1.0));
 }

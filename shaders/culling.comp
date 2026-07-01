@@ -1,4 +1,7 @@
 #version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "web_compat.glsl"
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -22,9 +25,17 @@ layout(set = 0, binding = 0, std430) readonly buffer InstanceBuffer {
     InstanceData instances[];
 };
 
+// WGSL storage buffers have no write-only access; web drops the qualifier (this
+// shader only writes here anyway). Desktop keeps it, staying byte-identical.
+#ifdef WEB
+layout(set = 0, binding = 1, std430) buffer DrawCommandBuffer {
+    VkDrawIndexedIndirectCommand drawCommands[];
+};
+#else
 layout(set = 0, binding = 1, std430) writeonly buffer DrawCommandBuffer {
     VkDrawIndexedIndirectCommand drawCommands[];
 };
+#endif
 
 layout(set = 0, binding = 2) buffer CountBuffer {
     uint drawCount;
@@ -35,7 +46,7 @@ layout(set = 0, binding = 3, std430) readonly buffer OriginalDrawCommandBuffer {
     VkDrawIndexedIndirectCommand originalDraws[];
 };
 
-layout(push_constant) uniform PushConstants {
+PUSH_QUALIFIER PushConstants {
     vec4 frustumPlanes[6]; // xyz = normal, w = distance
     uint instanceCount;
 } push;
