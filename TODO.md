@@ -66,7 +66,14 @@
   - Cas spéciaux gérés : `ui.frag`/`web_canvas_world.frag` (bindless → `#ifdef WEB` texture unique), `culling.comp` (`writeonly` gardé desktop, readwrite sur web), `ddgi_trace` (`texelFetch(giVoxels)` séparé).
   - CMake : `WEB_READY_SHADERS` (= les 33) → `web.<name>.spv` (-DWEB) → `build/shaders/wgsl/`. Cible `WebShaders` gardée par `find_program(naga)`, sans impact desktop.
   - **Note 16.4** : les bindings web divergent (sampler séparé, push→UBO set 3) — le backend WebGPU devra aligner ses bind group layouts dessus.
-- [ ] **16.3 — Extraction RHI** : déplacer le Vulkan existant derrière une interface `rhi::*`, **sans changement de comportement** (desktop identique, validable à chaque commit).
+- [~] **16.3 — Extraction RHI** : déplacer le Vulkan existant derrière `rhi::*`, **sans changement de comportement** (desktop identique, validable à chaque commit). **Design : [PLAN_RHI.md](PLAN_RHI.md)** — RHI mince, backend au **compile-time** (pas de vtable), on abstrait ressources+commandes, pas la logique de rendu.
+  - [x] Design + décision d'archi (compile-time backend alias, ce qu'on n'abstrait pas)
+  - [ ] 16.3.a — `namespace rhi` + `rhi::Capabilities` dé-Vulkanisé (`maxSamples` → uint32, + flags web `bindless`/`pushConstants` quand un consommateur les lit)
+  - [ ] 16.3.b — `rhi::Buffer` (surface minimale, `MemoryUsage` déjà là)
+  - [ ] 16.3.c — `rhi::Texture` / `Sampler` / `ShaderModule`
+  - [ ] 16.3.d — `rhi::Pipeline` / `BindGroup(Layout)`
+  - [ ] 16.3.e — `rhi::CommandEncoder` / passes (le gros : `Renderer` cesse de toucher `Vk*`)
+  - [ ] 16.3.f — `rhi::Device` / `Surface` (couture présentation)
 - [ ] **16.4 — Backend WebGPU** : implémenter `rhi/webgpu/*` (Dawn / `webgpu.h` Emscripten), chemin minimal Lit + tonemap d'abord.
 - [ ] **16.5 — Parité rendu** : shadows → DDGI → particules GPU → post-process, une feature à la fois.
 - [ ] **16.6 — Packaging web** : intégration au `BuildExporter`/packager, en-têtes COOP/COEP (threads/SharedArrayBuffer), Brotli, optimisation taille WASM (LTO / `-Oz` / `wasm-opt`).
