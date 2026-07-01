@@ -798,7 +798,7 @@ bool WebCanvasNode::fireTouchEvent(uint64_t id, glm::vec2 position, TouchEvent t
     return handled;
 }
 
-void WebCanvasNode::updateTextureIfNeededAsync(VkCommandBuffer cmd) {
+void WebCanvasNode::updateTextureIfNeededAsync(rhi::vulkan::CommandEncoder& encoder) {
     SAIDA_PROFILE_FUNCTION();
     checkHotReload();
     if (!device_ || !texture_ || !rmlContext_ || !uiDirty_) return;
@@ -858,7 +858,7 @@ void WebCanvasNode::updateTextureIfNeededAsync(VkCommandBuffer cmd) {
     {
         SAIDA_PROFILE_SCOPE("WebCanvas/Upload");
         stagingBuffer_->write(pixels.data(), byteCount);
-        texture_->updatePixelsAsync(cmd, *stagingBuffer_, width_, height_);
+        texture_->updatePixelsAsync(encoder, *stagingBuffer_, width_, height_);
     }
     SAIDA_PROFILE_COUNTER_ADD("WebCanvas/Uploads", 1);
     SAIDA_PROFILE_COUNTER_ADD("WebCanvas/UploadBytes", static_cast<double>(byteCount));

@@ -5,8 +5,13 @@
 
 #include <vulkan/vulkan.h>  // was pulled in transitively via RenderCapabilities before 16.3
 
+#include <functional>
 #include <optional>
 #include <vector>
+
+namespace saida::rhi::vulkan {
+class CommandEncoder;
+}
 
 namespace saida {
 
@@ -65,9 +70,12 @@ public:
                                  VkImageTiling tiling, VkFormatFeatureFlags features) const;
     VkFormat findDepthFormat() const;
 
-    void copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) const;
-    void copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) const;
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect) const;
+
+    // Records a one-shot command batch through an rhi::CommandEncoder and waits
+    // for completion — the RHI staging/init path (PLAN_RHI §7.2). Replaces
+    // begin/endSingleTimeCommands at callers.
+    void withSingleTimeEncoder(const std::function<void(rhi::vulkan::CommandEncoder&)>& fn) const;
 
     VkCommandBuffer beginSingleTimeCommands() const;
     void endSingleTimeCommands(VkCommandBuffer cmd) const;

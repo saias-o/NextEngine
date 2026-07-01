@@ -1194,7 +1194,8 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/UI");
         {
             SAIDA_PROFILE_SCOPE("UI/RecordCommands");
-            uiRenderer_->recordCommands(cmd, swapchain_->extent().width, swapchain_->extent().height,
+            rhi::RenderPassEncoder uiPass = rhi::RenderPassEncoder::fromHandle(cmd);
+            uiRenderer_->recordCommands(uiPass, swapchain_->extent().width, swapchain_->extent().height,
                                         {static_cast<float>(renderRect.offset.x), static_cast<float>(renderRect.offset.y)},
                                         {static_cast<float>(renderRect.extent.width), static_cast<float>(renderRect.extent.height)});
         }
@@ -1349,7 +1350,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
 
     {
         SAIDA_PROFILE_SCOPE("UI/UpdateAsyncTextures");
-        uiRenderer_->updateAsyncTextures(cmd);
+        rhi::CommandEncoder uploadEncoder(cmd);
+        uiRenderer_->updateAsyncTextures(uploadEncoder);
     }
 
     // GI update (skipped when the volume is frozen in baked mode): re-voxelize the

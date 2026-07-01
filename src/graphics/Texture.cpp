@@ -4,6 +4,7 @@
 #include "graphics/Buffer.hpp"
 #include "graphics/MemoryProfiler.hpp"
 #include "graphics/VulkanDevice.hpp"
+#include "rhi/vulkan/CommandEncoder.hpp"
 #include "rhi/vulkan/Format.hpp"
 
 #include <cmath>
@@ -15,65 +16,6 @@
 namespace saida {
 
 namespace {
-
-
-void transitionLayout(VulkanDevice& device, VkImage image,
-                      VkImageLayout oldLayout, VkImageLayout newLayout) {
-    VkCommandBuffer cmd = device.beginSingleTimeCommands();
-
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = oldLayout;
-    barrier.newLayout = newLayout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-
-    VkPipelineStageFlags srcStage, dstStage;
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-        newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
-               newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        srcStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    } else {
-        throw std::runtime_error("unsupported texture layout transition");
-    }
-
-    vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-    device.endSingleTimeCommands(cmd);
-}
-
-void copyBufferToImage(VulkanDevice& device, VkBuffer buffer, VkImage image,
-                       uint32_t width, uint32_t height) {
-    VkCommandBuffer cmd = device.beginSingleTimeCommands();
-
-    VkBufferImageCopy region{};
-    region.bufferOffset = 0;
-    region.bufferRowLength = 0;
-    region.bufferImageHeight = 0;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
-    region.imageOffset = {0, 0, 0};
-    region.imageExtent = {width, height, 1};
-
-    vkCmdCopyBufferToImage(cmd, buffer, image,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-    device.endSingleTimeCommands(cmd);
-}
 
 uint64_t mipChainBytes(uint32_t width, uint32_t height, uint32_t bytesPerPixel, uint32_t levels) {
     uint64_t total = 0;
@@ -143,9 +85,10 @@ Texture::Texture(VulkanDevice& device, const std::string& path, bool srgb) : dev
     trackedCategory_ = isHdr ? "Texture/HDR" : "Texture/2D";
     MemoryProfiler::registerAllocation(trackedCategory_, trackedBytes_);
 
-    transitionLayout(device_, image_, VK_IMAGE_LAYOUT_UNDEFINED,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    copyBufferToImage(device_, staging.handle(), image_, width_, height_);
+    device_.withSingleTimeEncoder([&](rhi::vulkan::CommandEncoder& enc) {
+        enc.transition(image_, rhi::ResourceState::Undefined, rhi::ResourceState::CopyDst);
+        enc.copyBufferToTexture(staging, image_, width_, height_);
+    });
 
     generateMipmaps();
 
@@ -192,16 +135,14 @@ Texture::Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, ui
     trackedCategory_ = "Texture/Dynamic";
     MemoryProfiler::registerAllocation(trackedCategory_, trackedBytes_);
 
-    transitionLayout(device_, image_, VK_IMAGE_LAYOUT_UNDEFINED,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    copyBufferToImage(device_, staging.handle(), image_, width_, height_);
+    device_.withSingleTimeEncoder([&](rhi::vulkan::CommandEncoder& enc) {
+        enc.transition(image_, rhi::ResourceState::Undefined, rhi::ResourceState::CopyDst);
+        enc.copyBufferToTexture(staging, image_, width_, height_);
+        if (mipLevels_ == 1)
+            enc.transition(image_, rhi::ResourceState::CopyDst, rhi::ResourceState::ShaderRead);
+    });
 
-    if (mipLevels_ > 1) {
-        generateMipmaps();
-    } else {
-        transitionLayout(device_, image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    }
+    if (mipLevels_ > 1) generateMipmaps();
 
     imageView_ = createImageView(format, VK_IMAGE_ASPECT_COLOR_BIT);
     createSampler();
@@ -254,6 +195,9 @@ VkImageView Texture::createImageView(VkFormat format, VkImageAspectFlags aspect)
     return view;
 }
 
+// Mip generation stays raw Vulkan (vkCmdBlitImage): blits have no neutral RHI
+// abstraction by design — the WebGPU backend (16.4) generates mips its own way
+// (render/compute passes). This is backend-internal code.
 void Texture::generateMipmaps() {
     VkCommandBuffer cmd = device_.beginSingleTimeCommands();
 
@@ -336,67 +280,27 @@ void Texture::updatePixels(const uint8_t* pixels, size_t size) {
     Buffer staging(device_, size, rhi::BufferUsage::TransferSrc, MemoryUsage::HostVisible);
     staging.write(pixels, size);
 
-    transitionLayout(device_, image_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-                     
-    copyBufferToImage(device_, staging.handle(), image_, width_, height_);
+    device_.withSingleTimeEncoder([&](rhi::vulkan::CommandEncoder& enc) {
+        enc.transition(image_, rhi::ResourceState::ShaderRead, rhi::ResourceState::CopyDst);
+        enc.copyBufferToTexture(staging, image_, width_, height_);
+        if (mipLevels_ == 1)
+            enc.transition(image_, rhi::ResourceState::CopyDst, rhi::ResourceState::ShaderRead);
+    });
 
-    if (mipLevels_ > 1) {
-        generateMipmaps();
-    } else {
-        transitionLayout(device_, image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    }
+    if (mipLevels_ > 1) generateMipmaps();
 }
 
-void Texture::updatePixelsAsync(VkCommandBuffer cmd, Buffer& stagingBuffer, uint32_t width, uint32_t height) {
+void Texture::updatePixelsAsync(rhi::vulkan::CommandEncoder& encoder, Buffer& stagingBuffer,
+                                uint32_t width, uint32_t height) {
     SAIDA_PROFILE_SCOPE("Texture/UpdatePixelsAsync");
     if (width != width_ || height != height_) {
         throw std::runtime_error("updatePixelsAsync size mismatch");
     }
 
-    // Barrier: SHADER_READ -> TRANSFER_DST
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image_;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 
-                         0, 0, nullptr, 0, nullptr, 1, &barrier);
-
-    // Copy buffer
-    VkBufferImageCopy region{};
-    region.bufferOffset = 0;
-    region.bufferRowLength = 0;
-    region.bufferImageHeight = 0;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
-    region.imageOffset = {0, 0, 0};
-    region.imageExtent = {width, height, 1};
-
-    vkCmdCopyBufferToImage(cmd, stagingBuffer.handle(), image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-    // Barrier: TRANSFER_DST -> SHADER_READ
-    // For UI textures we assume mipLevels_ == 1. If not, dynamic mipmapping inside a render pass is bad.
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 
-                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+    // UI textures are single-mip; regenerating mips mid-frame would be wrong anyway.
+    encoder.transition(image_, rhi::ResourceState::ShaderRead, rhi::ResourceState::CopyDst);
+    encoder.copyBufferToTexture(stagingBuffer, image_, width, height);
+    encoder.transition(image_, rhi::ResourceState::CopyDst, rhi::ResourceState::ShaderRead);
 }
 
 } // namespace saida

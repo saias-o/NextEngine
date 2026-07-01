@@ -3,6 +3,7 @@
 #include "graphics/Buffer.hpp"
 #include "graphics/Mesh.hpp" // for Vertex definition
 #include "graphics/VulkanDevice.hpp"
+#include "rhi/vulkan/CommandEncoder.hpp"
 #include "vk_mem_alloc.h"
 
 #include <stdexcept>
@@ -75,8 +76,10 @@ GeometryAllocation GeometryRegistry::allocate(const std::vector<Vertex>& vertice
     Buffer stagingIndex(device_, indexSize, rhi::BufferUsage::TransferSrc, MemoryUsage::HostVisible);
     stagingIndex.write(indices.data(), indexSize);
 
-    device_.copyBuffer(stagingVertex.handle(), vertexBuffer_->handle(), vertexSize, 0, vertexOffsetBytes);
-    device_.copyBuffer(stagingIndex.handle(), indexBuffer_->handle(), indexSize, 0, indexOffsetBytes);
+    device_.withSingleTimeEncoder([&](rhi::vulkan::CommandEncoder& enc) {
+        enc.copyBufferToBuffer(stagingVertex, *vertexBuffer_, vertexSize, 0, vertexOffsetBytes);
+        enc.copyBufferToBuffer(stagingIndex, *indexBuffer_, indexSize, 0, indexOffsetBytes);
+    });
 
     return alloc;
 }

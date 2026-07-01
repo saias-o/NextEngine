@@ -81,6 +81,11 @@ public:
 
     VkCommandBuffer handle() const { return cmd_; }  // migration escape hatch
 
+    // Migration escape hatch: view over a pass begun with raw vkCmdBeginRendering,
+    // so converted subsystems can record inside unconverted passes. Usage shrinks
+    // to zero as 16.3.e.g converts the remaining pass-begin sites.
+    static RenderPassEncoder fromHandle(VkCommandBuffer cmd) { return RenderPassEncoder(cmd); }
+
 private:
     friend class CommandEncoder;
     explicit RenderPassEncoder(VkCommandBuffer cmd) : cmd_(cmd) {}
@@ -134,6 +139,13 @@ public:
 
     void copyBufferToBuffer(const saida::Buffer& src, const saida::Buffer& dst, uint64_t size,
                             uint64_t srcOffset = 0, uint64_t dstOffset = 0);
+
+    // Tightly-packed buffer → texture upload (staging). The image must be in
+    // CopyDst; the caller transitions around the copy (explicit sync, §7.3).
+    void copyBufferToTexture(const saida::Buffer& src, VkImage dst,
+                             uint32_t width, uint32_t height,
+                             uint32_t mipLevel = 0, uint32_t baseLayer = 0,
+                             uint32_t layerCount = 1, uint64_t srcOffset = 0);
 
 private:
     VkCommandBuffer cmd_;

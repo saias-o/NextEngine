@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/FileWatcher.hpp"
-#include "graphics/Texture.hpp"
+#include "graphics/Texture.hpp"  // fwd-declares rhi::vulkan::CommandEncoder
 #include "scene/Node.hpp"
 
 #include <memory>
@@ -108,7 +108,7 @@ public:
     void addStartupScript(const std::string& script) { startupScripts_.push_back(script); }
     const std::vector<std::string>& startupScripts() const { return startupScripts_; }
 
-    void updateTextureIfNeededAsync(VkCommandBuffer cmd);
+    void updateTextureIfNeededAsync(rhi::vulkan::CommandEncoder& encoder);
     Texture* texture() const { return texture_.get(); }
 
     uint64_t documentGeneration() const { return documentGeneration_; }

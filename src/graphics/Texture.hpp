@@ -6,6 +6,10 @@
 #include <cstdint>
 #include <string>
 
+namespace saida::rhi::vulkan {
+class CommandEncoder;
+}
+
 namespace saida {
 
 class VulkanDevice;
@@ -27,8 +31,9 @@ public:
     // Updates the texture content dynamically (e.g. for UI)
     void updatePixels(const uint8_t* pixels, size_t size);
     
-    // Updates the texture asynchronously during a command buffer recording
-    void updatePixelsAsync(VkCommandBuffer cmd, Buffer& stagingBuffer, uint32_t width, uint32_t height);
+    // Updates the texture asynchronously during frame command recording
+    void updatePixelsAsync(rhi::vulkan::CommandEncoder& encoder, Buffer& stagingBuffer,
+                           uint32_t width, uint32_t height);
     
     void setBindlessIndex(uint32_t idx) { bindlessIndex_ = idx; }
     uint32_t bindlessIndex() const { return bindlessIndex_; }

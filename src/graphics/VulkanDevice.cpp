@@ -3,6 +3,7 @@
 #include "core/Log.hpp"
 #include "core/Window.hpp"
 #include "graphics/VulkanDeviceCreator.hpp"
+#include "rhi/vulkan/CommandEncoder.hpp"
 #include "vk_mem_alloc.h"
 
 #include <cstring>
@@ -563,18 +564,11 @@ VkFormat VulkanDevice::findDepthFormat() const {
         VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
 }
 
-void VulkanDevice::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) const {
-    copyBuffer(src, dst, size, 0, 0);
-}
-
-void VulkanDevice::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) const {
-    VkCommandBuffer cmd = beginSingleTimeCommands();
-    VkBufferCopy copyRegion{};
-    copyRegion.srcOffset = srcOffset;
-    copyRegion.dstOffset = dstOffset;
-    copyRegion.size = size;
-    vkCmdCopyBuffer(cmd, src, dst, 1, &copyRegion);
-    endSingleTimeCommands(cmd);
+void VulkanDevice::withSingleTimeEncoder(
+    const std::function<void(rhi::vulkan::CommandEncoder&)>& fn) const {
+    rhi::vulkan::CommandEncoder encoder(beginSingleTimeCommands());
+    fn(encoder);
+    endSingleTimeCommands(encoder.handle());
 }
 
 VkImageView VulkanDevice::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect) const {

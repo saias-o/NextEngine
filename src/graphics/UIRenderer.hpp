@@ -5,6 +5,11 @@
 #include <memory>
 #include <vector>
 
+namespace saida::rhi::vulkan {
+class CommandEncoder;
+class RenderPassEncoder;
+}
+
 namespace saida {
 
 class VulkanDevice;
@@ -34,8 +39,8 @@ public:
     UIRenderer& operator=(const UIRenderer&) = delete;
 
     void gatherUI(Scene& scene, glm::vec2 viewportSize = glm::vec2(0.0f));
-    void updateAsyncTextures(VkCommandBuffer cmd);
-    void recordCommands(VkCommandBuffer cmd, uint32_t width, uint32_t height,
+    void updateAsyncTextures(rhi::vulkan::CommandEncoder& encoder);
+    void recordCommands(rhi::vulkan::RenderPassEncoder& rp, uint32_t width, uint32_t height,
                         glm::vec2 viewportOffset = glm::vec2(0.0f),
                         glm::vec2 viewportSize = glm::vec2(0.0f));
 
@@ -46,7 +51,6 @@ private:
     ResourceManager& resources_;
     
     std::unique_ptr<Pipeline> pipeline_;
-    VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
 
     std::vector<UIDrawCmd> drawCmds_;
     std::vector<WebCanvasNode*> webNodesToUpdate_;

@@ -1,5 +1,6 @@
 #include "graphics/UIRenderer.hpp"
 #include "core/Profiler.hpp"
+#include "rhi/vulkan/CommandEncoder.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Pipeline.hpp"
@@ -57,15 +58,10 @@ UIRenderer::UIRenderer(VulkanDevice& device, ResourceManager& resources, VkForma
         VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP // topology
     );
 
-    // Get the generated pipeline layout directly from Pipeline
-    pipelineLayout_ = pipeline_->layout();
-
     Log::info("UIRenderer: pipeline created");
 }
 
-UIRenderer::~UIRenderer() {
-    // pipelineLayout_ is owned by Pipeline, so we don't destroy it here.
-}
+UIRenderer::~UIRenderer() = default;
 
 void UIRenderer::gatherUI(Scene& scene, glm::vec2 viewportSize) {
     SAIDA_PROFILE_FUNCTION();
@@ -172,14 +168,14 @@ void UIRenderer::traverseUI(UINode* node) {
     }
 }
 
-void UIRenderer::updateAsyncTextures(VkCommandBuffer cmd) {
+void UIRenderer::updateAsyncTextures(rhi::vulkan::CommandEncoder& encoder) {
     SAIDA_PROFILE_FUNCTION();
     for (auto* wcn : webNodesToUpdate_) {
-        wcn->updateTextureIfNeededAsync(cmd);
+        wcn->updateTextureIfNeededAsync(encoder);
     }
 }
 
-void UIRenderer::recordCommands(VkCommandBuffer cmd, uint32_t width, uint32_t height,
+void UIRenderer::recordCommands(rhi::vulkan::RenderPassEncoder& rp, uint32_t width, uint32_t height,
                                 glm::vec2 viewportOffset, glm::vec2 viewportSize) {
     SAIDA_PROFILE_FUNCTION();
     if (drawCmds_.empty()) return;
@@ -187,33 +183,19 @@ void UIRenderer::recordCommands(VkCommandBuffer cmd, uint32_t width, uint32_t he
         viewportSize = {static_cast<float>(width), static_cast<float>(height)};
     }
 
-    pipeline_->bind(cmd);
+    rp.setPipeline(*pipeline_);
+    rp.setViewport(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height));
 
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(width);
-    viewport.height = static_cast<float>(height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.offset = {
-        static_cast<int32_t>(std::max(0.0f, std::floor(viewportOffset.x))),
-        static_cast<int32_t>(std::max(0.0f, std::floor(viewportOffset.y)))
-    };
-    scissor.extent = {
-        std::min(width - static_cast<uint32_t>(scissor.offset.x),
+    const int32_t scissorX = static_cast<int32_t>(std::max(0.0f, std::floor(viewportOffset.x)));
+    const int32_t scissorY = static_cast<int32_t>(std::max(0.0f, std::floor(viewportOffset.y)));
+    rp.setScissor(scissorX, scissorY,
+        std::min(width - static_cast<uint32_t>(scissorX),
                  static_cast<uint32_t>(std::max(1.0f, std::round(viewportSize.x)))),
-        std::min(height - static_cast<uint32_t>(scissor.offset.y),
-                 static_cast<uint32_t>(std::max(1.0f, std::round(viewportSize.y))))
-    };
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
+        std::min(height - static_cast<uint32_t>(scissorY),
+                 static_cast<uint32_t>(std::max(1.0f, std::round(viewportSize.y)))));
 
     // Set 0 matches ui.frag and contains the bindless texture table.
-    VkDescriptorSet globalSet = resources_.globalMaterialSet();
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1, &globalSet, 0, nullptr);
+    rp.setBindGroup(0, resources_.globalMaterialSet());
 
     UIPushConstants push{};
     push.screenSize = {static_cast<float>(width), static_cast<float>(height)};
@@ -227,10 +209,8 @@ void UIRenderer::recordCommands(VkCommandBuffer cmd, uint32_t width, uint32_t he
         push.useCorners = drawCmd.useCorners;
         for (int i = 0; i < 4; ++i) push.corners[i] = drawCmd.corners[i];
 
-        vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(UIPushConstants), &push);
-
-        vkCmdDraw(cmd, 4, 1, 0, 0);
+        rp.setPushConstants(&push, sizeof(UIPushConstants));
+        rp.draw(4);
     }
 }
 
