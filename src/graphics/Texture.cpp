@@ -113,7 +113,7 @@ Texture::Texture(VulkanDevice& device, const std::string& path, bool srgb) : dev
 
     imageSize = static_cast<VkDeviceSize>(width_) * height_ * (isHdr ? 16 : 4);
 
-    Buffer staging(device_, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::HostVisible);
+    Buffer staging(device_, imageSize, rhi::BufferUsage::TransferSrc, MemoryUsage::HostVisible);
     staging.write(pixels, imageSize);
     stbi_image_free(pixels);
 
@@ -162,7 +162,7 @@ Texture::Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, ui
 
     VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
 
-    Buffer staging(device_, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::HostVisible);
+    Buffer staging(device_, imageSize, rhi::BufferUsage::TransferSrc, MemoryUsage::HostVisible);
     staging.write(pixels, imageSize);
 
     VkImageCreateInfo imageInfo{};
@@ -331,7 +331,7 @@ void Texture::updatePixels(const uint8_t* pixels, size_t size) {
         throw std::runtime_error("updatePixels size mismatch");
     }
 
-    Buffer staging(device_, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::HostVisible);
+    Buffer staging(device_, size, rhi::BufferUsage::TransferSrc, MemoryUsage::HostVisible);
     staging.write(pixels, size);
 
     transitionLayout(device_, image_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,

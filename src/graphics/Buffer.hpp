@@ -1,6 +1,9 @@
 #pragma once
 
 #include "graphics/VmaFwd.hpp"
+#include "rhi/BufferUsage.hpp"
+
+#include <cstdint>
 
 namespace saida {
 
@@ -12,26 +15,29 @@ enum class MemoryUsage {
     HostVisible,  // host-accessible and persistently mapped (staging/uniforms)
 };
 
-// RAII wrapper around a VkBuffer backed by a VMA allocation.
+// RAII wrapper around a VkBuffer backed by a VMA allocation. This is the Vulkan
+// backend's rhi::Buffer (aliased in rhi/Rhi.hpp): its construction API is
+// backend-neutral (rhi::BufferUsage, plain sizes); handle() exposes the Vulkan
+// object for the backend's command recording.
 class Buffer {
 public:
-    Buffer(VulkanDevice& device, VkDeviceSize size, VkBufferUsageFlags usage, MemoryUsage memory);
+    Buffer(VulkanDevice& device, uint64_t size, rhi::BufferUsage usage, MemoryUsage memory);
     ~Buffer();
     Buffer(const Buffer&) = delete;
     Buffer& operator=(const Buffer&) = delete;
 
     // Copies `size` bytes into the (HostVisible) buffer and flushes it.
-    void write(const void* data, VkDeviceSize size, VkDeviceSize offset = 0);
-    void flush(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
+    void write(const void* data, uint64_t size, uint64_t offset = 0);
+    void flush(uint64_t size = UINT64_MAX, uint64_t offset = 0);
     VkBuffer handle() const { return buffer_; }
-    VkDeviceSize size() const { return size_; }
+    uint64_t size() const { return size_; }
     void* mapped() const { return mapped_; }
 
 private:
     VulkanDevice& device_;
     VkBuffer buffer_ = VK_NULL_HANDLE;
     VmaAllocation allocation_ = VK_NULL_HANDLE;
-    VkDeviceSize size_ = 0;
+    uint64_t size_ = 0;
     void* mapped_ = nullptr;  // non-null for HostVisible buffers
     MemoryUsage memory_ = MemoryUsage::GpuOnly;
 };

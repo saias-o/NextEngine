@@ -220,7 +220,7 @@ void GIVolume::createVoxelResources(VkDescriptorSetLayout materialSetLayout) {
         throw std::runtime_error("GIVolume: failed to create voxel image view");
 
     voxelUbo_ = std::make_unique<Buffer>(device_, sizeof(VoxelUBOData),
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryUsage::HostVisible);
+        rhi::BufferUsage::Uniform, MemoryUsage::HostVisible);
 
     // Descriptor set: binding 0 = storage image, binding 1 = UBO.
     std::array<VkDescriptorSetLayoutBinding, 2> b{};
@@ -479,7 +479,7 @@ void GIVolume::createComputeResources(VkDescriptorSetLayout globalSetLayout) {
     const int probeCount = desc_.probeCount();
     raysBuffer_ = std::make_unique<Buffer>(device_,
         static_cast<VkDeviceSize>(probeCount) * desc_.raysPerProbe * sizeof(RayData),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::GpuOnly);
+        rhi::BufferUsage::Storage, MemoryUsage::GpuOnly);
 
     // Set layout: 0=rays SSBO, 1/2=write irr/vis (storage img), 3/4=prev irr/vis.
     std::array<VkDescriptorSetLayoutBinding, 5> b{};

@@ -56,7 +56,7 @@ void WaterFeature::createPipelines(const RenderContext& ctx) {
     const VkDeviceSize bufSize = sizeof(GpuWater) * kMaxWaters;
     for (uint32_t i = 0; i < frames; ++i) {
         ubos_[i] = std::make_unique<Buffer>(*device_, bufSize,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryUsage::HostVisible);
+            rhi::BufferUsage::Uniform, MemoryUsage::HostVisible);
 
         VkDescriptorSetAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;

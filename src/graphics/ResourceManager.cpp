@@ -192,7 +192,7 @@ void ResourceManager::createGlobalBindlessResources() {
     // Create global MaterialData SSBO
     VkDeviceSize ssboSize = kMaxBindlessMaterials * sizeof(MaterialData);
     globalMaterialBuffer_ = std::make_unique<Buffer>(device_, ssboSize,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        rhi::BufferUsage::Storage | rhi::BufferUsage::TransferDst,
         MemoryUsage::HostVisible); // MemoryUsage::HostVisible for simple CPU-side mapping
 
     // Write the SSBO to the descriptor set

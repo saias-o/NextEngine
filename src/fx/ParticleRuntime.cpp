@@ -202,22 +202,22 @@ void ParticleRuntime::createComputeResources() {
     const VkDeviceSize counterSize = sizeof(GpuCounters);
     const VkDeviceSize emitterSize = sizeof(GpuEmitter) * desc_.maxEmitters;
     simParticleBuffer_ = std::make_unique<Buffer>(device_, particleSize,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::GpuOnly);
+        rhi::BufferUsage::Storage, MemoryUsage::GpuOnly);
     for (auto& alive : aliveIndexBuffers_) {
         alive = std::make_unique<Buffer>(device_, indexSize,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::GpuOnly);
+            rhi::BufferUsage::Storage, MemoryUsage::GpuOnly);
     }
     deadIndexBuffer_ = std::make_unique<Buffer>(device_, indexSize,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::GpuOnly);
+        rhi::BufferUsage::Storage, MemoryUsage::GpuOnly);
     counterBuffer_ = std::make_unique<Buffer>(device_, counterSize,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::GpuOnly);
+        rhi::BufferUsage::Storage, MemoryUsage::GpuOnly);
     indirectBuffer_ = std::make_unique<Buffer>(device_, sizeof(VkDrawIndirectCommand),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+        rhi::BufferUsage::Storage | rhi::BufferUsage::Indirect,
         MemoryUsage::GpuOnly);
 
     for (uint32_t i = 0; i < desc_.framesInFlight; ++i) {
         emitterBuffers_[i] = std::make_unique<Buffer>(device_, emitterSize,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::HostVisible);
+            rhi::BufferUsage::Storage, MemoryUsage::HostVisible);
 
         for (uint32_t parity = 0; parity < 2; ++parity) {
             const uint32_t setIndex = i * 2 + parity;

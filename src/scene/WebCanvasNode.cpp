@@ -853,7 +853,7 @@ void WebCanvasNode::updateTextureIfNeededAsync(VkCommandBuffer cmd) {
     const VkDeviceSize byteCount = static_cast<VkDeviceSize>(pixels.size());
     if (!stagingBuffer_ || stagingBuffer_->size() != byteCount) {
         SAIDA_PROFILE_COUNTER_ADD("WebCanvas/StagingRecreates", 1);
-        stagingBuffer_ = std::make_unique<Buffer>(*device_, byteCount, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::HostVisible);
+        stagingBuffer_ = std::make_unique<Buffer>(*device_, byteCount, rhi::BufferUsage::TransferSrc, MemoryUsage::HostVisible);
     }
     {
         SAIDA_PROFILE_SCOPE("WebCanvas/Upload");

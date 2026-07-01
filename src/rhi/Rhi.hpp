@@ -9,13 +9,17 @@
 // recording, not the render logic.
 
 #include "rhi/Capabilities.hpp"
+#include "rhi/BufferUsage.hpp"
+#include "graphics/Buffer.hpp"  // Vulkan backend's Buffer (aliased below)
 
 namespace saida::rhi {
 
-// Backend selection (compile-time). Type aliases such as
-//   using Buffer  = vulkan::Buffer;
-//   using Texture = vulkan::Texture;
-// land here as the extraction proceeds (16.3.b …). `Capabilities` is already
-// backend-neutral and lives in rhi/Capabilities.hpp.
+// Backend selection (compile-time). Types are aliased from the active backend as
+// the extraction proceeds; `Capabilities` / `BufferUsage` are already neutral.
+//
+// 16.3.b — Buffer: the Vulkan wrapper (graphics/Buffer.hpp) with a neutral
+// construction API. The WebGPU backend (16.4) will provide its own Buffer with
+// the same surface, selected here under Emscripten.
+using Buffer = saida::Buffer;
 
 } // namespace saida::rhi

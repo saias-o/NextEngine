@@ -27,7 +27,7 @@ void DebugLinesFeature::createPipelines(const RenderContext& ctx) {
     for (uint32_t i = 0; i < ctx.framesInFlight; ++i)
         buffers_.push_back(std::make_unique<Buffer>(ctx.device,
             kMaxVerts * sizeof(Vertex),
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, MemoryUsage::HostVisible));
+            rhi::BufferUsage::Vertex, MemoryUsage::HostVisible));
 }
 
 void DebugLinesFeature::record(const FrameContext& fc) {

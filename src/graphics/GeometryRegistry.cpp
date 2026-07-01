@@ -18,11 +18,11 @@ GeometryRegistry::GeometryRegistry(VulkanDevice& device, VkDeviceSize maxVertice
     // We use transfer_dst for copying data in, and vertex/index for drawing.
     // If BDA is enabled, we could also add SHADER_DEVICE_ADDRESS bit.
     vertexBuffer_ = std::make_unique<Buffer>(device_, vertexBufferSize,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        rhi::BufferUsage::TransferDst | rhi::BufferUsage::Vertex,
         MemoryUsage::GpuOnly);
 
     indexBuffer_ = std::make_unique<Buffer>(device_, indexBufferSize,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        rhi::BufferUsage::TransferDst | rhi::BufferUsage::Index,
         MemoryUsage::GpuOnly);
 
     VmaVirtualBlockCreateInfo vbInfo{};
@@ -69,10 +69,10 @@ GeometryAllocation GeometryRegistry::allocate(const std::vector<Vertex>& vertice
     alloc.firstIndex = static_cast<uint32_t>(indexOffsetBytes / sizeof(uint32_t));
 
     // Copy data to GPU
-    Buffer stagingVertex(device_, vertexSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::HostVisible);
+    Buffer stagingVertex(device_, vertexSize, rhi::BufferUsage::TransferSrc, MemoryUsage::HostVisible);
     stagingVertex.write(vertices.data(), vertexSize);
 
-    Buffer stagingIndex(device_, indexSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryUsage::HostVisible);
+    Buffer stagingIndex(device_, indexSize, rhi::BufferUsage::TransferSrc, MemoryUsage::HostVisible);
     stagingIndex.write(indices.data(), indexSize);
 
     device_.copyBuffer(stagingVertex.handle(), vertexBuffer_->handle(), vertexSize, 0, vertexOffsetBytes);

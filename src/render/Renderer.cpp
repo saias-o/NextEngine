@@ -402,11 +402,11 @@ void Renderer::createUniformBuffers() {
     const VkDeviceSize kBoneBufferSize = 4 * 1024 * 1024;
     for (int i = 0; i < kMaxFramesInFlight; i++) {
         uniformBuffers_.push_back(std::make_unique<Buffer>(device_, sizeof(UniformBufferObject),
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryUsage::HostVisible));
+            rhi::BufferUsage::Uniform, MemoryUsage::HostVisible));
         lightingBuffers_.push_back(std::make_unique<Buffer>(device_, sizeof(LightingUBO),
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryUsage::HostVisible));
+            rhi::BufferUsage::Uniform, MemoryUsage::HostVisible));
         boneMatricesBuffers_.push_back(std::make_unique<Buffer>(device_, kBoneBufferSize,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::HostVisible));
+            rhi::BufferUsage::Storage, MemoryUsage::HostVisible));
     }
 }
 
@@ -421,17 +421,17 @@ void Renderer::createGpuDrivenBuffers() {
 
     for (int i = 0; i < kMaxFramesInFlight; i++) {
         instanceBuffers_.push_back(std::make_unique<Buffer>(device_, instanceBufferSize,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::HostVisible));
+            rhi::BufferUsage::Storage, MemoryUsage::HostVisible));
             
         originalDrawCommandBuffers_.push_back(std::make_unique<Buffer>(device_, drawCommandBufferSize,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, MemoryUsage::HostVisible));
+            rhi::BufferUsage::Storage, MemoryUsage::HostVisible));
         
         drawCommandBuffers_.push_back(std::make_unique<Buffer>(device_, drawCommandBufferSize,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+            rhi::BufferUsage::Storage | rhi::BufferUsage::Indirect,
             MemoryUsage::GpuOnly));
             
         countBuffers_.push_back(std::make_unique<Buffer>(device_, sizeof(uint32_t),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            rhi::BufferUsage::Storage | rhi::BufferUsage::Indirect | rhi::BufferUsage::TransferDst,
             MemoryUsage::GpuOnly));
     }
 }

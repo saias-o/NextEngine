@@ -38,7 +38,7 @@ Material::Material(VulkanDevice& device, ResourceManager& manager, const Materia
 
     MaterialParams params{desc.baseColor, desc.metallic, desc.roughness, desc.ao, 0.0f, desc.emissiveColor};
     paramsBuffer_ = std::make_unique<Buffer>(device_, sizeof(MaterialParams),
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryUsage::HostVisible);
+        rhi::BufferUsage::Uniform, MemoryUsage::HostVisible);
     paramsBuffer_->write(&params, sizeof(params));
 
     // 1. Classic Path: Allocate local descriptor set and write it
