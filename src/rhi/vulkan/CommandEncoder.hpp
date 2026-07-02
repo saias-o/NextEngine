@@ -77,6 +77,13 @@ public:
                      int32_t vertexOffset = 0, uint32_t firstInstance = 0);
     void drawIndirect(const saida::Buffer& buffer, uint64_t offset,
                       uint32_t drawCount, uint32_t stride);
+    void drawIndexedIndirect(const saida::Buffer& buffer, uint64_t offset,
+                             uint32_t drawCount, uint32_t stride);
+    // Requires Capabilities::drawIndirectCount; callers branch on the cap and
+    // fall back to drawIndexedIndirect (16.4: compute writes instanceCount=0).
+    void drawIndexedIndirectCount(const saida::Buffer& args, uint64_t argsOffset,
+                                  const saida::Buffer& count, uint64_t countOffset,
+                                  uint32_t maxDrawCount, uint32_t stride);
     void end();
 
     VkCommandBuffer handle() const { return cmd_; }  // migration escape hatch
@@ -143,6 +150,13 @@ public:
     // compute). The GPU-particle handoff: sim writes the indirect command and
     // the render buffers the draw consumes.
     void computeToIndirectBarrier();
+
+    // Transfer writes (fillBuffer/copies) → compute reads/writes (GPU-driven
+    // culling clears its count buffer before the cull dispatch).
+    void transferToComputeBarrier();
+
+    // Fills a buffer range with a 32-bit value (WebGPU: clearBuffer / writeBuffer).
+    void fillBuffer(const saida::Buffer& dst, uint64_t offset, uint64_t size, uint32_t value);
 
     RenderPassEncoder beginRenderPass(const RenderPassDesc& desc);
     ComputePassEncoder beginComputePass() { return ComputePassEncoder(cmd_); }

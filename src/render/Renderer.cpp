@@ -237,9 +237,7 @@ Renderer::~Renderer() {
     if (tonemapDepthSampler_) vkDestroySampler(device_.device(), tonemapDepthSampler_, nullptr);
     if (tonemapSampler_) vkDestroySampler(device_.device(), tonemapSampler_, nullptr);
 
-    if (cullingSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), cullingSetLayout_, nullptr);
-    if (cullingPool_) vkDestroyDescriptorPool(device_.device(), cullingPool_, nullptr);
-    // pipeline_ and the buffers are torn down by their destructors.
+    // pipeline_, culling groups and the buffers are torn down by their destructors.
 }
 
 void Renderer::setViewportRect(glm::vec2 position, glm::vec2 size) {
@@ -298,7 +296,8 @@ void Renderer::createPipeline(rhi::BindGroupLayout& materialSetLayout) {
     // = culling/instance data.
     std::vector<VkDescriptorSetLayout> setLayouts;
     if (useGpuDriven) {
-        setLayouts = {globalSetLayout_->handle(), resources_.globalMaterialSetLayout(), cullingSetLayout_};
+        setLayouts = {globalSetLayout_->handle(), resources_.globalMaterialSetLayout(),
+                      cullingSetLayout_ ? cullingSetLayout_->handle() : VK_NULL_HANDLE};
     } else {
         setLayouts = {globalSetLayout_->handle(), materialSetLayout.handle()};
     }
@@ -380,130 +379,35 @@ void Renderer::createGpuDrivenBuffers() {
 }
 
 void Renderer::createCullingPipeline() {
-    // Descriptor Set 0 for Culling Pipeline:
-    // Binding 0: InstanceBuffer (Storage, Read)
-    // Binding 1: DrawCommandBuffer (Storage, Write)
-    // Binding 2: CountBuffer (Storage, Write)
-    // Binding 3: OriginalDrawCommandBuffer (Storage, Read)
-    
-    std::array<VkDescriptorSetLayoutBinding, 4> bindings{};
-    bindings[0].binding = 0;
-    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+    // Set 0 for the cull dispatch: 0=instances (read, also vertex-fetched by the
+    // bindless draw), 1=original draw commands (read), 2=count (write),
+    // 3=culled draw commands (write).
+    cullingSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute | rhi::ShaderStages::Vertex},
+            {1, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute},
+            {2, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute},
+            {3, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute},
+        });
 
-    bindings[1].binding = 1;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    bindings[2].binding = 2;
-    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[2].descriptorCount = 1;
-    bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    bindings[3].binding = 3;
-    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[3].descriptorCount = 1;
-    bindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    VkDescriptorSetLayoutCreateInfo ci{};
-    ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    ci.bindingCount = static_cast<uint32_t>(bindings.size());
-    ci.pBindings = bindings.data();
-    if (vkCreateDescriptorSetLayout(device_.device(), &ci, nullptr, &cullingSetLayout_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create culling set layout");
-
-    std::array<VkDescriptorPoolSize, 1> poolSizes{};
-    poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[0].descriptorCount = static_cast<uint32_t>(kMaxFramesInFlight) * 4;
-
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-    poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = static_cast<uint32_t>(kMaxFramesInFlight);
-    if (vkCreateDescriptorPool(device_.device(), &poolInfo, nullptr, &cullingPool_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create culling descriptor pool");
-
-    std::vector<VkDescriptorSetLayout> layouts(kMaxFramesInFlight, cullingSetLayout_);
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = cullingPool_;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(kMaxFramesInFlight);
-    allocInfo.pSetLayouts = layouts.data();
-
-    cullingSets_.resize(kMaxFramesInFlight);
-    if (vkAllocateDescriptorSets(device_.device(), &allocInfo, cullingSets_.data()) != VK_SUCCESS)
-        throw std::runtime_error("failed to allocate culling descriptor sets");
-
+    cullingGroups_.resize(kMaxFramesInFlight);
     for (int i = 0; i < kMaxFramesInFlight; i++) {
-        VkDescriptorBufferInfo instanceInfo{};
-        instanceInfo.buffer = instanceBuffers_[i]->handle();
-        instanceInfo.offset = 0;
-        instanceInfo.range = VK_WHOLE_SIZE;
-
-        VkDescriptorBufferInfo drawCmdInfo{};
-        drawCmdInfo.buffer = drawCommandBuffers_[i]->handle();
-        drawCmdInfo.offset = 0;
-        drawCmdInfo.range = VK_WHOLE_SIZE;
-
-        VkDescriptorBufferInfo countInfo{};
-        countInfo.buffer = countBuffers_[i]->handle();
-        countInfo.offset = 0;
-        countInfo.range = VK_WHOLE_SIZE;
-
-        VkDescriptorBufferInfo origDrawCmdInfo{};
-        origDrawCmdInfo.buffer = originalDrawCommandBuffers_[i]->handle();
-        origDrawCmdInfo.offset = 0;
-        origDrawCmdInfo.range = VK_WHOLE_SIZE;
-
-        std::array<VkWriteDescriptorSet, 4> writes{};
-        
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = cullingSets_[i];
-        writes[0].dstBinding = 0;
-        writes[0].dstArrayElement = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[0].descriptorCount = 1;
-        writes[0].pBufferInfo = &instanceInfo;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = cullingSets_[i];
-        writes[1].dstBinding = 1;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[1].descriptorCount = 1;
-        writes[1].pBufferInfo = &origDrawCmdInfo;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = cullingSets_[i];
-        writes[2].dstBinding = 2;
-        writes[2].dstArrayElement = 0;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[2].descriptorCount = 1;
-        writes[2].pBufferInfo = &countInfo;
-
-        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[3].dstSet = cullingSets_[i];
-        writes[3].dstBinding = 3;
-        writes[3].dstArrayElement = 0;
-        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[3].descriptorCount = 1;
-        writes[3].pBufferInfo = &drawCmdInfo;
-
-        vkUpdateDescriptorSets(device_.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        rhi::BindGroupEntry instances{0, instanceBuffers_[i].get()};
+        rhi::BindGroupEntry originalDraws{1, originalDrawCommandBuffers_[i].get()};
+        rhi::BindGroupEntry count{2, countBuffers_[i].get()};
+        rhi::BindGroupEntry culledDraws{3, drawCommandBuffers_[i].get()};
+        cullingGroups_[i] = std::make_unique<rhi::BindGroup>(*cullingSetLayout_,
+            std::vector<rhi::BindGroupEntry>{instances, originalDraws, count, culledDraws});
     }
-    
-    // We also need to specify the push constants
+
     struct CullingPushConstants {
         glm::vec4 frustumPlanes[6];
         uint32_t instanceCount;
     };
-    uint32_t pushConstantSize = sizeof(CullingPushConstants);
 
-    std::vector<VkDescriptorSetLayout> plLayouts = {cullingSetLayout_};
-    cullingPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("culling.comp.spv"), plLayouts, pushConstantSize);
+    std::vector<VkDescriptorSetLayout> plLayouts = {cullingSetLayout_->handle()};
+    cullingPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("culling.comp.spv"),
+        plLayouts, sizeof(CullingPushConstants));
 }
 
 void Renderer::rebuildGlobalSet(int frame) {
@@ -1109,31 +1013,23 @@ void Renderer::updateTonemapDescriptorSet() {
         std::vector<rhi::BindGroupEntry>{hdrEntry, depthEntry, bloomEntry});
 }
 
-void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
+void Renderer::recordTonemapPass(rhi::CommandEncoder& encoder, uint32_t imageIndex,
                                  Scene& scene, const Camera& camera) {
     SAIDA_PROFILE_FUNCTION();
+    VkCommandBuffer cmd = encoder.handle();  // GPU profiler zones (desktop tooling)
     GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
     SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/Tonemap+EditorUI");
-    VkImageMemoryBarrier2 toShaderRead = imageBarrier2(hdrImage_,
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-    VkImage depthImage = depthResolveImage_ ? depthResolveImage_ : swapchain_->depthImage();
-    VkImageMemoryBarrier2 depthToShaderRead = imageBarrier2(depthImage,
-        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
-        VK_IMAGE_ASPECT_DEPTH_BIT);
-    
-    VkImage swapImage = swapchain_->image(imageIndex);
-    VkImageMemoryBarrier2 toColorAttach = imageBarrier2(swapImage,
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
-    std::array<VkImageMemoryBarrier2, 3> barriers = {toShaderRead, depthToShaderRead, toColorAttach};
-    cmdImageBarriers(cmd, barriers.data(), barriers.size());
+    // Scene results -> sampled inputs; the swapchain image comes back from
+    // presentation with undefined contents (fully overwritten by this pass).
+    encoder.transition(hdrImage_, rhi::ResourceState::ColorAttachment,
+                       rhi::ResourceState::ShaderRead);
+    VkImage depthImage = depthResolveImage_ ? depthResolveImage_ : swapchain_->depthImage();
+    encoder.transition(depthImage, rhi::ResourceState::DepthWrite,
+                       rhi::ResourceState::ShaderRead);
+    encoder.transition(swapchain_->image(imageIndex), rhi::ResourceState::ColorAttachment,
+                       rhi::ResourceState::ColorAttachment, 0, VK_REMAINING_ARRAY_LAYERS,
+                       /*discardContents=*/true);
 
     VkRect2D renderRect = activeRenderRect();
     VkExtent2D fullExtent = swapchain_->extent();
@@ -1144,68 +1040,46 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
         static_cast<float>(renderRect.extent.height) / static_cast<float>(std::max(1u, fullExtent.height)));
 
     if (postProcessor_) {
-        rhi::CommandEncoder bloomEncoder(cmd);
-        postProcessor_->recordBloom(bloomEncoder, scene.settings(), sourceRect, gpuProfiler);
+        postProcessor_->recordBloom(encoder, scene.settings(), sourceRect, gpuProfiler);
     }
 
-    VkRenderingAttachmentInfo colorAttach{};
-    colorAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    colorAttach.imageView = swapchain_->imageView(imageIndex);
-    colorAttach.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttach.clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    rhi::RenderPassDesc pass;
+    pass.colorCount = 1;
+    pass.colors[0].view = swapchain_->imageView(imageIndex);
+    pass.colors[0].loadOp = rhi::LoadOp::Clear;
+    pass.width = fullExtent.width;
+    pass.height = fullExtent.height;
+    pass.defaultViewportScissor = false;  // tonemap draws into the viewport rect only
 
-    VkRenderingInfo renderingInfo{};
-    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea.offset = {0, 0};
-    renderingInfo.renderArea.extent = swapchain_->extent();
-    renderingInfo.layerCount = 1;
-    renderingInfo.colorAttachmentCount = 1;
-    renderingInfo.pColorAttachments = &colorAttach;
-
-    vkCmdBeginRendering(cmd, &renderingInfo);
-    tonemapPipeline_->bind(cmd);
-
-    VkViewport viewport{};
-    viewport.x = static_cast<float>(renderRect.offset.x);
-    viewport.y = static_cast<float>(renderRect.offset.y);
-    viewport.width = static_cast<float>(renderRect.extent.width);
-    viewport.height = static_cast<float>(renderRect.extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-    VkRect2D scissor = renderRect;
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-    VkDescriptorSet tonemapSetHandle = tonemapSet_->handle();
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, tonemapPipeline_->layout(),
-        0, 1, &tonemapSetHandle, 0, nullptr);
+    rhi::RenderPassEncoder rp = encoder.beginRenderPass(pass);
+    rp.setPipeline(*tonemapPipeline_);
+    rp.setViewport(static_cast<float>(renderRect.offset.x), static_cast<float>(renderRect.offset.y),
+                   static_cast<float>(renderRect.extent.width), static_cast<float>(renderRect.extent.height));
+    rp.setScissor(renderRect.offset.x, renderRect.offset.y,
+                  renderRect.extent.width, renderRect.extent.height);
+    rp.setBindGroup(0, *tonemapSet_);
 
     TonemapPushConstants push = tonemapPushConstants(scene.settings(), camera.projection());
     push.sourceRect = sourceRect;
     {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/Tonemap");
-        vkCmdPushConstants(cmd, tonemapPipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(TonemapPushConstants), &push);
-        vkCmdDraw(cmd, 3, 1, 0, 0);
+        rp.setPushConstants(&push, sizeof(TonemapPushConstants));
+        rp.draw(3);
     }
     {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/UI");
         {
             SAIDA_PROFILE_SCOPE("UI/RecordCommands");
-            rhi::RenderPassEncoder uiPass = rhi::RenderPassEncoder::fromHandle(cmd);
-            uiRenderer_->recordCommands(uiPass, swapchain_->extent().width, swapchain_->extent().height,
+            uiRenderer_->recordCommands(rp, fullExtent.width, fullExtent.height,
                                         {static_cast<float>(renderRect.offset.x), static_cast<float>(renderRect.offset.y)},
                                         {static_cast<float>(renderRect.extent.width), static_cast<float>(renderRect.extent.height)});
         }
         {
             SAIDA_PROFILE_SCOPE("ImGui/RenderDrawData");
-            imgui_->renderDrawData(cmd);  // UI on top, in the LDR swapchain pass
+            imgui_->renderDrawData(rp.handle());  // editor-only overlay, permanent escape hatch
         }
     }
-    vkCmdEndRendering(cmd);
+    rp.end();
 }
 
 void Renderer::buildFeatures(uint32_t viewMask, VkFormat depthFormat,
@@ -1224,7 +1098,7 @@ void Renderer::recordFeatures(FrameContext& fc) {
     for (auto& f : features_) f->record(fc);
 }
 
-void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, bool xrMultiview) {
+void Renderer::recordMeshDraws(rhi::RenderPassEncoder& rp, Pipeline* firstPipeline, bool xrMultiview) {
     SAIDA_PROFILE_FUNCTION();
     if (!firstPipeline) return;
 
@@ -1233,9 +1107,8 @@ void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, boo
     uint64_t drawCalls = 0;
     uint64_t triangles = 0;
     VkDescriptorSet globalSet = globalGroups_[currentFrame_]->handle();
-    activePipeline->bind(cmd);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline->layout(),
-                            0, 1, &globalSet, 0, nullptr);
+    rp.setPipeline(*activePipeline);
+    rp.setBindGroup(0, globalSet);
 
     for (const auto& draw : currentDraws_) {
         Pipeline* want = scenePipelineFor(draw.materialType);
@@ -1247,18 +1120,14 @@ void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, boo
 #endif
 
         if (want != activePipeline) {
-            want->bind(cmd);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, want->layout(),
-                                    0, 1, &globalSet, 0, nullptr);
+            rp.setPipeline(*want);
+            rp.setBindGroup(0, globalSet);
             activePipeline = want;
             lastMaterial = nullptr;
         }
 
-        VkPipelineLayout layout = activePipeline->layout();
         if (draw.material != lastMaterial) {
-            VkDescriptorSet matSet = draw.material->descriptorSet();
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
-                                    1, 1, &matSet, 0, nullptr);
+            rp.setBindGroup(1, draw.material->descriptorSet());
             lastMaterial = draw.material;
         }
 
@@ -1266,12 +1135,10 @@ void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, boo
         pc.model = draw.world;
         // params.y: offset into the global bone matrix buffer, or -1.
         pc.params = glm::vec4(0.0f, static_cast<float>(draw.boneOffset), 0.0f, 0.0f);
-        vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(PushConstants), &pc);
+        rp.setPushConstants(&pc, sizeof(PushConstants));
 
-        rhi::RenderPassEncoder meshPass = rhi::RenderPassEncoder::fromHandle(cmd);
-        draw.mesh->bind(meshPass);
-        draw.mesh->draw(meshPass);
+        draw.mesh->bind(rp);
+        draw.mesh->draw(rp);
         ++drawCalls;
         triangles += draw.mesh->allocation().indexCount / 3;
     }
@@ -1279,16 +1146,14 @@ void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, boo
     SAIDA_PROFILE_COUNTER("Renderer/Triangles", triangles);
 }
 
-void Renderer::recordWorldWebCanvases(VkCommandBuffer cmd, Scene& scene, const Camera& camera) {
+void Renderer::recordWorldWebCanvases(rhi::RenderPassEncoder& rp, Scene& scene, const Camera& camera) {
     if (!webCanvasWorldPipeline_ || !resources_.globalMaterialSet()) return;
 
     std::vector<WebCanvasWorldDraw> draws = collectWorldWebCanvasDraws(scene, camera.position);
     if (draws.empty()) return;
 
-    webCanvasWorldPipeline_->bind(cmd);
-    VkDescriptorSet textures = resources_.globalMaterialSet();
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, webCanvasWorldPipeline_->layout(),
-                            0, 1, &textures, 0, nullptr);
+    rp.setPipeline(*webCanvasWorldPipeline_);
+    rp.setBindGroup(0, resources_.globalMaterialSet());
 
     for (const WebCanvasWorldDraw& draw : draws) {
         WebCanvasNode* node = draw.node;
@@ -1299,15 +1164,12 @@ void Renderer::recordWorldWebCanvases(VkCommandBuffer cmd, Scene& scene, const C
         pc.model = node->worldTransform();
         pc.params = glm::vec4(node->worldWidth(), node->worldHeight(),
                               static_cast<float>(resources_.ensureBindlessTextureIndex(texture)), 1.0f);
-        vkCmdPushConstants(cmd, webCanvasWorldPipeline_->layout(),
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(pc), &pc);
-        vkCmdDraw(cmd, 4, 1, 0, 0);
+        rp.setPushConstants(&pc, sizeof(pc));
+        rp.draw(4);
     }
 }
 
-void Renderer::recordShadowPasses(VkCommandBuffer cmd) {
-    rhi::CommandEncoder encoder(cmd);  // non-owning view; coexists with raw recording (16.3.e)
+void Renderer::recordShadowPasses(rhi::CommandEncoder& encoder) {
     shadowMap_->record(encoder, shadowCount_,
         [this](rhi::RenderPassEncoder& rp, int layer) {
             for (const ShadowDraw& draw : shadowDraws_) {
@@ -1350,10 +1212,11 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     if (gpuProfiler) gpuProfiler->resetQueries(cmd);
     uint32_t gpuFrameZone = gpuProfiler ? gpuProfiler->beginZone(cmd, "GPU/Frame") : UINT32_MAX;
 
+    rhi::CommandEncoder encoder(cmd);
+
     {
         SAIDA_PROFILE_SCOPE("UI/UpdateAsyncTextures");
-        rhi::CommandEncoder uploadEncoder(cmd);
-        uiRenderer_->updateAsyncTextures(uploadEncoder);
+        uiRenderer_->updateAsyncTextures(encoder);
     }
 
     // GI update (skipped when the volume is frozen in baked mode): re-voxelize the
@@ -1361,78 +1224,34 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     // samples the result. When frozen, the previously-baked atlas is kept.
     if (giUpdateThisFrame_) {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
-        rhi::CommandEncoder giEncoder(cmd);
-        gi_->voxelize(giEncoder, scene, gpuProfiler);
-        gi_->update(giEncoder, globalGroups_[currentFrame_]->handle(), gpuProfiler);
+        gi_->voxelize(encoder, scene, gpuProfiler);
+        gi_->update(encoder, globalGroups_[currentFrame_]->handle(), gpuProfiler);
     }
 
     bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
 
     if (useGpuDriven && currentInstanceCount_ > 0) {
-        // 1. Clear CountBuffer
-        vkCmdFillBuffer(cmd, countBuffers_[currentFrame_]->handle(), 0, sizeof(uint32_t), 0);
+        // 1. Clear the count buffer, visible to the cull dispatch.
+        encoder.fillBuffer(*countBuffers_[currentFrame_], 0, sizeof(uint32_t), 0);
+        encoder.transferToComputeBarrier();
 
-        // Barrier: Wait for FillBuffer to finish before compute shader writes
-        VkBufferMemoryBarrier2 fillBarrier{};
-        fillBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-        fillBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        fillBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        fillBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        fillBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-        fillBarrier.buffer = countBuffers_[currentFrame_]->handle();
-        fillBarrier.offset = 0;
-        fillBarrier.size = sizeof(uint32_t);
+        // 2. Cull dispatch: writes the culled draw commands + count.
+        rhi::ComputePassEncoder cp = encoder.beginComputePass();
+        cp.setPipeline(*cullingPipeline_);
+        cp.setBindGroup(0, *cullingGroups_[currentFrame_]);
 
-        VkDependencyInfo depInfo{};
-        depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        depInfo.bufferMemoryBarrierCount = 1;
-        depInfo.pBufferMemoryBarriers = &fillBarrier;
-        vkCmdPipelineBarrier2(cmd, &depInfo);
-
-        // 2. Dispatch Compute Shader
-        cullingPipeline_->bind(cmd);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cullingPipeline_->layout(),
-                                0, 1, &cullingSets_[currentFrame_], 0, nullptr);
-
-        // Push constants for compute shader
         struct CullingPushConstants {
             glm::vec4 frustumPlanes[6];
             uint32_t instanceCount;
         } pc;
         for (int i = 0; i < 6; ++i) pc.frustumPlanes[i] = cameraFrustum_.planes[i];
         pc.instanceCount = currentInstanceCount_;
+        cp.setPushConstants(&pc, sizeof(pc));
+        cp.dispatch((currentInstanceCount_ + 63) / 64);
+        cp.end();
 
-        vkCmdPushConstants(cmd, cullingPipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT,
-                           0, sizeof(pc), &pc);
-
-        uint32_t groupCount = (currentInstanceCount_ + 63) / 64;
-        vkCmdDispatch(cmd, groupCount, 1, 1);
-
-            // Barrier: Wait for compute shader to finish before graphics reads
-            std::array<VkBufferMemoryBarrier2, 2> computeBarriers{};
-            computeBarriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-            computeBarriers[0].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            computeBarriers[0].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-            computeBarriers[0].dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-            computeBarriers[0].dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
-            computeBarriers[0].buffer = drawCommandBuffers_[currentFrame_]->handle();
-            computeBarriers[0].offset = 0;
-            computeBarriers[0].size = VK_WHOLE_SIZE;
-
-            computeBarriers[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-            computeBarriers[1].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            computeBarriers[1].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-            computeBarriers[1].dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-            computeBarriers[1].dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
-            computeBarriers[1].buffer = countBuffers_[currentFrame_]->handle();
-            computeBarriers[1].offset = 0;
-            computeBarriers[1].size = sizeof(uint32_t);
-
-            VkDependencyInfo computeDepInfo{};
-        computeDepInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        computeDepInfo.bufferMemoryBarrierCount = static_cast<uint32_t>(computeBarriers.size());
-        computeDepInfo.pBufferMemoryBarriers = computeBarriers.data();
-        vkCmdPipelineBarrier2(cmd, &computeDepInfo);
+        // Culled commands/count -> indirect draw reads.
+        encoder.computeToIndirectBarrier();
     }
 
     // Shadow passes: render scene depth from each caster's POV before the main
@@ -1440,7 +1259,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     // cast into view; each shadow layer just reuses it.
     {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/Shadows");
-        recordShadowPasses(cmd);
+        recordShadowPasses(encoder);
     }
 
     auto& settings = scene.settings();
@@ -1455,141 +1274,82 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     VkImageView colorView = msaa ? hdrMsaaView_ : hdrView_;
 
     // Dynamic rendering does no implicit layout transitions: do them by hand.
-    std::array<VkImageMemoryBarrier2, 4> preBarriers{};
-    uint32_t preCount = 0;
-    preBarriers[preCount++] = imageBarrier2(colorImage,
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-    if (msaa)
-        preBarriers[preCount++] = imageBarrier2(hdrImage_,
-            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-    if (msaa)
-        preBarriers[preCount++] = imageBarrier2(depthResolveImage_,
-            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, 0,
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
-    preBarriers[preCount++] = imageBarrier2(swapchain_->depthImage(),
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, 0,
-        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
-    cmdImageBarriers(cmd, preBarriers.data(), preCount);
-
-    VkRenderingAttachmentInfo colorAttach{};
-    colorAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    colorAttach.imageView = colorView;
-    colorAttach.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttach.storeOp = msaa ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttach.clearValue.color = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
+    // Same-state transitions with discardContents keep the previous frame's sync
+    // scope but drop the stale contents (the pass clears everything).
+    encoder.transition(colorImage, rhi::ResourceState::ColorAttachment,
+                       rhi::ResourceState::ColorAttachment, 0, VK_REMAINING_ARRAY_LAYERS,
+                       /*discardContents=*/true);
     if (msaa) {
-        colorAttach.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
-        colorAttach.resolveImageView = hdrView_;
-        colorAttach.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        encoder.transition(hdrImage_, rhi::ResourceState::ColorAttachment,
+                           rhi::ResourceState::ColorAttachment, 0, VK_REMAINING_ARRAY_LAYERS,
+                           /*discardContents=*/true);
+        encoder.transition(depthResolveImage_, rhi::ResourceState::DepthWrite,
+                           rhi::ResourceState::DepthWrite, 0, VK_REMAINING_ARRAY_LAYERS,
+                           /*discardContents=*/true);
     }
+    encoder.transition(swapchain_->depthImage(), rhi::ResourceState::DepthWrite,
+                       rhi::ResourceState::DepthWrite, 0, VK_REMAINING_ARRAY_LAYERS,
+                       /*discardContents=*/true);
 
-    VkRenderingAttachmentInfo depthAttach{};
-    depthAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    depthAttach.imageView = swapchain_->depthView();
-    depthAttach.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttach.storeOp = msaa ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
-    depthAttach.clearValue.depthStencil = {1.0f, 0};
-    if (msaa) {
-        depthAttach.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
-        depthAttach.resolveImageView = depthResolveView_;
-        depthAttach.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    }
-
-    VkRenderingInfo renderingInfo{};
-    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea.offset = renderRect.offset;
-    renderingInfo.renderArea.extent = extent;
-    renderingInfo.layerCount = 1;
-    renderingInfo.colorAttachmentCount = 1;
-    renderingInfo.pColorAttachments = &colorAttach;
-    renderingInfo.pDepthAttachment = &depthAttach;
+    rhi::RenderPassDesc scenePass;
+    scenePass.colorCount = 1;
+    scenePass.colors[0].view = colorView;
+    scenePass.colors[0].loadOp = rhi::LoadOp::Clear;
+    scenePass.colors[0].clearColor = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
+    scenePass.colors[0].store = !msaa;                          // MSAA source is resolved, not kept
+    scenePass.colors[0].resolveView = msaa ? hdrView_ : VK_NULL_HANDLE;
+    scenePass.depth.view = swapchain_->depthView();
+    scenePass.depth.loadOp = rhi::LoadOp::Clear;
+    scenePass.depth.store = !msaa;
+    scenePass.depth.resolveView = msaa ? depthResolveView_ : VK_NULL_HANDLE;
+    scenePass.x = renderRect.offset.x;
+    scenePass.y = renderRect.offset.y;
+    scenePass.width = extent.width;
+    scenePass.height = extent.height;
 
     {
     SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/SceneHDR");
-    vkCmdBeginRendering(cmd, &renderingInfo);
-
-    VkViewport viewport{};
-    viewport.x = static_cast<float>(renderRect.offset.x);
-    viewport.y = static_cast<float>(renderRect.offset.y);
-    viewport.width = static_cast<float>(extent.width);
-    viewport.height = static_cast<float>(extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.offset = renderRect.offset;
-    scissor.extent = extent;
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-    VkPipelineLayout layout = pipeline_->layout();
+    rhi::RenderPassEncoder rp = encoder.beginRenderPass(scenePass);
 
     if (useGpuDriven) {
-        pipeline_->bind(cmd);
+        rp.setPipeline(*pipeline_);
         // Set 0: per-frame global data (camera + lighting), shared by every object.
-        VkDescriptorSet globalSet = globalGroups_[currentFrame_]->handle();
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
-            0, 1, &globalSet, 0, nullptr);
+        rp.setBindGroup(0, *globalGroups_[currentFrame_]);
+        // Set 1: bindless textures + MaterialData SSBO (raw, out of RHI scope until 16.4).
+        rp.setBindGroup(1, resources_.globalMaterialSet());
+        // Set 2: instance buffer (shared with the cull dispatch).
+        rp.setBindGroup(2, *cullingGroups_[currentFrame_]);
 
-        // Set 1: Bindless Textures + MaterialData SSBO
-        VkDescriptorSet globalMaterialSet = resources_.globalMaterialSet();
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
-            1, 1, &globalMaterialSet, 0, nullptr);
-            
-        // Push constants for the graphics pipeline (overwrites the compute ones in the push constant memory)
         PushConstants gfxPc{};
         gfxPc.model = glm::mat4(1.0f); // Unused in bindless
         gfxPc.params = glm::vec4(0.0f);
-        vkCmdPushConstants(cmd, pipeline_->layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(PushConstants), &gfxPc);
+        rp.setPushConstants(&gfxPc, sizeof(PushConstants));
 
-        // Set 2: InstanceBuffer (from cullingSets_)
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
-            2, 1, &cullingSets_[currentFrame_], 0, nullptr);
-            
-        // Bind the global vertex and index buffers
         auto& geometry = resources_.geometry();
-        VkBuffer vertexBuffers[] = {geometry.vertexBuffer()->handle()};
-        VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(cmd, geometry.indexBuffer()->handle(), 0, VK_INDEX_TYPE_UINT32);
-        
-        // Execute draw indirect count
+        rp.setVertexBuffer(*geometry.vertexBuffer());
+        rp.setIndexBuffer(*geometry.indexBuffer());
+
         if (currentInstanceCount_ > 0) {
             if (device_.capabilities().drawIndirectCount) {
-                // vkCmdDrawIndexedIndirectCount requires Vulkan 1.2 core or the extension
-                auto func = (PFN_vkCmdDrawIndexedIndirectCount)vkGetDeviceProcAddr(device_.device(), "vkCmdDrawIndexedIndirectCount");
-                if (!func) func = (PFN_vkCmdDrawIndexedIndirectCount)vkGetDeviceProcAddr(device_.device(), "vkCmdDrawIndexedIndirectCountKHR");
-                
-                if (func) {
-                    func(cmd,
-                         drawCommandBuffers_[currentFrame_]->handle(), 0,
-                         countBuffers_[currentFrame_]->handle(), 0,
-                         currentInstanceCount_, sizeof(VkDrawIndexedIndirectCommand));
-                } else {
-                    vkCmdDrawIndexedIndirect(cmd, drawCommandBuffers_[currentFrame_]->handle(), 0, currentInstanceCount_, sizeof(VkDrawIndexedIndirectCommand));
-                }
+                rp.drawIndexedIndirectCount(*drawCommandBuffers_[currentFrame_], 0,
+                                            *countBuffers_[currentFrame_], 0,
+                                            currentInstanceCount_,
+                                            sizeof(VkDrawIndexedIndirectCommand));
             } else {
-                vkCmdDrawIndexedIndirect(cmd, drawCommandBuffers_[currentFrame_]->handle(), 0, currentInstanceCount_, sizeof(VkDrawIndexedIndirectCommand));
+                // 16.4 fallback: the cull shader writes instanceCount=0 for culled
+                // draws, so a plain indirect loop stays correct without the count.
+                rp.drawIndexedIndirect(*drawCommandBuffers_[currentFrame_], 0,
+                                       currentInstanceCount_,
+                                       sizeof(VkDrawIndexedIndirectCommand));
             }
         }
     } else {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Scene/Opaque");
-        recordMeshDraws(cmd, pipeline_.get(), false);
+        recordMeshDraws(rp, pipeline_.get(), false);
     }
 
     // Scene-pass features are recorded after opaque meshes.
-    FrameContext fc{rhi::CommandEncoder(cmd), rhi::RenderPassEncoder::fromHandle(cmd),
+    FrameContext fc{encoder, rp,
                     currentFrame_, globalGroups_[currentFrame_]->handle(), scene,
                     Time::elapsed(), false, &camera, nullptr, false, extent,
                     currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
@@ -1597,20 +1357,16 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Scene/Features");
         recordFeatures(fc);
     }
-    recordWorldWebCanvases(cmd, scene, camera);
+    recordWorldWebCanvases(rp, scene, camera);
 
-    vkCmdEndRendering(cmd);
+    rp.end();
     }
 
-    recordTonemapPass(cmd, imageIndex, scene, camera);
+    recordTonemapPass(encoder, imageIndex, scene, camera);
 
-    VkImage swapImage = swapchain_->image(imageIndex);
     // Transition the swap-chain image from color attachment to present.
-    VkImageMemoryBarrier2 toPresent = imageBarrier2(swapImage,
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0);
-    cmdImageBarrier(cmd, toPresent);
+    encoder.transition(swapchain_->image(imageIndex), rhi::ResourceState::ColorAttachment,
+                       rhi::ResourceState::Present);
 
     if (gpuProfiler) gpuProfiler->endZone(cmd, gpuFrameZone);
 
@@ -1993,7 +1749,7 @@ void Renderer::updateUniformBufferXr(uint32_t frame, const std::vector<EyeRender
     lightingBuffers_[frame]->write(&lighting, sizeof(lighting));
 }
 
-void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
+void Renderer::recordXrScenePass(rhi::CommandEncoder& encoder, Scene& scene,
                                  const std::vector<EyeRenderInfo>& eyes) {
     auto& settings = scene.settings();
     // Passthrough (AR): clear fully transparent so the compositor blends the real
@@ -2002,71 +1758,42 @@ void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
     glm::vec4 clearColor = settings.clearColor;
     if (passthrough) clearColor.a = 0.0f;
 
-    std::array<VkImageMemoryBarrier2, 2> pre{};
-    pre[0] = imageBarrier2(xrHdrImage_,
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-        VK_IMAGE_ASPECT_COLOR_BIT, 0, xrViewCount_);
-    pre[1] = imageBarrier2(xrDepthImage_,
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, 0,
-        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, 0, xrViewCount_);
-    cmdImageBarriers(cmd, pre.data(), pre.size());
+    // Both eye layers come back from sampling with stale contents (cleared below).
+    encoder.transition(xrHdrImage_, rhi::ResourceState::ColorAttachment,
+                       rhi::ResourceState::ColorAttachment, 0, xrViewCount_,
+                       /*discardContents=*/true);
+    encoder.transition(xrDepthImage_, rhi::ResourceState::DepthWrite,
+                       rhi::ResourceState::DepthWrite, 0, xrViewCount_,
+                       /*discardContents=*/true);
 
-    VkRenderingAttachmentInfo color{};
-    color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    color.imageView = xrHdrArrayView_;
-    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color.clearValue.color = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
+    rhi::RenderPassDesc pass;
+    pass.colorCount = 1;
+    pass.colors[0].view = xrHdrArrayView_;
+    pass.colors[0].loadOp = rhi::LoadOp::Clear;
+    pass.colors[0].clearColor = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
+    pass.depth.view = xrDepthArrayView_;
+    pass.depth.loadOp = rhi::LoadOp::Clear;
+    pass.width = xrExtent_.width;
+    pass.height = xrExtent_.height;
+    pass.layerCount = 1;                        // ignored when viewMask != 0
+    pass.viewMask = xrViewMask(xrViewCount_);   // multiview: both eyes in one pass
 
-    VkRenderingAttachmentInfo depth{};
-    depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    depth.imageView = xrDepthArrayView_;
-    depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depth.clearValue.depthStencil = {1.0f, 0};
+    rhi::RenderPassEncoder rp = encoder.beginRenderPass(pass);
 
-    VkRenderingInfo ri{};
-    ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    ri.renderArea.offset = {0, 0};
-    ri.renderArea.extent = xrExtent_;
-    ri.layerCount = 1;                       // ignored when viewMask != 0
-    ri.viewMask = xrViewMask(xrViewCount_);  // multiview: both eyes in one pass
-    ri.colorAttachmentCount = 1;
-    ri.pColorAttachments = &color;
-    ri.pDepthAttachment = &depth;
-
-    vkCmdBeginRendering(cmd, &ri);
-
-    VkViewport vp{};
-    vp.width = static_cast<float>(xrExtent_.width);
-    vp.height = static_cast<float>(xrExtent_.height);
-    vp.minDepth = 0.0f;
-    vp.maxDepth = 1.0f;
-    vkCmdSetViewport(cmd, 0, 1, &vp);
-    VkRect2D sc{};
-    sc.extent = xrExtent_;
-    vkCmdSetScissor(cmd, 0, 1, &sc);
-
-    recordMeshDraws(cmd, xrScenePipeline_.get(), true);
+    recordMeshDraws(rp, xrScenePipeline_.get(), true);
 
     // passthrough is forwarded so the skybox skips itself.
-    FrameContext fc{rhi::CommandEncoder(cmd), rhi::RenderPassEncoder::fromHandle(cmd),
+    FrameContext fc{encoder, rp,
                     currentFrame_, globalGroups_[currentFrame_]->handle(), scene,
                     Time::elapsed(), true, nullptr, &eyes, passthrough, xrExtent_,
                     currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
     recordFeatures(fc);
-    recordXrWorldWebCanvases(cmd, scene, eyes);
+    recordXrWorldWebCanvases(rp, scene, eyes);
 
-    vkCmdEndRendering(cmd);
+    rp.end();
 }
 
-void Renderer::recordXrWorldWebCanvases(VkCommandBuffer cmd, Scene& scene,
+void Renderer::recordXrWorldWebCanvases(rhi::RenderPassEncoder& rp, Scene& scene,
                                         const std::vector<EyeRenderInfo>& eyes) {
     if (!xrWebCanvasWorldPipeline_ || !resources_.globalMaterialSet()) return;
 
@@ -2077,10 +1804,8 @@ void Renderer::recordXrWorldWebCanvases(VkCommandBuffer cmd, Scene& scene,
     std::vector<WebCanvasWorldDraw> draws = collectWorldWebCanvasDraws(scene, head);
     if (draws.empty()) return;
 
-    xrWebCanvasWorldPipeline_->bind(cmd);
-    VkDescriptorSet textures = resources_.globalMaterialSet();
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, xrWebCanvasWorldPipeline_->layout(),
-                            0, 1, &textures, 0, nullptr);
+    rp.setPipeline(*xrWebCanvasWorldPipeline_);
+    rp.setBindGroup(0, resources_.globalMaterialSet());
 
     for (const WebCanvasWorldDraw& draw : draws) {
         WebCanvasNode* node = draw.node;
@@ -2091,38 +1816,27 @@ void Renderer::recordXrWorldWebCanvases(VkCommandBuffer cmd, Scene& scene,
         pc.model = node->worldTransform();
         pc.params = glm::vec4(node->worldWidth(), node->worldHeight(),
                               static_cast<float>(resources_.ensureBindlessTextureIndex(texture)), 1.0f);
-        vkCmdPushConstants(cmd, xrWebCanvasWorldPipeline_->layout(),
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(pc), &pc);
-        vkCmdDraw(cmd, 4, 1, 0, 0);
+        rp.setPushConstants(&pc, sizeof(pc));
+        rp.draw(4);
     }
 }
 
-void Renderer::recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
+void Renderer::recordXrTonemap(rhi::CommandEncoder& encoder, Scene& scene,
                                const std::vector<EyeRenderInfo>& eyes) {
+    VkCommandBuffer cmd = encoder.handle();  // GPU profiler zones (desktop tooling)
     GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
-    // HDR (all layers) → shader read for sampling.
-    VkImageMemoryBarrier2 hdrToRead = imageBarrier2(xrHdrImage_,
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
-        VK_IMAGE_ASPECT_COLOR_BIT, 0, xrViewCount_);
-    VkImageMemoryBarrier2 depthToRead = imageBarrier2(xrDepthImage_,
-        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
-        VK_IMAGE_ASPECT_DEPTH_BIT, 0, xrViewCount_);
-    std::array<VkImageMemoryBarrier2, 2> readBarriers{hdrToRead, depthToRead};
-    cmdImageBarriers(cmd, readBarriers.data(), readBarriers.size());
+    // HDR + depth (all eye layers) -> shader read for sampling.
+    encoder.transition(xrHdrImage_, rhi::ResourceState::ColorAttachment,
+                       rhi::ResourceState::ShaderRead, 0, xrViewCount_);
+    encoder.transition(xrDepthImage_, rhi::ResourceState::DepthWrite,
+                       rhi::ResourceState::ShaderRead, 0, xrViewCount_);
 
     const uint32_t n = std::min<uint32_t>(static_cast<uint32_t>(eyes.size()), xrViewCount_);
     {
     SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/Tonemap+EditorUI");
     for (uint32_t i = 0; i < n; ++i) {
         if (xrPostProcessors_[i]) {
-            rhi::CommandEncoder bloomEncoder(cmd);
-            xrPostProcessors_[i]->recordBloom(bloomEncoder, scene.settings(),
+            xrPostProcessors_[i]->recordBloom(encoder, scene.settings(),
                 glm::vec4(0.0f, 0.0f, 1.0f, 1.0f), gpuProfiler);
         }
     }
@@ -2131,49 +1845,27 @@ void Renderer::recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
         const EyeRenderInfo& eye = eyes[i];
         // The XR image starts UNDEFINED; the compositor wants it left in
         // COLOR_ATTACHMENT_OPTIMAL, which is exactly where rendering leaves it.
-        VkImageMemoryBarrier2 toColor = imageBarrier2(eye.image,
-            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-        cmdImageBarrier(cmd, toColor);
+        encoder.transition(eye.image, rhi::ResourceState::ColorAttachment,
+                           rhi::ResourceState::ColorAttachment, 0, VK_REMAINING_ARRAY_LAYERS,
+                           /*discardContents=*/true);
 
-        VkRenderingAttachmentInfo color{};
-        color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        color.imageView = eye.imageView;
-        color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        color.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        rhi::RenderPassDesc pass;
+        pass.colorCount = 1;
+        pass.colors[0].view = eye.imageView;
+        pass.colors[0].loadOp = rhi::LoadOp::DontCare;  // fully overwritten by the tonemap
+        pass.width = eye.extent.width;
+        pass.height = eye.extent.height;
 
-        VkRenderingInfo ri{};
-        ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        ri.renderArea.offset = {0, 0};
-        ri.renderArea.extent = eye.extent;
-        ri.layerCount = 1;
-        ri.colorAttachmentCount = 1;
-        ri.pColorAttachments = &color;
-
-        vkCmdBeginRendering(cmd, &ri);
-        xrTonemapPipeline_->bind(cmd);
-        VkViewport vp{};
-        vp.width = static_cast<float>(eye.extent.width);
-        vp.height = static_cast<float>(eye.extent.height);
-        vp.minDepth = 0.0f;
-        vp.maxDepth = 1.0f;
-        vkCmdSetViewport(cmd, 0, 1, &vp);
-        VkRect2D sc{};
-        sc.extent = eye.extent;
-        vkCmdSetScissor(cmd, 0, 1, &sc);
-        VkDescriptorSet xrTonemapSetHandle = xrTonemapSets_[i]->handle();
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            xrTonemapPipeline_->layout(), 0, 1, &xrTonemapSetHandle, 0, nullptr);
+        rhi::RenderPassEncoder rp = encoder.beginRenderPass(pass);
+        rp.setPipeline(*xrTonemapPipeline_);
+        rp.setBindGroup(0, *xrTonemapSets_[i]);
         TonemapPushConstants push = tonemapPushConstants(scene.settings(), eye.projection);
         {
             SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/Tonemap");
-            vkCmdPushConstants(cmd, xrTonemapPipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
-                0, sizeof(TonemapPushConstants), &push);
-            vkCmdDraw(cmd, 3, 1, 0, 0);
+            rp.setPushConstants(&push, sizeof(TonemapPushConstants));
+            rp.draw(3);
         }
-        vkCmdEndRendering(cmd);
+        rp.end();
     }
     }
 }
@@ -2232,17 +1924,17 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
     updateUniformBufferXr(currentFrame_, eyes, scene, project);
 
     // View-independent passes recorded once, then the stereo scene + tonemap.
+    rhi::CommandEncoder encoder(cmd);
     if (giUpdateThisFrame_) {
         GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
-        rhi::CommandEncoder giEncoder(cmd);
-        gi_->voxelize(giEncoder, scene, gpuProfiler);
-        gi_->update(giEncoder, globalGroups_[currentFrame_]->handle(), gpuProfiler);
+        gi_->voxelize(encoder, scene, gpuProfiler);
+        gi_->update(encoder, globalGroups_[currentFrame_]->handle(), gpuProfiler);
     }
-    recordShadowPasses(cmd);
+    recordShadowPasses(encoder);
 
-    recordXrScenePass(cmd, scene, eyes);
-    recordXrTonemap(cmd, scene, eyes);
+    recordXrScenePass(encoder, scene, eyes);
+    recordXrTonemap(encoder, scene, eyes);
 
     currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
 }

@@ -159,7 +159,7 @@ private:
     void cleanupHdrResources();
     void createTonemapPipeline();
     void updateTonemapDescriptorSet();
-    void recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
+    void recordTonemapPass(rhi::CommandEncoder& encoder, uint32_t imageIndex,
                            Scene& scene, const Camera& camera);
     void createUniformBuffers();
     void createGlobalDescriptorSets();
@@ -181,9 +181,9 @@ private:
     // Records the sorted CPU mesh draw list for both desktop and XR. The caller
     // chooses the first pipeline for the active render target; this method handles
     // pipeline switches, material binds, push constants and mesh draws.
-    void recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, bool xrMultiview);
-    void recordWorldWebCanvases(VkCommandBuffer cmd, Scene& scene, const Camera& camera);
-    void recordShadowPasses(VkCommandBuffer cmd);
+    void recordMeshDraws(rhi::RenderPassEncoder& rp, Pipeline* firstPipeline, bool xrMultiview);
+    void recordWorldWebCanvases(rhi::RenderPassEncoder& rp, Scene& scene, const Camera& camera);
+    void recordShadowPasses(rhi::CommandEncoder& encoder);
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Scene& scene, const Camera& camera);
     VkRect2D activeRenderRect() const;
 
@@ -248,9 +248,8 @@ private:
     static constexpr uint32_t kMaxInstances = 100000;
     
     std::unique_ptr<ComputePipeline> cullingPipeline_;
-    VkDescriptorSetLayout cullingSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool cullingPool_ = VK_NULL_HANDLE;
-    std::vector<VkDescriptorSet> cullingSets_;
+    std::unique_ptr<rhi::BindGroupLayout> cullingSetLayout_;
+    std::vector<std::unique_ptr<rhi::BindGroup>> cullingGroups_;
     uint32_t currentInstanceCount_ = 0;
     Frustum cameraFrustum_;
 
@@ -306,11 +305,11 @@ private:
     void updateXrTonemapDescriptorSets();
     void updateUniformBufferXr(uint32_t frame, const std::vector<EyeRenderInfo>& eyes,
                                Scene& scene, Project* project);
-    void recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
+    void recordXrScenePass(rhi::CommandEncoder& encoder, Scene& scene,
                            const std::vector<EyeRenderInfo>& eyes);
-    void recordXrWorldWebCanvases(VkCommandBuffer cmd, Scene& scene,
+    void recordXrWorldWebCanvases(rhi::RenderPassEncoder& rp, Scene& scene,
                                   const std::vector<EyeRenderInfo>& eyes);
-    void recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
+    void recordXrTonemap(rhi::CommandEncoder& encoder, Scene& scene,
                          const std::vector<EyeRenderInfo>& eyes);
 
     std::unique_ptr<Pipeline> xrScenePipeline_;    // multiview scene: MaterialType::Lit

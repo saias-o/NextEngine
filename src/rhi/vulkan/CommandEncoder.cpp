@@ -68,6 +68,20 @@ void RenderPassEncoder::drawIndirect(const saida::Buffer& buffer, uint64_t offse
     vkCmdDrawIndirect(cmd_, buffer.handle(), offset, drawCount, stride);
 }
 
+void RenderPassEncoder::drawIndexedIndirect(const saida::Buffer& buffer, uint64_t offset,
+                                            uint32_t drawCount, uint32_t stride) {
+    vkCmdDrawIndexedIndirect(cmd_, buffer.handle(), offset, drawCount, stride);
+}
+
+void RenderPassEncoder::drawIndexedIndirectCount(const saida::Buffer& args, uint64_t argsOffset,
+                                                 const saida::Buffer& count, uint64_t countOffset,
+                                                 uint32_t maxDrawCount, uint32_t stride) {
+    // Core Vulkan 1.2 symbol; the engine's device is 1.3 and callers guard on
+    // Capabilities::drawIndirectCount.
+    vkCmdDrawIndexedIndirectCount(cmd_, args.handle(), argsOffset, count.handle(), countOffset,
+                                  maxDrawCount, stride);
+}
+
 void RenderPassEncoder::end() {
     vkCmdEndRendering(cmd_);
 }
@@ -158,6 +172,18 @@ void CommandEncoder::computeToIndirectBarrier() {
             VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
         VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT |
             VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+}
+
+void CommandEncoder::transferToComputeBarrier() {
+    memoryBarrier2(cmd_,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+}
+
+void CommandEncoder::fillBuffer(const saida::Buffer& dst, uint64_t offset, uint64_t size,
+                                uint32_t value) {
+    vkCmdFillBuffer(cmd_, dst.handle(), offset, size, value);
 }
 
 RenderPassEncoder CommandEncoder::beginRenderPass(const RenderPassDesc& desc) {
