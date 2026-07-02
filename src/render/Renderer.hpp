@@ -168,7 +168,6 @@ private:
     // immutable (PLAN_RHI §7.4): re-pointing any binding means recreating.
     void rebuildGlobalSet(int frame);
     void createCommandBuffers();
-    void createSyncObjects();
     void createGpuDrivenBuffers();
     void createCullingPipeline();
 
@@ -206,16 +205,9 @@ private:
     glm::vec2 viewportSize_{0.0f};
 
     // HDR offscreen target — scene renders here, then tonemapped to swapchain.
-    VkImage hdrImage_ = VK_NULL_HANDLE;
-    VmaAllocation hdrAllocation_ = VK_NULL_HANDLE;
-    VkImageView hdrView_ = VK_NULL_HANDLE;
-    VkImage hdrMsaaImage_ = VK_NULL_HANDLE;  // MSAA resolve target (when MSAA on)
-    VmaAllocation hdrMsaaAllocation_ = VK_NULL_HANDLE;
-    VkImageView hdrMsaaView_ = VK_NULL_HANDLE;
-    VkImage depthResolveImage_ = VK_NULL_HANDLE;  // single-sample depth for AO when MSAA is enabled
-    VmaAllocation depthResolveAllocation_ = VK_NULL_HANDLE;
-    VkImageView depthResolveView_ = VK_NULL_HANDLE;
-    uint64_t hdrTrackedBytes_ = 0;
+    std::unique_ptr<rhi::RenderTexture> hdrTexture_;
+    std::unique_ptr<rhi::RenderTexture> hdrMsaaTexture_;       // MSAA scene target (when MSAA on)
+    std::unique_ptr<rhi::RenderTexture> depthResolveTexture_;  // single-sample depth for AO when MSAA on
     std::unique_ptr<PostProcessor> postProcessor_;
 
     // Tonemap pipeline
@@ -254,8 +246,6 @@ private:
     Frustum cameraFrustum_;
 
     std::vector<VkCommandBuffer> commandBuffers_;
-    std::vector<VkSemaphore> imageAvailableSemaphores_;
-    std::vector<VkFence> inFlightFences_;
     uint32_t currentFrame_ = 0;
     
     std::vector<SceneDraw> currentDraws_;
@@ -324,16 +314,10 @@ private:
                                                                  : xrScenePipeline_.get();
     }
 
-    // 2-layer HDR color + depth (one layer per eye).
-    VkImage xrHdrImage_ = VK_NULL_HANDLE;
-    VmaAllocation xrHdrAllocation_ = VK_NULL_HANDLE;
-    VkImageView xrHdrArrayView_ = VK_NULL_HANDLE;      // 2D_ARRAY, render target
-    std::array<VkImageView, 2> xrHdrLayerViews_{};     // per-layer, tonemap source
-    VkImage xrDepthImage_ = VK_NULL_HANDLE;
-    VmaAllocation xrDepthAllocation_ = VK_NULL_HANDLE;
-    VkImageView xrDepthArrayView_ = VK_NULL_HANDLE;
-    std::array<VkImageView, 2> xrDepthLayerViews_{};   // per-layer, tonemap depth source
-    uint64_t xrTrackedBytes_ = 0;
+    // 2-layer HDR color + depth (one layer per eye): the whole-resource view is
+    // the multiview render target, per-layer views feed the per-eye tonemap.
+    std::unique_ptr<rhi::RenderTexture> xrHdrTexture_;
+    std::unique_ptr<rhi::RenderTexture> xrDepthTexture_;
 
     std::array<std::unique_ptr<rhi::BindGroup>, 2> xrTonemapSets_;   // one per eye layer
     std::array<std::unique_ptr<PostProcessor>, 2> xrPostProcessors_;

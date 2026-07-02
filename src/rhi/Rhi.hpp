@@ -15,11 +15,18 @@
 #include "rhi/Format.hpp"
 #include "rhi/PipelineState.hpp"
 #include "rhi/ShaderStages.hpp"
+#include "rhi/TextureUsage.hpp"
 #include "rhi/vulkan/BindGroup.hpp"
 #include "rhi/vulkan/CommandEncoder.hpp"
+#include "rhi/vulkan/RenderTexture.hpp"
 #include "graphics/Buffer.hpp"   // Vulkan backend's Buffer (aliased below)
 #include "graphics/Pipeline.hpp" // Vulkan backend's Pipeline (aliased below)
 #include "graphics/Texture.hpp"  // Vulkan backend's Texture (aliased below)
+
+namespace saida {
+class VulkanDevice;  // Vulkan backend's Device (aliased below, fwd-decl only)
+class Swapchain;     // Vulkan backend's Surface (aliased below, fwd-decl only)
+}
 
 namespace saida::rhi {
 
@@ -50,5 +57,14 @@ using ComputePassEncoder = vulkan::ComputePassEncoder;
 using RenderPassDesc = vulkan::RenderPassDesc;
 using ColorAttachment = vulkan::ColorAttachment;
 using DepthAttachment = vulkan::DepthAttachment;
+
+// 16.3.f — Device / Surface / render targets. Device is the GPU handle
+// (queues, allocator, caps, withSingleTimeEncoder); Surface owns presentation
+// (acquire/submit/present with the frame sync hidden inside — the Desktop/XR/
+// Web seam). RenderTexture is neutral render-target creation.
+using Device = saida::VulkanDevice;
+using Surface = saida::Swapchain;
+using RenderTexture = vulkan::RenderTexture;
+using RenderTextureDesc = vulkan::RenderTextureDesc;
 
 } // namespace saida::rhi

@@ -1,11 +1,9 @@
 #pragma once
 
-#include "graphics/VmaFwd.hpp"
 #include "rhi/Rhi.hpp"
 
 #include <vulkan/vulkan.h>
 
-#include <array>
 #include <functional>
 #include <memory>
 
@@ -13,10 +11,8 @@ namespace saida {
 
 class VulkanDevice;
 
-// Depth 2D-array shadow maps for directional and spot lights.
-// Pilot subsystem of the RHI CommandEncoder extraction (16.3.e.a): its command
-// recording is fully rhi::, only resource creation (image/views) is still raw
-// Vulkan (render-target creation is neutralised with 16.3.f).
+// Depth 2D-array shadow maps for directional and spot lights. Fully rhi::
+// (encoder recording since 16.3.e.a, RenderTexture creation since 16.3.f).
 class ShadowMap {
 public:
     static constexpr uint32_t kMaxShadows = 4;
@@ -38,12 +34,11 @@ public:
     // encoder, before the main render pass. No-op when count == 0.
     void record(rhi::CommandEncoder& encoder, int count, const DrawGeometryFn& drawGeometry);
 
-    VkImageView arrayView() const { return arrayView_; }
+    VkImageView arrayView() const { return texture_->view(); }
     VkSampler sampler() const { return sampler_; }
 
 private:
-    void createImage();
-    void createViews();
+    void createTexture();
     void createSampler();
     void createPipeline();
 
@@ -51,10 +46,7 @@ private:
     rhi::Format format_ = rhi::Format::Undefined;
     uint32_t resolution_;
 
-    VkImage image_ = VK_NULL_HANDLE;
-    VmaAllocation allocation_ = VK_NULL_HANDLE;
-    VkImageView arrayView_ = VK_NULL_HANDLE;                 // all layers, sampled
-    std::array<VkImageView, kMaxShadows> layerViews_{};      // one per layer (attachment)
+    std::unique_ptr<rhi::RenderTexture> texture_;  // kMaxShadows depth layers
     VkSampler sampler_ = VK_NULL_HANDLE;
 
     std::unique_ptr<rhi::Pipeline> pipeline_;  // depth-only, vertex-stage push constants

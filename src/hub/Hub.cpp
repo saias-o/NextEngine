@@ -328,19 +328,8 @@ void Hub::drawUI() {
 }
 
 void Hub::run() {
-    // Minimal sync objects for a 1-frame-in-flight rendering loop
-    VkFence fence;
-    VkSemaphore imageAvailableSemaphore;
-    
-    VkFenceCreateInfo fenceInfo{};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    vkCreateFence(device_->device(), &fenceInfo, nullptr, &fence);
-
-    VkSemaphoreCreateInfo semInfo{};
-    semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    vkCreateSemaphore(device_->device(), &semInfo, nullptr, &imageAvailableSemaphore);
-    
+    // 1-frame-in-flight loop: the frame sync lives in the Swapchain (rhi::Surface,
+    // 16.3.f) — the Hub just always uses frame slot 0.
     VkCommandPool pool;
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -365,18 +354,13 @@ void Hub::run() {
             continue;
         }
 
-        vkWaitForFences(device_->device(), 1, &fence, VK_TRUE, UINT64_MAX);
-        
+        swapchain_->waitFrame(0);
+
         uint32_t imageIndex;
-        VkResult result = vkAcquireNextImageKHR(device_->device(), swapchain_->handle(), UINT64_MAX,
-            imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
-            
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            swapchain_->recreate();
-            continue;
+        if (!swapchain_->acquire(0, imageIndex)) {
+            continue;  // out of date: the surface recreated itself
         }
-        
-        vkResetFences(device_->device(), 1, &fence);
+
         vkResetCommandBuffer(cmd, 0);
 
         imgui_->beginFrame();
@@ -435,40 +419,11 @@ void Hub::run() {
             VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0);
         cmdImageBarrier(cmd, toPresent);
         vkEndCommandBuffer(cmd);
-        
-        VkSubmitInfo submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
-        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-        submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = waitSemaphores;
-        submitInfo.pWaitDstStageMask = waitStages;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &cmd;
-        VkSemaphore signalSemaphores[] = {swapchain_->renderFinishedSemaphore(imageIndex)};
-        submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = signalSemaphores;
 
-        vkQueueSubmit(device_->graphicsQueue(), 1, &submitInfo, fence);
-
-        VkPresentInfoKHR presentInfo{};
-        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = signalSemaphores;
-        VkSwapchainKHR swapchains[] = {swapchain_->handle()};
-        presentInfo.swapchainCount = 1;
-        presentInfo.pSwapchains = swapchains;
-        presentInfo.pImageIndices = &imageIndex;
-
-        result = vkQueuePresentKHR(device_->presentQueue(), &presentInfo);
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-            swapchain_->recreate();
-        }
+        swapchain_->submitAndPresent(cmd, 0, imageIndex);
     }
-    
+
     vkDeviceWaitIdle(device_->device());
-    vkDestroyFence(device_->device(), fence, nullptr);
-    vkDestroySemaphore(device_->device(), imageAvailableSemaphore, nullptr);
     vkDestroyCommandPool(device_->device(), pool, nullptr);
 }
 

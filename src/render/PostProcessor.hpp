@@ -35,9 +35,7 @@ public:
 
 private:
     struct Target {
-        VkImage image = VK_NULL_HANDLE;
-        VmaAllocation allocation = VK_NULL_HANDLE;
-        VkImageView view = VK_NULL_HANDLE;
+        std::unique_ptr<rhi::RenderTexture> texture;
         VkExtent2D extent{};
         // Explicitly tracked by the owner (PLAN_RHI 7.3: no automatic tracking).
         rhi::ResourceState state = rhi::ResourceState::Undefined;

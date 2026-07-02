@@ -1,6 +1,5 @@
 #pragma once
 
-#include "graphics/StorageImage.hpp"
 #include "rhi/Rhi.hpp"
 
 #include <vulkan/vulkan.h>
@@ -60,7 +59,7 @@ public:
     // Views/sampler the renderer binds into set 0 (bindings 4/5/6) for shading.
     VkImageView irradianceView() const { return irradiance_[curr_]->view(); }
     VkImageView visibilityView() const { return visibility_[curr_]->view(); }
-    VkImageView voxelView() const { return voxelView_; }
+    VkImageView voxelView() const { return voxelTexture_->view(); }
     VkSampler sampler() const { return sampler_; }
 
     const GIVolumeDesc& desc() const { return desc_; }
@@ -88,14 +87,12 @@ private:
     int probesPerRow_ = 1;
     int curr_ = 0;  // current ping-pong atlas (written this frame, sampled by lighting)
 
-    std::array<std::unique_ptr<StorageImage>, 2> irradiance_;  // rgba16f
-    std::array<std::unique_ptr<StorageImage>, 2> visibility_;  // rg16f
+    std::array<std::unique_ptr<rhi::RenderTexture>, 2> irradiance_;  // rgba16f
+    std::array<std::unique_ptr<rhi::RenderTexture>, 2> visibility_;  // rg16f
     VkSampler sampler_ = VK_NULL_HANDLE;
 
     // --- Voxelization (P1) ---
-    VkImage voxelImage_ = VK_NULL_HANDLE;       // 3D rgba16f albedo grid
-    VmaAllocation voxelAllocation_ = VK_NULL_HANDLE;
-    VkImageView voxelView_ = VK_NULL_HANDLE;
+    std::unique_ptr<rhi::RenderTexture> voxelTexture_;  // 3D rgba16f albedo grid
     std::unique_ptr<Buffer> voxelUbo_;          // origin/extent/res + 3 axis VPs
     std::unique_ptr<rhi::BindGroupLayout> voxelSetLayout_;
     std::unique_ptr<rhi::BindGroup> voxelSet_;

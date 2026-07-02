@@ -9,14 +9,30 @@ namespace saida {
 class VulkanDevice;
 class Window;
 
-// Swapchain plus MSAA color target and depth buffer. Dynamic rendering means
-// the Renderer owns layout transitions and vkCmdBeginRendering.
+// Swapchain plus MSAA color target and depth buffer — the Vulkan backend of
+// rhi::Surface (16.3.f). Owns presentation AND its synchronisation: per-frame
+// fences + acquire semaphores, per-image render-finished semaphores. Dynamic
+// rendering means the Renderer owns layout transitions and render passes.
 class Swapchain {
 public:
+    static constexpr uint32_t kFramesInFlight = 2;
+
     Swapchain(VulkanDevice& device, Window& window, bool vSync = false);
     ~Swapchain();
     Swapchain(const Swapchain&) = delete;
     Swapchain& operator=(const Swapchain&) = delete;
+
+    // ---- rhi::Surface presentation API ----
+    // Blocks until the given frame slot's previous submission completed.
+    void waitFrame(uint32_t frame) const;
+    // Acquires the next image. Returns false when the swap chain is out of
+    // date — the caller recreates its targets and skips the frame.
+    bool acquire(uint32_t frame, uint32_t& imageIndex);
+    // Submits the recorded frame (waiting on the acquire, signalling the
+    // per-image present semaphore + the frame fence) and presents. Returns
+    // true when the swap chain must be recreated (out of date / suboptimal /
+    // window resized). WebGPU backend (16.4): both are trivial, sync is no-op.
+    bool submitAndPresent(VkCommandBuffer cmd, uint32_t frame, uint32_t imageIndex);
 
     // Waits until the window has a non-zero size, then rebuilds the swap chain.
     void recreate();
@@ -44,19 +60,13 @@ public:
     VkImage depthImage() const { return depthImage_; }
     VkImageView depthView() const { return depthImageView_; }
 
-    // Signalled when rendering to the given swap-chain image is done. One per
-    // image (not per frame-in-flight) so a semaphore is never reused while its
-    // present is still pending.
-    VkSemaphore renderFinishedSemaphore(uint32_t imageIndex) const {
-        return renderFinishedSemaphores_[imageIndex];
-    }
-
 private:
     void createSwapchain();
     void createImageViews();
     void createColorResources();
     void createDepthResources();
     void createRenderFinishedSemaphores();
+    void createFrameSync();
     void cleanup();
 
     VkSurfaceFormatKHR chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& available) const;
@@ -84,7 +94,11 @@ private:
     VmaAllocation depthAllocation_ = VK_NULL_HANDLE;
     VkImageView depthImageView_ = VK_NULL_HANDLE;
 
-    std::vector<VkSemaphore> renderFinishedSemaphores_;  // one per swap-chain image
+    // renderFinished: one per swap-chain image (never reused while its present
+    // is pending). imageAvailable + fences: one per frame in flight.
+    std::vector<VkSemaphore> renderFinishedSemaphores_;
+    std::vector<VkSemaphore> imageAvailableSemaphores_;
+    std::vector<VkFence> inFlightFences_;
 };
 
 } // namespace saida

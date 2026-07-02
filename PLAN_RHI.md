@@ -207,7 +207,32 @@ Swapchain/HDR sont temporaires et disparaissent en f.
 - **f** — `rhi::Device` (VulkanDevice) + `rhi::Surface` (Swapchain, acquire/present,
   sémaphores/fences cachés). Les conversions Format aux coutures disparaissent.
 
-### 7.7 Cas particuliers (décidés)
+### 7.7 Design 16.3.f (Device / Surface / render targets)
+
+- **`rhi::Device`** = `VulkanDevice`, aliasé tel quel (fwd-decl, zéro include).
+  Sa surface utile aux appelants convertis est déjà neutre :
+  `capabilities()`, `withSingleTimeEncoder()`, la construction des types rhi.
+  Le backend WebGPU exposera la même surface.
+- **`rhi::RenderTexture`** : création neutre des render targets (HDR, MSAA,
+  depth-resolve, shadow array, bloom, atlas GI, voxel 3D). Desc = format
+  `rhi::Format`, extent (depth>1 = 3D), layers (array), samples,
+  `rhi::TextureUsage` (bitmask Sampled/Storage/ColorAttachment/DepthAttachment/
+  CopySrc/CopyDst/Transient), catégorie MemoryProfiler optionnelle. Expose la
+  vue whole-resource (2D / 2D_ARRAY / 3D auto) et des vues par layer
+  (attachements shadow/XR). Remplace `StorageImage` (supprimé) et tous les
+  `vmaCreateImage` de render/. `Texture` (assets échantillonnés + mips) reste
+  un type distinct.
+- **`rhi::Surface`** = `Swapchain`, qui absorbe la sync de présentation :
+  fences de frame + sémaphores acquire (déplacés du Renderer), sémaphores
+  renderFinished (déjà là). API : `waitFrame(frame)`, `acquire(frame, &image)`
+  (false = out-of-date, l'appelant recrée), `submitAndPresent(cmd, frame,
+  image)` (true = recreate nécessaire — out-of-date/suboptimal/resize).
+  Le Renderer ne touche plus ni VkSemaphore/VkFence ni vkQueueSubmit/Present.
+  Côté WebGPU : `acquire` = getCurrentTexture, submit = queue.submit, pas de
+  sync exposée (no-op) — même forme d'appel. Côté XR, la présentation reste à
+  la session OpenXR (le Renderer XR ne crée pas de Surface), couture inchangée.
+
+### 7.8 Cas particuliers (décidés)
 
 - **GpuProfiler** (timestamps) : outillage desktop — prend l'encoder et utilise
   `handle()` en interne ; exclu du build web, pas d'abstraction.

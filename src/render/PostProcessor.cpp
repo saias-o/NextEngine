@@ -21,10 +21,6 @@ namespace saida {
 namespace {
 constexpr uint32_t kMaxBloomLevels = 6;
 constexpr uint32_t kMinBloomSize = 16;
-
-uint64_t targetBytes(VkExtent2D extent) {
-    return static_cast<uint64_t>(extent.width) * extent.height * 8u;
-}
 }
 
 PostProcessor::PostProcessor(VulkanDevice& device, VkExtent2D extent, VkFormat hdrFormat,
@@ -53,83 +49,36 @@ void PostProcessor::setHdrInput(VkImageView hdrInputView) {
 }
 
 VkImageView PostProcessor::bloomView() const {
-    return bloom_.empty() ? VK_NULL_HANDLE : bloom_.front().view;
+    return bloom_.empty() ? VK_NULL_HANDLE : bloom_.front().texture->view();
 }
 
 void PostProcessor::createTargets() {
     uint32_t w = std::max(1u, extent_.width / 2u);
     uint32_t h = std::max(1u, extent_.height / 2u);
-    uint64_t bytes = 0;
+
+    auto makeTarget = [&](uint32_t width, uint32_t height) {
+        Target target{};
+        target.extent = {width, height};
+        rhi::RenderTextureDesc desc;
+        desc.format = rhi::vulkan::fromVk(hdrFormat_);
+        desc.width = width;
+        desc.height = height;
+        desc.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::Sampled;
+        desc.memoryCategory = "RenderTarget/PostBloom";
+        target.texture = std::make_unique<rhi::RenderTexture>(device_, desc);
+        return target;
+    };
 
     while (w >= kMinBloomSize && h >= kMinBloomSize && bloom_.size() < kMaxBloomLevels) {
-        Target target{};
-        target.extent = {w, h};
-
-        VkImageCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        info.imageType = VK_IMAGE_TYPE_2D;
-        info.extent = {w, h, 1};
-        info.mipLevels = 1;
-        info.arrayLayers = 1;
-        info.format = hdrFormat_;
-        info.tiling = VK_IMAGE_TILING_OPTIMAL;
-        info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        info.samples = VK_SAMPLE_COUNT_1_BIT;
-        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo alloc{};
-        alloc.usage = VMA_MEMORY_USAGE_AUTO;
-        if (vmaCreateImage(device_.allocator(), &info, &alloc,
-                           &target.image, &target.allocation, nullptr) != VK_SUCCESS) {
-            throw std::runtime_error("PostProcessor: failed to create bloom target");
-        }
-        target.view = device_.createImageView(target.image, hdrFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
-        bytes += targetBytes(target.extent);
-        bloom_.push_back(target);
-
+        bloom_.push_back(makeTarget(w, h));
         w /= 2u;
         h /= 2u;
     }
 
-    if (bloom_.empty()) {
-        Target target{};
-        target.extent = {1, 1};
-        VkImageCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        info.imageType = VK_IMAGE_TYPE_2D;
-        info.extent = {1, 1, 1};
-        info.mipLevels = 1;
-        info.arrayLayers = 1;
-        info.format = hdrFormat_;
-        info.tiling = VK_IMAGE_TILING_OPTIMAL;
-        info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        info.samples = VK_SAMPLE_COUNT_1_BIT;
-        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        VmaAllocationCreateInfo alloc{};
-        alloc.usage = VMA_MEMORY_USAGE_AUTO;
-        if (vmaCreateImage(device_.allocator(), &info, &alloc,
-                           &target.image, &target.allocation, nullptr) != VK_SUCCESS) {
-            throw std::runtime_error("PostProcessor: failed to create fallback bloom target");
-        }
-        target.view = device_.createImageView(target.image, hdrFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
-        bytes += targetBytes(target.extent);
-        bloom_.push_back(target);
-    }
-
-    MemoryProfiler::registerAllocation("RenderTarget/PostBloom", bytes);
+    if (bloom_.empty()) bloom_.push_back(makeTarget(1, 1));
 }
 
 void PostProcessor::destroyTargets() {
-    uint64_t bytes = 0;
-    for (const Target& target : bloom_) bytes += targetBytes(target.extent);
-    MemoryProfiler::unregisterAllocation("RenderTarget/PostBloom", bytes);
-
-    for (Target& target : bloom_) {
-        if (target.view) vkDestroyImageView(device_.device(), target.view, nullptr);
-        if (target.image) vmaDestroyImage(device_.allocator(), target.image, target.allocation);
-    }
     bloom_.clear();
 }
 
@@ -174,10 +123,10 @@ void PostProcessor::updateDescriptorSets() {
     };
 
     for (size_t i = 0; i < bloom_.size(); ++i) {
-        downsampleGroups_.push_back(makeGroup(i == 0 ? hdrInputView_ : bloom_[i - 1].view));
+        downsampleGroups_.push_back(makeGroup(i == 0 ? hdrInputView_ : bloom_[i - 1].texture->view()));
     }
     for (size_t i = 0; i < bloom_.size(); ++i) {
-        upsampleGroups_.push_back(makeGroup(bloom_[std::min(i + 1, bloom_.size() - 1)].view));
+        upsampleGroups_.push_back(makeGroup(bloom_[std::min(i + 1, bloom_.size() - 1)].texture->view()));
     }
 }
 
@@ -204,7 +153,7 @@ void PostProcessor::createPipelines() {
 void PostProcessor::transitionTarget(rhi::CommandEncoder& encoder, Target& target,
                                      rhi::ResourceState to) {
     if (target.state == to) return;
-    encoder.transition(target.image, target.state, to);
+    encoder.transition(target.texture->image(), target.state, to);
     target.state = to;
 }
 
@@ -212,7 +161,7 @@ rhi::RenderPassEncoder PostProcessor::beginFullscreenPass(rhi::CommandEncoder& e
                                                           Target& target, bool clear) {
     rhi::RenderPassDesc pass;
     pass.colorCount = 1;
-    pass.colors[0].view = target.view;
+    pass.colors[0].view = target.texture->view();
     pass.colors[0].loadOp = clear ? rhi::LoadOp::Clear : rhi::LoadOp::Load;
     pass.width = target.extent.width;
     pass.height = target.extent.height;

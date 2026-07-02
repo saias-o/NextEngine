@@ -190,7 +190,6 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
                                      resources_.materialSetLayout(), *globalSetLayout_);
     createGlobalDescriptorSets();
     createCommandBuffers();
-    createSyncObjects();
     gpuProfiler_ = std::make_unique<GpuProfiler>(device_, kMaxFramesInFlight);
 
     if (device_.capabilities().descriptorIndexing && device_.capabilities().multiDrawIndirect) {
@@ -222,11 +221,6 @@ Renderer::Renderer(VulkanDevice& device, Window& window, ResourceManager& resour
 Renderer::~Renderer() {
     vkDeviceWaitIdle(device_.device());
     features_.clear();  // destroy feature pipelines/descriptors while the device is valid
-    // Desktop-only present sync (not created in XR mode).
-    for (size_t i = 0; i < inFlightFences_.size(); i++) {
-        vkDestroySemaphore(device_.device(), imageAvailableSemaphores_[i], nullptr);
-        vkDestroyFence(device_.device(), inFlightFences_[i], nullptr);
-    }
 #ifdef SAIDA_ENABLE_XR
     if (xrMode_) {
         for (auto& post : xrPostProcessors_) post.reset();
@@ -594,24 +588,6 @@ void Renderer::createCommandBuffers() {
         throw std::runtime_error("failed to allocate command buffers");
 }
 
-void Renderer::createSyncObjects() {
-    // imageAvailable semaphores and fences are per frame-in-flight; the
-    // renderFinished semaphores are per swap-chain image and owned by Swapchain.
-    imageAvailableSemaphores_.resize(kMaxFramesInFlight);
-    inFlightFences_.resize(kMaxFramesInFlight);
-
-    VkSemaphoreCreateInfo semCI{};
-    semCI.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    VkFenceCreateInfo fenceCI{};
-    fenceCI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceCI.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-    for (int i = 0; i < kMaxFramesInFlight; i++) {
-        if (vkCreateSemaphore(device_.device(), &semCI, nullptr, &imageAvailableSemaphores_[i]) != VK_SUCCESS ||
-            vkCreateFence(device_.device(), &fenceCI, nullptr, &inFlightFences_[i]) != VK_SUCCESS)
-            throw std::runtime_error("failed to create sync objects");
-    }
-}
 
 void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& cameraPos,
                            const Frustum* cullFrustum, Project* project,
@@ -857,97 +833,41 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
 
 void Renderer::createHdrResources() {
     VkExtent2D extent = swapchain_->extent();
-    VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT;
-
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width = extent.width;
-    imageInfo.extent.height = extent.height;
-    imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 1;
-    imageInfo.format = format;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-    if (vmaCreateImage(device_.allocator(), &imageInfo, &allocInfo,
-                       &hdrImage_, &hdrAllocation_, nullptr) != VK_SUCCESS)
-        throw std::runtime_error("failed to create HDR image");
-
-    hdrView_ = device_.createImageView(hdrImage_, format, VK_IMAGE_ASPECT_COLOR_BIT);
-
     const bool msaa = swapchain_->samples() != VK_SAMPLE_COUNT_1_BIT;
-    if (msaa) {
-        imageInfo.samples = swapchain_->samples();
-        imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
-        if (vmaCreateImage(device_.allocator(), &imageInfo, &allocInfo,
-                           &hdrMsaaImage_, &hdrMsaaAllocation_, nullptr) != VK_SUCCESS)
-            throw std::runtime_error("failed to create MSAA HDR image");
-        hdrMsaaView_ = device_.createImageView(hdrMsaaImage_, format, VK_IMAGE_ASPECT_COLOR_BIT);
 
-        VkImageCreateInfo depthInfo{};
-        depthInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        depthInfo.imageType = VK_IMAGE_TYPE_2D;
-        depthInfo.extent.width = extent.width;
-        depthInfo.extent.height = extent.height;
-        depthInfo.extent.depth = 1;
-        depthInfo.mipLevels = 1;
-        depthInfo.arrayLayers = 1;
-        depthInfo.format = swapchain_->depthFormat();
-        depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        depthInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        depthInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        if (vmaCreateImage(device_.allocator(), &depthInfo, &allocInfo,
-                           &depthResolveImage_, &depthResolveAllocation_, nullptr) != VK_SUCCESS)
-            throw std::runtime_error("failed to create AO depth resolve image");
-        depthResolveView_ = device_.createImageView(depthResolveImage_, swapchain_->depthFormat(), VK_IMAGE_ASPECT_DEPTH_BIT);
+    rhi::RenderTextureDesc hdrDesc;
+    hdrDesc.format = rhi::Format::RGBA16Float;
+    hdrDesc.width = extent.width;
+    hdrDesc.height = extent.height;
+    hdrDesc.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::Sampled;
+    hdrDesc.memoryCategory = "RenderTarget/DesktopHDR";
+    hdrTexture_ = std::make_unique<rhi::RenderTexture>(device_, hdrDesc);
+
+    if (msaa) {
+        rhi::RenderTextureDesc msaaDesc = hdrDesc;
+        msaaDesc.samples = sampleCountValue(swapchain_->samples());
+        msaaDesc.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::Transient;
+        hdrMsaaTexture_ = std::make_unique<rhi::RenderTexture>(device_, msaaDesc);
+
+        rhi::RenderTextureDesc depthDesc;
+        depthDesc.format = rhi::vulkan::fromVk(swapchain_->depthFormat());
+        depthDesc.width = extent.width;
+        depthDesc.height = extent.height;
+        depthDesc.usage = rhi::TextureUsage::DepthAttachment | rhi::TextureUsage::Sampled;
+        depthDesc.memoryCategory = "RenderTarget/DesktopHDR";
+        depthResolveTexture_ = std::make_unique<rhi::RenderTexture>(device_, depthDesc);
     }
 
-    hdrTrackedBytes_ = imageBytes(extent, 8);
-    if (msaa) {
-        hdrTrackedBytes_ += imageBytes(extent, 8, 1, sampleCountValue(swapchain_->samples()));
-        hdrTrackedBytes_ += imageBytes(extent, 4);
-    }
-    MemoryProfiler::registerAllocation("RenderTarget/DesktopHDR", hdrTrackedBytes_);
-
-    postProcessor_ = std::make_unique<PostProcessor>(device_, extent, format, hdrView_);
+    postProcessor_ = std::make_unique<PostProcessor>(device_, extent,
+        VK_FORMAT_R16G16B16A16_SFLOAT, hdrTexture_->view());
     updateTonemapDescriptorSet();
 }
 
 void Renderer::cleanupHdrResources() {
     postProcessor_.reset();
-    MemoryProfiler::unregisterAllocation("RenderTarget/DesktopHDR", hdrTrackedBytes_);
-    hdrTrackedBytes_ = 0;
-    if (depthResolveView_) {
-        vkDestroyImageView(device_.device(), depthResolveView_, nullptr);
-        vmaDestroyImage(device_.allocator(), depthResolveImage_, depthResolveAllocation_);
-        depthResolveView_ = VK_NULL_HANDLE;
-        depthResolveImage_ = VK_NULL_HANDLE;
-        depthResolveAllocation_ = VK_NULL_HANDLE;
-    }
-    if (hdrMsaaView_) {
-        vkDestroyImageView(device_.device(), hdrMsaaView_, nullptr);
-        vmaDestroyImage(device_.allocator(), hdrMsaaImage_, hdrMsaaAllocation_);
-        hdrMsaaView_ = VK_NULL_HANDLE;
-        hdrMsaaImage_ = VK_NULL_HANDLE;
-        hdrMsaaAllocation_ = VK_NULL_HANDLE;
-    }
-    if (hdrView_) {
-        vkDestroyImageView(device_.device(), hdrView_, nullptr);
-        vmaDestroyImage(device_.allocator(), hdrImage_, hdrAllocation_);
-        hdrView_ = VK_NULL_HANDLE;
-        hdrImage_ = VK_NULL_HANDLE;
-        hdrAllocation_ = VK_NULL_HANDLE;
-    }
+    depthResolveTexture_.reset();
+    hdrMsaaTexture_.reset();
+    hdrTexture_.reset();
 }
 
 void Renderer::createTonemapPipeline() {
@@ -990,18 +910,18 @@ void Renderer::createTonemapPipeline() {
 }
 
 void Renderer::updateTonemapDescriptorSet() {
-    if (!tonemapSetLayout_ || !hdrView_ || !swapchain_ || !tonemapSampler_ || !tonemapDepthSampler_ || !postProcessor_) {
+    if (!tonemapSetLayout_ || !hdrTexture_ || !swapchain_ || !tonemapSampler_ || !tonemapDepthSampler_ || !postProcessor_) {
         return;
     }
 
     rhi::BindGroupEntry hdrEntry;
     hdrEntry.binding = 0;
-    hdrEntry.view = hdrView_;
+    hdrEntry.view = hdrTexture_->view();
     hdrEntry.sampler = tonemapSampler_;
 
     rhi::BindGroupEntry depthEntry;
     depthEntry.binding = 1;
-    depthEntry.view = depthResolveView_ ? depthResolveView_ : swapchain_->depthView();
+    depthEntry.view = depthResolveTexture_ ? depthResolveTexture_->view() : swapchain_->depthView();
     depthEntry.sampler = tonemapDepthSampler_;
 
     rhi::BindGroupEntry bloomEntry;
@@ -1022,9 +942,10 @@ void Renderer::recordTonemapPass(rhi::CommandEncoder& encoder, uint32_t imageInd
 
     // Scene results -> sampled inputs; the swapchain image comes back from
     // presentation with undefined contents (fully overwritten by this pass).
-    encoder.transition(hdrImage_, rhi::ResourceState::ColorAttachment,
+    encoder.transition(hdrTexture_->image(), rhi::ResourceState::ColorAttachment,
                        rhi::ResourceState::ShaderRead);
-    VkImage depthImage = depthResolveImage_ ? depthResolveImage_ : swapchain_->depthImage();
+    VkImage depthImage = depthResolveTexture_ ? depthResolveTexture_->image()
+                                              : swapchain_->depthImage();
     encoder.transition(depthImage, rhi::ResourceState::DepthWrite,
                        rhi::ResourceState::ShaderRead);
     encoder.transition(swapchain_->image(imageIndex), rhi::ResourceState::ColorAttachment,
@@ -1270,8 +1191,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     const bool msaa = swapchain_->samples() != VK_SAMPLE_COUNT_1_BIT;
     // Color is rendered into the MSAA target and resolved to the HDR image; with
     // no MSAA we render straight to the HDR image.
-    VkImage colorImage = msaa ? hdrMsaaImage_ : hdrImage_;
-    VkImageView colorView = msaa ? hdrMsaaView_ : hdrView_;
+    VkImage colorImage = msaa ? hdrMsaaTexture_->image() : hdrTexture_->image();
+    VkImageView colorView = msaa ? hdrMsaaTexture_->view() : hdrTexture_->view();
 
     // Dynamic rendering does no implicit layout transitions: do them by hand.
     // Same-state transitions with discardContents keep the previous frame's sync
@@ -1280,10 +1201,10 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
                        rhi::ResourceState::ColorAttachment, 0, VK_REMAINING_ARRAY_LAYERS,
                        /*discardContents=*/true);
     if (msaa) {
-        encoder.transition(hdrImage_, rhi::ResourceState::ColorAttachment,
+        encoder.transition(hdrTexture_->image(), rhi::ResourceState::ColorAttachment,
                            rhi::ResourceState::ColorAttachment, 0, VK_REMAINING_ARRAY_LAYERS,
                            /*discardContents=*/true);
-        encoder.transition(depthResolveImage_, rhi::ResourceState::DepthWrite,
+        encoder.transition(depthResolveTexture_->image(), rhi::ResourceState::DepthWrite,
                            rhi::ResourceState::DepthWrite, 0, VK_REMAINING_ARRAY_LAYERS,
                            /*discardContents=*/true);
     }
@@ -1297,11 +1218,11 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     scenePass.colors[0].loadOp = rhi::LoadOp::Clear;
     scenePass.colors[0].clearColor = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
     scenePass.colors[0].store = !msaa;                          // MSAA source is resolved, not kept
-    scenePass.colors[0].resolveView = msaa ? hdrView_ : VK_NULL_HANDLE;
+    scenePass.colors[0].resolveView = msaa ? hdrTexture_->view() : VK_NULL_HANDLE;
     scenePass.depth.view = swapchain_->depthView();
     scenePass.depth.loadOp = rhi::LoadOp::Clear;
     scenePass.depth.store = !msaa;
-    scenePass.depth.resolveView = msaa ? depthResolveView_ : VK_NULL_HANDLE;
+    scenePass.depth.resolveView = msaa ? depthResolveTexture_->view() : VK_NULL_HANDLE;
     scenePass.x = renderRect.offset.x;
     scenePass.y = renderRect.offset.y;
     scenePass.width = extent.width;
@@ -1375,10 +1296,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
 }
 
 void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
-    {
-        SAIDA_PROFILE_SCOPE("Vulkan/WaitForFrameFence");
-        vkWaitForFences(device_.device(), 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
-    }
+    swapchain_->waitFrame(currentFrame_);
     if (Profiler::instance().enabled() && gpuProfiler_) {
         gpuProfiler_->beginFrame(currentFrame_);
         gpuProfiler_->publishLatest();
@@ -1398,23 +1316,13 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     }
 
     uint32_t imageIndex;
-    VkResult result;
-    {
-        SAIDA_PROFILE_SCOPE("Vulkan/AcquireNextImage");
-        result = vkAcquireNextImageKHR(device_.device(), swapchain_->handle(), UINT64_MAX,
-            imageAvailableSemaphores_[currentFrame_], VK_NULL_HANDLE, &imageIndex);
-    }
-
-    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        swapchain_->recreate();
+    if (!swapchain_->acquire(currentFrame_, imageIndex)) {
+        // Out of date: the surface recreated itself; rebuild the HDR chain and
+        // skip this frame.
         cleanupHdrResources();
         createHdrResources();
         return;
-    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        throw std::runtime_error("failed to acquire swap chain image");
     }
-
-    vkResetFences(device_.device(), 1, &inFlightFences_[currentFrame_]);
 
     auto& settings = scene.settings();
 
@@ -1491,46 +1399,11 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
         SAIDA_PROFILE_SCOPE("Renderer/RecordCommandBuffer");
         recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex, scene, camera);
     }
-    VkSemaphore waitSemaphores[] = {imageAvailableSemaphores_[currentFrame_]};
-    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    VkSemaphore signalSemaphores[] = {swapchain_->renderFinishedSemaphore(imageIndex)};
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = waitSemaphores;
-    submitInfo.pWaitDstStageMask = waitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffers_[currentFrame_];
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = signalSemaphores;
-
-    {
-        SAIDA_PROFILE_SCOPE("Vulkan/QueueSubmit");
-        if (vkQueueSubmit(device_.graphicsQueue(), 1, &submitInfo, inFlightFences_[currentFrame_]) != VK_SUCCESS)
-            throw std::runtime_error("failed to submit draw command buffer");
-    }
-
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = signalSemaphores;
-    VkSwapchainKHR swapChains[] = {swapchain_->handle()};
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = swapChains;
-    presentInfo.pImageIndices = &imageIndex;
-
-    {
-        SAIDA_PROFILE_SCOPE("Vulkan/QueuePresent");
-        result = vkQueuePresentKHR(device_.presentQueue(), &presentInfo);
-    }
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window_.wasResized()) {
-        window_.resetResizedFlag();
-        swapchain_->recreate();
+    if (swapchain_->submitAndPresent(commandBuffers_[currentFrame_], currentFrame_, imageIndex)) {
+        // Out of date / suboptimal / resized: the surface recreated itself;
+        // rebuild the HDR chain sized to the new extent.
         cleanupHdrResources();
         createHdrResources();
-    } else if (result != VK_SUCCESS) {
-        throw std::runtime_error("failed to present swap chain image");
     }
 
     currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
@@ -1548,82 +1421,36 @@ uint32_t xrViewMask(uint32_t viewCount) { return (1u << viewCount) - 1u; }
 }
 
 void Renderer::createXrTargets() {
-    const VkFormat hdrFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    // 2-layer HDR color: the array view is the multiview render target, the
+    // per-layer views feed each eye's tonemap. Same layout for depth.
+    rhi::RenderTextureDesc hdrDesc;
+    hdrDesc.format = rhi::Format::RGBA16Float;
+    hdrDesc.width = xrExtent_.width;
+    hdrDesc.height = xrExtent_.height;
+    hdrDesc.layers = xrViewCount_;            // one layer per eye
+    hdrDesc.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::Sampled;
+    hdrDesc.memoryCategory = "RenderTarget/XR";
+    xrHdrTexture_ = std::make_unique<rhi::RenderTexture>(device_, hdrDesc);
 
-    auto makeView = [&](VkImage img, VkFormat fmt, VkImageAspectFlags aspect,
-                        VkImageViewType type, uint32_t baseLayer, uint32_t layers) {
-        VkImageViewCreateInfo v{};
-        v.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        v.image = img;
-        v.viewType = type;
-        v.format = fmt;
-        v.subresourceRange = {aspect, 0, 1, baseLayer, layers};
-        VkImageView view;
-        if (vkCreateImageView(device_.device(), &v, nullptr, &view) != VK_SUCCESS)
-            throw std::runtime_error("XR: failed to create image view");
-        return view;
-    };
-
-    VkImageCreateInfo ci{};
-    ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    ci.imageType = VK_IMAGE_TYPE_2D;
-    ci.extent = {xrExtent_.width, xrExtent_.height, 1};
-    ci.mipLevels = 1;
-    ci.arrayLayers = xrViewCount_;            // one layer per eye
-    ci.format = hdrFormat;
-    ci.tiling = VK_IMAGE_TILING_OPTIMAL;
-    ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    ci.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    ci.samples = VK_SAMPLE_COUNT_1_BIT;       // MSAA is a follow-up for XR
-    ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo ai{};
-    ai.usage = VMA_MEMORY_USAGE_AUTO;
-
-    // 2-layer HDR color: one array view to render into (multiview), plus a
-    // single-layer view per eye that the tonemap pass samples.
-    if (vmaCreateImage(device_.allocator(), &ci, &ai, &xrHdrImage_, &xrHdrAllocation_, nullptr) != VK_SUCCESS)
-        throw std::runtime_error("XR: failed to create HDR image");
-    xrHdrArrayView_ = makeView(xrHdrImage_, hdrFormat, VK_IMAGE_ASPECT_COLOR_BIT,
-                               VK_IMAGE_VIEW_TYPE_2D_ARRAY, 0, xrViewCount_);
-    for (uint32_t i = 0; i < xrViewCount_; ++i)
-        xrHdrLayerViews_[i] = makeView(xrHdrImage_, hdrFormat, VK_IMAGE_ASPECT_COLOR_BIT,
-                                       VK_IMAGE_VIEW_TYPE_2D, i, 1);
-
-    // 2-layer depth.
-    const VkFormat depthFormat = device_.findDepthFormat();
-    ci.format = depthFormat;
-    ci.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    if (vmaCreateImage(device_.allocator(), &ci, &ai, &xrDepthImage_, &xrDepthAllocation_, nullptr) != VK_SUCCESS)
-        throw std::runtime_error("XR: failed to create depth image");
-    xrDepthArrayView_ = makeView(xrDepthImage_, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT,
-                                 VK_IMAGE_VIEW_TYPE_2D_ARRAY, 0, xrViewCount_);
-    for (uint32_t i = 0; i < xrViewCount_; ++i)
-        xrDepthLayerViews_[i] = makeView(xrDepthImage_, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT,
-                                         VK_IMAGE_VIEW_TYPE_2D, i, 1);
-
-    xrTrackedBytes_ = imageBytes(xrExtent_, 8, xrViewCount_) +
-                      imageBytes(xrExtent_, 4, xrViewCount_);
-    MemoryProfiler::registerAllocation("RenderTarget/XR", xrTrackedBytes_);
+    rhi::RenderTextureDesc depthDesc;
+    depthDesc.format = rhi::vulkan::fromVk(device_.findDepthFormat());
+    depthDesc.width = xrExtent_.width;
+    depthDesc.height = xrExtent_.height;
+    depthDesc.layers = xrViewCount_;
+    depthDesc.usage = rhi::TextureUsage::DepthAttachment | rhi::TextureUsage::Sampled;
+    depthDesc.memoryCategory = "RenderTarget/XR";
+    xrDepthTexture_ = std::make_unique<rhi::RenderTexture>(device_, depthDesc);
 
     for (uint32_t i = 0; i < std::min<uint32_t>(xrViewCount_, 2); ++i) {
-        xrPostProcessors_[i] = std::make_unique<PostProcessor>(device_, xrExtent_, hdrFormat, xrHdrLayerViews_[i]);
+        xrPostProcessors_[i] = std::make_unique<PostProcessor>(device_, xrExtent_,
+            VK_FORMAT_R16G16B16A16_SFLOAT, xrHdrTexture_->layerView(i));
     }
 }
 
 void Renderer::cleanupXrTargets() {
-    VkDevice d = device_.device();
     for (auto& post : xrPostProcessors_) post.reset();
-    MemoryProfiler::unregisterAllocation("RenderTarget/XR", xrTrackedBytes_);
-    xrTrackedBytes_ = 0;
-    for (auto& v : xrDepthLayerViews_) { if (v) vkDestroyImageView(d, v, nullptr); v = VK_NULL_HANDLE; }
-    if (xrDepthArrayView_) vkDestroyImageView(d, xrDepthArrayView_, nullptr);
-    if (xrDepthImage_) vmaDestroyImage(device_.allocator(), xrDepthImage_, xrDepthAllocation_);
-    for (auto& v : xrHdrLayerViews_) { if (v) vkDestroyImageView(d, v, nullptr); v = VK_NULL_HANDLE; }
-    if (xrHdrArrayView_) vkDestroyImageView(d, xrHdrArrayView_, nullptr);
-    if (xrHdrImage_) vmaDestroyImage(device_.allocator(), xrHdrImage_, xrHdrAllocation_);
-    xrDepthArrayView_ = VK_NULL_HANDLE; xrDepthImage_ = VK_NULL_HANDLE; xrDepthAllocation_ = VK_NULL_HANDLE;
-    xrHdrArrayView_ = VK_NULL_HANDLE; xrHdrImage_ = VK_NULL_HANDLE; xrHdrAllocation_ = VK_NULL_HANDLE;
+    xrDepthTexture_.reset();
+    xrHdrTexture_.reset();
 }
 
 void Renderer::createXrPipelines() {
@@ -1707,12 +1534,12 @@ void Renderer::updateXrTonemapDescriptorSets() {
 
         rhi::BindGroupEntry hdrEntry;
         hdrEntry.binding = 0;
-        hdrEntry.view = xrHdrLayerViews_[i];
+        hdrEntry.view = xrHdrTexture_->layerView(i);
         hdrEntry.sampler = tonemapSampler_;
 
         rhi::BindGroupEntry depthEntry;
         depthEntry.binding = 1;
-        depthEntry.view = xrDepthLayerViews_[i];
+        depthEntry.view = xrDepthTexture_->layerView(i);
         depthEntry.sampler = tonemapDepthSampler_;
 
         rhi::BindGroupEntry bloomEntry;
@@ -1759,19 +1586,19 @@ void Renderer::recordXrScenePass(rhi::CommandEncoder& encoder, Scene& scene,
     if (passthrough) clearColor.a = 0.0f;
 
     // Both eye layers come back from sampling with stale contents (cleared below).
-    encoder.transition(xrHdrImage_, rhi::ResourceState::ColorAttachment,
+    encoder.transition(xrHdrTexture_->image(), rhi::ResourceState::ColorAttachment,
                        rhi::ResourceState::ColorAttachment, 0, xrViewCount_,
                        /*discardContents=*/true);
-    encoder.transition(xrDepthImage_, rhi::ResourceState::DepthWrite,
+    encoder.transition(xrDepthTexture_->image(), rhi::ResourceState::DepthWrite,
                        rhi::ResourceState::DepthWrite, 0, xrViewCount_,
                        /*discardContents=*/true);
 
     rhi::RenderPassDesc pass;
     pass.colorCount = 1;
-    pass.colors[0].view = xrHdrArrayView_;
+    pass.colors[0].view = xrHdrTexture_->view();
     pass.colors[0].loadOp = rhi::LoadOp::Clear;
     pass.colors[0].clearColor = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
-    pass.depth.view = xrDepthArrayView_;
+    pass.depth.view = xrDepthTexture_->view();
     pass.depth.loadOp = rhi::LoadOp::Clear;
     pass.width = xrExtent_.width;
     pass.height = xrExtent_.height;
@@ -1826,9 +1653,9 @@ void Renderer::recordXrTonemap(rhi::CommandEncoder& encoder, Scene& scene,
     VkCommandBuffer cmd = encoder.handle();  // GPU profiler zones (desktop tooling)
     GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
     // HDR + depth (all eye layers) -> shader read for sampling.
-    encoder.transition(xrHdrImage_, rhi::ResourceState::ColorAttachment,
+    encoder.transition(xrHdrTexture_->image(), rhi::ResourceState::ColorAttachment,
                        rhi::ResourceState::ShaderRead, 0, xrViewCount_);
-    encoder.transition(xrDepthImage_, rhi::ResourceState::DepthWrite,
+    encoder.transition(xrDepthTexture_->image(), rhi::ResourceState::DepthWrite,
                        rhi::ResourceState::ShaderRead, 0, xrViewCount_);
 
     const uint32_t n = std::min<uint32_t>(static_cast<uint32_t>(eyes.size()), xrViewCount_);

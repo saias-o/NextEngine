@@ -5,14 +5,12 @@
 #include "graphics/Mesh.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/GpuProfiler.hpp"
-#include "graphics/GpuSync.hpp"
 #include "graphics/ComputePipeline.hpp"
+#include "rhi/vulkan/Format.hpp"
 #include "scene/Scene.hpp"
 #include "scene/MeshNode.hpp"
 #include "core/Paths.hpp"
 #include "core/Log.hpp"
-
-#include "vk_mem_alloc.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -26,13 +24,13 @@
 namespace saida {
 
 namespace {
-constexpr VkFormat kIrradianceFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-constexpr VkFormat kVisibilityFormat = VK_FORMAT_R16G16_SFLOAT;
-constexpr VkFormat kVoxelFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+constexpr rhi::Format kIrradianceFormat = rhi::Format::RGBA16Float;
+constexpr rhi::Format kVisibilityFormat = rhi::Format::RG16Float;
+constexpr rhi::Format kVoxelFormat = rhi::Format::RGBA16Float;
 // Atlases are compute-written (P2), sampled in the lighting pass, and (P0)
-// cleared once — hence STORAGE | SAMPLED | TRANSFER_DST.
-constexpr VkImageUsageFlags kAtlasUsage =
-    VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+// cleared once — hence Storage | Sampled | CopyDst.
+constexpr rhi::TextureUsage kAtlasUsage =
+    rhi::TextureUsage::Storage | rhi::TextureUsage::Sampled | rhi::TextureUsage::CopyDst;
 
 // Mirror of VoxelUBO in voxelize.vert/frag (std140).
 struct VoxelUBOData {
@@ -82,11 +80,17 @@ GIVolume::GIVolume(VulkanDevice& device, const GIVolumeDesc& desc,
 
     glm::ivec2 irr = irradianceAtlasSize();
     glm::ivec2 vis = visibilityAtlasSize();
+    auto makeAtlas = [&](rhi::Format format, glm::ivec2 size) {
+        rhi::RenderTextureDesc desc;
+        desc.format = format;
+        desc.width = static_cast<uint32_t>(size.x);
+        desc.height = static_cast<uint32_t>(size.y);
+        desc.usage = kAtlasUsage;
+        return std::make_unique<rhi::RenderTexture>(device_, desc);
+    };
     for (int i = 0; i < 2; ++i) {
-        irradiance_[i] = std::make_unique<StorageImage>(
-            device_, irr.x, irr.y, kIrradianceFormat, kAtlasUsage);
-        visibility_[i] = std::make_unique<StorageImage>(
-            device_, vis.x, vis.y, kVisibilityFormat, kAtlasUsage);
+        irradiance_[i] = makeAtlas(kIrradianceFormat, irr);
+        visibility_[i] = makeAtlas(kVisibilityFormat, vis);
     }
 
     createSampler();
@@ -101,11 +105,8 @@ GIVolume::GIVolume(VulkanDevice& device, const GIVolumeDesc& desc,
 }
 
 GIVolume::~GIVolume() {
-    // Pipelines + bind groups destroy themselves (unique_ptr).
-    if (voxelView_) vkDestroyImageView(device_.device(), voxelView_, nullptr);
-    if (voxelImage_) vmaDestroyImage(device_.allocator(), voxelImage_, voxelAllocation_);
+    // Pipelines, bind groups, textures and buffers destroy themselves (RAII).
     if (sampler_) vkDestroySampler(device_.device(), sampler_, nullptr);
-    // StorageImages and the UBO/rays Buffers destroy themselves.
 }
 
 void GIVolume::createSampler() {
@@ -122,21 +123,15 @@ void GIVolume::createSampler() {
 }
 
 void GIVolume::fillConstant() {
-    // Irradiance stores mean incident radiance (diffuse = albedo * value). A
-    // neutral ambient until the first DDGI update writes real data.
-    VkClearColorValue irrClear{};
-    irrClear.float32[0] = 0.10f;
-    irrClear.float32[1] = 0.10f;
-    irrClear.float32[2] = 0.10f;
-    irrClear.float32[3] = 1.0f;
-
-    // Visibility: huge mean distance so the Chebyshev test always returns "fully
-    // visible" (no occlusion) until real data is baked/updated.
+    // Irradiance stores mean incident radiance (diffuse = albedo * value) — a
+    // neutral ambient until the first DDGI update writes real data. Visibility:
+    // huge mean distance so the Chebyshev test always returns "fully visible"
+    // (no occlusion) until real data is baked/updated.
     const std::array<float, 4> irr{0.10f, 0.10f, 0.10f, 1.0f};
     const std::array<float, 4> vis{1.0e4f, 1.0e8f, 0.0f, 0.0f};  // mean dist, dist^2
 
     device_.withSingleTimeEncoder([&](rhi::CommandEncoder& enc) {
-        auto clear = [&](StorageImage& img, const std::array<float, 4>& color) {
+        auto clear = [&](rhi::RenderTexture& img, const std::array<float, 4>& color) {
             enc.transition(img.image(), rhi::ResourceState::Undefined,
                            rhi::ResourceState::CopyDst);
             enc.clearColorTexture(img.image(), color);
@@ -156,31 +151,13 @@ void GIVolume::createVoxelResources(rhi::BindGroupLayout& materialSetLayout) {
     const uint32_t res = static_cast<uint32_t>(desc_.voxelResolution);
 
     // 3D albedo grid.
-    VkImageCreateInfo img{};
-    img.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    img.imageType = VK_IMAGE_TYPE_3D;
-    img.extent = {res, res, res};
-    img.mipLevels = 1;
-    img.arrayLayers = 1;
-    img.format = kVoxelFormat;
-    img.tiling = VK_IMAGE_TILING_OPTIMAL;
-    img.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    img.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    img.samples = VK_SAMPLE_COUNT_1_BIT;
-    img.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VmaAllocationCreateInfo alloc{};
-    alloc.usage = VMA_MEMORY_USAGE_AUTO;
-    if (vmaCreateImage(device_.allocator(), &img, &alloc, &voxelImage_, &voxelAllocation_, nullptr) != VK_SUCCESS)
-        throw std::runtime_error("GIVolume: failed to create voxel image");
-
-    VkImageViewCreateInfo view{};
-    view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    view.image = voxelImage_;
-    view.viewType = VK_IMAGE_VIEW_TYPE_3D;
-    view.format = kVoxelFormat;
-    view.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    if (vkCreateImageView(device_.device(), &view, nullptr, &voxelView_) != VK_SUCCESS)
-        throw std::runtime_error("GIVolume: failed to create voxel image view");
+    rhi::RenderTextureDesc voxelDesc;
+    voxelDesc.format = kVoxelFormat;
+    voxelDesc.width = res;
+    voxelDesc.height = res;
+    voxelDesc.depth = res;
+    voxelDesc.usage = kAtlasUsage;
+    voxelTexture_ = std::make_unique<rhi::RenderTexture>(device_, voxelDesc);
 
     voxelUbo_ = std::make_unique<Buffer>(device_, sizeof(VoxelUBOData),
         rhi::BufferUsage::Uniform, MemoryUsage::HostVisible);
@@ -194,7 +171,7 @@ void GIVolume::createVoxelResources(rhi::BindGroupLayout& materialSetLayout) {
 
     rhi::BindGroupEntry voxelImageEntry;
     voxelImageEntry.binding = 0;
-    voxelImageEntry.view = voxelView_;
+    voxelImageEntry.view = voxelTexture_->view();
     voxelImageEntry.textureState = rhi::ResourceState::StorageReadWrite;
     rhi::BindGroupEntry uboEntry;
     uboEntry.binding = 1;
@@ -241,9 +218,10 @@ void GIVolume::voxelize(rhi::CommandEncoder& encoder, Scene& scene, GpuProfiler*
     voxelUbo_->write(&ubo, sizeof(ubo));
 
     // Clear the grid, then move it to storage-write for imageStore.
-    encoder.transition(voxelImage_, rhi::ResourceState::Undefined, rhi::ResourceState::CopyDst);
-    encoder.clearColorTexture(voxelImage_, {0.0f, 0.0f, 0.0f, 0.0f});
-    encoder.transition(voxelImage_, rhi::ResourceState::CopyDst,
+    encoder.transition(voxelTexture_->image(), rhi::ResourceState::Undefined,
+                       rhi::ResourceState::CopyDst);
+    encoder.clearColorTexture(voxelTexture_->image(), {0.0f, 0.0f, 0.0f, 0.0f});
+    encoder.transition(voxelTexture_->image(), rhi::ResourceState::CopyDst,
                        rhi::ResourceState::StorageReadWrite);
 
     // Attachment-less rendering at voxel resolution.
@@ -270,7 +248,7 @@ void GIVolume::voxelize(rhi::CommandEncoder& encoder, Scene& scene, GpuProfiler*
     rp.end();
 
     // Storage writes -> sampled for the main/debug pass AND the DDGI trace.
-    encoder.transition(voxelImage_, rhi::ResourceState::StorageReadWrite,
+    encoder.transition(voxelTexture_->image(), rhi::ResourceState::StorageReadWrite,
                        rhi::ResourceState::ShaderRead);
 }
 

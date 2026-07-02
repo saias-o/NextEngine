@@ -350,6 +350,7 @@ add_library(saida_engine STATIC
     src/audio/AudioManager.cpp
     src/rhi/vulkan/BindGroup.cpp
     src/rhi/vulkan/CommandEncoder.cpp
+    src/rhi/vulkan/RenderTexture.cpp
     src/graphics/VulkanDevice.cpp
     src/graphics/Swapchain.cpp
     src/graphics/Buffer.cpp
@@ -364,7 +365,6 @@ add_library(saida_engine STATIC
     src/graphics/Primitives.cpp
     src/graphics/Pipeline.cpp
     src/graphics/ComputePipeline.cpp
-    src/graphics/StorageImage.cpp
     src/graphics/ShadowMap.cpp
     src/graphics/Texture.cpp
     src/graphics/ResourceManager.cpp

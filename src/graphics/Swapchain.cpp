@@ -2,6 +2,7 @@
 
 #include "core/Window.hpp"
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "vk_mem_alloc.h"
 
@@ -37,6 +38,7 @@ Swapchain::Swapchain(VulkanDevice& device, Window& window, bool vSync)
     createColorResources();
     createDepthResources();
     createRenderFinishedSemaphores();
+    createFrameSync();
 }
 
 bool Swapchain::setVSync(bool enabled) {
@@ -48,6 +50,10 @@ bool Swapchain::setVSync(bool enabled) {
 
 Swapchain::~Swapchain() {
     cleanup();
+    for (auto sem : imageAvailableSemaphores_)
+        vkDestroySemaphore(device_.device(), sem, nullptr);
+    for (auto fence : inFlightFences_)
+        vkDestroyFence(device_.device(), fence, nullptr);
 }
 
 void Swapchain::recreate() {
@@ -96,6 +102,90 @@ void Swapchain::createRenderFinishedSemaphores() {
     for (auto& sem : renderFinishedSemaphores_)
         if (vkCreateSemaphore(device_.device(), &ci, nullptr, &sem) != VK_SUCCESS)
             throw std::runtime_error("failed to create render-finished semaphore");
+}
+
+void Swapchain::createFrameSync() {
+    VkSemaphoreCreateInfo semCI{};
+    semCI.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    VkFenceCreateInfo fenceCI{};
+    fenceCI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceCI.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    imageAvailableSemaphores_.resize(kFramesInFlight);
+    inFlightFences_.resize(kFramesInFlight);
+    for (uint32_t i = 0; i < kFramesInFlight; i++) {
+        if (vkCreateSemaphore(device_.device(), &semCI, nullptr, &imageAvailableSemaphores_[i]) != VK_SUCCESS ||
+            vkCreateFence(device_.device(), &fenceCI, nullptr, &inFlightFences_[i]) != VK_SUCCESS)
+            throw std::runtime_error("failed to create frame sync objects");
+    }
+}
+
+void Swapchain::waitFrame(uint32_t frame) const {
+    SAIDA_PROFILE_SCOPE("Vulkan/WaitForFrameFence");
+    vkWaitForFences(device_.device(), 1, &inFlightFences_[frame], VK_TRUE, UINT64_MAX);
+}
+
+bool Swapchain::acquire(uint32_t frame, uint32_t& imageIndex) {
+    VkResult result;
+    {
+        SAIDA_PROFILE_SCOPE("Vulkan/AcquireNextImage");
+        result = vkAcquireNextImageKHR(device_.device(), swapchain_, UINT64_MAX,
+                                       imageAvailableSemaphores_[frame], VK_NULL_HANDLE,
+                                       &imageIndex);
+    }
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        recreate();
+        return false;
+    }
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+        throw std::runtime_error("failed to acquire swap chain image");
+
+    vkResetFences(device_.device(), 1, &inFlightFences_[frame]);
+    return true;
+}
+
+bool Swapchain::submitAndPresent(VkCommandBuffer cmd, uint32_t frame, uint32_t imageIndex) {
+    VkSemaphore waitSemaphores[] = {imageAvailableSemaphores_[frame]};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    VkSemaphore signalSemaphores[] = {renderFinishedSemaphores_[imageIndex]};
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores;
+
+    {
+        SAIDA_PROFILE_SCOPE("Vulkan/QueueSubmit");
+        if (vkQueueSubmit(device_.graphicsQueue(), 1, &submitInfo, inFlightFences_[frame]) != VK_SUCCESS)
+            throw std::runtime_error("failed to submit draw command buffer");
+    }
+
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &swapchain_;
+    presentInfo.pImageIndices = &imageIndex;
+
+    VkResult result;
+    {
+        SAIDA_PROFILE_SCOPE("Vulkan/QueuePresent");
+        result = vkQueuePresentKHR(device_.presentQueue(), &presentInfo);
+    }
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window_.wasResized()) {
+        window_.resetResizedFlag();
+        recreate();
+        return true;
+    }
+    if (result != VK_SUCCESS)
+        throw std::runtime_error("failed to present swap chain image");
+    return false;
 }
 
 VkSurfaceFormatKHR Swapchain::chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& available) const {

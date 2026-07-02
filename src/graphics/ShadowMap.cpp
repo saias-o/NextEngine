@@ -5,8 +5,6 @@
 #include "graphics/VulkanDevice.hpp"
 #include "rhi/vulkan/Format.hpp"
 
-#include "vk_mem_alloc.h"
-
 #include <glm/glm.hpp>
 
 #include <stdexcept>
@@ -20,74 +18,29 @@ ShadowMap::ShadowMap(VulkanDevice& device, uint32_t initialResolution) : device_
         VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
     format_ = vkFormat == VK_FORMAT_D32_SFLOAT ? rhi::Format::Depth32Float : rhi::Format::Depth16;
 
-    createImage();
-    createViews();
+    createTexture();
     createSampler();
     createPipeline();
 }
 
-ShadowMap::~ShadowMap() {
-    pipeline_.reset();
-    vkDestroySampler(device_.device(), sampler_, nullptr);
-    for (auto view : layerViews_)
-        if (view) vkDestroyImageView(device_.device(), view, nullptr);
-    vkDestroyImageView(device_.device(), arrayView_, nullptr);
-    vmaDestroyImage(device_.allocator(), image_, allocation_);
-}
+ShadowMap::~ShadowMap() = default;
 
-void ShadowMap::createImage() {
-    VkImageCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    info.imageType = VK_IMAGE_TYPE_2D;
-    info.extent = {resolution_, resolution_, 1};
-    info.mipLevels = 1;
-    info.arrayLayers = kMaxShadows;
-    info.format = rhi::vulkan::toVk(format_);
-    info.tiling = VK_IMAGE_TILING_OPTIMAL;
-    info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    info.samples = VK_SAMPLE_COUNT_1_BIT;
-
-    VmaAllocationCreateInfo alloc{};
-    alloc.usage = VMA_MEMORY_USAGE_AUTO;
-    if (vmaCreateImage(device_.allocator(), &info, &alloc, &image_, &allocation_, nullptr) != VK_SUCCESS)
-        throw std::runtime_error("failed to create shadow map image");
+void ShadowMap::createTexture() {
+    rhi::RenderTextureDesc desc;
+    desc.format = format_;
+    desc.width = resolution_;
+    desc.height = resolution_;
+    desc.layers = kMaxShadows;
+    desc.usage = rhi::TextureUsage::DepthAttachment | rhi::TextureUsage::Sampled;
+    texture_ = std::make_unique<rhi::RenderTexture>(device_, desc);
 
     // Transition every layer to the sampled (read-only) layout up front, so even
     // layers never rendered into hold the layout the descriptor expects. Rendered
     // layers cycle attachment -> read-only each frame via record().
-    rhi::CommandEncoder encoder(device_.beginSingleTimeCommands());
-    encoder.transition(image_, rhi::ResourceState::Undefined, rhi::ResourceState::DepthRead,
-                       0, kMaxShadows);
-    device_.endSingleTimeCommands(encoder.handle());
-}
-
-void ShadowMap::createViews() {
-    VkImageViewCreateInfo arrayInfo{};
-    arrayInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    arrayInfo.image = image_;
-    arrayInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-    arrayInfo.format = rhi::vulkan::toVk(format_);
-    arrayInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    arrayInfo.subresourceRange.levelCount = 1;
-    arrayInfo.subresourceRange.layerCount = kMaxShadows;
-    if (vkCreateImageView(device_.device(), &arrayInfo, nullptr, &arrayView_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create shadow array view");
-
-    for (uint32_t i = 0; i < kMaxShadows; ++i) {
-        VkImageViewCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        info.image = image_;
-        info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        info.format = rhi::vulkan::toVk(format_);
-        info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        info.subresourceRange.levelCount = 1;
-        info.subresourceRange.baseArrayLayer = i;
-        info.subresourceRange.layerCount = 1;
-        if (vkCreateImageView(device_.device(), &info, nullptr, &layerViews_[i]) != VK_SUCCESS)
-            throw std::runtime_error("failed to create shadow layer view");
-    }
+    device_.withSingleTimeEncoder([&](rhi::CommandEncoder& enc) {
+        enc.transition(texture_->image(), rhi::ResourceState::Undefined,
+                       rhi::ResourceState::DepthRead, 0, kMaxShadows);
+    });
 }
 
 void ShadowMap::createSampler() {
@@ -128,13 +81,14 @@ void ShadowMap::record(rhi::CommandEncoder& encoder, int count, const DrawGeomet
     for (int i = 0; i < count; ++i) {
         // This layer is sampled (init / previous frame); move it to a depth
         // attachment. Contents are cleared by the pass, so discard them.
-        encoder.transition(image_, rhi::ResourceState::DepthRead, rhi::ResourceState::DepthWrite,
+        encoder.transition(texture_->image(), rhi::ResourceState::DepthRead,
+                           rhi::ResourceState::DepthWrite,
                            static_cast<uint32_t>(i), 1, /*discardContents=*/true);
 
         rhi::RenderPassDesc pass;
         pass.width = resolution_;
         pass.height = resolution_;
-        pass.depth.view = layerViews_[i];
+        pass.depth.view = texture_->layerView(i);
         pass.depth.loadOp = rhi::LoadOp::Clear;
         pass.depth.clearDepth = 1.0f;
 
@@ -144,7 +98,8 @@ void ShadowMap::record(rhi::CommandEncoder& encoder, int count, const DrawGeomet
         rp.end();
 
         // Back to a sampled layout for the main pass / bake.
-        encoder.transition(image_, rhi::ResourceState::DepthWrite, rhi::ResourceState::DepthRead,
+        encoder.transition(texture_->image(), rhi::ResourceState::DepthWrite,
+                           rhi::ResourceState::DepthRead,
                            static_cast<uint32_t>(i), 1);
     }
 }
@@ -157,26 +112,9 @@ bool ShadowMap::resize(uint32_t newResolution) {
     // Wait for device to finish before destroying resources
     vkDeviceWaitIdle(device_.device());
 
-    // Destroy old views and image
-    for (auto view : layerViews_) {
-        if (view) vkDestroyImageView(device_.device(), view, nullptr);
-    }
-    layerViews_.fill(VK_NULL_HANDLE);
-
-    if (arrayView_) {
-        vkDestroyImageView(device_.device(), arrayView_, nullptr);
-        arrayView_ = VK_NULL_HANDLE;
-    }
-
-    if (image_) {
-        vmaDestroyImage(device_.allocator(), image_, allocation_);
-        image_ = VK_NULL_HANDLE;
-        allocation_ = VK_NULL_HANDLE;
-    }
-
-    // Recreate image and views (sampler and pipeline remain valid as they don't depend on resolution)
-    createImage();
-    createViews();
+    // Recreate the texture (sampler and pipeline don't depend on resolution).
+    texture_.reset();
+    createTexture();
 
     return true;
 }
