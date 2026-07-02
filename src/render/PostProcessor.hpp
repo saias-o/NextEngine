@@ -27,7 +27,7 @@ public:
     PostProcessor& operator=(const PostProcessor&) = delete;
 
     void setHdrInput(VkImageView hdrInputView);
-    void recordBloom(VkCommandBuffer cmd, const SceneSettings& settings,
+    void recordBloom(rhi::CommandEncoder& encoder, const SceneSettings& settings,
                      const glm::vec4& sourceRect, GpuProfiler* profiler);
 
     VkImageView bloomView() const;
@@ -39,7 +39,8 @@ private:
         VmaAllocation allocation = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;
         VkExtent2D extent{};
-        VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+        // Explicitly tracked by the owner (PLAN_RHI 7.3: no automatic tracking).
+        rhi::ResourceState state = rhi::ResourceState::Undefined;
     };
 
     struct BloomPush {
@@ -53,10 +54,9 @@ private:
     void createDescriptorResources();
     void updateDescriptorSets();
     void createPipelines();
-    void transitionTarget(VkCommandBuffer cmd, Target& target, VkImageLayout newLayout,
-                          VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
-                          VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess);
-    void beginFullscreenPass(VkCommandBuffer cmd, Target& target, bool clear);
+    void transitionTarget(rhi::CommandEncoder& encoder, Target& target, rhi::ResourceState to);
+    rhi::RenderPassEncoder beginFullscreenPass(rhi::CommandEncoder& encoder, Target& target,
+                                               bool clear);
 
     VulkanDevice& device_;
     VkExtent2D extent_{};

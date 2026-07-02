@@ -201,108 +201,69 @@ void PostProcessor::createPipelines() {
     bloomUpsamplePipeline_ = std::make_unique<Pipeline>(device_, desc);
 }
 
-void PostProcessor::transitionTarget(VkCommandBuffer cmd, Target& target, VkImageLayout newLayout,
-                                     VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
-                                     VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess) {
-    if (target.layout == newLayout) return;
-    if (target.layout == VK_IMAGE_LAYOUT_UNDEFINED) {
-        srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-        srcAccess = 0;
-    }
-    VkImageMemoryBarrier2 barrier = imageBarrier2(target.image, target.layout, newLayout,
-        srcStage, srcAccess, dstStage, dstAccess);
-    cmdImageBarrier(cmd, barrier);
-    target.layout = newLayout;
+void PostProcessor::transitionTarget(rhi::CommandEncoder& encoder, Target& target,
+                                     rhi::ResourceState to) {
+    if (target.state == to) return;
+    encoder.transition(target.image, target.state, to);
+    target.state = to;
 }
 
-void PostProcessor::beginFullscreenPass(VkCommandBuffer cmd, Target& target, bool clear) {
-    VkRenderingAttachmentInfo color{};
-    color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    color.imageView = target.view;
-    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-    color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color.clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-
-    VkRenderingInfo rendering{};
-    rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    rendering.renderArea.offset = {0, 0};
-    rendering.renderArea.extent = target.extent;
-    rendering.layerCount = 1;
-    rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachments = &color;
-    vkCmdBeginRendering(cmd, &rendering);
-
-    VkViewport viewport{};
-    viewport.width = static_cast<float>(target.extent.width);
-    viewport.height = static_cast<float>(target.extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-    VkRect2D scissor{};
-    scissor.extent = target.extent;
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
+rhi::RenderPassEncoder PostProcessor::beginFullscreenPass(rhi::CommandEncoder& encoder,
+                                                          Target& target, bool clear) {
+    rhi::RenderPassDesc pass;
+    pass.colorCount = 1;
+    pass.colors[0].view = target.view;
+    pass.colors[0].loadOp = clear ? rhi::LoadOp::Clear : rhi::LoadOp::Load;
+    pass.width = target.extent.width;
+    pass.height = target.extent.height;
+    return encoder.beginRenderPass(pass);
 }
 
-void PostProcessor::recordBloom(VkCommandBuffer cmd, const SceneSettings& settings,
+void PostProcessor::recordBloom(rhi::CommandEncoder& encoder, const SceneSettings& settings,
                                 const glm::vec4& sourceRect, GpuProfiler* profiler) {
     if (bloom_.empty()) return;
 
     const bool enabled = settings.bloomEnabled && settings.bloomIntensity > 0.0f && settings.bloomRadius > 0.0f;
 
     {
-        SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, "Post/BloomDownsample");
-        bloomDownsamplePipeline_->bind(cmd);
+        SAIDA_GPU_PROFILE_SCOPE(profiler, encoder.handle(), "Post/BloomDownsample");
         for (size_t i = 0; i < bloom_.size(); ++i) {
             Target& target = bloom_[i];
-            transitionTarget(cmd, target, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
-                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-            beginFullscreenPass(cmd, target, true);
-            VkDescriptorSet downsampleSet = downsampleGroups_[i]->handle();
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                bloomDownsamplePipeline_->layout(), 0, 1, &downsampleSet, 0, nullptr);
+            transitionTarget(encoder, target, rhi::ResourceState::ColorAttachment);
+            rhi::RenderPassEncoder rp = beginFullscreenPass(encoder, target, true);
+            rp.setPipeline(*bloomDownsamplePipeline_);
+            rp.setBindGroup(0, *downsampleGroups_[i]);
             BloomPush push{};
             push.sourceRect = (i == 0) ? sourceRect : glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
             push.params = glm::vec4(std::max(settings.bloomThreshold, 0.0f),
                                     (enabled && i == 0) ? 1.0f : 0.0f,
                                     std::max(settings.bloomRadius, 0.0f),
                                     enabled ? 1.0f : 0.0f);
-            vkCmdPushConstants(cmd, bloomDownsamplePipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(push), &push);
-            vkCmdDraw(cmd, 3, 1, 0, 0);
-            vkCmdEndRendering(cmd);
-            transitionTarget(cmd, target, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+            rp.setPushConstants(&push, sizeof(push));
+            rp.draw(3);
+            rp.end();
+            transitionTarget(encoder, target, rhi::ResourceState::ShaderRead);
         }
     }
 
     if (!enabled || bloom_.size() < 2) return;
 
     {
-        SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, "Post/BloomUpsample");
-        bloomUpsamplePipeline_->bind(cmd);
+        SAIDA_GPU_PROFILE_SCOPE(profiler, encoder.handle(), "Post/BloomUpsample");
         for (size_t reverse = bloom_.size() - 1; reverse > 0; --reverse) {
             size_t targetIndex = reverse - 1;
             Target& target = bloom_[targetIndex];
-            transitionTarget(cmd, target, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
-                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-            beginFullscreenPass(cmd, target, false);
-            VkDescriptorSet upsampleSet = upsampleGroups_[targetIndex]->handle();
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                bloomUpsamplePipeline_->layout(), 0, 1, &upsampleSet, 0, nullptr);
+            transitionTarget(encoder, target, rhi::ResourceState::ColorAttachment);
+            rhi::RenderPassEncoder rp = beginFullscreenPass(encoder, target, false);
+            rp.setPipeline(*bloomUpsamplePipeline_);
+            rp.setBindGroup(0, *upsampleGroups_[targetIndex]);
             BloomPush push{};
             push.sourceRect = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
             push.params = glm::vec4(0.0f, 0.0f, std::max(settings.bloomRadius, 0.0f), 0.0f);
-            vkCmdPushConstants(cmd, bloomUpsamplePipeline_->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(push), &push);
-            vkCmdDraw(cmd, 3, 1, 0, 0);
-            vkCmdEndRendering(cmd);
-            transitionTarget(cmd, target, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+            rp.setPushConstants(&push, sizeof(push));
+            rp.draw(3);
+            rp.end();
+            transitionTarget(encoder, target, rhi::ResourceState::ShaderRead);
         }
     }
 }

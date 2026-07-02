@@ -1144,7 +1144,8 @@ void Renderer::recordTonemapPass(VkCommandBuffer cmd, uint32_t imageIndex,
         static_cast<float>(renderRect.extent.height) / static_cast<float>(std::max(1u, fullExtent.height)));
 
     if (postProcessor_) {
-        postProcessor_->recordBloom(cmd, scene.settings(), sourceRect, gpuProfiler);
+        rhi::CommandEncoder bloomEncoder(cmd);
+        postProcessor_->recordBloom(bloomEncoder, scene.settings(), sourceRect, gpuProfiler);
     }
 
     VkRenderingAttachmentInfo colorAttach{};
@@ -2119,7 +2120,8 @@ void Renderer::recordXrTonemap(VkCommandBuffer cmd, Scene& scene,
     SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/Tonemap+EditorUI");
     for (uint32_t i = 0; i < n; ++i) {
         if (xrPostProcessors_[i]) {
-            xrPostProcessors_[i]->recordBloom(cmd, scene.settings(),
+            rhi::CommandEncoder bloomEncoder(cmd);
+            xrPostProcessors_[i]->recordBloom(bloomEncoder, scene.settings(),
                 glm::vec4(0.0f, 0.0f, 1.0f, 1.0f), gpuProfiler);
         }
     }
