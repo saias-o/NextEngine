@@ -2,6 +2,51 @@
 
 #include "core/Profiler.hpp"
 
+#ifdef SAIDA_RHI_WEBGPU
+
+#include "rhi/Rhi.hpp"
+
+#include <cstdint>
+
+namespace saida {
+
+class GpuProfiler {
+public:
+    GpuProfiler(rhi::Device&, uint32_t, uint32_t = 128) {}
+    ~GpuProfiler() = default;
+    GpuProfiler(const GpuProfiler&) = delete;
+    GpuProfiler& operator=(const GpuProfiler&) = delete;
+
+    void beginFrame(uint32_t) {}
+
+    template <typename CommandHandle>
+    void resetQueries(CommandHandle) {}
+
+    template <typename CommandHandle>
+    uint32_t beginZone(CommandHandle, const char*) { return UINT32_MAX; }
+
+    template <typename CommandHandle>
+    void endZone(CommandHandle, uint32_t) {}
+
+    void publishLatest() {}
+};
+
+class GpuProfileScope {
+public:
+    template <typename CommandHandle>
+    GpuProfileScope(GpuProfiler*, CommandHandle, const char*) {}
+    ~GpuProfileScope() = default;
+    GpuProfileScope(const GpuProfileScope&) = delete;
+    GpuProfileScope& operator=(const GpuProfileScope&) = delete;
+};
+
+} // namespace saida
+
+#define SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, name) \
+    ::saida::GpuProfileScope SAIDA_PROFILE_CONCAT(_neGpuProfileScope_, __LINE__)((profiler), (cmd), (name))
+
+#else
+
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
@@ -67,3 +112,5 @@ private:
 
 #define SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, name) \
     ::saida::GpuProfileScope SAIDA_PROFILE_CONCAT(_neGpuProfileScope_, __LINE__)((profiler), (cmd), (name))
+
+#endif // SAIDA_RHI_WEBGPU

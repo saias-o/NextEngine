@@ -7,6 +7,12 @@
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
+#ifdef WEB
+// WebGPU core interdit le storage read-write hors r32* : la copie du gutter est
+// fusionnée dans ddgi_blend.comp sous -DWEB. Ce shader n'est pas utilisé sur web
+// (GIVolume n'y crée pas la pipeline) — main vide pour rester transpilable.
+void main() {}
+#else
 layout(set = 1, binding = 1, rgba16f) uniform image2D writeIrr;
 layout(set = 1, binding = 2, rg16f)   uniform image2D writeVis;
 
@@ -47,3 +53,4 @@ void main() {
     if (pc.mode == 0) imageStore(writeIrr, px, imageLoad(writeIrr, copy));
     else              imageStore(writeVis, px, imageLoad(writeVis, copy));
 }
+#endif

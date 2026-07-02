@@ -1,5 +1,16 @@
 #pragma once
 
+#ifdef SAIDA_RHI_WEBGPU
+
+#include "rhi/webgpu/Pipeline.hpp"
+
+namespace saida {
+using BlendMode = rhi::BlendMode;
+using Pipeline = rhi::webgpu::Pipeline;
+} // namespace saida
+
+#else
+
 #include "rhi/Format.hpp"
 #include "rhi/PipelineState.hpp"
 #include "rhi/ShaderStages.hpp"
@@ -93,3 +104,5 @@ private:
 };
 
 } // namespace saida
+
+#endif // SAIDA_RHI_WEBGPU

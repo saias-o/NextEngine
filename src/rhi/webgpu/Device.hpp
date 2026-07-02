@@ -65,6 +65,11 @@ public:
     WGPUBindGroupLayout emptyBindGroupLayout();
     WGPUBindGroup emptyBindGroup();
 
+    // Cached all-zero buffer of at least `size` bytes (WebGPU zero-initialises
+    // buffers; this one is never written). Source for texture zero-clears —
+    // WebGPU has no clear-texture command outside a render pass.
+    WGPUBuffer zeroBuffer(uint64_t size);
+
     // Backend-internal (used by the requestAsync callbacks); apps go through
     // requestAsync, never construct a Device directly.
     Device() = default;
@@ -84,6 +89,8 @@ private:
     std::vector<uint8_t> pushStaging_;
     uint32_t pushCursor_ = 0;
     uint32_t pushFlushed_ = 0;
+    WGPUBuffer zeroBuffer_ = nullptr;
+    uint64_t zeroBufferSize_ = 0;
 };
 
 } // namespace saida::rhi::webgpu

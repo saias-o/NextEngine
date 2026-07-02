@@ -1,19 +1,30 @@
 #pragma once
 
+#ifndef SAIDA_RHI_WEBGPU
 #include "graphics/VmaFwd.hpp"
 #include <vulkan/vulkan.h>
+#else
+#include "graphics/Buffer.hpp"
+#endif
+
 #include <memory>
+#include <cstdint>
 #include <vector>
+
+#include "rhi/Rhi.hpp"
 
 namespace saida {
 
-class VulkanDevice;
-class Buffer;
 struct Vertex;
 
 struct GeometryAllocation {
+#ifndef SAIDA_RHI_WEBGPU
     VmaVirtualAllocation vertexVirtualAlloc = VK_NULL_HANDLE;
     VmaVirtualAllocation indexVirtualAlloc = VK_NULL_HANDLE;
+#else
+    uint64_t vertexVirtualAlloc = 0;
+    uint64_t indexVirtualAlloc = 0;
+#endif
     uint32_t firstIndex = 0;
     uint32_t indexCount = 0;
     int32_t vertexOffset = 0;
@@ -23,13 +34,14 @@ struct GeometryAllocation {
 // for individual meshes using VMA's Virtual Blocks.
 class GeometryRegistry {
 public:
-    static constexpr VkDeviceSize kDefaultMaxVertices = 1 * 1024 * 1024;
-    static constexpr VkDeviceSize kDefaultMaxIndices = 3 * 1024 * 1024;
+    using DeviceSize = uint64_t;
+    static constexpr DeviceSize kDefaultMaxVertices = 1 * 1024 * 1024;
+    static constexpr DeviceSize kDefaultMaxIndices = 3 * 1024 * 1024;
 
     // Default to ~64MB vertices (1M vertices) and ~12MB indices (3M indices).
-    GeometryRegistry(VulkanDevice& device,
-                     VkDeviceSize maxVertices = kDefaultMaxVertices,
-                     VkDeviceSize maxIndices = kDefaultMaxIndices);
+    GeometryRegistry(rhi::Device& device,
+                     DeviceSize maxVertices = kDefaultMaxVertices,
+                     DeviceSize maxIndices = kDefaultMaxIndices);
     ~GeometryRegistry();
 
     GeometryRegistry(const GeometryRegistry&) = delete;
@@ -45,11 +57,16 @@ public:
     Buffer* indexBuffer() const { return indexBuffer_.get(); }
 
 private:
-    VulkanDevice& device_;
+    rhi::Device& device_;
     std::unique_ptr<Buffer> vertexBuffer_;
     std::unique_ptr<Buffer> indexBuffer_;
+#ifndef SAIDA_RHI_WEBGPU
     VmaVirtualBlock vertexBlock_ = VK_NULL_HANDLE;
     VmaVirtualBlock indexBlock_ = VK_NULL_HANDLE;
+#else
+    uint64_t vertexCursorBytes_ = 0;
+    uint64_t indexCursorBytes_ = 0;
+#endif
 };
 
 } // namespace saida

@@ -2,18 +2,20 @@
 
 #include "core/Log.hpp"
 #include "graphics/Pipeline.hpp"
-#include "graphics/Swapchain.hpp"
-#include "graphics/VulkanDevice.hpp"
 #include "graphics/Buffer.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/Mesh.hpp"
 #include "graphics/Primitives.hpp"
 #include "graphics/Texture.hpp"
 #include "project/AssetRegistry.hpp"
-#include "graphics/VulkanDevice.hpp"
 #include "scene/Node.hpp"
 #include "scene/animation/Rig.hpp"
 #include "scene/animation/AnimationClip.hpp"
+
+#ifndef SAIDA_RHI_WEBGPU
+#include "graphics/Swapchain.hpp"
+#include "graphics/VulkanDevice.hpp"
+#endif
 
 #include <stb_image.h>
 
@@ -39,9 +41,23 @@ struct MaterialData {
 };
 }
 
-ResourceManager::ResourceManager(VulkanDevice& device, AssetRegistry* registry)
+ResourceManager::ResourceManager(rhi::Device& device, AssetRegistry* registry)
     : device_(device), registry_(registry) {
     geometryRegistry_ = std::make_unique<GeometryRegistry>(device_);
+#ifdef SAIDA_RHI_WEBGPU
+    materialSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::webgpu::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::SampledTexture, rhi::ShaderStages::Fragment}, // albedo texture
+            {1, rhi::BindingType::SampledTexture, rhi::ShaderStages::Fragment}, // normal texture
+            {2, rhi::BindingType::SampledTexture, rhi::ShaderStages::Fragment}, // metallic/roughness texture
+            {3, rhi::BindingType::UniformBuffer, rhi::ShaderStages::Fragment},  // params
+            {4, rhi::BindingType::SampledTexture, rhi::ShaderStages::Fragment}, // emissive texture
+            {5, rhi::BindingType::Sampler, rhi::ShaderStages::Fragment},        // albedo sampler
+            {6, rhi::BindingType::Sampler, rhi::ShaderStages::Fragment},        // normal sampler
+            {7, rhi::BindingType::Sampler, rhi::ShaderStages::Fragment},        // metallic/roughness sampler
+            {8, rhi::BindingType::Sampler, rhi::ShaderStages::Fragment},        // emissive sampler
+        });
+#else
     materialSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
         std::vector<rhi::BindGroupLayoutEntry>{
             {0, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // albedo
@@ -51,6 +67,7 @@ ResourceManager::ResourceManager(VulkanDevice& device, AssetRegistry* registry)
             {4, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // emissive
         });
     createGlobalBindlessResources();
+#endif
     ensureDefaultTextures();
 }
 
@@ -63,11 +80,16 @@ ResourceManager::~ResourceManager() {
     rigs_.clear();
     animations_.clear();
     materialSetLayout_.reset();
+#ifndef SAIDA_RHI_WEBGPU
     if (globalMaterialSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), globalMaterialSetLayout_, nullptr);
     if (globalMaterialPool_) vkDestroyDescriptorPool(device_.device(), globalMaterialPool_, nullptr);
+#endif
 }
 
 void ResourceManager::createGlobalBindlessResources() {
+#ifdef SAIDA_RHI_WEBGPU
+    return;
+#else
     if (!device_.capabilities().descriptorIndexing) {
         Log::warn("Descriptor Indexing not supported. GPU-driven rendering is disabled.");
         return;
@@ -154,9 +176,14 @@ void ResourceManager::createGlobalBindlessResources() {
     write.pBufferInfo = &bufferInfo;
 
     vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
+#endif
 }
 
 uint32_t ResourceManager::getBindlessTextureIndex(Texture* texture) {
+#ifdef SAIDA_RHI_WEBGPU
+    (void)texture;
+    return 0;
+#else
     if (!globalMaterialSet_) return 0;
     if (!texture) return 0;
     if (nextBindlessTextureIndex_ >= kMaxBindlessTextures)
@@ -181,21 +208,39 @@ uint32_t ResourceManager::getBindlessTextureIndex(Texture* texture) {
     vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
     
     return index;
+#endif
 }
 
 uint32_t ResourceManager::ensureBindlessTextureIndex(Texture* texture) {
+#ifdef SAIDA_RHI_WEBGPU
+    (void)texture;
+    return 0;
+#else
     if (!texture) return 0;
     if (!globalMaterialSet_) return 0;
     if (texture->bindlessIndex() == ~0u) {
         texture->setBindlessIndex(getBindlessTextureIndex(texture));
     }
     return texture->bindlessIndex();
+#endif
 }
 
 
 uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const glm::vec4& emissive,
                                                float metallic, float roughness, float ao,
                                                uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx, uint32_t emissiveIdx) {
+#ifdef SAIDA_RHI_WEBGPU
+    (void)baseColor;
+    (void)emissive;
+    (void)metallic;
+    (void)roughness;
+    (void)ao;
+    (void)albedoIdx;
+    (void)normalIdx;
+    (void)mrIdx;
+    (void)emissiveIdx;
+    return 0;
+#else
     if (!globalMaterialBuffer_) return 0;
     
     uint32_t index = nextMaterialIndex_++;
@@ -222,6 +267,7 @@ uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const
     }
 
     return index;
+#endif
 }
 
 Mesh* ResourceManager::createMesh(AssetID id, const std::vector<Vertex>& vertices,
@@ -316,6 +362,21 @@ AssetID ResourceManager::registerMemoryTexture(const uint8_t* data, size_t size,
     
     static std::atomic<AssetID> s_dynamicId{0x8000000000000000ULL};
     AssetID id = s_dynamicId++;
+    textures_.emplace(id, std::move(tex));
+    return id;
+}
+
+AssetID ResourceManager::registerGeneratedTexture(const uint8_t* pixels, uint32_t width,
+                                                  uint32_t height, rhi::Format format,
+                                                  bool generateMipmaps) {
+    if (!pixels || width == 0 || height == 0)
+        return kAssetInvalid;
+
+    auto tex = std::make_unique<Texture>(device_, pixels, width, height, format, generateMipmaps);
+    ensureBindlessTextureIndex(tex.get());
+
+    static std::atomic<AssetID> s_generatedId{0x8100000000000000ULL};
+    AssetID id = s_generatedId++;
     textures_.emplace(id, std::move(tex));
     return id;
 }

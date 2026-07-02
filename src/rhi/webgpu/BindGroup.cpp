@@ -59,7 +59,7 @@ BindGroupLayout::BindGroupLayout(Device& device, std::vector<BindGroupLayoutEntr
                                                        : WGPUSamplerBindingType_Filtering;
                 break;
             case rhi::BindingType::StorageImage:
-                w.storageTexture.access = WGPUStorageTextureAccess_ReadWrite;
+                w.storageTexture.access = e.storageAccess;
                 w.storageTexture.format = toWgpu(e.storageFormat);
                 w.storageTexture.viewDimension = toWgpu(e.dim);
                 break;

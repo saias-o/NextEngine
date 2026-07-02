@@ -3,8 +3,11 @@
 #include "core/Paths.hpp"
 #include "graphics/Buffer.hpp"
 #include "graphics/ComputePipeline.hpp"
+
+#ifndef SAIDA_RHI_WEBGPU
 #include "graphics/VulkanDevice.hpp"
 #include "rhi/vulkan/CommandEncoder.hpp"
+#endif
 
 #include <array>
 #include <algorithm>
@@ -12,7 +15,7 @@
 
 namespace saida {
 
-ParticleRuntime::ParticleRuntime(VulkanDevice& device, const Desc& desc)
+ParticleRuntime::ParticleRuntime(rhi::Device& device, const Desc& desc)
     : device_(device), desc_(desc) {
     desc_.framesInFlight = std::max(1u, desc_.framesInFlight);
     desc_.maxParticles = std::max(1u, desc_.maxParticles);
@@ -100,16 +103,28 @@ uint32_t ParticleRuntime::recordCompute(rhi::CommandEncoder& encoder, uint32_t f
 }
 
 void ParticleRuntime::createRenderResources() {
+#ifdef SAIDA_RHI_WEBGPU
+    renderSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::webgpu::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Vertex},
+            {1, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Vertex},
+        });
+#else
     renderSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
         std::vector<rhi::BindGroupLayoutEntry>{
             {0, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Vertex},
             {1, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Vertex},
         });
+#endif
     renderSets_.resize(2);
 }
 
 void ParticleRuntime::createComputeResources() {
+#ifdef SAIDA_RHI_WEBGPU
+    std::vector<rhi::webgpu::BindGroupLayoutEntry> computeEntries;
+#else
     std::vector<rhi::BindGroupLayoutEntry> computeEntries;
+#endif
     for (uint32_t i = 0; i < 7; ++i)
         computeEntries.push_back({i, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute});
     computeSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_, computeEntries);
@@ -117,10 +132,10 @@ void ParticleRuntime::createComputeResources() {
     emitterBuffers_.resize(desc_.framesInFlight);
     computeSets_.resize(desc_.framesInFlight * 2);
 
-    const VkDeviceSize particleSize = sizeof(SimParticle) * desc_.maxParticles;
-    const VkDeviceSize indexSize = sizeof(uint32_t) * desc_.maxParticles;
-    const VkDeviceSize counterSize = sizeof(GpuCounters);
-    const VkDeviceSize emitterSize = sizeof(GpuEmitter) * desc_.maxEmitters;
+    const uint64_t particleSize = sizeof(SimParticle) * desc_.maxParticles;
+    const uint64_t indexSize = sizeof(uint32_t) * desc_.maxParticles;
+    const uint64_t counterSize = sizeof(GpuCounters);
+    const uint64_t emitterSize = sizeof(GpuEmitter) * desc_.maxEmitters;
     simParticleBuffer_ = std::make_unique<Buffer>(device_, particleSize,
         rhi::BufferUsage::Storage, MemoryUsage::GpuOnly);
     for (auto& alive : aliveIndexBuffers_) {
@@ -131,7 +146,7 @@ void ParticleRuntime::createComputeResources() {
         rhi::BufferUsage::Storage, MemoryUsage::GpuOnly);
     counterBuffer_ = std::make_unique<Buffer>(device_, counterSize,
         rhi::BufferUsage::Storage, MemoryUsage::GpuOnly);
-    indirectBuffer_ = std::make_unique<Buffer>(device_, sizeof(VkDrawIndirectCommand),
+    indirectBuffer_ = std::make_unique<Buffer>(device_, kDrawIndirectCommandSize,
         rhi::BufferUsage::Storage | rhi::BufferUsage::Indirect,
         MemoryUsage::GpuOnly);
 
@@ -150,13 +165,13 @@ void ParticleRuntime::createComputeResources() {
             entries[3] = {3, deadIndexBuffer_.get(), 0, indexSize};
             entries[4] = {4, counterBuffer_.get(), 0, counterSize};
             entries[5] = {5, emitterBuffers_[i].get(), 0, emitterSize};
-            entries[6] = {6, indirectBuffer_.get(), 0, sizeof(VkDrawIndirectCommand)};
+            entries[6] = {6, indirectBuffer_.get(), 0, kDrawIndirectCommandSize};
             computeSets_[setIndex] = std::make_unique<rhi::BindGroup>(*computeSetLayout_, entries);
         }
     }
 
-    const VkDeviceSize particleSizeRender = sizeof(SimParticle) * desc_.maxParticles;
-    const VkDeviceSize indexSizeRender = sizeof(uint32_t) * desc_.maxParticles;
+    const uint64_t particleSizeRender = sizeof(SimParticle) * desc_.maxParticles;
+    const uint64_t indexSizeRender = sizeof(uint32_t) * desc_.maxParticles;
     for (uint32_t parity = 0; parity < 2; ++parity) {
         std::vector<rhi::BindGroupEntry> entries(2);
         entries[0] = {0, simParticleBuffer_.get(), 0, particleSizeRender};
@@ -164,6 +179,19 @@ void ParticleRuntime::createComputeResources() {
         renderSets_[parity] = std::make_unique<rhi::BindGroup>(*renderSetLayout_, entries);
     }
 
+#ifdef SAIDA_RHI_WEBGPU
+    std::vector<const rhi::BindGroupLayout*> setLayouts = {computeSetLayout_.get()};
+    initPipeline_ = std::make_unique<ComputePipeline>(device_, "/shaders/particle_init.comp.wgsl",
+        setLayouts, sizeof(ComputePush));
+    preparePipeline_ = std::make_unique<ComputePipeline>(device_, "/shaders/particle_prepare.comp.wgsl",
+        setLayouts, sizeof(ComputePush));
+    emitPipeline_ = std::make_unique<ComputePipeline>(device_, "/shaders/particle_emit.comp.wgsl",
+        setLayouts, sizeof(ComputePush));
+    simPipeline_ = std::make_unique<ComputePipeline>(device_, "/shaders/particle_sim.comp.wgsl",
+        setLayouts, sizeof(ComputePush));
+    finalizePipeline_ = std::make_unique<ComputePipeline>(device_, "/shaders/particle_finalize.comp.wgsl",
+        setLayouts, sizeof(ComputePush));
+#else
     std::vector<rhi::vulkan::BindGroupLayoutRef> setLayouts = {*computeSetLayout_};
     initPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("particle_init.comp.spv"),
         setLayouts, sizeof(ComputePush));
@@ -175,6 +203,7 @@ void ParticleRuntime::createComputeResources() {
         setLayouts, sizeof(ComputePush));
     finalizePipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("particle_finalize.comp.spv"),
         setLayouts, sizeof(ComputePush));
+#endif
 }
 
 const rhi::BindGroup& ParticleRuntime::computeSet(uint32_t frame, uint32_t readParity) const {

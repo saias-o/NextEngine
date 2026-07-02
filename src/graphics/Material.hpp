@@ -1,10 +1,14 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
 #include "project/AssetRegistry.hpp"
 #include "rhi/Rhi.hpp"
+
+#ifdef SAIDA_RHI_WEBGPU
+#include "graphics/Buffer.hpp"
+#include "graphics/Texture.hpp"
+#endif
 
 #include <memory>
 #include <string>
@@ -12,9 +16,10 @@
 
 namespace saida {
 
-class VulkanDevice;
+#ifndef SAIDA_RHI_WEBGPU
 class Texture;
 class Buffer;
+#endif
 
 class ResourceManager;
 
@@ -70,18 +75,18 @@ namespace saida {
 
 class Material {
 public:
-    Material(VulkanDevice& device, ResourceManager& manager, const MaterialDesc& desc);
+    Material(rhi::Device& device, ResourceManager& manager, const MaterialDesc& desc);
     ~Material();
     Material(const Material&) = delete;
     Material& operator=(const Material&) = delete;
 
-    VkDescriptorSet descriptorSet() const { return descriptorSet_->handle(); }
+    const rhi::BindGroup& descriptorSet() const { return *descriptorSet_; }
     uint32_t bindlessIndex() const { return bindlessIndex_; }
     const MaterialDesc& desc() const { return desc_; }
     Texture* texture() const { return albedo_; }
 
 private:
-    VulkanDevice& device_;
+    rhi::Device& device_;
     MaterialDesc desc_;
     Texture* albedo_;
     Texture* normalMap_;

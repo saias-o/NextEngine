@@ -3,6 +3,8 @@
 #include "rhi/webgpu/Device.hpp"
 #include "rhi/webgpu/Format.hpp"
 
+#include <stb_image.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -34,6 +36,30 @@ std::vector<uint8_t> downsample(const std::vector<uint8_t>& src, uint32_t w, uin
 }
 
 } // namespace
+
+Texture::Texture(Device& device, const std::string& path, bool srgb)
+    : device_(device) {
+    int texWidth = 0, texHeight = 0, channels = 0;
+    stbi_uc* pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &channels, STBI_rgb_alpha);
+    if (!pixels)
+        throw std::runtime_error("webgpu: failed to load texture '" + path + "'");
+
+    Texture loaded(device, pixels, static_cast<uint32_t>(texWidth),
+                   static_cast<uint32_t>(texHeight),
+                   srgb ? rhi::Format::RGBA8Srgb : rhi::Format::RGBA8Unorm);
+    stbi_image_free(pixels);
+
+    texture_ = loaded.texture_;
+    view_ = loaded.view_;
+    sampler_ = loaded.sampler_;
+    width_ = loaded.width_;
+    height_ = loaded.height_;
+    mipLevels_ = loaded.mipLevels_;
+
+    loaded.texture_ = nullptr;
+    loaded.view_ = nullptr;
+    loaded.sampler_ = nullptr;
+}
 
 Texture::Texture(Device& device, const uint8_t* pixels, uint32_t width, uint32_t height,
                  rhi::Format format, bool generateMipmaps)

@@ -17,12 +17,20 @@
 #include "rhi/Sampler.hpp"
 #include "rhi/ShaderStages.hpp"
 #include "rhi/TextureUsage.hpp"
+
+#ifdef SAIDA_RHI_WEBGPU
+
+#include "rhi/webgpu/RhiWeb.hpp"
+
+#else
+
 #include "rhi/vulkan/BindGroup.hpp"
 #include "rhi/vulkan/CommandEncoder.hpp"
 #include "rhi/vulkan/Handles.hpp"
 #include "rhi/vulkan/RenderTexture.hpp"
 #include "rhi/vulkan/Sampler.hpp"
 #include "graphics/Buffer.hpp"   // Vulkan backend's Buffer (aliased below)
+#include "graphics/ComputePipeline.hpp"
 #include "graphics/Pipeline.hpp" // Vulkan backend's Pipeline (aliased below)
 #include "graphics/Texture.hpp"  // Vulkan backend's Texture (aliased below)
 
@@ -48,6 +56,7 @@ using Texture = saida::Texture;
 // 16.3.d — Pipeline (neutral Desc), bind groups (descriptor sets behind a
 // pool-free API).
 using Pipeline = saida::Pipeline;
+using ComputePipeline = saida::ComputePipeline;
 using BindGroupLayout = vulkan::BindGroupLayout;
 using BindGroup = vulkan::BindGroup;
 using BindGroupEntry = vulkan::BindGroupEntry;
@@ -81,3 +90,5 @@ using Rect2D = vulkan::Rect2D;
 using SampleCount = vulkan::SampleCount;
 
 } // namespace saida::rhi
+
+#endif // SAIDA_RHI_WEBGPU

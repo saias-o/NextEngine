@@ -2,25 +2,21 @@
 
 #include "core/Camera.hpp"
 #include "core/Paths.hpp"
-#include "core/Window.hpp"
 #include "project/Project.hpp"
 #include "graphics/Buffer.hpp"
 #include "core/Profiler.hpp"
 #include "graphics/GpuProfiler.hpp"
 #include "graphics/ImGuiLayer.hpp"
-#include "graphics/MemoryProfiler.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/Mesh.hpp"
-#include "graphics/GpuSync.hpp"
 #include "graphics/Pipeline.hpp"
 #include "graphics/ShadowMap.hpp"
-#include "graphics/Swapchain.hpp"
-#include "graphics/VulkanDevice.hpp"
 #include "graphics/ResourceManager.hpp"
-#include "rhi/vulkan/Format.hpp"
 #include "render/GIVolume.hpp"
 #include "render/PostProcessor.hpp"
+#ifndef SAIDA_RHI_WEBGPU
 #include "graphics/UIRenderer.hpp"
+#endif
 #include "scene/LightNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
@@ -28,10 +24,19 @@
 #include "render/RenderFeatureRegistry.hpp"
 #include "core/Log.hpp"
 
+#ifndef SAIDA_RHI_WEBGPU
+#include "graphics/MemoryProfiler.hpp"
+#include "graphics/Swapchain.hpp"
+#include "graphics/VulkanDevice.hpp"
+#include "rhi/vulkan/Format.hpp"
+#endif
+
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/MeshLod.hpp"
+#ifndef SAIDA_RHI_WEBGPU
 #include "scene/WebCanvasNode.hpp"
+#endif
 #include "scene/animation/Animator.hpp"
 #ifdef SAIDA_ENABLE_XR
 #include "xr/XrSession.hpp"   // xr::EyeView
@@ -56,6 +61,7 @@ constexpr int kMaxFramesInFlight = 2;
 // enough for the demo scene, easy to grow later (or fit to the camera/scene AABB).
 constexpr float kShadowOrthoHalfSize = 25.0f;
 constexpr float kShadowOrthoDepth = 100.0f;
+constexpr uint32_t kAllTextureLayers = ~0u;
 
 // Picks an up vector not colinear with the light direction.
 glm::vec3 safeUp(const glm::vec3& dir) {
@@ -75,10 +81,21 @@ glm::mat4 directionalMatrix(const glm::vec3& dir, float distance) {
     return proj * view;
 }
 
+#ifndef SAIDA_RHI_WEBGPU
 struct WebCanvasWorldDraw {
     WebCanvasNode* node = nullptr;
     float distance = 0.0f;
 };
+
+struct DrawIndexedIndirectCommand {
+    uint32_t indexCount = 0;
+    uint32_t instanceCount = 0;
+    uint32_t firstIndex = 0;
+    int32_t vertexOffset = 0;
+    uint32_t firstInstance = 0;
+};
+static_assert(sizeof(DrawIndexedIndirectCommand) == 20,
+              "DrawIndexedIndirectCommand must match Vulkan/WebGPU indirect args");
 
 std::vector<WebCanvasWorldDraw> collectWorldWebCanvasDraws(Scene& scene, glm::vec3 viewpoint) {
     std::vector<WebCanvasWorldDraw> draws;
@@ -96,6 +113,19 @@ std::vector<WebCanvasWorldDraw> collectWorldWebCanvasDraws(Scene& scene, glm::ve
     });
     return draws;
 }
+#endif
+
+#ifdef SAIDA_RHI_WEBGPU
+struct DrawIndexedIndirectCommand {
+    uint32_t indexCount = 0;
+    uint32_t instanceCount = 0;
+    uint32_t firstIndex = 0;
+    int32_t vertexOffset = 0;
+    uint32_t firstInstance = 0;
+};
+static_assert(sizeof(DrawIndexedIndirectCommand) == 20,
+              "DrawIndexedIndirectCommand must match Vulkan/WebGPU indirect args");
+#endif
 
 // DDGI volume configuration scaled by the GPU's quality tier. Denser probes +
 // more rays = finer, cleaner GI; lower tiers (mobile/Quest) stay cheap. Same
@@ -123,6 +153,7 @@ GIVolumeDesc giDescForTier(QualityTier tier) {
     return d;
 }
 
+#ifndef SAIDA_RHI_WEBGPU
 uint32_t sampleCountValue(VkSampleCountFlagBits samples) {
     switch (samples) {
         case VK_SAMPLE_COUNT_2_BIT: return 2;
@@ -141,6 +172,7 @@ uint64_t imageBytes(VkExtent2D extent, uint32_t bytesPerPixel,
     return static_cast<uint64_t>(extent.width) * extent.height *
            layers * samples * bytesPerPixel;
 }
+#endif
 
 void hashCombine(uint64_t& h, uint64_t v) {
     h ^= v + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
@@ -174,16 +206,24 @@ glm::mat4 spotMatrix(const glm::vec3& pos, const glm::vec3& dir, float outerAngl
 }
 }
 
-Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
+Renderer::Renderer(rhi::Device& device, rhi::Surface& swapchain, Window& window,
                    ResourceManager& resources, ImGuiLayer& imgui)
-    : device_(device), swapchain_(&swapchain), window_(window), resources_(resources), imgui_(&imgui) {
+    : device_(device), swapchain_(&swapchain), window_(&window), resources_(resources), imgui_(&imgui) {
     createGlobalSetLayout();
+#ifdef SAIDA_RHI_WEBGPU
+    (void)imgui;
+#else
     uiRenderer_ = std::make_unique<UIRenderer>(device_, resources_, rhi::vulkan::fromVk(swapchain_->colorFormat()));
+#endif
     createHdrResources();
     createPipeline(resources_.materialSetLayout());
     createWebCanvasWorldPipeline();
     createTonemapPipeline();
+#ifdef SAIDA_RHI_WEBGPU
+    buildFeatures(0, swapchain_->depthFormat(), swapchain_->samples());
+#else
     buildFeatures(0, rhi::vulkan::fromVk(swapchain_->depthFormat()), swapchain_->samples());
+#endif
     createUniformBuffers();
     shadowMap_ = std::make_unique<ShadowMap>(device_);
     gi_ = std::make_unique<GIVolume>(device_, giDescForTier(device_.capabilities().tier),
@@ -192,15 +232,35 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
     gpuProfiler_ = std::make_unique<GpuProfiler>(device_, kMaxFramesInFlight);
 
     if (device_.capabilities().descriptorIndexing && device_.capabilities().multiDrawIndirect) {
+#ifndef SAIDA_RHI_WEBGPU
         createGpuDrivenBuffers();
         createCullingPipeline();
+#endif
     }
 }
+
+#ifdef SAIDA_RHI_WEBGPU
+Renderer::Renderer(rhi::Device& device, rhi::Surface& swapchain, ResourceManager& resources)
+    : device_(device), swapchain_(&swapchain), resources_(resources) {
+    createGlobalSetLayout();
+    createHdrResources();
+    createPipeline(resources_.materialSetLayout());
+    createWebCanvasWorldPipeline();
+    createTonemapPipeline();
+    buildFeatures(0, swapchain_->depthFormat(), swapchain_->samples());
+    createUniformBuffers();
+    shadowMap_ = std::make_unique<ShadowMap>(device_);
+    gi_ = std::make_unique<GIVolume>(device_, giDescForTier(device_.capabilities().tier),
+                                     resources_.materialSetLayout(), *globalSetLayout_);
+    createGlobalDescriptorSets();
+    gpuProfiler_ = std::make_unique<GpuProfiler>(device_, kMaxFramesInFlight);
+}
+#endif
 
 #ifdef SAIDA_ENABLE_XR
 Renderer::Renderer(VulkanDevice& device, Window& window, ResourceManager& resources,
                    VkExtent2D xrEyeExtent, VkFormat xrColorFormat, uint32_t xrViewCount)
-    : device_(device), window_(window), resources_(resources),
+    : device_(device), window_(&window), resources_(resources),
       xrMode_(true), xrExtent_(xrEyeExtent), xrColorFormat_(xrColorFormat),
       xrViewCount_(xrViewCount) {
     // Shared rendering machinery (identical to desktop) ...
@@ -262,6 +322,43 @@ rhi::Rect2D Renderer::activeRenderRect() const {
 
 void Renderer::createGlobalSetLayout() {
     // Set 0: camera + lighting + shadow array + bone SSBO + DDGI atlases + env map.
+#ifdef SAIDA_RHI_WEBGPU
+    using WE = rhi::webgpu::BindGroupLayoutEntry;
+    using Dim = rhi::webgpu::TextureDim;
+    // Fragment|Compute mirrors the desktop layout: the DDGI trace compute pass
+    // reads the voxel grid, shadows and environment through this same set 0.
+    const auto FC = rhi::ShaderStages::Fragment | rhi::ShaderStages::Compute;
+    const auto V = rhi::ShaderStages::Vertex;
+    std::vector<WE> entries;
+    WE e{};
+    e.binding = 0; e.type = rhi::BindingType::UniformBuffer; e.visibility = V;
+    entries.push_back(e);
+    e = {}; e.binding = 1; e.type = rhi::BindingType::UniformBuffer; e.visibility = FC;
+    entries.push_back(e);
+    e = {}; e.binding = 2; e.type = rhi::BindingType::SampledTexture; e.visibility = FC;
+    e.dim = Dim::Dim2DArray; e.depthTexture = true;
+    entries.push_back(e);
+    e = {}; e.binding = 3; e.type = rhi::BindingType::StorageBuffer; e.visibility = V;
+    e.readOnlyStorage = true;
+    entries.push_back(e);
+    e = {}; e.binding = 4; e.type = rhi::BindingType::SampledTexture; e.visibility = FC;
+    entries.push_back(e);
+    e = {}; e.binding = 5; e.type = rhi::BindingType::SampledTexture; e.visibility = FC;
+    entries.push_back(e);
+    e = {}; e.binding = 6; e.type = rhi::BindingType::SampledTexture; e.visibility = FC;
+    e.dim = Dim::Dim3D;
+    entries.push_back(e);
+    e = {}; e.binding = 7; e.type = rhi::BindingType::SampledTexture; e.visibility = FC;
+    entries.push_back(e);
+    e = {}; e.binding = 8; e.type = rhi::BindingType::Sampler; e.visibility = FC;
+    e.comparisonSampler = true;
+    entries.push_back(e);
+    for (uint32_t b : {9u, 10u, 11u, 12u}) {
+        e = {}; e.binding = b; e.type = rhi::BindingType::Sampler; e.visibility = FC;
+        entries.push_back(e);
+    }
+    globalSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_, entries);
+#else
     globalSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
         std::vector<rhi::BindGroupLayoutEntry>{
             {0, rhi::BindingType::UniformBuffer, rhi::ShaderStages::Vertex},                       // camera
@@ -273,6 +370,7 @@ void Renderer::createGlobalSetLayout() {
             {6, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment | rhi::ShaderStages::Compute},  // GI voxel
             {7, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment | rhi::ShaderStages::Compute},  // environment
         });
+#endif
 }
 
 void Renderer::createPipeline(rhi::BindGroupLayout& materialSetLayout) {
@@ -285,19 +383,31 @@ void Renderer::createPipeline(rhi::BindGroupLayout& materialSetLayout) {
     // Dormant GPU-driven path: set 0 = global, set 1 = bindless material data
     // (raw layout, out of RHI scope until 16.4's caps.bindless fallback), set 2
     // = culling/instance data.
-    Pipeline::Desc desc;
+    rhi::Pipeline::Desc desc;
     desc.vertPath = shaderPath(vertShader);
     desc.fragPath = shaderPath(fragShader);
     desc.colorFormats = {rhi::Format::RGBA16Float};
+    // Same value as the Vulkan backend's legacy default range; the web backend
+    // has no default (0 = no push block) and needs it to emit @group(3).
+    desc.pushConstantSize = sizeof(PushConstants);
+#ifdef SAIDA_RHI_WEBGPU
+    desc.depthFormat = swapchain_->depthFormat();
+    desc.samples = swapchain_->samples();
+#else
     desc.depthFormat = rhi::vulkan::fromVk(swapchain_->depthFormat());
     desc.samples = sampleCountValue(swapchain_->samples());
+#endif
+#ifndef SAIDA_RHI_WEBGPU
     if (useGpuDriven) {
         desc.bindGroupLayouts = {globalSetLayout_.get(), resources_.globalMaterialSetLayout(),
                                  cullingSetLayout_.get()};
     } else {
+#endif
         desc.bindGroupLayouts = {globalSetLayout_.get(), &materialSetLayout};
+#ifndef SAIDA_RHI_WEBGPU
     }
-    pipeline_ = std::make_unique<Pipeline>(device_, desc);
+#endif
+    pipeline_ = std::make_unique<rhi::Pipeline>(device_, desc);
 
     // Unlit variant: same vertex shader + identical set layout and push-constant
     // range as Lit, only the fragment differs, so the draw loop swaps pipelines
@@ -306,16 +416,19 @@ void Renderer::createPipeline(rhi::BindGroupLayout& materialSetLayout) {
     desc.vertPath = shaderPath("shader.vert.spv");
     desc.fragPath = shaderPath("unlit.frag.spv");
     desc.bindGroupLayouts = {globalSetLayout_.get(), &materialSetLayout};
-    unlitPipeline_ = std::make_unique<Pipeline>(device_, desc);
+    unlitPipeline_ = std::make_unique<rhi::Pipeline>(device_, desc);
 }
 
 void Renderer::createWebCanvasWorldPipeline() {
+#ifdef SAIDA_RHI_WEBGPU
+    return;
+#else
     if (!resources_.globalMaterialSetLayout()) {
         Log::warn("WebCanvas world-space rendering disabled: descriptor indexing is unavailable.");
         return;
     }
 
-    Pipeline::Desc desc;
+    rhi::Pipeline::Desc desc;
     desc.vertPath = shaderPath("web_canvas_world.vert.spv");
     desc.fragPath = shaderPath("web_canvas_world.frag.spv");
     desc.colorFormats = {rhi::Format::RGBA16Float};
@@ -329,7 +442,8 @@ void Renderer::createWebCanvasWorldPipeline() {
     desc.blendMode = rhi::BlendMode::Alpha;
     desc.topology = rhi::Topology::TriangleStrip;
     desc.pushConstantSize = sizeof(WebCanvasWorldPushConstants);
-    webCanvasWorldPipeline_ = std::make_unique<Pipeline>(device_, desc);
+    webCanvasWorldPipeline_ = std::make_unique<rhi::Pipeline>(device_, desc);
+#endif
 }
 
 void Renderer::createUniformBuffers() {
@@ -337,13 +451,13 @@ void Renderer::createUniformBuffers() {
     lightingBuffers_.reserve(kMaxFramesInFlight);
     boneMatricesBuffers_.reserve(kMaxFramesInFlight);
     // Allocate a 4MB buffer for global bone matrices (enough for 65536 bones)
-    const VkDeviceSize kBoneBufferSize = 4 * 1024 * 1024;
+    const uint64_t kBoneBufferSize = 4 * 1024 * 1024;
     for (int i = 0; i < kMaxFramesInFlight; i++) {
-        uniformBuffers_.push_back(std::make_unique<Buffer>(device_, sizeof(UniformBufferObject),
+        uniformBuffers_.push_back(std::make_unique<rhi::Buffer>(device_, sizeof(UniformBufferObject),
             rhi::BufferUsage::Uniform, MemoryUsage::HostVisible));
-        lightingBuffers_.push_back(std::make_unique<Buffer>(device_, sizeof(LightingUBO),
+        lightingBuffers_.push_back(std::make_unique<rhi::Buffer>(device_, sizeof(LightingUBO),
             rhi::BufferUsage::Uniform, MemoryUsage::HostVisible));
-        boneMatricesBuffers_.push_back(std::make_unique<Buffer>(device_, kBoneBufferSize,
+        boneMatricesBuffers_.push_back(std::make_unique<rhi::Buffer>(device_, kBoneBufferSize,
             rhi::BufferUsage::Storage, MemoryUsage::HostVisible));
     }
 }
@@ -354,27 +468,30 @@ void Renderer::createGpuDrivenBuffers() {
     drawCommandBuffers_.reserve(kMaxFramesInFlight);
     countBuffers_.reserve(kMaxFramesInFlight);
 
-    VkDeviceSize instanceBufferSize = kMaxInstances * sizeof(InstanceData);
-    VkDeviceSize drawCommandBufferSize = kMaxInstances * sizeof(VkDrawIndexedIndirectCommand);
+    uint64_t instanceBufferSize = kMaxInstances * sizeof(InstanceData);
+    uint64_t drawCommandBufferSize = kMaxInstances * sizeof(DrawIndexedIndirectCommand);
 
     for (int i = 0; i < kMaxFramesInFlight; i++) {
-        instanceBuffers_.push_back(std::make_unique<Buffer>(device_, instanceBufferSize,
+        instanceBuffers_.push_back(std::make_unique<rhi::Buffer>(device_, instanceBufferSize,
             rhi::BufferUsage::Storage, MemoryUsage::HostVisible));
             
-        originalDrawCommandBuffers_.push_back(std::make_unique<Buffer>(device_, drawCommandBufferSize,
+        originalDrawCommandBuffers_.push_back(std::make_unique<rhi::Buffer>(device_, drawCommandBufferSize,
             rhi::BufferUsage::Storage, MemoryUsage::HostVisible));
         
-        drawCommandBuffers_.push_back(std::make_unique<Buffer>(device_, drawCommandBufferSize,
+        drawCommandBuffers_.push_back(std::make_unique<rhi::Buffer>(device_, drawCommandBufferSize,
             rhi::BufferUsage::Storage | rhi::BufferUsage::Indirect,
             MemoryUsage::GpuOnly));
             
-        countBuffers_.push_back(std::make_unique<Buffer>(device_, sizeof(uint32_t),
+        countBuffers_.push_back(std::make_unique<rhi::Buffer>(device_, sizeof(uint32_t),
             rhi::BufferUsage::Storage | rhi::BufferUsage::Indirect | rhi::BufferUsage::TransferDst,
             MemoryUsage::GpuOnly));
     }
 }
 
 void Renderer::createCullingPipeline() {
+#ifdef SAIDA_RHI_WEBGPU
+    return;
+#else
     // Set 0 for the cull dispatch: 0=instances (read, also vertex-fetched by the
     // bindless draw), 1=original draw commands (read), 2=count (write),
     // 3=culled draw commands (write).
@@ -404,6 +521,7 @@ void Renderer::createCullingPipeline() {
     std::vector<rhi::vulkan::BindGroupLayoutRef> plLayouts = {*cullingSetLayout_};
     cullingPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("culling.comp.spv"),
         plLayouts, sizeof(CullingPushConstants));
+#endif
 }
 
 void Renderer::rebuildGlobalSet(int frame) {
@@ -420,8 +538,10 @@ void Renderer::rebuildGlobalSet(int frame) {
     rhi::BindGroupEntry shadowEntry;
     shadowEntry.binding = 2;
     shadowEntry.view = shadowMap_->arrayView();
+#ifndef SAIDA_RHI_WEBGPU
     shadowEntry.sampler = shadowMap_->sampler();
     shadowEntry.textureState = rhi::ResourceState::DepthRead;
+#endif
 
     rhi::BindGroupEntry boneEntry;
     boneEntry.binding = 3;
@@ -432,29 +552,79 @@ void Renderer::rebuildGlobalSet(int frame) {
     rhi::BindGroupEntry giIrradianceEntry;
     giIrradianceEntry.binding = 4;
     giIrradianceEntry.view = gi_->irradianceView();
+#ifndef SAIDA_RHI_WEBGPU
     giIrradianceEntry.sampler = gi_->sampler();
     giIrradianceEntry.textureState = rhi::ResourceState::StorageReadWrite;
+#endif
 
     rhi::BindGroupEntry giVisibilityEntry;
     giVisibilityEntry.binding = 5;
     giVisibilityEntry.view = gi_->visibilityView();
+#ifndef SAIDA_RHI_WEBGPU
     giVisibilityEntry.sampler = gi_->sampler();
     giVisibilityEntry.textureState = rhi::ResourceState::StorageReadWrite;
+#endif
 
     rhi::BindGroupEntry giVoxelEntry;
     giVoxelEntry.binding = 6;
     giVoxelEntry.view = gi_->voxelView();
+#ifndef SAIDA_RHI_WEBGPU
     giVoxelEntry.sampler = gi_->sampler();
+#endif
 
     Texture* environment = resources_.defaultWhiteTexture();
     rhi::BindGroupEntry environmentEntry;
     environmentEntry.binding = 7;
     environmentEntry.view = environment->imageView();
+#ifndef SAIDA_RHI_WEBGPU
     environmentEntry.sampler = environment->sampler();
+#endif
+
+#ifdef SAIDA_RHI_WEBGPU
+    rhi::BindGroupEntry shadowSamplerEntry;
+    shadowSamplerEntry.binding = 8;
+    shadowSamplerEntry.sampler = shadowMap_->sampler();
+
+    rhi::BindGroupEntry giIrradianceSamplerEntry;
+    giIrradianceSamplerEntry.binding = 9;
+    giIrradianceSamplerEntry.sampler = gi_->sampler();
+
+    rhi::BindGroupEntry giVisibilitySamplerEntry;
+    giVisibilitySamplerEntry.binding = 10;
+    giVisibilitySamplerEntry.sampler = gi_->sampler();
+
+    rhi::BindGroupEntry giVoxelSamplerEntry;
+    giVoxelSamplerEntry.binding = 11;
+    giVoxelSamplerEntry.sampler = gi_->sampler();
+
+    rhi::BindGroupEntry environmentSamplerEntry;
+    environmentSamplerEntry.binding = 12;
+    environmentSamplerEntry.sampler = environment->sampler();
 
     globalGroups_[frame] = std::make_unique<rhi::BindGroup>(*globalSetLayout_,
         std::vector<rhi::BindGroupEntry>{cameraEntry, lightEntry, shadowEntry, boneEntry,
+            giIrradianceEntry, giVisibilityEntry, giVoxelEntry, environmentEntry,
+            shadowSamplerEntry, giIrradianceSamplerEntry, giVisibilitySamplerEntry,
+            giVoxelSamplerEntry, environmentSamplerEntry});
+
+    // Variant for the DDGI compute pass. WebGPU merges every bound group's
+    // resources into the dispatch usage scope, so having the current atlases
+    // sampled here (bindings 4/5) while the GI set storage-writes them fails
+    // validation. The compute shaders never sample them — bind dummies.
+    rhi::BindGroupEntry giIrradianceDummy = giIrradianceEntry;
+    giIrradianceDummy.view = environment->imageView();
+    rhi::BindGroupEntry giVisibilityDummy = giVisibilityEntry;
+    giVisibilityDummy.view = environment->imageView();
+    giComputeGlobalGroups_[frame] = std::make_unique<rhi::BindGroup>(*globalSetLayout_,
+        std::vector<rhi::BindGroupEntry>{cameraEntry, lightEntry, shadowEntry, boneEntry,
+            giIrradianceDummy, giVisibilityDummy, giVoxelEntry, environmentEntry,
+            shadowSamplerEntry, giIrradianceSamplerEntry, giVisibilitySamplerEntry,
+            giVoxelSamplerEntry, environmentSamplerEntry});
+#else
+    globalGroups_[frame] = std::make_unique<rhi::BindGroup>(*globalSetLayout_,
+        std::vector<rhi::BindGroupEntry>{cameraEntry, lightEntry, shadowEntry, boneEntry,
             giIrradianceEntry, giVisibilityEntry, giVoxelEntry, environmentEntry});
+#endif
 
     cachedGiIrradianceView_[frame] = gi_->irradianceView();
     cachedGiVisibilityView_[frame] = gi_->visibilityView();
@@ -465,6 +635,9 @@ void Renderer::rebuildGlobalSet(int frame) {
 
 void Renderer::createGlobalDescriptorSets() {
     globalGroups_.resize(kMaxFramesInFlight);
+#ifdef SAIDA_RHI_WEBGPU
+    giComputeGlobalGroups_.resize(kMaxFramesInFlight);
+#endif
     for (int i = 0; i < kMaxFramesInFlight; i++) rebuildGlobalSet(i);
 }
 
@@ -652,11 +825,16 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
         settings.skyboxRotation);
 
     auto getAnimatorInParent = [](Node* n) -> Animator* {
+#ifdef SAIDA_RHI_WEBGPU
+        (void)n;
+        return nullptr;
+#else
         while (n) {
             if (auto* a = n->getBehaviour<Animator>()) return a;
             n = n->parent();
         }
         return nullptr;
+#endif
     };
 
     uint32_t currentBoneCount = 0;
@@ -680,7 +858,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
     bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
     if (useGpuDriven) {
         InstanceData* instanceData = static_cast<InstanceData*>(instanceBuffers_[currentFrame_]->mapped());
-        VkDrawIndexedIndirectCommand* drawData = static_cast<VkDrawIndexedIndirectCommand*>(originalDrawCommandBuffers_[currentFrame_]->mapped());
+        auto* drawData = static_cast<DrawIndexedIndirectCommand*>(originalDrawCommandBuffers_[currentFrame_]->mapped());
         
         uint32_t instanceCount = 0;
         for (MeshNode* node : scene.meshes()) {
@@ -713,7 +891,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
                     inst.materialIndex = mat->bindlessIndex();
                     inst.boneOffset = boneOffset;
                     
-                    VkDrawIndexedIndirectCommand& draw = drawData[instanceCount];
+                    DrawIndexedIndirectCommand& draw = drawData[instanceCount];
                     auto alloc = m->geometryAllocation();
                     draw.indexCount = alloc.indexCount;
                     draw.instanceCount = 1;
@@ -738,7 +916,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
         
         if (instanceCount > 0) {
             instanceBuffers_[currentFrame_]->flush(instanceCount * sizeof(InstanceData));
-            originalDrawCommandBuffers_[currentFrame_]->flush(instanceCount * sizeof(VkDrawIndexedIndirectCommand));
+            originalDrawCommandBuffers_[currentFrame_]->flush(instanceCount * sizeof(DrawIndexedIndirectCommand));
         }
         if (currentBoneCount > 0) {
             boneMatricesBuffers_[currentFrame_]->flush(currentBoneCount * sizeof(glm::mat4));
@@ -822,8 +1000,13 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
 }
 
 void Renderer::createHdrResources() {
-    VkExtent2D extent = swapchain_->extent();
+#ifdef SAIDA_RHI_WEBGPU
+    rhi::Extent2D extent = swapchain_->extent();
+    const bool msaa = false;
+#else
+    rhi::Extent2D extent = swapchain_->extent();
     const bool msaa = swapchain_->samples() != VK_SAMPLE_COUNT_1_BIT;
+#endif
 
     rhi::RenderTextureDesc hdrDesc;
     hdrDesc.format = rhi::Format::RGBA16Float;
@@ -835,12 +1018,20 @@ void Renderer::createHdrResources() {
 
     if (msaa) {
         rhi::RenderTextureDesc msaaDesc = hdrDesc;
+#ifdef SAIDA_RHI_WEBGPU
+        msaaDesc.samples = swapchain_->samples();
+#else
         msaaDesc.samples = sampleCountValue(swapchain_->samples());
+#endif
         msaaDesc.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::Transient;
         hdrMsaaTexture_ = std::make_unique<rhi::RenderTexture>(device_, msaaDesc);
 
         rhi::RenderTextureDesc depthDesc;
+#ifdef SAIDA_RHI_WEBGPU
+        depthDesc.format = swapchain_->depthFormat();
+#else
         depthDesc.format = rhi::vulkan::fromVk(swapchain_->depthFormat());
+#endif
         depthDesc.width = extent.width;
         depthDesc.height = extent.height;
         depthDesc.usage = rhi::TextureUsage::DepthAttachment | rhi::TextureUsage::Sampled;
@@ -861,12 +1052,34 @@ void Renderer::cleanupHdrResources() {
 }
 
 void Renderer::createTonemapPipeline() {
+#ifdef SAIDA_RHI_WEBGPU
+    using WE = rhi::webgpu::BindGroupLayoutEntry;
+    const auto F = rhi::ShaderStages::Fragment;
+    std::vector<WE> tonemapEntries;
+    WE e{};
+    e.binding = 0; e.type = rhi::BindingType::SampledTexture; e.visibility = F;
+    tonemapEntries.push_back(e);
+    e = {}; e.binding = 1; e.type = rhi::BindingType::SampledTexture; e.visibility = F;
+    e.unfilterable = true;
+    tonemapEntries.push_back(e);
+    e = {}; e.binding = 2; e.type = rhi::BindingType::SampledTexture; e.visibility = F;
+    tonemapEntries.push_back(e);
+    e = {}; e.binding = 3; e.type = rhi::BindingType::Sampler; e.visibility = F;
+    tonemapEntries.push_back(e);
+    e = {}; e.binding = 4; e.type = rhi::BindingType::Sampler; e.visibility = F;
+    e.nonFilteringSampler = true;
+    tonemapEntries.push_back(e);
+    e = {}; e.binding = 5; e.type = rhi::BindingType::Sampler; e.visibility = F;
+    tonemapEntries.push_back(e);
+    tonemapSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_, tonemapEntries);
+#else
     tonemapSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
         std::vector<rhi::BindGroupLayoutEntry>{
             {0, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // HDR
             {1, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // depth (AO)
             {2, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // bloom
         });
+#endif
 
     rhi::SamplerDesc linearDesc;
     linearDesc.mipFilter = rhi::FilterMode::Linear;
@@ -877,15 +1090,24 @@ void Renderer::createTonemapPipeline() {
     nearestDesc.minFilter = rhi::FilterMode::Nearest;
     tonemapDepthSampler_ = std::make_unique<rhi::Sampler>(device_, nearestDesc);
 
-    Pipeline::Desc tonemapDesc;
+    rhi::Pipeline::Desc tonemapDesc;
     tonemapDesc.vertPath = shaderPath("tonemap.vert.spv");
     tonemapDesc.fragPath = shaderPath("tonemap.frag.spv");
+#ifdef SAIDA_RHI_WEBGPU
+    tonemapDesc.colorFormats = {swapchain_->colorFormat()};
+#else
     tonemapDesc.colorFormats = {rhi::vulkan::fromVk(swapchain_->colorFormat())};
+#endif
     tonemapDesc.bindGroupLayouts = {tonemapSetLayout_.get()};
     tonemapDesc.vertexInput = false;
     tonemapDesc.depthTest = false;
+    // Fullscreen triangle: never cull. On web the naga SPIR-V→WGSL pass flips
+    // clip-space Y, which inverts the winding of raw-clip-coord triangles (the
+    // scene is unaffected: its projection flip cancels naga's) — with the
+    // default Back cull the tonemap triangle disappears entirely.
+    tonemapDesc.cullMode = rhi::CullMode::None;
     tonemapDesc.pushConstantSize = sizeof(TonemapPushConstants);
-    tonemapPipeline_ = std::make_unique<Pipeline>(device_, tonemapDesc);
+    tonemapPipeline_ = std::make_unique<rhi::Pipeline>(device_, tonemapDesc);
 
     updateTonemapDescriptorSet();
 }
@@ -898,26 +1120,54 @@ void Renderer::updateTonemapDescriptorSet() {
     rhi::BindGroupEntry hdrEntry;
     hdrEntry.binding = 0;
     hdrEntry.view = hdrTexture_->view();
+#ifndef SAIDA_RHI_WEBGPU
     hdrEntry.sampler = tonemapSampler_->handle();
+#endif
 
     rhi::BindGroupEntry depthEntry;
     depthEntry.binding = 1;
     depthEntry.view = depthResolveTexture_ ? depthResolveTexture_->view() : swapchain_->depthView();
+#ifndef SAIDA_RHI_WEBGPU
     depthEntry.sampler = tonemapDepthSampler_->handle();
+#endif
 
     rhi::BindGroupEntry bloomEntry;
     bloomEntry.binding = 2;
     bloomEntry.view = postProcessor_->bloomView();
+#ifndef SAIDA_RHI_WEBGPU
     bloomEntry.sampler = postProcessor_->bloomSampler();
+#endif
+
+#ifdef SAIDA_RHI_WEBGPU
+    rhi::BindGroupEntry hdrSamplerEntry;
+    hdrSamplerEntry.binding = 3;
+    hdrSamplerEntry.sampler = tonemapSampler_->handle();
+
+    rhi::BindGroupEntry depthSamplerEntry;
+    depthSamplerEntry.binding = 4;
+    depthSamplerEntry.sampler = tonemapDepthSampler_->handle();
+
+    rhi::BindGroupEntry bloomSamplerEntry;
+    bloomSamplerEntry.binding = 5;
+    bloomSamplerEntry.sampler = postProcessor_->bloomSampler();
 
     tonemapSet_ = std::make_unique<rhi::BindGroup>(*tonemapSetLayout_,
+        std::vector<rhi::BindGroupEntry>{hdrEntry, depthEntry, bloomEntry,
+            hdrSamplerEntry, depthSamplerEntry, bloomSamplerEntry});
+#else
+    tonemapSet_ = std::make_unique<rhi::BindGroup>(*tonemapSetLayout_,
         std::vector<rhi::BindGroupEntry>{hdrEntry, depthEntry, bloomEntry});
+#endif
 }
 
 void Renderer::recordTonemapPass(rhi::CommandEncoder& encoder, uint32_t imageIndex,
                                  Scene& scene, const Camera& camera) {
     SAIDA_PROFILE_FUNCTION();
+#ifdef SAIDA_RHI_WEBGPU
+    auto cmd = encoder.handle();
+#else
     VkCommandBuffer cmd = encoder.handle();  // GPU profiler zones (desktop tooling)
+#endif
     GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
     SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/Tonemap+EditorUI");
 
@@ -925,16 +1175,16 @@ void Renderer::recordTonemapPass(rhi::CommandEncoder& encoder, uint32_t imageInd
     // presentation with undefined contents (fully overwritten by this pass).
     encoder.transition(hdrTexture_->image(), rhi::ResourceState::ColorAttachment,
                        rhi::ResourceState::ShaderRead);
-    VkImage depthImage = depthResolveTexture_ ? depthResolveTexture_->image()
-                                              : swapchain_->depthImage();
+    auto depthImage = depthResolveTexture_ ? depthResolveTexture_->image()
+                                           : swapchain_->depthImage();
     encoder.transition(depthImage, rhi::ResourceState::DepthWrite,
                        rhi::ResourceState::ShaderRead);
     encoder.transition(swapchain_->image(imageIndex), rhi::ResourceState::ColorAttachment,
-                       rhi::ResourceState::ColorAttachment, 0, VK_REMAINING_ARRAY_LAYERS,
+                       rhi::ResourceState::ColorAttachment, 0, kAllTextureLayers,
                        /*discardContents=*/true);
 
-    VkRect2D renderRect = activeRenderRect();
-    VkExtent2D fullExtent = swapchain_->extent();
+    rhi::Rect2D renderRect = activeRenderRect();
+    rhi::Extent2D fullExtent = swapchain_->extent();
     glm::vec4 sourceRect(
         static_cast<float>(renderRect.offset.x) / static_cast<float>(std::max(1u, fullExtent.width)),
         static_cast<float>(renderRect.offset.y) / static_cast<float>(std::max(1u, fullExtent.height)),
@@ -970,6 +1220,7 @@ void Renderer::recordTonemapPass(rhi::CommandEncoder& encoder, uint32_t imageInd
     }
     {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/UI");
+#ifndef SAIDA_RHI_WEBGPU
         {
             SAIDA_PROFILE_SCOPE("UI/RecordCommands");
             uiRenderer_->recordCommands(rp, fullExtent.width, fullExtent.height,
@@ -980,12 +1231,19 @@ void Renderer::recordTonemapPass(rhi::CommandEncoder& encoder, uint32_t imageInd
             SAIDA_PROFILE_SCOPE("ImGui/RenderDrawData");
             imgui_->renderDrawData(rp.handle());  // editor-only overlay, permanent escape hatch
         }
+#endif
     }
     rp.end();
 }
 
 void Renderer::buildFeatures(uint32_t viewMask, rhi::Format depthFormat,
                             rhi::SampleCount samples) {
+#ifdef SAIDA_RHI_WEBGPU
+    (void)viewMask;
+    (void)depthFormat;
+    (void)samples;
+    features_.clear();
+#else
     // The Renderer knows ONLY the ScenePassFeature interface. Concrete effects
     // (water, skybox, debug lines, …) plug in through the registry, so this never
     // names or includes a concrete effect — adding one touches no Renderer code.
@@ -994,18 +1252,19 @@ void Renderer::buildFeatures(uint32_t viewMask, rhi::Format depthFormat,
                       rhi::Format::RGBA16Float, depthFormat, samples,
                       viewMask, static_cast<uint32_t>(kMaxFramesInFlight)};
     for (auto& f : features_) f->createPipelines(ctx);
+#endif
 }
 
 void Renderer::recordFeatures(FrameContext& fc) {
     for (auto& f : features_) f->record(fc);
 }
 
-void Renderer::recordMeshDraws(rhi::RenderPassEncoder& rp, Pipeline* firstPipeline, bool xrMultiview) {
+void Renderer::recordMeshDraws(rhi::RenderPassEncoder& rp, rhi::Pipeline* firstPipeline, bool xrMultiview) {
     SAIDA_PROFILE_FUNCTION();
     if (!firstPipeline) return;
 
     Material* lastMaterial = nullptr;
-    Pipeline* activePipeline = firstPipeline;
+    rhi::Pipeline* activePipeline = firstPipeline;
     uint64_t drawCalls = 0;
     uint64_t triangles = 0;
     const rhi::BindGroup& globalSet = *globalGroups_[currentFrame_];
@@ -1013,7 +1272,7 @@ void Renderer::recordMeshDraws(rhi::RenderPassEncoder& rp, Pipeline* firstPipeli
     rp.setBindGroup(0, globalSet);
 
     for (const auto& draw : currentDraws_) {
-        Pipeline* want = scenePipelineFor(draw.materialType);
+        rhi::Pipeline* want = scenePipelineFor(draw.materialType);
 #ifdef SAIDA_ENABLE_XR
         if (xrMultiview)
             want = xrScenePipelineFor(draw.materialType);
@@ -1049,6 +1308,11 @@ void Renderer::recordMeshDraws(rhi::RenderPassEncoder& rp, Pipeline* firstPipeli
 }
 
 void Renderer::recordWorldWebCanvases(rhi::RenderPassEncoder& rp, Scene& scene, const Camera& camera) {
+#ifdef SAIDA_RHI_WEBGPU
+    (void)rp;
+    (void)scene;
+    (void)camera;
+#else
     if (!webCanvasWorldPipeline_ || !resources_.globalMaterialSet()) return;
 
     std::vector<WebCanvasWorldDraw> draws = collectWorldWebCanvasDraws(scene, camera.position);
@@ -1069,6 +1333,7 @@ void Renderer::recordWorldWebCanvases(rhi::RenderPassEncoder& rp, Scene& scene, 
         rp.setPushConstants(&pc, sizeof(pc));
         rp.draw(4);
     }
+#endif
 }
 
 void Renderer::recordShadowPasses(rhi::CommandEncoder& encoder) {
@@ -1084,7 +1349,7 @@ void Renderer::recordShadowPasses(rhi::CommandEncoder& encoder) {
 }
 
 void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera, Project* project) {
-    VkRect2D renderRect = activeRenderRect();
+    rhi::Rect2D renderRect = activeRenderRect();
     float aspect = renderRect.extent.width / static_cast<float>(std::max(1u, renderRect.extent.height));
     camera.setPerspective(glm::radians(camera.fovDegrees), aspect,
                           camera.nearZ, camera.farZ);
@@ -1107,14 +1372,20 @@ void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera,
 void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageIndex,
                                    Scene& scene, const Camera& camera) {
     // GPU profiling is a desktop-only escape hatch on the raw command buffer.
+#ifdef SAIDA_RHI_WEBGPU
+    auto cmd = encoder.handle();
+#else
     VkCommandBuffer cmd = encoder.handle();
+#endif
     GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
     if (gpuProfiler) gpuProfiler->resetQueries(cmd);
     uint32_t gpuFrameZone = gpuProfiler ? gpuProfiler->beginZone(cmd, "GPU/Frame") : UINT32_MAX;
 
     {
         SAIDA_PROFILE_SCOPE("UI/UpdateAsyncTextures");
+#ifndef SAIDA_RHI_WEBGPU
         uiRenderer_->updateAsyncTextures(encoder);
+#endif
     }
 
     // GI update (skipped when the volume is frozen in baked mode): re-voxelize the
@@ -1123,7 +1394,11 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
     if (giUpdateThisFrame_) {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
         gi_->voxelize(encoder, scene, gpuProfiler);
+#ifdef SAIDA_RHI_WEBGPU
+        gi_->update(encoder, *giComputeGlobalGroups_[currentFrame_], gpuProfiler);
+#else
         gi_->update(encoder, *globalGroups_[currentFrame_], gpuProfiler);
+#endif
     }
 
     bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
@@ -1162,31 +1437,35 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
 
     auto& settings = scene.settings();
     glm::vec4 clearColor = settings.clearColor;
-    VkRect2D renderRect = activeRenderRect();
-    VkExtent2D extent = renderRect.extent;
+    rhi::Rect2D renderRect = activeRenderRect();
+    rhi::Extent2D extent = renderRect.extent;
 
+#ifdef SAIDA_RHI_WEBGPU
+    const bool msaa = false;
+#else
     const bool msaa = swapchain_->samples() != VK_SAMPLE_COUNT_1_BIT;
+#endif
     // Color is rendered into the MSAA target and resolved to the HDR image; with
     // no MSAA we render straight to the HDR image.
-    VkImage colorImage = msaa ? hdrMsaaTexture_->image() : hdrTexture_->image();
-    VkImageView colorView = msaa ? hdrMsaaTexture_->view() : hdrTexture_->view();
+    auto colorImage = msaa ? hdrMsaaTexture_->image() : hdrTexture_->image();
+    auto colorView = msaa ? hdrMsaaTexture_->view() : hdrTexture_->view();
 
     // Dynamic rendering does no implicit layout transitions: do them by hand.
     // Same-state transitions with discardContents keep the previous frame's sync
     // scope but drop the stale contents (the pass clears everything).
     encoder.transition(colorImage, rhi::ResourceState::ColorAttachment,
-                       rhi::ResourceState::ColorAttachment, 0, VK_REMAINING_ARRAY_LAYERS,
+                       rhi::ResourceState::ColorAttachment, 0, kAllTextureLayers,
                        /*discardContents=*/true);
     if (msaa) {
         encoder.transition(hdrTexture_->image(), rhi::ResourceState::ColorAttachment,
-                           rhi::ResourceState::ColorAttachment, 0, VK_REMAINING_ARRAY_LAYERS,
+                           rhi::ResourceState::ColorAttachment, 0, kAllTextureLayers,
                            /*discardContents=*/true);
         encoder.transition(depthResolveTexture_->image(), rhi::ResourceState::DepthWrite,
-                           rhi::ResourceState::DepthWrite, 0, VK_REMAINING_ARRAY_LAYERS,
+                           rhi::ResourceState::DepthWrite, 0, kAllTextureLayers,
                            /*discardContents=*/true);
     }
     encoder.transition(swapchain_->depthImage(), rhi::ResourceState::DepthWrite,
-                       rhi::ResourceState::DepthWrite, 0, VK_REMAINING_ARRAY_LAYERS,
+                       rhi::ResourceState::DepthWrite, 0, kAllTextureLayers,
                        /*discardContents=*/true);
 
     rhi::RenderPassDesc scenePass;
@@ -1195,11 +1474,11 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
     scenePass.colors[0].loadOp = rhi::LoadOp::Clear;
     scenePass.colors[0].clearColor = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
     scenePass.colors[0].store = !msaa;                          // MSAA source is resolved, not kept
-    scenePass.colors[0].resolveView = msaa ? hdrTexture_->view() : VK_NULL_HANDLE;
+    scenePass.colors[0].resolveView = msaa ? hdrTexture_->view() : rhi::TextureView{};
     scenePass.depth.view = swapchain_->depthView();
     scenePass.depth.loadOp = rhi::LoadOp::Clear;
     scenePass.depth.store = !msaa;
-    scenePass.depth.resolveView = msaa ? depthResolveTexture_->view() : VK_NULL_HANDLE;
+    scenePass.depth.resolveView = msaa ? depthResolveTexture_->view() : rhi::TextureView{};
     scenePass.x = renderRect.offset.x;
     scenePass.y = renderRect.offset.y;
     scenePass.width = extent.width;
@@ -1209,6 +1488,7 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
     SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/SceneHDR");
     rhi::RenderPassEncoder rp = encoder.beginRenderPass(scenePass);
 
+#ifndef SAIDA_RHI_WEBGPU
     if (useGpuDriven) {
         rp.setPipeline(*pipeline_);
         // Set 0: per-frame global data (camera + lighting), shared by every object.
@@ -1232,16 +1512,18 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
                 rp.drawIndexedIndirectCount(*drawCommandBuffers_[currentFrame_], 0,
                                             *countBuffers_[currentFrame_], 0,
                                             currentInstanceCount_,
-                                            sizeof(VkDrawIndexedIndirectCommand));
+                                            sizeof(DrawIndexedIndirectCommand));
             } else {
                 // 16.4 fallback: the cull shader writes instanceCount=0 for culled
                 // draws, so a plain indirect loop stays correct without the count.
                 rp.drawIndexedIndirect(*drawCommandBuffers_[currentFrame_], 0,
                                        currentInstanceCount_,
-                                       sizeof(VkDrawIndexedIndirectCommand));
+                                       sizeof(DrawIndexedIndirectCommand));
             }
         }
-    } else {
+    } else
+#endif
+    {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Scene/Opaque");
         recordMeshDraws(rp, pipeline_.get(), false);
     }
@@ -1278,11 +1560,13 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
 
     if (project) {
         SAIDA_PROFILE_SCOPE("Renderer/ProjectSettings");
+#ifndef SAIDA_RHI_WEBGPU
         if (swapchain_->setVSync(project->vSync())) {
             cleanupHdrResources();
             createHdrResources();
             return;
         }
+#endif
 
         if (shadowMap_->resize(project->shadowResolution())) {
             updateGlobalShadowDescriptor();
@@ -1357,15 +1641,17 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
         updateEnvironmentDescriptor(scene);
     }
 
-    VkRect2D renderRect = activeRenderRect();
+    rhi::Rect2D renderRect = activeRenderRect();
     {
         SAIDA_PROFILE_SCOPE("Renderer/UpdateUniforms");
         updateUniformBuffer(currentFrame_, scene, camera, project);
     }
     {
         SAIDA_PROFILE_SCOPE("UI/Gather");
+#ifndef SAIDA_RHI_WEBGPU
         uiRenderer_->gatherUI(scene,
             {static_cast<float>(renderRect.extent.width), static_cast<float>(renderRect.extent.height)});
+#endif
     }
 
     rhi::CommandEncoder encoder = swapchain_->beginFrameCommands(currentFrame_);
@@ -1432,7 +1718,7 @@ void Renderer::createXrPipelines() {
     const VkFormat depthFormat = device_.findDepthFormat();
     const uint32_t viewMask = xrViewMask(xrViewCount_);
 
-    Pipeline::Desc sceneDesc;
+    rhi::Pipeline::Desc sceneDesc;
     sceneDesc.colorFormats = {rhi::vulkan::fromVk(hdrFormat)};
     sceneDesc.depthFormat = rhi::vulkan::fromVk(depthFormat);
     sceneDesc.bindGroupLayouts = {globalSetLayout_.get(), &resources_.materialSetLayout()};
@@ -1441,15 +1727,15 @@ void Renderer::createXrPipelines() {
 
     sceneDesc.vertPath = shaderPath("multiview.shader.vert.spv");
     sceneDesc.fragPath = shaderPath("shader.frag.spv");
-    xrScenePipeline_ = std::make_unique<Pipeline>(device_, sceneDesc);
+    xrScenePipeline_ = std::make_unique<rhi::Pipeline>(device_, sceneDesc);
 
     // Unlit multiview variant — same vertex shader + layout as the lit scene
     // pipeline, only the fragment differs (no per-eye data, so no MULTIVIEW frag).
     sceneDesc.fragPath = shaderPath("unlit.frag.spv");
-    xrUnlitPipeline_ = std::make_unique<Pipeline>(device_, sceneDesc);
+    xrUnlitPipeline_ = std::make_unique<rhi::Pipeline>(device_, sceneDesc);
 
     if (resources_.globalMaterialSetLayout()) {
-        Pipeline::Desc webDesc;
+        rhi::Pipeline::Desc webDesc;
         webDesc.vertPath = shaderPath("multiview.web_canvas_world.vert.spv");
         webDesc.fragPath = shaderPath("web_canvas_world.frag.spv");
         webDesc.colorFormats = {rhi::vulkan::fromVk(hdrFormat)};
@@ -1463,7 +1749,7 @@ void Renderer::createXrPipelines() {
         webDesc.topology = rhi::Topology::TriangleStrip;
         webDesc.pushConstantSize = sizeof(WebCanvasWorldPushConstants);
         webDesc.viewMask = viewMask;
-        xrWebCanvasWorldPipeline_ = std::make_unique<Pipeline>(device_, webDesc);
+        xrWebCanvasWorldPipeline_ = std::make_unique<rhi::Pipeline>(device_, webDesc);
     }
 
     // Same registry as desktop; each feature builds its stereo pipeline from the
@@ -1489,7 +1775,7 @@ void Renderer::createXrPipelines() {
 
         updateXrTonemapDescriptorSets();
 
-        Pipeline::Desc xrTonemapDesc;
+        rhi::Pipeline::Desc xrTonemapDesc;
         xrTonemapDesc.vertPath = shaderPath("tonemap.vert.spv");
         xrTonemapDesc.fragPath = shaderPath("tonemap.frag.spv");
         xrTonemapDesc.colorFormats = {rhi::vulkan::fromVk(xrColorFormat_)};
@@ -1497,7 +1783,7 @@ void Renderer::createXrPipelines() {
         xrTonemapDesc.vertexInput = false;
         xrTonemapDesc.depthTest = false;
         xrTonemapDesc.pushConstantSize = sizeof(TonemapPushConstants);
-        xrTonemapPipeline_ = std::make_unique<Pipeline>(device_, xrTonemapDesc);
+        xrTonemapPipeline_ = std::make_unique<rhi::Pipeline>(device_, xrTonemapDesc);
     }
 }
 
@@ -1743,3 +2029,4 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
 
 } // namespace saida
 #endif // SAIDA_ENABLE_XR
+

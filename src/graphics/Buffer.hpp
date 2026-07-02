@@ -1,5 +1,16 @@
 #pragma once
 
+#ifdef SAIDA_RHI_WEBGPU
+
+#include "rhi/webgpu/Buffer.hpp"
+
+namespace saida {
+using Buffer = rhi::webgpu::Buffer;
+using MemoryUsage = rhi::webgpu::MemoryUsage;
+} // namespace saida
+
+#else
+
 #include "graphics/VmaFwd.hpp"
 #include "rhi/BufferUsage.hpp"
 
@@ -43,3 +54,5 @@ private:
 };
 
 } // namespace saida
+
+#endif // SAIDA_RHI_WEBGPU

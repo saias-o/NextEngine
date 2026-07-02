@@ -2,8 +2,11 @@
 
 #include "graphics/Buffer.hpp"
 #include "graphics/Texture.hpp"
-#include "graphics/VulkanDevice.hpp"
 #include "graphics/ResourceManager.hpp"
+
+#ifndef SAIDA_RHI_WEBGPU
+#include "graphics/VulkanDevice.hpp"
+#endif
 
 #include <array>
 #include <stdexcept>
@@ -21,7 +24,7 @@ struct MaterialParams {
 };
 }
 
-Material::Material(VulkanDevice& device, ResourceManager& manager, const MaterialDesc& desc)
+Material::Material(rhi::Device& device, ResourceManager& manager, const MaterialDesc& desc)
     : device_(device), desc_(desc) {
     
     albedo_ = manager.getTexture(desc.albedoId);
@@ -67,8 +70,35 @@ Material::Material(VulkanDevice& device, ResourceManager& manager, const Materia
     emissiveEntry.view = emissiveMap_->imageView();
     emissiveEntry.sampler = emissiveMap_->sampler();
 
+#ifdef SAIDA_RHI_WEBGPU
+    rhi::BindGroupEntry albedoSamplerEntry;
+    albedoSamplerEntry.binding = 5;
+    albedoSamplerEntry.sampler = albedo_->sampler();
+    albedoEntry.sampler = nullptr;
+
+    rhi::BindGroupEntry normalSamplerEntry;
+    normalSamplerEntry.binding = 6;
+    normalSamplerEntry.sampler = normalMap_->sampler();
+    normalEntry.sampler = nullptr;
+
+    rhi::BindGroupEntry mrSamplerEntry;
+    mrSamplerEntry.binding = 7;
+    mrSamplerEntry.sampler = metallicRoughnessMap_->sampler();
+    mrEntry.sampler = nullptr;
+
+    rhi::BindGroupEntry emissiveSamplerEntry;
+    emissiveSamplerEntry.binding = 8;
+    emissiveSamplerEntry.sampler = emissiveMap_->sampler();
+    emissiveEntry.sampler = nullptr;
+
+    descriptorSet_ = std::make_unique<rhi::BindGroup>(manager.materialSetLayout(),
+        std::vector<rhi::BindGroupEntry>{
+            albedoEntry, normalEntry, mrEntry, paramsEntry, emissiveEntry,
+            albedoSamplerEntry, normalSamplerEntry, mrSamplerEntry, emissiveSamplerEntry});
+#else
     descriptorSet_ = std::make_unique<rhi::BindGroup>(manager.materialSetLayout(),
         std::vector<rhi::BindGroupEntry>{albedoEntry, normalEntry, mrEntry, paramsEntry, emissiveEntry});
+#endif
 
     // 2. GPU-Driven Path: Register into global MaterialData SSBO
     if (device_.capabilities().descriptorIndexing) {

@@ -1,12 +1,14 @@
 #include "render/GIVolume.hpp"
 
+#ifndef SAIDA_RHI_WEBGPU
 #include "graphics/VulkanDevice.hpp"
+#include "rhi/vulkan/Format.hpp"
+#endif
 #include "graphics/Buffer.hpp"
 #include "graphics/Mesh.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/GpuProfiler.hpp"
 #include "graphics/ComputePipeline.hpp"
-#include "rhi/vulkan/Format.hpp"
 #include "scene/Scene.hpp"
 #include "scene/MeshNode.hpp"
 #include "core/Paths.hpp"
@@ -25,7 +27,14 @@ namespace saida {
 
 namespace {
 constexpr rhi::Format kIrradianceFormat = rhi::Format::RGBA16Float;
+#ifdef SAIDA_RHI_WEBGPU
+// rg16f n'est pas un format storage en WebGPU core : l'atlas visibilité passe
+// en rgba16f (canaux ba inutilisés) pour rester écrivable en compute ET
+// filtrable au sampling. Miroir de la variante -DWEB de ddgi_blend.comp.
+constexpr rhi::Format kVisibilityFormat = rhi::Format::RGBA16Float;
+#else
 constexpr rhi::Format kVisibilityFormat = rhi::Format::RG16Float;
+#endif
 constexpr rhi::Format kVoxelFormat = rhi::Format::RGBA16Float;
 // Atlases are compute-written (P2), sampled in the lighting pass, and (P0)
 // cleared once — hence Storage | Sampled | CopyDst.
@@ -71,7 +80,7 @@ struct BorderPush {
 };
 }
 
-GIVolume::GIVolume(VulkanDevice& device, const GIVolumeDesc& desc,
+GIVolume::GIVolume(rhi::Device& device, const GIVolumeDesc& desc,
                    rhi::BindGroupLayout& materialSetLayout, rhi::BindGroupLayout& globalSetLayout)
     : device_(device), desc_(desc) {
     // Lay probes out in a roughly square 2D atlas.
@@ -151,16 +160,34 @@ void GIVolume::createVoxelResources(rhi::BindGroupLayout& materialSetLayout) {
         rhi::BufferUsage::Uniform, MemoryUsage::HostVisible);
 
     // Descriptor set: binding 0 = storage image, binding 1 = UBO.
+#ifdef SAIDA_RHI_WEBGPU
+    rhi::webgpu::BindGroupLayoutEntry voxelImage{};
+    voxelImage.binding = 0;
+    voxelImage.type = rhi::BindingType::StorageImage;
+    voxelImage.visibility = rhi::ShaderStages::Fragment;
+    voxelImage.dim = rhi::webgpu::TextureDim::Dim3D;
+    voxelImage.storageFormat = kVoxelFormat;
+    voxelImage.storageAccess = WGPUStorageTextureAccess_WriteOnly;
+    rhi::webgpu::BindGroupLayoutEntry voxelUbo{};
+    voxelUbo.binding = 1;
+    voxelUbo.type = rhi::BindingType::UniformBuffer;
+    voxelUbo.visibility = rhi::ShaderStages::Vertex | rhi::ShaderStages::Fragment;
+    voxelSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::webgpu::BindGroupLayoutEntry>{voxelImage, voxelUbo});
+#else
     voxelSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
         std::vector<rhi::BindGroupLayoutEntry>{
             {0, rhi::BindingType::StorageImage, rhi::ShaderStages::Fragment},
             {1, rhi::BindingType::UniformBuffer, rhi::ShaderStages::Vertex | rhi::ShaderStages::Fragment},
         });
+#endif
 
     rhi::BindGroupEntry voxelImageEntry;
     voxelImageEntry.binding = 0;
     voxelImageEntry.view = voxelTexture_->view();
+#ifndef SAIDA_RHI_WEBGPU
     voxelImageEntry.textureState = rhi::ResourceState::StorageReadWrite;
+#endif
     rhi::BindGroupEntry uboEntry;
     uboEntry.binding = 1;
     uboEntry.buffer = voxelUbo_.get();
@@ -170,9 +197,27 @@ void GIVolume::createVoxelResources(rhi::BindGroupLayout& materialSetLayout) {
 
     // --- Voxelize pipeline (attachment-less raster; writes only via imageStore). ---
     rhi::Pipeline::Desc pipelineDesc;
+#ifdef SAIDA_RHI_WEBGPU
+    pipelineDesc.vertPath = "/shaders/voxelize.vert.wgsl";
+    pipelineDesc.fragPath = "/shaders/voxelize.frag.wgsl";
+    // WebGPU rejects attachment-less passes ("Render pass has no attachments"),
+    // which silently invalidates the whole frame submit. Rasterize into a
+    // throwaway res×res target with writeMask None instead.
+    pipelineDesc.colorFormats = {rhi::Format::RGBA8Unorm};
+    pipelineDesc.colorWrite = false;
+    {
+        rhi::RenderTextureDesc dummyDesc;
+        dummyDesc.format = rhi::Format::RGBA8Unorm;
+        dummyDesc.width = res;
+        dummyDesc.height = res;
+        dummyDesc.usage = rhi::TextureUsage::ColorAttachment;
+        voxelDummyTarget_ = std::make_unique<rhi::RenderTexture>(device_, dummyDesc);
+    }
+#else
     pipelineDesc.vertPath = shaderPath("voxelize.vert.spv");
     pipelineDesc.fragPath = shaderPath("voxelize.frag.spv");
     // No color/depth formats: attachment-less pass, rasterize every triangle.
+#endif
     pipelineDesc.bindGroupLayouts = {voxelSetLayout_.get(), &materialSetLayout};
     pipelineDesc.depthTest = false;
     pipelineDesc.depthWrite = false;
@@ -182,7 +227,8 @@ void GIVolume::createVoxelResources(rhi::BindGroupLayout& materialSetLayout) {
     voxelPipeline_ = std::make_unique<rhi::Pipeline>(device_, pipelineDesc);
 }
 
-void GIVolume::voxelize(rhi::CommandEncoder& encoder, Scene& scene, GpuProfiler* profiler) {
+void GIVolume::voxelize(rhi::CommandEncoder& encoder, const DrawGeometryFn& drawGeometry,
+                        GpuProfiler* profiler) {
     SAIDA_GPU_PROFILE_SCOPE(profiler, encoder.handle(), "DDGI/Voxelize");
     const uint32_t res = static_cast<uint32_t>(desc_.voxelResolution);
     glm::vec3 extent = worldExtent();
@@ -216,11 +262,30 @@ void GIVolume::voxelize(rhi::CommandEncoder& encoder, Scene& scene, GpuProfiler*
     rhi::RenderPassDesc passDesc;
     passDesc.width = res;
     passDesc.height = res;
+#ifdef SAIDA_RHI_WEBGPU
+    // Web: attachment-less passes are invalid — bind the throwaway target
+    // (the pipeline masks all writes to it).
+    passDesc.colorCount = 1;
+    passDesc.colors[0].view = voxelDummyTarget_->view();
+    passDesc.colors[0].store = false;
+#endif
     rhi::RenderPassEncoder rp = encoder.beginRenderPass(passDesc);
     rp.setPipeline(*voxelPipeline_);
     rp.setBindGroup(0, *voxelSet_);
 
     for (uint32_t axis = 0; axis < 3; ++axis) {
+        drawGeometry(rp, axis);
+    }
+
+    rp.end();
+
+    // Storage writes -> sampled for the main/debug pass AND the DDGI trace.
+    encoder.transition(voxelTexture_->image(), rhi::ResourceState::StorageReadWrite,
+                       rhi::ResourceState::ShaderRead);
+}
+
+void GIVolume::voxelize(rhi::CommandEncoder& encoder, Scene& scene, GpuProfiler* profiler) {
+    voxelize(encoder, [&](rhi::RenderPassEncoder& rp, uint32_t axis) {
         for (MeshNode* node : scene.meshes()) {
             Mesh* mesh = node->mesh();
             Material* mat = node->material();
@@ -231,13 +296,7 @@ void GIVolume::voxelize(rhi::CommandEncoder& encoder, Scene& scene, GpuProfiler*
             mesh->bind(rp);
             mesh->draw(rp);
         }
-    }
-
-    rp.end();
-
-    // Storage writes -> sampled for the main/debug pass AND the DDGI trace.
-    encoder.transition(voxelTexture_->image(), rhi::ResourceState::StorageReadWrite,
-                       rhi::ResourceState::ShaderRead);
+    }, profiler);
 }
 
 void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
@@ -247,6 +306,31 @@ void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
         rhi::BufferUsage::Storage, MemoryUsage::GpuOnly);
 
     // Set layout: 0=rays SSBO, 1/2=write irr/vis (storage img), 3/4=prev irr/vis.
+#ifdef SAIDA_RHI_WEBGPU
+    auto storage = [](uint32_t binding, rhi::Format format, WGPUStorageTextureAccess access) {
+        rhi::webgpu::BindGroupLayoutEntry e{};
+        e.binding = binding;
+        e.type = rhi::BindingType::StorageImage;
+        e.visibility = rhi::ShaderStages::Compute;
+        e.storageFormat = format;
+        e.storageAccess = access;
+        return e;
+    };
+    rhi::webgpu::BindGroupLayoutEntry rays{};
+    rays.binding = 0;
+    rays.type = rhi::BindingType::StorageBuffer;
+    rays.visibility = rhi::ShaderStages::Compute;
+    // Write targets are WriteOnly: read-write storage is r32*-only in WebGPU
+    // core (the border copy that needed it is folded into ddgi_blend on web).
+    giComputeSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::webgpu::BindGroupLayoutEntry>{
+            rays,
+            storage(1, kIrradianceFormat, WGPUStorageTextureAccess_WriteOnly),
+            storage(2, kVisibilityFormat, WGPUStorageTextureAccess_WriteOnly),
+            storage(3, kIrradianceFormat, WGPUStorageTextureAccess_ReadOnly),
+            storage(4, kVisibilityFormat, WGPUStorageTextureAccess_ReadOnly),
+        });
+#else
     giComputeSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
         std::vector<rhi::BindGroupLayoutEntry>{
             {0, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute},
@@ -255,6 +339,7 @@ void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
             {3, rhi::BindingType::StorageImage, rhi::ShaderStages::Compute},
             {4, rhi::BindingType::StorageImage, rhi::ShaderStages::Compute},
         });
+#endif
 
     // Parity p: write = atlas[p], prev = atlas[1-p].
     for (int p = 0; p < 2; ++p) {
@@ -263,7 +348,9 @@ void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
         raysEntry.buffer = raysBuffer_.get();
         auto imgEntry = [](uint32_t binding, rhi::TextureView v) {
             rhi::BindGroupEntry e; e.binding = binding; e.view = v;
+#ifndef SAIDA_RHI_WEBGPU
             e.textureState = rhi::ResourceState::StorageReadWrite;
+#endif
             return e;
         };
         rhi::BindGroupEntry wi = imgEntry(1, irradiance_[p]->view());
@@ -274,10 +361,17 @@ void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
             std::vector<rhi::BindGroupEntry>{raysEntry, wi, wv, pi, pv});
     }
 
+#ifdef SAIDA_RHI_WEBGPU
+    std::vector<const rhi::BindGroupLayout*> setLayouts = {&globalSetLayout, giComputeSetLayout_.get()};
+    tracePipeline_  = std::make_unique<ComputePipeline>(device_, "/shaders/ddgi_trace.comp.wgsl", setLayouts, sizeof(TracePush));
+    blendPipeline_  = std::make_unique<ComputePipeline>(device_, "/shaders/ddgi_blend.comp.wgsl", setLayouts, sizeof(BlendPush));
+    // No border pipeline on web: ddgi_blend's -DWEB variant writes the gutter.
+#else
     std::vector<rhi::vulkan::BindGroupLayoutRef> setLayouts = {globalSetLayout, *giComputeSetLayout_};
-    tracePipeline_  = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_trace.comp.spv"),  setLayouts, sizeof(TracePush));
-    blendPipeline_  = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_blend.comp.spv"),  setLayouts, sizeof(BlendPush));
+    tracePipeline_  = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_trace.comp.spv"), setLayouts, sizeof(TracePush));
+    blendPipeline_  = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_blend.comp.spv"), setLayouts, sizeof(BlendPush));
     borderPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_borders.comp.spv"), setLayouts, sizeof(BorderPush));
+#endif
 }
 
 void GIVolume::update(rhi::CommandEncoder& encoder, const rhi::BindGroup& globalSet,
@@ -324,9 +418,10 @@ void GIVolume::update(rhi::CommandEncoder& encoder, const rhi::BindGroup& global
         blend(1, visibilityAtlasSize());
     }
 
+#ifndef SAIDA_RHI_WEBGPU
     encoder.storageBarrier();  // blend write -> border read
 
-    // --- 3. Border copy ---
+    // --- 3. Border copy (desktop; the web blend writes the gutter itself) ---
     {
         SAIDA_GPU_PROFILE_SCOPE(profiler, encoder.handle(), "DDGI/Borders");
         cp.setPipeline(*borderPipeline_);
@@ -340,6 +435,7 @@ void GIVolume::update(rhi::CommandEncoder& encoder, const rhi::BindGroup& global
         border(0, irradianceAtlasSize());
         border(1, visibilityAtlasSize());
     }
+#endif
     cp.end();
 
     // Border writes -> lighting fragment reads (current atlas, set 0 bindings 4/5).

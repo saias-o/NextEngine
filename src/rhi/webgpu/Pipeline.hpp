@@ -41,6 +41,10 @@ public:
         uint32_t pushConstantSize = 0;
         rhi::ShaderStages pushConstantStages = rhi::ShaderStages::VertexFragment;
         uint32_t viewMask = 0;             // ignored: no multiview on web
+        // writeMask None on every color target: for passes whose fragment writes
+        // nothing (voxelize's dummy attachment — WebGPU forbids attachment-less
+        // passes, so a throwaway target keeps the rasterizer running).
+        bool colorWrite = true;
         bool depthBias = false;
         float depthBiasConstant = 0.0f;
         float depthBiasSlope = 0.0f;

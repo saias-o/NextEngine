@@ -2,6 +2,10 @@
 
 #include "rhi/Rhi.hpp"
 
+#ifdef SAIDA_RHI_WEBGPU
+#include "graphics/Pipeline.hpp"
+#endif
+
 #include <glm/glm.hpp>
 
 #include <memory>
@@ -10,7 +14,9 @@
 namespace saida {
 
 class GpuProfiler;
+#ifndef SAIDA_RHI_WEBGPU
 class Pipeline;
+#endif
 class SceneSettings;
 class VulkanDevice;
 

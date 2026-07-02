@@ -2,8 +2,11 @@
 
 #include "core/Camera.hpp"
 #include "core/Paths.hpp"
+
+#ifndef SAIDA_RHI_WEBGPU
 #include "graphics/VulkanDevice.hpp"
 #include "rhi/vulkan/Format.hpp"
+#endif
 #include "scene/Scene.hpp"
 
 #include <glm/gtc/constants.hpp>
@@ -18,7 +21,7 @@ namespace saida {
 namespace {
 
 uint32_t hashPtr(const void* p) {
-    uintptr_t v = reinterpret_cast<uintptr_t>(p);
+    uint64_t v = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(p));
     v ^= v >> 33;
     v *= 0xff51afd7ed558ccdULL;
     v ^= v >> 33;
@@ -124,11 +127,15 @@ void ParticleFeature::createPipelines(const RenderContext& ctx) {
     alphaRuntime_ = std::make_unique<ParticleRuntime>(ctx.device, runtimeDesc);
     additiveRuntime_ = std::make_unique<ParticleRuntime>(ctx.device, runtimeDesc);
 
-    const char* vert = ctx.stereo() ? "multiview.particle_render.vert.spv" : "particle_render.vert.spv";
-
     Pipeline::Desc desc;
+#ifdef SAIDA_RHI_WEBGPU
+    desc.vertPath = "/shaders/particle_render.vert.wgsl";
+    desc.fragPath = "/shaders/particle_render.frag.wgsl";
+#else
+    const char* vert = ctx.stereo() ? "multiview.particle_render.vert.spv" : "particle_render.vert.spv";
     desc.vertPath = shaderPath(vert);
     desc.fragPath = shaderPath("particle_render.frag.spv");
+#endif
     desc.colorFormats = {ctx.colorFormat};
     desc.depthFormat = ctx.depthFormat;
     desc.bindGroupLayouts = {&ctx.globalSetLayout, &alphaRuntime_->renderSetLayout()};
@@ -293,7 +300,7 @@ void ParticleFeature::record(FrameContext& fc) {
         fc.pass.setBindGroup(1, runtime.renderSet(parity));
         Push push{};
         fc.pass.setPushConstants(&push, sizeof(Push));
-        fc.pass.drawIndirect(runtime.indirectBuffer(), 0, 1, sizeof(VkDrawIndirectCommand));
+        fc.pass.drawIndirect(runtime.indirectBuffer(), 0, 1, ParticleRuntime::kDrawIndirectCommandSize);
     };
 
     runBatch(ParticleSystemNode::BlendMode::Alpha, *alphaRuntime_, *alphaPipeline_);

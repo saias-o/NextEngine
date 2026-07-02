@@ -1,6 +1,5 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
 #include <array>
@@ -9,15 +8,15 @@
 #include <vector>
 
 #include "graphics/GeometryRegistry.hpp"
+#include "rhi/Rhi.hpp"
 
-namespace saida::rhi::vulkan {
-class RenderPassEncoder;
-}
+#ifndef SAIDA_RHI_WEBGPU
+#include <vulkan/vulkan.h>
+#endif
 
 namespace saida {
 
 class VulkanDevice;
-class Buffer;
 class GeometryRegistry;
 
 struct Vertex {
@@ -30,8 +29,10 @@ struct Vertex {
     glm::ivec4 boneIndices{-1, -1, -1, -1};
     glm::vec4 boneWeights{0.0f, 0.0f, 0.0f, 0.0f};
 
+#ifndef SAIDA_RHI_WEBGPU
     static VkVertexInputBindingDescription bindingDescription();
     static std::array<VkVertexInputAttributeDescription, 8> attributeDescriptions();
+#endif
 };
 
 // Local-space axis-aligned bounding box, in the mesh's own coordinate space
@@ -59,8 +60,8 @@ public:
     static std::unique_ptr<Mesh> fromObjFile(GeometryRegistry& registry, const std::string& path,
                                              bool generateLightmapUVs = false);
 
-    void bind(rhi::vulkan::RenderPassEncoder& rp) const;
-    void draw(rhi::vulkan::RenderPassEncoder& rp) const;
+    void bind(rhi::RenderPassEncoder& rp) const;
+    void draw(rhi::RenderPassEncoder& rp) const;
 
     GeometryAllocation geometryAllocation() const { return allocation_; }
     const GeometryAllocation& allocation() const { return allocation_; }

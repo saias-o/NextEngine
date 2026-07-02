@@ -26,6 +26,32 @@ set(GLM_INCLUDE_DIR ${SAIDA_ROOT}/third_party/glm CACHE PATH "Directory containi
 
 add_executable(saida_web
     main.cpp
+    ${SAIDA_ROOT}/src/core/Profiler.cpp
+    ${SAIDA_ROOT}/src/core/Camera.cpp
+    ${SAIDA_ROOT}/src/graphics/GeometryRegistry.cpp
+    ${SAIDA_ROOT}/src/graphics/Material.cpp
+    ${SAIDA_ROOT}/src/graphics/Mesh.cpp
+    ${SAIDA_ROOT}/src/graphics/Primitives.cpp
+    ${SAIDA_ROOT}/src/graphics/ResourceManager.cpp
+    ${SAIDA_ROOT}/src/graphics/ShadowMap.cpp
+    ${SAIDA_ROOT}/src/graphics/StbImageUsage.cpp
+    ${SAIDA_ROOT}/src/graphics/TinyObjUsage.cpp
+    ${SAIDA_ROOT}/src/fx/ParticleQuality.cpp
+    ${SAIDA_ROOT}/src/fx/ParticleRuntime.cpp
+    ${SAIDA_ROOT}/src/project/AssetRegistry.cpp
+    ${SAIDA_ROOT}/src/render/GIVolume.cpp
+    ${SAIDA_ROOT}/src/render/features/ParticleFeature.cpp
+    ${SAIDA_ROOT}/src/render/PostProcessor.cpp
+    ${SAIDA_ROOT}/src/render/Renderer.cpp
+    ${SAIDA_ROOT}/src/scene/Behaviour.cpp
+    ${SAIDA_ROOT}/src/scene/BehaviourRegistry.cpp
+    ${SAIDA_ROOT}/src/scene/LightNode.cpp
+    ${SAIDA_ROOT}/src/scene/MeshLod.cpp
+    ${SAIDA_ROOT}/src/scene/MeshNode.cpp
+    ${SAIDA_ROOT}/src/scene/Node.cpp
+    ${SAIDA_ROOT}/src/scene/NodeId.cpp
+    ${SAIDA_ROOT}/src/scene/ParticleSystemNode.cpp
+    ${SAIDA_ROOT}/src/scene/Scene.cpp
     ${SAIDA_ROOT}/src/rhi/webgpu/BindGroup.cpp
     ${SAIDA_ROOT}/src/rhi/webgpu/Buffer.cpp
     ${SAIDA_ROOT}/src/rhi/webgpu/CommandEncoder.cpp
@@ -37,7 +63,13 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/rhi/webgpu/Texture.cpp
 )
 
-target_include_directories(saida_web PRIVATE ${SAIDA_ROOT}/src ${GLM_INCLUDE_DIR})
+target_include_directories(saida_web PRIVATE
+    ${SAIDA_ROOT}/src
+    ${GLM_INCLUDE_DIR}
+    ${SAIDA_ROOT}/third_party/json
+    ${SAIDA_ROOT}/third_party/stb
+    ${SAIDA_ROOT}/third_party/tinyobjloader
+)
 target_compile_definitions(saida_web PRIVATE SAIDA_RHI_WEBGPU GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
 # Size-conscious flags (16.6): -Oz in release, plus link-time stripping.

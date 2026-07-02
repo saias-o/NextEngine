@@ -15,21 +15,21 @@
 namespace saida {
 
 class VulkanDevice;
-class Swapchain;
 class Window;
-class Pipeline;
+#ifndef SAIDA_RHI_WEBGPU
 class ComputePipeline;
-class Buffer;
+#endif
 class ImGuiLayer;
 class Scene;
 class Camera;
 class Mesh;
 class Project;
-class Swapchain;
 class Material;
 class ResourceManager;
 class ShadowMap;
+#ifndef SAIDA_RHI_WEBGPU
 class UIRenderer;
+#endif
 class GIVolume;
 class GpuProfiler;
 class PostProcessor;
@@ -95,8 +95,11 @@ struct InstanceData {
 // touches the swap chain present path — the seam a future XR path slots into.
 class Renderer {
 public:
-    Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
+    Renderer(rhi::Device& device, rhi::Surface& surface, Window& window,
              ResourceManager& resources, ImGuiLayer& imgui);
+#ifdef SAIDA_RHI_WEBGPU
+    Renderer(rhi::Device& device, rhi::Surface& surface, ResourceManager& resources);
+#endif
 #ifdef SAIDA_ENABLE_XR
     // XR constructor: no window swapchain / ImGui — presentation is owned by the
     // OpenXR session. Builds the multiview (stereo) scene/skybox/tonemap pipelines
@@ -149,7 +152,7 @@ private:
     // The scene pipeline for a material's shading model (desktop / XR). Both
     // variants share an identical descriptor-set + push-constant layout, so the
     // draw loop can swap between them and keep its bound sets (layout-compatible).
-    Pipeline* scenePipelineFor(MaterialType type) const {
+    rhi::Pipeline* scenePipelineFor(MaterialType type) const {
         return (type == MaterialType::Unlit && unlitPipeline_) ? unlitPipeline_.get()
                                                                : pipeline_.get();
     }
@@ -177,24 +180,26 @@ private:
     // Records the sorted CPU mesh draw list for both desktop and XR. The caller
     // chooses the first pipeline for the active render target; this method handles
     // pipeline switches, material binds, push constants and mesh draws.
-    void recordMeshDraws(rhi::RenderPassEncoder& rp, Pipeline* firstPipeline, bool xrMultiview);
+    void recordMeshDraws(rhi::RenderPassEncoder& rp, rhi::Pipeline* firstPipeline, bool xrMultiview);
     void recordWorldWebCanvases(rhi::RenderPassEncoder& rp, Scene& scene, const Camera& camera);
     void recordShadowPasses(rhi::CommandEncoder& encoder);
     void recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageIndex, Scene& scene,
                              const Camera& camera);
     rhi::Rect2D activeRenderRect() const;
 
-    VulkanDevice& device_;
-    Swapchain* swapchain_ = nullptr;  // null in XR mode (OpenXR owns presentation)
-    Window& window_;
+    rhi::Device& device_;
+    rhi::Surface* swapchain_ = nullptr;  // null in XR mode (OpenXR owns presentation)
+    Window* window_ = nullptr;
     ResourceManager& resources_;
     ImGuiLayer* imgui_ = nullptr;     // null in XR mode (no debug overlay yet)
 
-    std::unique_ptr<Pipeline> pipeline_;        // scene pipeline: MaterialType::Lit
-    std::unique_ptr<Pipeline> unlitPipeline_;   // scene pipeline: MaterialType::Unlit
-    std::unique_ptr<Pipeline> webCanvasWorldPipeline_;
+    std::unique_ptr<rhi::Pipeline> pipeline_;        // scene pipeline: MaterialType::Lit
+    std::unique_ptr<rhi::Pipeline> unlitPipeline_;   // scene pipeline: MaterialType::Unlit
+    std::unique_ptr<rhi::Pipeline> webCanvasWorldPipeline_;
     std::unique_ptr<ShadowMap> shadowMap_;
+#ifndef SAIDA_RHI_WEBGPU
     std::unique_ptr<UIRenderer> uiRenderer_;
+#endif
     std::unique_ptr<GIVolume> gi_;  // DDGI irradiance volume (the single GI primitive)
     std::unique_ptr<GpuProfiler> gpuProfiler_;
 
@@ -209,7 +214,7 @@ private:
     std::unique_ptr<PostProcessor> postProcessor_;
 
     // Tonemap pipeline
-    std::unique_ptr<Pipeline> tonemapPipeline_;
+    std::unique_ptr<rhi::Pipeline> tonemapPipeline_;
     std::unique_ptr<rhi::BindGroupLayout> tonemapSetLayout_;
     std::unique_ptr<rhi::BindGroup> tonemapSet_;
     std::unique_ptr<rhi::Sampler> tonemapSampler_;         // linear (HDR + bloom)
@@ -226,18 +231,27 @@ private:
 
     std::unique_ptr<rhi::BindGroupLayout> globalSetLayout_;
     std::vector<std::unique_ptr<rhi::BindGroup>> globalGroups_;
-    std::vector<std::unique_ptr<Buffer>> uniformBuffers_;
-    std::vector<std::unique_ptr<Buffer>> lightingBuffers_;
-    std::vector<std::unique_ptr<Buffer>> boneMatricesBuffers_;
+#ifdef SAIDA_RHI_WEBGPU
+    // Set 0 variant for the DDGI compute pass: dummy views at the GI atlas
+    // bindings — WebGPU rejects sampling a texture the same pass storage-writes.
+    std::vector<std::unique_ptr<rhi::BindGroup>> giComputeGlobalGroups_;
+#endif
+    std::vector<std::unique_ptr<rhi::Buffer>> uniformBuffers_;
+    std::vector<std::unique_ptr<rhi::Buffer>> lightingBuffers_;
+    std::vector<std::unique_ptr<rhi::Buffer>> boneMatricesBuffers_;
 
     // GPU-driven rendering resources
-    std::vector<std::unique_ptr<Buffer>> instanceBuffers_;
-    std::vector<std::unique_ptr<Buffer>> originalDrawCommandBuffers_;
-    std::vector<std::unique_ptr<Buffer>> drawCommandBuffers_;
-    std::vector<std::unique_ptr<Buffer>> countBuffers_;
+    std::vector<std::unique_ptr<rhi::Buffer>> instanceBuffers_;
+    std::vector<std::unique_ptr<rhi::Buffer>> originalDrawCommandBuffers_;
+    std::vector<std::unique_ptr<rhi::Buffer>> drawCommandBuffers_;
+    std::vector<std::unique_ptr<rhi::Buffer>> countBuffers_;
     static constexpr uint32_t kMaxInstances = 100000;
     
+#ifdef SAIDA_RHI_WEBGPU
+    std::unique_ptr<rhi::ComputePipeline> cullingPipeline_;
+#else
     std::unique_ptr<ComputePipeline> cullingPipeline_;
+#endif
     std::unique_ptr<rhi::BindGroupLayout> cullingSetLayout_;
     std::vector<std::unique_ptr<rhi::BindGroup>> cullingGroups_;
     uint32_t currentInstanceCount_ = 0;
@@ -299,14 +313,14 @@ private:
     void recordXrTonemap(rhi::CommandEncoder& encoder, Scene& scene,
                          const std::vector<EyeRenderInfo>& eyes);
 
-    std::unique_ptr<Pipeline> xrScenePipeline_;    // multiview scene: MaterialType::Lit
-    std::unique_ptr<Pipeline> xrUnlitPipeline_;    // multiview scene: MaterialType::Unlit
-    std::unique_ptr<Pipeline> xrWebCanvasWorldPipeline_;
-    std::unique_ptr<Pipeline> xrTonemapPipeline_;  // per-eye tonemap → XR image
+    std::unique_ptr<rhi::Pipeline> xrScenePipeline_;    // multiview scene: MaterialType::Lit
+    std::unique_ptr<rhi::Pipeline> xrUnlitPipeline_;    // multiview scene: MaterialType::Unlit
+    std::unique_ptr<rhi::Pipeline> xrWebCanvasWorldPipeline_;
+    std::unique_ptr<rhi::Pipeline> xrTonemapPipeline_;  // per-eye tonemap → XR image
     // Skybox/water in XR are scene-pass features (see features_), shared with desktop.
 
     // XR counterpart of scenePipelineFor (multiview pipelines).
-    Pipeline* xrScenePipelineFor(MaterialType type) const {
+    rhi::Pipeline* xrScenePipelineFor(MaterialType type) const {
         return (type == MaterialType::Unlit && xrUnlitPipeline_) ? xrUnlitPipeline_.get()
                                                                  : xrScenePipeline_.get();
     }

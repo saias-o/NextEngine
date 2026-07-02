@@ -15,8 +15,6 @@
 
 namespace saida {
 
-class VulkanDevice;
-
 class ParticleFeature : public ScenePassFeature {
 public:
     ~ParticleFeature() override;
@@ -46,7 +44,7 @@ private:
     static constexpr uint32_t kFramesInFlightFallback = 2;
     static constexpr uint32_t kVertsPerParticle = 6;
 
-    VulkanDevice* device_ = nullptr;
+    rhi::Device* device_ = nullptr;
     ParticleQualityBudget budget_;
     uint64_t recordSerial_ = 0;
     std::unique_ptr<Pipeline> alphaPipeline_;

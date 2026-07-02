@@ -9,7 +9,6 @@
 
 namespace saida {
 
-class VulkanDevice;
 class ResourceManager;
 class Scene;
 class Camera;
@@ -53,7 +52,7 @@ struct EyeRenderInfo {
 // and descriptors against the engine's HDR scene target. `viewMask == 0` means the
 // mono (desktop) path; a non-zero mask means stereo multiview (XR).
 struct RenderContext {
-    VulkanDevice& device;
+    rhi::Device& device;
     ResourceManager& resources;
     rhi::BindGroupLayout& globalSetLayout;  // set 0: camera + lighting + environment
     rhi::Format colorFormat;                // HDR color attachment
@@ -71,8 +70,8 @@ struct RenderContext {
 // (compute/barriers — the GPU-particle sim records through it, a pre-existing
 // in-pass dispatch the WebGPU backend will have to hoist in 16.4).
 struct FrameContext {
-    rhi::CommandEncoder encoder;
-    rhi::RenderPassEncoder pass;
+    rhi::CommandEncoder& encoder;
+    rhi::RenderPassEncoder& pass;
     uint32_t frameIndex;
     const rhi::BindGroup* globalSet;  // set 0 for this frame (camera + lighting + env)
     Scene& scene;

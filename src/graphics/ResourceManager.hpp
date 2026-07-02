@@ -1,6 +1,9 @@
 #pragma once
 
+#ifndef SAIDA_RHI_WEBGPU
 #include <vulkan/vulkan.h>
+#endif
+
 #include <glm/glm.hpp>
 
 #include <memory>
@@ -13,11 +16,18 @@
 #include "graphics/GeometryRegistry.hpp"
 #include "rhi/Rhi.hpp"
 
+#ifdef SAIDA_RHI_WEBGPU
+#include "graphics/Buffer.hpp"
+#include "graphics/Texture.hpp"
+#endif
+
 namespace saida {
 
 class VulkanDevice;
 class Mesh;
+#ifndef SAIDA_RHI_WEBGPU
 class Texture;
+#endif
 struct Vertex;
 class Rig;
 class AnimationClip;
@@ -27,12 +37,12 @@ class ResourceManager {
 public:
     static constexpr uint32_t kMaxBindlessTextures = 8192;
     static constexpr uint32_t kMaxBindlessMaterials = 4096;
-    ResourceManager(VulkanDevice& device, AssetRegistry* registry = nullptr);
+    ResourceManager(rhi::Device& device, AssetRegistry* registry = nullptr);
     ~ResourceManager();
     ResourceManager(const ResourceManager&) = delete;
     ResourceManager& operator=(const ResourceManager&) = delete;
 
-    VulkanDevice& device() { return device_; }
+    rhi::Device& device() { return device_; }
 
     // Mesh by id: a built-in primitive or an .obj AssetID.
     Mesh* getMesh(AssetID id);
@@ -52,6 +62,9 @@ public:
     AssetID getOrRegister(const std::string& path, AssetType type = AssetType::Unknown, bool srgb = true);
 
     AssetID registerMemoryTexture(const uint8_t* data, size_t size, bool srgb = true);
+    AssetID registerGeneratedTexture(const uint8_t* pixels, uint32_t width, uint32_t height,
+                                     rhi::Format format = rhi::Format::RGBA8Srgb,
+                                     bool generateMipmaps = true);
 
     // Register a dynamically generated mesh (e.g. from gltf primitive)
     AssetID registerMemoryMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
@@ -66,8 +79,10 @@ public:
     rhi::BindGroupLayout& materialSetLayout() const { return *materialSetLayout_; }
 
     // Global bindless texture/material table. Pipelines choose the set index.
+#ifndef SAIDA_RHI_WEBGPU
     VkDescriptorSetLayout globalMaterialSetLayout() const { return globalMaterialSetLayout_; }
     VkDescriptorSet globalMaterialSet() const { return globalMaterialSet_; }
+#endif
     Buffer* globalMaterialBuffer() const { return globalMaterialBuffer_.get(); }
     
     GeometryRegistry& geometry() { return *geometryRegistry_; }
@@ -89,14 +104,16 @@ private:
     void ensureDefaultTextures();
     uint32_t getBindlessTextureIndex(Texture* texture);
 
-    VulkanDevice& device_;
+    rhi::Device& device_;
     AssetRegistry* registry_;
     std::unique_ptr<rhi::BindGroupLayout> materialSetLayout_;
 
+#ifndef SAIDA_RHI_WEBGPU
     // Global Bindless resources
     VkDescriptorSetLayout globalMaterialSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool globalMaterialPool_ = VK_NULL_HANDLE;
     VkDescriptorSet globalMaterialSet_ = VK_NULL_HANDLE;
+#endif
     std::unique_ptr<Buffer> globalMaterialBuffer_;
     uint32_t nextBindlessTextureIndex_ = 0;
     uint32_t nextMaterialIndex_ = 0;

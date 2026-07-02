@@ -116,6 +116,11 @@ BuiltLayout buildLayout(Device& device, const std::vector<const BindGroupLayout*
         // `PUSH_QUALIFIER` puts the push block at @group(3) @binding(0).
         while (groups.size() < 3) groups.push_back(device.emptyBindGroupLayout());
 
+        // WGSL rounds a uniform block's size up to 16 (e.g. mat4 + uint = 68
+        // bytes in C++ but 80 in the shader): bind the rounded size or Dawn
+        // rejects the pipeline (minBindingSize too small).
+        pushSize = (pushSize + 15u) & ~15u;
+
         WGPUBindGroupLayoutEntry entry = {};
         entry.binding = 0;
         entry.visibility = WGPUShaderStage_None;
@@ -223,7 +228,8 @@ Pipeline::Pipeline(Device& device, const Desc& desc) : device_(device) {
         for (rhi::Format format : desc.colorFormats) {
             WGPUColorTargetState target = {};
             target.format = toWgpu(format);
-            target.writeMask = WGPUColorWriteMask_All;
+            target.writeMask = desc.colorWrite ? WGPUColorWriteMask_All
+                                               : WGPUColorWriteMask_None;
             if (desc.blendMode != rhi::BlendMode::None) target.blend = &blend;
             targets.push_back(target);
         }

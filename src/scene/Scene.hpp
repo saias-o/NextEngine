@@ -110,7 +110,13 @@ public:
     const std::vector<ParticleSystemNode*>& particleSystems() const { return particleSystems_; }
 
     // The per-scene physics world (created lazily once a body exists; null until then).
-    PhysicsWorld* physics() const { return physics_.get(); }
+    PhysicsWorld* physics() const {
+#ifdef SAIDA_RHI_WEBGPU
+        return nullptr;
+#else
+        return physics_.get();
+#endif
+    }
 
     // SceneTree wiring: only the persistent World root carries a tree pointer;
     // Node::tree() walks to the root and reads it via ownTree().
@@ -152,7 +158,9 @@ private:
     std::vector<CollisionObjectNode*> bodies_;
     uint32_t activeNodeCount_ = 0;
 
+#ifndef SAIDA_RHI_WEBGPU
     std::unique_ptr<PhysicsWorld> physics_;
+#endif
     SceneTree* tree_ = nullptr;
 };
 

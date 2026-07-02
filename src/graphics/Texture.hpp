@@ -1,5 +1,15 @@
 #pragma once
 
+#ifdef SAIDA_RHI_WEBGPU
+
+#include "rhi/webgpu/Texture.hpp"
+
+namespace saida {
+using Texture = rhi::webgpu::Texture;
+} // namespace saida
+
+#else
+
 #include "graphics/VmaFwd.hpp"
 #include "rhi/Format.hpp"
 
@@ -58,3 +68,5 @@ private:
 };
 
 } // namespace saida
+
+#endif // SAIDA_RHI_WEBGPU

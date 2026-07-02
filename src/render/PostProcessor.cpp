@@ -2,10 +2,10 @@
 
 #include "core/Paths.hpp"
 #include "graphics/GpuProfiler.hpp"
-#include "graphics/GpuSync.hpp"
-#include "graphics/MemoryProfiler.hpp"
 #include "graphics/Pipeline.hpp"
+#ifndef SAIDA_RHI_WEBGPU
 #include "graphics/VulkanDevice.hpp"
+#endif
 #include "scene/Scene.hpp"
 
 #include <algorithm>
@@ -86,10 +86,18 @@ void PostProcessor::createSampler() {
 }
 
 void PostProcessor::createDescriptorResources() {
+#ifdef SAIDA_RHI_WEBGPU
+    inputLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
+        std::vector<rhi::webgpu::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::SampledTexture, rhi::ShaderStages::Fragment},
+            {1, rhi::BindingType::Sampler, rhi::ShaderStages::Fragment},
+        });
+#else
     inputLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
         std::vector<rhi::BindGroupLayoutEntry>{
             {0, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},
         });
+#endif
     updateDescriptorSets();
 }
 
@@ -106,9 +114,17 @@ void PostProcessor::updateDescriptorSets() {
         rhi::BindGroupEntry entry;
         entry.binding = 0;
         entry.view = view;
+#ifdef SAIDA_RHI_WEBGPU
+        rhi::BindGroupEntry samplerEntry;
+        samplerEntry.binding = 1;
+        samplerEntry.sampler = linearSampler_->handle();
+        return std::make_unique<rhi::BindGroup>(*inputLayout_,
+                                                std::vector<rhi::BindGroupEntry>{entry, samplerEntry});
+#else
         entry.sampler = linearSampler_->handle();
         return std::make_unique<rhi::BindGroup>(*inputLayout_,
                                                 std::vector<rhi::BindGroupEntry>{entry});
+#endif
     };
 
     for (size_t i = 0; i < bloom_.size(); ++i) {
@@ -121,7 +137,11 @@ void PostProcessor::updateDescriptorSets() {
 
 void PostProcessor::createPipelines() {
     Pipeline::Desc desc;
+#ifdef SAIDA_RHI_WEBGPU
+    desc.vertPath = "/shaders/tonemap.vert.wgsl";
+#else
     desc.vertPath = shaderPath("tonemap.vert.spv");
+#endif
     desc.colorFormats = {hdrFormat_};
     desc.bindGroupLayouts = {inputLayout_.get()};
     desc.vertexInput = false;
@@ -130,11 +150,19 @@ void PostProcessor::createPipelines() {
     desc.cullMode = rhi::CullMode::None;
     desc.pushConstantSize = sizeof(BloomPush);
 
+#ifdef SAIDA_RHI_WEBGPU
+    desc.fragPath = "/shaders/bloom_downsample.frag.wgsl";
+#else
     desc.fragPath = shaderPath("bloom_downsample.frag.spv");
+#endif
     desc.blendMode = rhi::BlendMode::None;
     bloomDownsamplePipeline_ = std::make_unique<Pipeline>(device_, desc);
 
+#ifdef SAIDA_RHI_WEBGPU
+    desc.fragPath = "/shaders/bloom_upsample.frag.wgsl";
+#else
     desc.fragPath = shaderPath("bloom_upsample.frag.spv");
+#endif
     desc.blendMode = rhi::BlendMode::Additive;
     bloomUpsamplePipeline_ = std::make_unique<Pipeline>(device_, desc);
 }

@@ -2,8 +2,11 @@
 
 #include "core/Paths.hpp"
 #include "graphics/Mesh.hpp"
+
+#ifndef SAIDA_RHI_WEBGPU
 #include "graphics/VulkanDevice.hpp"
 #include "rhi/vulkan/Format.hpp"
+#endif
 
 #include <glm/glm.hpp>
 
@@ -11,12 +14,16 @@
 
 namespace saida {
 
-ShadowMap::ShadowMap(VulkanDevice& device, uint32_t initialResolution) : device_(device), resolution_(initialResolution) {
+ShadowMap::ShadowMap(rhi::Device& device, uint32_t initialResolution) : device_(device), resolution_(initialResolution) {
+#ifdef SAIDA_RHI_WEBGPU
+    format_ = rhi::Format::Depth32Float;
+#else
     VkFormat vkFormat = device_.findSupportedFormat(
         {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D16_UNORM},
         VK_IMAGE_TILING_OPTIMAL,
         VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
     format_ = vkFormat == VK_FORMAT_D32_SFLOAT ? rhi::Format::Depth32Float : rhi::Format::Depth16;
+#endif
 
     createTexture();
     createSampler();
@@ -55,7 +62,11 @@ void ShadowMap::createPipeline() {
     // Depth-only: a single vertex stage, no fragment shader, no color attachment.
     // Push constant: mat4 mvp = lightViewProj * model (vertex stage only).
     rhi::Pipeline::Desc desc;
+#ifdef SAIDA_RHI_WEBGPU
+    desc.vertPath = "/shaders/shadow.vert.wgsl";
+#else
     desc.vertPath = shaderPath("shadow.vert.spv");
+#endif
     desc.depthFormat = format_;
     desc.pushConstantSize = sizeof(glm::mat4);
     desc.pushConstantStages = rhi::ShaderStages::Vertex;

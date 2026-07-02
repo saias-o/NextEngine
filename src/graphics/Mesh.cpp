@@ -3,9 +3,11 @@
 #include "core/Log.hpp"
 #include "core/Profiler.hpp"
 #include "graphics/Buffer.hpp"
-#include "graphics/VulkanDevice.hpp"
-#include "rhi/vulkan/CommandEncoder.hpp"
 #include "tiny_obj_loader.h"
+
+#ifndef SAIDA_RHI_WEBGPU
+#include "graphics/VulkanDevice.hpp"
+#endif
 
 #include <algorithm>
 #include <cstddef>
@@ -16,6 +18,7 @@
 
 namespace saida {
 
+#ifndef SAIDA_RHI_WEBGPU
 VkVertexInputBindingDescription Vertex::bindingDescription() {
     VkVertexInputBindingDescription desc{};
     desc.binding = 0;
@@ -60,6 +63,7 @@ std::array<VkVertexInputAttributeDescription, 8> Vertex::attributeDescriptions()
     attrs[7].offset = offsetof(Vertex, boneWeights);
     return attrs;
 }
+#endif
 
 Mesh::Mesh(GeometryRegistry& registry, const std::vector<Vertex>& vertices,
            const std::vector<uint32_t>& indices)
@@ -207,13 +211,13 @@ std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::s
     return std::make_unique<Mesh>(registry, vertices, indices);
 }
 
-void Mesh::bind(rhi::vulkan::RenderPassEncoder& rp) const {
+void Mesh::bind(rhi::RenderPassEncoder& rp) const {
     // In hybrid rendering, binding is usually done globally, but if we do it per-mesh:
     rp.setVertexBuffer(*registry_.vertexBuffer());
     rp.setIndexBuffer(*registry_.indexBuffer());
 }
 
-void Mesh::draw(rhi::vulkan::RenderPassEncoder& rp) const {
+void Mesh::draw(rhi::RenderPassEncoder& rp) const {
     rp.drawIndexed(allocation_.indexCount, 1, allocation_.firstIndex, allocation_.vertexOffset, 0);
 }
 

@@ -212,13 +212,45 @@ void CommandEncoder::copyBufferToTexture(const Buffer& src, WGPUTexture dst,
 }
 
 void CommandEncoder::clearColorTexture(WGPUTexture texture, const std::array<float, 4>& color) {
-    // WebGPU has no clear-texture command outside a pass. Non-zero clears would
-    // need a render pass; the engine only zero-clears through this path (the GI
-    // voxel grid) and GI atlas init writes constants through the same helper —
-    // both tolerate a zero fill on the web profile until the DDGI port (16.5).
-    (void)texture;
-    if (color[0] != 0.0f || color[1] != 0.0f || color[2] != 0.0f)
+    // WebGPU has no clear-texture command outside a pass. Zero clears are done
+    // by copying from the Device's cached all-zero buffer (the GI voxel grid
+    // needs one per frame). Non-zero clears would need a render pass; the only
+    // caller is the GI atlas init constant, which tolerates staying zero.
+    if (color[0] != 0.0f || color[1] != 0.0f || color[2] != 0.0f) {
         std::printf("rhi::webgpu: clearColorTexture ignores non-zero clears (16.5)\n");
+        return;
+    }
+
+    uint32_t bpp = 0;
+    switch (wgpuTextureGetFormat(texture)) {
+        case WGPUTextureFormat_R32Float:
+        case WGPUTextureFormat_RG16Float:
+        case WGPUTextureFormat_RGBA8Unorm:
+        case WGPUTextureFormat_RGBA8UnormSrgb:
+        case WGPUTextureFormat_BGRA8Unorm:
+        case WGPUTextureFormat_BGRA8UnormSrgb: bpp = 4; break;
+        case WGPUTextureFormat_RG32Float:
+        case WGPUTextureFormat_RGBA16Float:   bpp = 8; break;
+        case WGPUTextureFormat_RGBA32Float:   bpp = 16; break;
+        default:
+            std::printf("rhi::webgpu: clearColorTexture: unsupported format %d\n",
+                        int(wgpuTextureGetFormat(texture)));
+            return;
+    }
+
+    const uint32_t w = wgpuTextureGetWidth(texture);
+    const uint32_t h = wgpuTextureGetHeight(texture);
+    const uint32_t d = wgpuTextureGetDepthOrArrayLayers(texture);
+    const uint32_t bytesPerRow = (w * bpp + 255u) & ~255u;  // copy alignment
+
+    WGPUTexelCopyBufferInfo src = {};
+    src.buffer = device_.zeroBuffer(uint64_t(bytesPerRow) * h * d);
+    src.layout.bytesPerRow = bytesPerRow;
+    src.layout.rowsPerImage = h;
+    WGPUTexelCopyTextureInfo dst = {};
+    dst.texture = texture;
+    WGPUExtent3D extent = {w, h, d};
+    wgpuCommandEncoderCopyBufferToTexture(encoder_, &src, &dst, &extent);
 }
 
 void CommandEncoder::fillBuffer(const Buffer& dst, uint64_t offset, uint64_t size,

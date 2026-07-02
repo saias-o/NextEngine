@@ -3,8 +3,11 @@
 #include "scene/BehaviourRegistry.hpp"
 #include "scene/SceneTree.hpp"
 #include "scene/SerializationHelpers.hpp"
-#include "audio/AudioManager.hpp"
 #include "core/Log.hpp"
+
+#ifndef SAIDA_RHI_WEBGPU
+#include "audio/AudioManager.hpp"
+#endif
 
 #include <nlohmann/json.hpp>
 
@@ -34,8 +37,12 @@ Node::~Node() {
         if (b->ready_) b->onDestroy();
         b->cancelTimers();
     }
+#ifndef SAIDA_RHI_WEBGPU
     if (SceneTree* t = tree()) t->cancelTimersOwnedBy(this);
+#endif
+#ifndef SAIDA_RHI_WEBGPU
     AudioManager::get().stopAllOnNode(this);
+#endif
 }
 
 Node* Node::addChild(std::unique_ptr<Node> child) {

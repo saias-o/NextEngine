@@ -1,5 +1,15 @@
 #pragma once
 
+#ifdef SAIDA_RHI_WEBGPU
+
+#include "rhi/webgpu/Pipeline.hpp"
+
+namespace saida {
+using ComputePipeline = rhi::webgpu::ComputePipeline;
+} // namespace saida
+
+#else
+
 #include "rhi/vulkan/BindGroup.hpp"  // BindGroupLayoutRef
 
 #include <vulkan/vulkan.h>
@@ -41,3 +51,5 @@ private:
 };
 
 } // namespace saida
+
+#endif // SAIDA_RHI_WEBGPU

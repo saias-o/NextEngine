@@ -9,11 +9,28 @@
 layout(local_size_x = 8, local_size_y = 8) in;
 
 struct Ray { vec4 dirDist; vec4 radiance; };
+#ifdef WEB
+// Pas de readonly : le layout WebGPU du set GI déclare ce SSBO en Storage
+// (read-write, requis par ddgi_trace qui l'écrit) et WGSL exige que l'accès
+// du shader corresponde exactement à celui du layout.
+layout(std430, set = 1, binding = 0) buffer RaysBuffer { Ray rays[]; };
+#else
 layout(std430, set = 1, binding = 0) readonly buffer RaysBuffer { Ray rays[]; };
+#endif
+#ifdef WEB
+// WebGPU : rg16f n'est pas un format storage (→ rgba16f, canaux ba inutilisés)
+// et l'accès read-write y est réservé à r32* → cibles d'écriture writeonly.
+// Les texels de bordure sont absorbés ici (pas de passe ddgi_borders sur web).
+layout(set = 1, binding = 1, rgba16f) uniform writeonly image2D writeIrr;
+layout(set = 1, binding = 2, rgba16f) uniform writeonly image2D writeVis;
+layout(set = 1, binding = 3, rgba16f) uniform readonly image2D prevIrr;
+layout(set = 1, binding = 4, rgba16f) uniform readonly image2D prevVis;
+#else
 layout(set = 1, binding = 1, rgba16f) uniform image2D writeIrr;
 layout(set = 1, binding = 2, rg16f)   uniform image2D writeVis;
 layout(set = 1, binding = 3, rgba16f) uniform readonly image2D prevIrr;
 layout(set = 1, binding = 4, rg16f)   uniform readonly image2D prevVis;
+#endif
 
 PUSH_QUALIFIER Push {
     int mode;          // 0 = irradiance, 1 = visibility
@@ -31,13 +48,39 @@ void main() {
 
     ivec2 tile  = px / T;
     ivec2 local = px - tile * T;
+#ifdef WEB
+    // Gutter octaédrique fusionné (l'équivalent exact de ddgi_borders.comp) :
+    // un texel de bordure évalue le blend de son texel source intérieur et
+    // l'écrit à sa propre position — même résultat que la copie desktop.
+    ivec2 srcLocal = local;
+    bool borderX = (local.x == 0 || local.x == T - 1);
+    bool borderY = (local.y == 0 || local.y == T - 1);
+    if (borderX || borderY) {
+        int n = texels;
+        if (borderX && borderY) {
+            srcLocal.x = (local.x > 0) ? 1 : n;
+            srcLocal.y = (local.y > 0) ? 1 : n;
+        } else if (borderY) {
+            srcLocal.x = (T - 1) - local.x;
+            srcLocal.y = local.y + ((local.y > 0) ? -1 : 1);
+        } else {
+            srcLocal.x = local.x + ((local.x > 0) ? -1 : 1);
+            srcLocal.y = (T - 1) - local.y;
+        }
+    }
+    #define SRC_LOCAL srcLocal
+    #define SRC_PX (tile * T + srcLocal)
+#else
     if (local.x == 0 || local.y == 0 || local.x == T - 1 || local.y == T - 1)
         return;  // border texels handled by ddgi_borders.comp
+    #define SRC_LOCAL local
+    #define SRC_PX px
+#endif
 
     int probe = tile.y * ppr + tile.x;
     if (probe >= pc.probeCount) return;
 
-    ivec2 interior = local - 1;                              // [0, texels-1]
+    ivec2 interior = SRC_LOCAL - 1;                          // [0, texels-1]
     vec2  oct = (vec2(interior) + 0.5) / float(texels) * 2.0 - 1.0;
     vec3  texelDir = octDecode(oct);
 
@@ -53,7 +96,7 @@ void main() {
             sumW += w;
         }
         vec3 result  = sum / max(sumW, 1e-4);
-        vec3 prev    = imageLoad(prevIrr, px).rgb;
+        vec3 prev    = imageLoad(prevIrr, SRC_PX).rgb;
         vec3 blended = mix(result, prev, pc.hysteresis);     // old + (1-h)(new-old)
         imageStore(writeIrr, px, vec4(blended, 1.0));
     } else {
@@ -68,7 +111,7 @@ void main() {
         }
         float invW   = 1.0 / max(sumW, 1e-4);
         vec2  result = vec2(sumD * invW, sumD2 * invW);
-        vec2  prev   = imageLoad(prevVis, px).rg;
+        vec2  prev   = imageLoad(prevVis, SRC_PX).rg;
         vec2  blended = mix(result, prev, pc.hysteresis);
         imageStore(writeVis, px, vec4(blended, 0.0, 0.0));
     }

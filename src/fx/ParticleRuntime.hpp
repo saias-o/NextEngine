@@ -2,7 +2,13 @@
 
 #include "rhi/Rhi.hpp"
 
+#ifdef SAIDA_RHI_WEBGPU
+#include "graphics/Buffer.hpp"
+#include "graphics/ComputePipeline.hpp"
+#else
 #include <vulkan/vulkan.h>
+#endif
+
 #include <glm/glm.hpp>
 
 #include <array>
@@ -12,9 +18,10 @@
 
 namespace saida {
 
+#ifndef SAIDA_RHI_WEBGPU
 class Buffer;
 class ComputePipeline;
-class VulkanDevice;
+#endif
 
 // GPU backing store for SaidaFX. The CPU uploads compact emitter records only; the
 // GPU keeps particle state alive across frames, compacts survivors, recycles dead
@@ -60,7 +67,9 @@ public:
         float time = 0.0f;
     };
 
-    ParticleRuntime(VulkanDevice& device, const Desc& desc);
+    static constexpr uint32_t kDrawIndirectCommandSize = 16; // vertexCount, instanceCount, firstVertex, firstInstance
+
+    ParticleRuntime(rhi::Device& device, const Desc& desc);
     ~ParticleRuntime();
     ParticleRuntime(const ParticleRuntime&) = delete;
     ParticleRuntime& operator=(const ParticleRuntime&) = delete;
@@ -97,7 +106,7 @@ private:
     void recordInit(rhi::CommandEncoder& encoder) const;
     const rhi::BindGroup& computeSet(uint32_t frame, uint32_t readParity) const;
 
-    VulkanDevice& device_;
+    rhi::Device& device_;
     Desc desc_;
     bool initialized_ = false;
     uint32_t aliveReadParity_ = 0;

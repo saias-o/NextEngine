@@ -3,15 +3,19 @@
 #include "core/Profiler.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/LightNode.hpp"
+#ifndef SAIDA_RHI_WEBGPU
 #include "scene/UICanvasNode.hpp"
 #include "scene/WebCanvasNode.hpp"
 #include "scene/WaterNode.hpp"
+#endif
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/SerializationHelpers.hpp"
 #include "graphics/ResourceManager.hpp"
+#ifndef SAIDA_RHI_WEBGPU
 #include "physics/PhysicsWorld.hpp"
 #include "physics/CollisionObjectNode.hpp"
 #include "physics/AreaNode.hpp"
+#endif
 
 #include <nlohmann/json.hpp>
 
@@ -61,6 +65,7 @@ void Scene::update(float dt) {
         updateTransforms(glm::mat4(1.0f), false);
     }
 
+#ifndef SAIDA_RHI_WEBGPU
     // Freeze each Auto collision shape once, now that world transforms are fresh
     // (runs in edit mode too, so the editor wireframe is stable and correct).
     {
@@ -108,6 +113,7 @@ void Scene::update(float dt) {
             updateTransforms(glm::mat4(1.0f), false);  // propagate dynamic results down the tree
         }
     }
+#endif
 }
 
 void Scene::flattenHierarchy() {
@@ -133,6 +139,7 @@ void Scene::flattenHierarchy() {
         if (n.asLight()) {
             lights_.push_back(static_cast<LightNode*>(&n));
         }
+#ifndef SAIDA_RHI_WEBGPU
         if (!uiCanvas_) {
             if (auto* canvas = dynamic_cast<UICanvasNode*>(&n)) {
                 uiCanvas_ = canvas;
@@ -144,6 +151,7 @@ void Scene::flattenHierarchy() {
         if (auto* water = dynamic_cast<WaterNode*>(&n)) {
             waterNodes_.push_back(water);
         }
+#endif
         if (auto* ps = dynamic_cast<ParticleSystemNode*>(&n)) {
             particleSystems_.push_back(ps);
         }

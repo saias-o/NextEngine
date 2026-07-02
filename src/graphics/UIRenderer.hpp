@@ -10,7 +10,6 @@ namespace saida {
 
 class VulkanDevice;
 class ResourceManager;
-class Pipeline;
 class Scene;
 class UINode;
 class WebCanvasNode;
@@ -46,7 +45,7 @@ private:
     VulkanDevice& device_;
     ResourceManager& resources_;
     
-    std::unique_ptr<Pipeline> pipeline_;
+    std::unique_ptr<rhi::Pipeline> pipeline_;
 
     std::vector<UIDrawCmd> drawCmds_;
     std::vector<WebCanvasNode*> webNodesToUpdate_;

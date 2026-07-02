@@ -107,7 +107,21 @@ WGPUBindGroup Device::emptyBindGroup() {
     return emptyGroup_;
 }
 
+WGPUBuffer Device::zeroBuffer(uint64_t size) {
+    if (size > zeroBufferSize_) {
+        if (zeroBuffer_) wgpuBufferRelease(zeroBuffer_);
+        WGPUBufferDescriptor desc = {};
+        desc.label = sv("saida.zeroBuffer");
+        desc.usage = WGPUBufferUsage_CopySrc;  // never written: stays all-zero
+        desc.size = size;
+        zeroBuffer_ = wgpuDeviceCreateBuffer(device_, &desc);
+        zeroBufferSize_ = size;
+    }
+    return zeroBuffer_;
+}
+
 Device::~Device() {
+    if (zeroBuffer_) wgpuBufferRelease(zeroBuffer_);
     if (emptyGroup_) wgpuBindGroupRelease(emptyGroup_);
     if (emptyLayout_) wgpuBindGroupLayoutRelease(emptyLayout_);
     if (pushRing_) wgpuBufferRelease(pushRing_);

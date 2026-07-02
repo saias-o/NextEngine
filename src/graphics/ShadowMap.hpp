@@ -7,15 +7,13 @@
 
 namespace saida {
 
-class VulkanDevice;
-
 // Depth 2D-array shadow maps for directional and spot lights. Fully rhi::
 // (encoder recording since 16.3.e.a, RenderTexture creation since 16.3.f).
 class ShadowMap {
 public:
     static constexpr uint32_t kMaxShadows = 4;
 
-    explicit ShadowMap(VulkanDevice& device, uint32_t initialResolution = 2048);
+    explicit ShadowMap(rhi::Device& device, uint32_t initialResolution = 2048);
     ~ShadowMap();
     ShadowMap(const ShadowMap&) = delete;
     ShadowMap& operator=(const ShadowMap&) = delete;
@@ -40,7 +38,7 @@ private:
     void createSampler();
     void createPipeline();
 
-    VulkanDevice& device_;
+    rhi::Device& device_;
     rhi::Format format_ = rhi::Format::Undefined;
     uint32_t resolution_;
 

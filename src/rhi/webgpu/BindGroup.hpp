@@ -43,6 +43,7 @@ struct BindGroupLayoutEntry {
 
     // StorageImage hint: the declared WGSL storage format.
     rhi::Format storageFormat = rhi::Format::RGBA16Float;
+    WGPUStorageTextureAccess storageAccess = WGPUStorageTextureAccess_ReadWrite;
 };
 
 class BindGroupLayout {

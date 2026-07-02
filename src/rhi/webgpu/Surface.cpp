@@ -25,6 +25,13 @@ Surface::Surface(Device& device, const char* canvasSelector, uint32_t width, uin
     config.alphaMode = WGPUCompositeAlphaMode_Auto;
     config.presentMode = WGPUPresentMode_Fifo;
     wgpuSurfaceConfigure(surface_, &config);
+
+    RenderTextureDesc depthDesc;
+    depthDesc.format = rhi::Format::Depth32Float;
+    depthDesc.width = width_;
+    depthDesc.height = height_;
+    depthDesc.usage = rhi::TextureUsage::DepthAttachment | rhi::TextureUsage::Sampled;
+    depth_ = std::make_unique<RenderTexture>(device_, depthDesc);
 }
 
 Surface::~Surface() {
@@ -41,6 +48,7 @@ bool Surface::acquire(uint32_t frame, uint32_t& imageIndex) {
     wgpuSurfaceGetCurrentTexture(surface_, &st);
     if (!st.texture) return false;
     if (currentView_) wgpuTextureViewRelease(currentView_);
+    currentTexture_ = st.texture;
     currentView_ = wgpuTextureCreateView(st.texture, nullptr);
     return true;
 }
@@ -52,6 +60,15 @@ bool Surface::submitAndPresent(WGPUCommandBuffer cmd, uint32_t frame, uint32_t i
     wgpuQueueSubmit(device_.queue(), 1, &cmd);
     wgpuCommandBufferRelease(cmd);
     return false;  // browser handles resize/composition; nothing to recreate here
+}
+
+CommandEncoder Surface::beginFrameCommands(uint32_t frame) {
+    (void)frame;
+    return CommandEncoder(device_);
+}
+
+bool Surface::submitAndPresent(CommandEncoder& encoder, uint32_t frame, uint32_t imageIndex) {
+    return submitAndPresent(encoder.finish(), frame, imageIndex);
 }
 
 } // namespace saida::rhi::webgpu

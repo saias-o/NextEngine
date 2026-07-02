@@ -2,18 +2,25 @@
 
 #include "rhi/Rhi.hpp"
 
+#ifdef SAIDA_RHI_WEBGPU
+#include "graphics/Buffer.hpp"
+#include "graphics/ComputePipeline.hpp"
+#endif
+
 #include <glm/glm.hpp>
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <random>
 
 namespace saida {
 
-class VulkanDevice;
+#ifndef SAIDA_RHI_WEBGPU
 class Buffer;
-class Scene;
 class ComputePipeline;
+#endif
+class Scene;
 class GpuProfiler;
 
 // Layout of the DDGI probe grid. Visibility stores mean distance and mean^2.
@@ -35,7 +42,7 @@ struct GIVolumeDesc {
 // Baked mode freezes the current atlases.
 class GIVolume {
 public:
-    GIVolume(VulkanDevice& device, const GIVolumeDesc& desc,
+    GIVolume(rhi::Device& device, const GIVolumeDesc& desc,
              rhi::BindGroupLayout& materialSetLayout, rhi::BindGroupLayout& globalSetLayout);
     ~GIVolume();
     GIVolume(const GIVolume&) = delete;
@@ -44,6 +51,9 @@ public:
     // Re-voxelize the scene's albedo into the 3D grid (call before the main pass).
     // Clears, runs the 3 dominant-axis passes, and leaves the grid sampled-ready.
     void voxelize(rhi::CommandEncoder& encoder, Scene& scene, GpuProfiler* profiler = nullptr);
+    using DrawGeometryFn = std::function<void(rhi::RenderPassEncoder&, uint32_t axis)>;
+    void voxelize(rhi::CommandEncoder& encoder, const DrawGeometryFn& drawGeometry,
+                  GpuProfiler* profiler = nullptr);
 
     // Swap the ping-pong atlases (call host-side at frame start). After this, the
     // "current" atlas is the one update() writes and the lighting pass samples;
@@ -81,7 +91,7 @@ private:
         return {probesPerRow_ * (texels + 2), rows * (texels + 2)};
     }
 
-    VulkanDevice& device_;
+    rhi::Device& device_;
     GIVolumeDesc desc_;
     int probesPerRow_ = 1;
     int curr_ = 0;  // current ping-pong atlas (written this frame, sampled by lighting)
@@ -96,6 +106,11 @@ private:
     std::unique_ptr<rhi::BindGroupLayout> voxelSetLayout_;
     std::unique_ptr<rhi::BindGroup> voxelSet_;
     std::unique_ptr<rhi::Pipeline> voxelPipeline_;  // attachment-less (imageStore only)
+#ifdef SAIDA_RHI_WEBGPU
+    // WebGPU forbids attachment-less passes: throwaway res×res target
+    // (writeMask None on the pipeline) keeps the voxelize rasterization valid.
+    std::unique_ptr<rhi::RenderTexture> voxelDummyTarget_;
+#endif
 
     // --- DDGI update (P2): trace -> blend -> borders ---
     std::unique_ptr<Buffer> raysBuffer_;        // numProbes * raysPerProbe * 2 vec4

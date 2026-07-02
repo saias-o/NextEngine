@@ -1,5 +1,34 @@
 #pragma once
 
+#ifdef SAIDA_RHI_WEBGPU
+
+#include "rhi/Rhi.hpp"
+
+namespace saida {
+
+class Window;
+
+// Web builds do not ship the desktop Dear ImGui overlay yet. Keep the engine
+// call surface intact while the WebGPU renderer comes online.
+class ImGuiLayer {
+public:
+    template <typename ColorFormat, typename Samples>
+    ImGuiLayer(rhi::Device&, Window&, ColorFormat, uint32_t, Samples) {}
+    ~ImGuiLayer() = default;
+    ImGuiLayer(const ImGuiLayer&) = delete;
+    ImGuiLayer& operator=(const ImGuiLayer&) = delete;
+
+    void beginFrame() {}
+    void endFrame() {}
+
+    template <typename CommandHandle>
+    void renderDrawData(CommandHandle) {}
+};
+
+} // namespace saida
+
+#else
+
 #include <vulkan/vulkan.h>
 
 namespace saida {
@@ -29,3 +58,5 @@ private:
 };
 
 } // namespace saida
+
+#endif // SAIDA_RHI_WEBGPU
