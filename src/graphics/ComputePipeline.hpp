@@ -1,5 +1,7 @@
 #pragma once
 
+#include "rhi/vulkan/BindGroup.hpp"  // BindGroupLayoutRef
+
 #include <vulkan/vulkan.h>
 
 #include <string>
@@ -15,9 +17,10 @@ class VulkanDevice;
 class ComputePipeline {
 public:
     // pushConstantSize in bytes (0 = none); push constants are visible to the
-    // compute stage.
+    // compute stage. Layouts are rhi bind group layouts (raw form = bindless
+    // interop only, see BindGroupLayoutRef).
     ComputePipeline(VulkanDevice& device, const std::string& compPath,
-                    const std::vector<VkDescriptorSetLayout>& setLayouts,
+                    const std::vector<rhi::vulkan::BindGroupLayoutRef>& setLayouts,
                     uint32_t pushConstantSize = 0);
     ~ComputePipeline();
     ComputePipeline(const ComputePipeline&) = delete;

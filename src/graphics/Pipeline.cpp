@@ -36,8 +36,8 @@ Pipeline::Pipeline(VulkanDevice& device, const Desc& desc) : device_(device) {
         info.colorFormats.push_back(rhi::vulkan::toVk(format));
     info.depthFormat = rhi::vulkan::toVk(desc.depthFormat);
     info.setLayouts.reserve(desc.bindGroupLayouts.size());
-    for (const rhi::vulkan::BindGroupLayout* layout : desc.bindGroupLayouts)
-        info.setLayouts.push_back(layout->handle());
+    for (const rhi::vulkan::BindGroupLayoutRef& layout : desc.bindGroupLayouts)
+        info.setLayouts.push_back(layout.handle());
     info.samples = static_cast<VkSampleCountFlagBits>(desc.samples);
     info.useVertexInput = desc.vertexInput;
     info.useDepth = desc.depthTest;
@@ -52,43 +52,6 @@ Pipeline::Pipeline(VulkanDevice& device, const Desc& desc) : device_(device) {
     info.depthBias = desc.depthBias;
     info.depthBiasConstant = desc.depthBiasConstant;
     info.depthBiasSlope = desc.depthBiasSlope;
-    build(info);
-}
-
-Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std::string& fragPath,
-                   const std::vector<VkFormat>& colorFormats, VkFormat depthFormat,
-                   const std::vector<VkDescriptorSetLayout>& setLayouts,
-                   VkSampleCountFlagBits samples, bool useVertexInput, bool useDepth, uint32_t pushConstantSize,
-                   bool depthWrite, VkCompareOp depthCompare, VkCullModeFlags cullMode,
-                   bool useBlending, VkPrimitiveTopology topology, uint32_t viewMask)
-    : Pipeline(device, vertPath, fragPath, colorFormats, depthFormat, setLayouts, samples,
-               useVertexInput, useDepth, pushConstantSize, depthWrite, depthCompare,
-               cullMode, useBlending ? BlendMode::Alpha : BlendMode::None,
-               topology, viewMask) {}
-
-Pipeline::Pipeline(VulkanDevice& device, const std::string& vertPath, const std::string& fragPath,
-                   const std::vector<VkFormat>& colorFormats, VkFormat depthFormat,
-                   const std::vector<VkDescriptorSetLayout>& setLayouts,
-                   VkSampleCountFlagBits samples, bool useVertexInput, bool useDepth, uint32_t pushConstantSize,
-                   bool depthWrite, VkCompareOp depthCompare, VkCullModeFlags cullMode,
-                   BlendMode blendMode, VkPrimitiveTopology topology, uint32_t viewMask)
-    : device_(device) {
-    BuildInfo info;
-    info.vertPath = vertPath;
-    info.fragPath = fragPath;
-    info.colorFormats = colorFormats;
-    info.depthFormat = depthFormat;
-    info.setLayouts = setLayouts;
-    info.samples = samples;
-    info.useVertexInput = useVertexInput;
-    info.useDepth = useDepth;
-    info.pushConstantSize = pushConstantSize;
-    info.depthWrite = depthWrite;
-    info.depthCompare = depthCompare;
-    info.cullMode = cullMode;
-    info.blendMode = blendMode;
-    info.topology = topology;
-    info.viewMask = viewMask;
     build(info);
 }
 

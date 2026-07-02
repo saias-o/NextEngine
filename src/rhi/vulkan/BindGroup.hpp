@@ -67,6 +67,21 @@ struct BindGroupEntry {
     rhi::ResourceState textureState = rhi::ResourceState::ShaderRead;
 };
 
+// A pipeline-layout slot: either an rhi BindGroupLayout (the normal path) or a
+// raw VkDescriptorSetLayout. The raw form exists for ONE caller family — the
+// bindless UPDATE_AFTER_BIND set (out of RHI scope until 16.4's caps.bindless
+// fallback, see ResourceManager). Everything else passes BindGroupLayouts.
+struct BindGroupLayoutRef {
+    const BindGroupLayout* layout = nullptr;
+    VkDescriptorSetLayout raw = VK_NULL_HANDLE;
+
+    BindGroupLayoutRef(const BindGroupLayout* l) : layout(l) {}
+    BindGroupLayoutRef(const BindGroupLayout& l) : layout(&l) {}
+    BindGroupLayoutRef(VkDescriptorSetLayout r) : raw(r) {}
+
+    VkDescriptorSetLayout handle() const { return layout ? layout->handle() : raw; }
+};
+
 class BindGroup {
 public:
     BindGroup(BindGroupLayout& layout, const std::vector<BindGroupEntry>& entries);

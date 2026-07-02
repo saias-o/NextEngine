@@ -1,6 +1,7 @@
 #include "graphics/UIRenderer.hpp"
 #include "core/Profiler.hpp"
 #include "rhi/vulkan/CommandEncoder.hpp"
+#include "rhi/vulkan/Format.hpp"
 #include "graphics/VulkanDevice.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Pipeline.hpp"
@@ -33,30 +34,19 @@ struct UIPushConstants {
 
 UIRenderer::UIRenderer(VulkanDevice& device, ResourceManager& resources, VkFormat colorFormat)
     : device_(device), resources_(resources) {
-    
-    std::vector<VkDescriptorSetLayout> setLayouts = {
-        resources_.globalMaterialSetLayout()
-    };
-
-    std::vector<VkFormat> colorFormats = {colorFormat};
-    
-    pipeline_ = std::make_unique<Pipeline>(
-        device_, 
-        shaderPath("ui.vert.spv"), 
-        shaderPath("ui.frag.spv"), 
-        colorFormats, 
-        VK_FORMAT_UNDEFINED, 
-        setLayouts,
-        VK_SAMPLE_COUNT_1_BIT, 
-        false, // useVertexInput
-        false, // useDepth
-        sizeof(UIPushConstants), // pushConstantSize
-        false, // depthWrite
-        VK_COMPARE_OP_ALWAYS, // depthCompare
-        VK_CULL_MODE_NONE, // cullMode
-        true, // useBlending
-        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP // topology
-    );
+    Pipeline::Desc desc;
+    desc.vertPath = shaderPath("ui.vert.spv");
+    desc.fragPath = shaderPath("ui.frag.spv");
+    desc.colorFormats = {rhi::vulkan::fromVk(colorFormat)};
+    desc.bindGroupLayouts = {resources_.globalMaterialSetLayout()};  // raw bindless set
+    desc.vertexInput = false;
+    desc.depthTest = false;
+    desc.depthWrite = false;
+    desc.cullMode = rhi::CullMode::None;
+    desc.blendMode = rhi::BlendMode::Alpha;
+    desc.topology = rhi::Topology::TriangleStrip;
+    desc.pushConstantSize = sizeof(UIPushConstants);
+    pipeline_ = std::make_unique<Pipeline>(device_, desc);
 
     Log::info("UIRenderer: pipeline created");
 }

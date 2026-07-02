@@ -164,7 +164,7 @@ void ParticleRuntime::createComputeResources() {
         renderSets_[parity] = std::make_unique<rhi::BindGroup>(*renderSetLayout_, entries);
     }
 
-    std::vector<VkDescriptorSetLayout> setLayouts = {computeSetLayout_->handle()};
+    std::vector<rhi::vulkan::BindGroupLayoutRef> setLayouts = {*computeSetLayout_};
     initPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("particle_init.comp.spv"),
         setLayouts, sizeof(ComputePush));
     preparePipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("particle_prepare.comp.spv"),

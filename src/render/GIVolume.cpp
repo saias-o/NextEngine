@@ -286,7 +286,7 @@ void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
             std::vector<rhi::BindGroupEntry>{raysEntry, wi, wv, pi, pv});
     }
 
-    std::vector<VkDescriptorSetLayout> setLayouts = {globalSetLayout.handle(), giComputeSetLayout_->handle()};
+    std::vector<rhi::vulkan::BindGroupLayoutRef> setLayouts = {globalSetLayout, *giComputeSetLayout_};
     tracePipeline_  = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_trace.comp.spv"),  setLayouts, sizeof(TracePush));
     blendPipeline_  = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_blend.comp.spv"),  setLayouts, sizeof(BlendPush));
     borderPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_borders.comp.spv"), setLayouts, sizeof(BorderPush));

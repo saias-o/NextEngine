@@ -286,33 +286,30 @@ void Renderer::createPipeline(rhi::BindGroupLayout& materialSetLayout) {
 
     // Classic path: set 0 = global, set 1 = material.
     // Dormant GPU-driven path: set 0 = global, set 1 = bindless material data
-    // (raw Vulkan, out of RHI scope until 16.4's caps.bindless fallback), set 2
+    // (raw layout, out of RHI scope until 16.4's caps.bindless fallback), set 2
     // = culling/instance data.
-    std::vector<VkDescriptorSetLayout> setLayouts;
+    Pipeline::Desc desc;
+    desc.vertPath = shaderPath(vertShader);
+    desc.fragPath = shaderPath(fragShader);
+    desc.colorFormats = {rhi::Format::RGBA16Float};
+    desc.depthFormat = rhi::vulkan::fromVk(swapchain_->depthFormat());
+    desc.samples = sampleCountValue(swapchain_->samples());
     if (useGpuDriven) {
-        setLayouts = {globalSetLayout_->handle(), resources_.globalMaterialSetLayout(),
-                      cullingSetLayout_ ? cullingSetLayout_->handle() : VK_NULL_HANDLE};
+        desc.bindGroupLayouts = {globalSetLayout_.get(), resources_.globalMaterialSetLayout(),
+                                 cullingSetLayout_.get()};
     } else {
-        setLayouts = {globalSetLayout_->handle(), materialSetLayout.handle()};
+        desc.bindGroupLayouts = {globalSetLayout_.get(), &materialSetLayout};
     }
+    pipeline_ = std::make_unique<Pipeline>(device_, desc);
 
-    std::vector<VkFormat> colorFormats = {VK_FORMAT_R16G16B16A16_SFLOAT};
-    pipeline_ = std::make_unique<Pipeline>(device_, shaderPath(vertShader),
-        shaderPath(fragShader), colorFormats, swapchain_->depthFormat(), setLayouts,
-        swapchain_->samples());
-
-    // Unlit variant: same vertex shader + identical set 0/1/2 and push-constant
-    // layout as Lit, only the fragment differs → the draw loop swaps pipelines
+    // Unlit variant: same vertex shader + identical set layout and push-constant
+    // range as Lit, only the fragment differs, so the draw loop swaps pipelines
     // per material with no other change. Always built against the classic
-    // (non-bindless) 3-set layout used by the per-object draw path.
-    Pipeline::Desc unlitDesc;
-    unlitDesc.vertPath = shaderPath("shader.vert.spv");
-    unlitDesc.fragPath = shaderPath("unlit.frag.spv");
-    unlitDesc.colorFormats = {rhi::vulkan::fromVk(VK_FORMAT_R16G16B16A16_SFLOAT)};
-    unlitDesc.depthFormat = rhi::vulkan::fromVk(swapchain_->depthFormat());
-    unlitDesc.bindGroupLayouts = {globalSetLayout_.get(), &materialSetLayout};
-    unlitDesc.samples = static_cast<uint32_t>(swapchain_->samples());
-    unlitPipeline_ = std::make_unique<Pipeline>(device_, unlitDesc);
+    // (non-bindless) 2-set layout used by the per-object draw path.
+    desc.vertPath = shaderPath("shader.vert.spv");
+    desc.fragPath = shaderPath("unlit.frag.spv");
+    desc.bindGroupLayouts = {globalSetLayout_.get(), &materialSetLayout};
+    unlitPipeline_ = std::make_unique<Pipeline>(device_, desc);
 }
 
 void Renderer::createWebCanvasWorldPipeline() {
@@ -321,13 +318,21 @@ void Renderer::createWebCanvasWorldPipeline() {
         return;
     }
 
-    std::vector<VkDescriptorSetLayout> setLayouts = {resources_.globalMaterialSetLayout()};
-    std::vector<VkFormat> colorFormats = {VK_FORMAT_R16G16B16A16_SFLOAT};
-    webCanvasWorldPipeline_ = std::make_unique<Pipeline>(device_,
-        shaderPath("web_canvas_world.vert.spv"), shaderPath("web_canvas_world.frag.spv"),
-        colorFormats, swapchain_->depthFormat(), setLayouts, swapchain_->samples(),
-        false, true, sizeof(WebCanvasWorldPushConstants), false, VK_COMPARE_OP_LESS_OR_EQUAL,
-        VK_CULL_MODE_NONE, BlendMode::Alpha, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
+    Pipeline::Desc desc;
+    desc.vertPath = shaderPath("web_canvas_world.vert.spv");
+    desc.fragPath = shaderPath("web_canvas_world.frag.spv");
+    desc.colorFormats = {rhi::Format::RGBA16Float};
+    desc.depthFormat = rhi::vulkan::fromVk(swapchain_->depthFormat());
+    desc.bindGroupLayouts = {resources_.globalMaterialSetLayout()};  // raw bindless set
+    desc.samples = sampleCountValue(swapchain_->samples());
+    desc.vertexInput = false;
+    desc.depthWrite = false;
+    desc.depthCompare = rhi::CompareOp::LessOrEqual;
+    desc.cullMode = rhi::CullMode::None;
+    desc.blendMode = rhi::BlendMode::Alpha;
+    desc.topology = rhi::Topology::TriangleStrip;
+    desc.pushConstantSize = sizeof(WebCanvasWorldPushConstants);
+    webCanvasWorldPipeline_ = std::make_unique<Pipeline>(device_, desc);
 }
 
 void Renderer::createUniformBuffers() {
@@ -399,7 +404,7 @@ void Renderer::createCullingPipeline() {
         uint32_t instanceCount;
     };
 
-    std::vector<VkDescriptorSetLayout> plLayouts = {cullingSetLayout_->handle()};
+    std::vector<rhi::vulkan::BindGroupLayoutRef> plLayouts = {*cullingSetLayout_};
     cullingPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("culling.comp.spv"),
         plLayouts, sizeof(CullingPushConstants));
 }
@@ -1457,7 +1462,6 @@ void Renderer::createXrPipelines() {
     const VkFormat hdrFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
     const VkFormat depthFormat = device_.findDepthFormat();
     const uint32_t viewMask = xrViewMask(xrViewCount_);
-    const std::vector<VkFormat> hdrColor = {hdrFormat};
 
     Pipeline::Desc sceneDesc;
     sceneDesc.colorFormats = {rhi::vulkan::fromVk(hdrFormat)};
@@ -1476,12 +1480,21 @@ void Renderer::createXrPipelines() {
     xrUnlitPipeline_ = std::make_unique<Pipeline>(device_, sceneDesc);
 
     if (resources_.globalMaterialSetLayout()) {
-        std::vector<VkDescriptorSetLayout> webLayouts = {resources_.globalMaterialSetLayout()};
-        xrWebCanvasWorldPipeline_ = std::make_unique<Pipeline>(device_,
-            shaderPath("multiview.web_canvas_world.vert.spv"), shaderPath("web_canvas_world.frag.spv"),
-            hdrColor, depthFormat, webLayouts, VK_SAMPLE_COUNT_1_BIT,
-            false, true, sizeof(WebCanvasWorldPushConstants), false, VK_COMPARE_OP_LESS_OR_EQUAL,
-            VK_CULL_MODE_NONE, BlendMode::Alpha, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, viewMask);
+        Pipeline::Desc webDesc;
+        webDesc.vertPath = shaderPath("multiview.web_canvas_world.vert.spv");
+        webDesc.fragPath = shaderPath("web_canvas_world.frag.spv");
+        webDesc.colorFormats = {rhi::vulkan::fromVk(hdrFormat)};
+        webDesc.depthFormat = rhi::vulkan::fromVk(depthFormat);
+        webDesc.bindGroupLayouts = {resources_.globalMaterialSetLayout()};  // raw bindless set
+        webDesc.vertexInput = false;
+        webDesc.depthWrite = false;
+        webDesc.depthCompare = rhi::CompareOp::LessOrEqual;
+        webDesc.cullMode = rhi::CullMode::None;
+        webDesc.blendMode = rhi::BlendMode::Alpha;
+        webDesc.topology = rhi::Topology::TriangleStrip;
+        webDesc.pushConstantSize = sizeof(WebCanvasWorldPushConstants);
+        webDesc.viewMask = viewMask;
+        xrWebCanvasWorldPipeline_ = std::make_unique<Pipeline>(device_, webDesc);
     }
 
     // Same registry as desktop; each feature builds its stereo pipeline from the

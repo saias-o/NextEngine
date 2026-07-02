@@ -23,9 +23,14 @@ std::vector<char> readFile(const std::string& filename) {
 } // namespace
 
 ComputePipeline::ComputePipeline(VulkanDevice& device, const std::string& compPath,
-                                 const std::vector<VkDescriptorSetLayout>& setLayouts,
+                                 const std::vector<rhi::vulkan::BindGroupLayoutRef>& layoutRefs,
                                  uint32_t pushConstantSize)
     : device_(device) {
+    std::vector<VkDescriptorSetLayout> setLayouts;
+    setLayouts.reserve(layoutRefs.size());
+    for (const rhi::vulkan::BindGroupLayoutRef& ref : layoutRefs)
+        setLayouts.push_back(ref.handle());
+
     auto code = readFile(compPath);
     VkShaderModuleCreateInfo smci{};
     smci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
