@@ -21,14 +21,6 @@ public:
     VkImageView view() const { return view_; }
     VkFormat format() const { return format_; }
     VkExtent2D extent() const { return {width_, height_}; }
-    VkImageLayout layout() const { return layout_; }
-
-    // Classic-barrier layout transition (works without synchronization2). Updates
-    // the tracked layout. For compute writes use GENERAL, for sampling use
-    // SHADER_READ_ONLY_OPTIMAL.
-    void transition(VkCommandBuffer cmd, VkImageLayout newLayout,
-                    VkPipelineStageFlags srcStage, VkAccessFlags srcAccess,
-                    VkPipelineStageFlags dstStage, VkAccessFlags dstAccess);
 
 private:
     VulkanDevice& device_;
@@ -37,7 +29,6 @@ private:
     VkImage image_ = VK_NULL_HANDLE;
     VmaAllocation allocation_ = VK_NULL_HANDLE;
     VkImageView view_ = VK_NULL_HANDLE;
-    VkImageLayout layout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 };
 
 } // namespace saida

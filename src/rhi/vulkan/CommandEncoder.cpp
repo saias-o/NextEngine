@@ -224,6 +224,17 @@ void CommandEncoder::copyBufferToBuffer(const saida::Buffer& src, const saida::B
     vkCmdCopyBuffer(cmd_, src.handle(), dst.handle(), 1, &region);
 }
 
+void CommandEncoder::clearColorTexture(VkImage image, const std::array<float, 4>& color) {
+    VkClearColorValue value{};
+    value.float32[0] = color[0];
+    value.float32[1] = color[1];
+    value.float32[2] = color[2];
+    value.float32[3] = color[3];
+    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS,
+                                  0, VK_REMAINING_ARRAY_LAYERS};
+    vkCmdClearColorImage(cmd_, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value, 1, &range);
+}
+
 void CommandEncoder::copyBufferToTexture(const saida::Buffer& src, VkImage dst,
                                          uint32_t width, uint32_t height,
                                          uint32_t mipLevel, uint32_t baseLayer,

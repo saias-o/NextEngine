@@ -45,7 +45,7 @@ public:
 
     // Re-voxelize the scene's albedo into the 3D grid (call before the main pass).
     // Clears, runs the 3 dominant-axis passes, and leaves the grid sampled-ready.
-    void voxelize(VkCommandBuffer cmd, Scene& scene, GpuProfiler* profiler = nullptr);
+    void voxelize(rhi::CommandEncoder& encoder, Scene& scene, GpuProfiler* profiler = nullptr);
 
     // Swap the ping-pong atlases (call host-side at frame start). After this, the
     // "current" atlas is the one update() writes and the lighting pass samples;
@@ -54,7 +54,8 @@ public:
 
     // Run the DDGI update: trace rays, blend into the current atlases, copy borders.
     // globalSet = set 0 for this frame (lights, shadow maps, voxel grid).
-    void update(VkCommandBuffer cmd, VkDescriptorSet globalSet, GpuProfiler* profiler = nullptr);
+    void update(rhi::CommandEncoder& encoder, VkDescriptorSet globalSet,
+                GpuProfiler* profiler = nullptr);
 
     // Views/sampler the renderer binds into set 0 (bindings 4/5/6) for shading.
     VkImageView irradianceView() const { return irradiance_[curr_]->view(); }
@@ -98,8 +99,7 @@ private:
     std::unique_ptr<Buffer> voxelUbo_;          // origin/extent/res + 3 axis VPs
     std::unique_ptr<rhi::BindGroupLayout> voxelSetLayout_;
     std::unique_ptr<rhi::BindGroup> voxelSet_;
-    VkPipeline voxelPipeline_ = VK_NULL_HANDLE;
-    VkPipelineLayout voxelPipelineLayout_ = VK_NULL_HANDLE;
+    std::unique_ptr<rhi::Pipeline> voxelPipeline_;  // attachment-less (imageStore only)
 
     // --- DDGI update (P2): trace -> blend -> borders ---
     std::unique_ptr<Buffer> raysBuffer_;        // numProbes * raysPerProbe * 2 vec4

@@ -1361,8 +1361,9 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     // samples the result. When frozen, the previously-baked atlas is kept.
     if (giUpdateThisFrame_) {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
-        gi_->voxelize(cmd, scene, gpuProfiler);
-        gi_->update(cmd, globalGroups_[currentFrame_]->handle(), gpuProfiler);
+        rhi::CommandEncoder giEncoder(cmd);
+        gi_->voxelize(giEncoder, scene, gpuProfiler);
+        gi_->update(giEncoder, globalGroups_[currentFrame_]->handle(), gpuProfiler);
     }
 
     bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
@@ -2234,8 +2235,9 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
     if (giUpdateThisFrame_) {
         GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
-        gi_->voxelize(cmd, scene, gpuProfiler);
-        gi_->update(cmd, globalGroups_[currentFrame_]->handle(), gpuProfiler);
+        rhi::CommandEncoder giEncoder(cmd);
+        gi_->voxelize(giEncoder, scene, gpuProfiler);
+        gi_->update(giEncoder, globalGroups_[currentFrame_]->handle(), gpuProfiler);
     }
     recordShadowPasses(cmd);
 

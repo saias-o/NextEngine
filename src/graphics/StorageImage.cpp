@@ -37,21 +37,4 @@ StorageImage::~StorageImage() {
     vmaDestroyImage(device_.allocator(), image_, allocation_);
 }
 
-void StorageImage::transition(VkCommandBuffer cmd, VkImageLayout newLayout,
-                              VkPipelineStageFlags srcStage, VkAccessFlags srcAccess,
-                              VkPipelineStageFlags dstStage, VkAccessFlags dstAccess) {
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = layout_;
-    barrier.newLayout = newLayout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image_;
-    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    barrier.srcAccessMask = srcAccess;
-    barrier.dstAccessMask = dstAccess;
-    vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-    layout_ = newLayout;
-}
-
 } // namespace saida

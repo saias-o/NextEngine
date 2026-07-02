@@ -157,6 +157,10 @@ public:
                              uint32_t mipLevel = 0, uint32_t baseLayer = 0,
                              uint32_t layerCount = 1, uint64_t srcOffset = 0);
 
+    // Clears a whole color texture (all mips/layers) to a constant. The image
+    // must be in CopyDst (GI atlas init, voxel grid reset).
+    void clearColorTexture(VkImage image, const std::array<float, 4>& color);
+
 private:
     VkCommandBuffer cmd_;
 };

@@ -71,28 +71,6 @@ struct BorderPush {
     int32_t mode;
     int32_t probeCount;
 };
-
-std::vector<char> readFile(const std::string& filename) {
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-    if (!file.is_open())
-        throw std::runtime_error("GIVolume: failed to open " + filename);
-    size_t size = static_cast<size_t>(file.tellg());
-    std::vector<char> buffer(size);
-    file.seekg(0);
-    file.read(buffer.data(), size);
-    return buffer;
-}
-
-VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code) {
-    VkShaderModuleCreateInfo ci{};
-    ci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    ci.codeSize = code.size();
-    ci.pCode = reinterpret_cast<const uint32_t*>(code.data());
-    VkShaderModule mod;
-    if (vkCreateShaderModule(device, &ci, nullptr, &mod) != VK_SUCCESS)
-        throw std::runtime_error("GIVolume: failed to create shader module");
-    return mod;
-}
 }
 
 GIVolume::GIVolume(VulkanDevice& device, const GIVolumeDesc& desc,
@@ -123,9 +101,7 @@ GIVolume::GIVolume(VulkanDevice& device, const GIVolumeDesc& desc,
 }
 
 GIVolume::~GIVolume() {
-    // Compute pipelines + bind groups destroy themselves (unique_ptr).
-    if (voxelPipeline_) vkDestroyPipeline(device_.device(), voxelPipeline_, nullptr);
-    if (voxelPipelineLayout_) vkDestroyPipelineLayout(device_.device(), voxelPipelineLayout_, nullptr);
+    // Pipelines + bind groups destroy themselves (unique_ptr).
     if (voxelView_) vkDestroyImageView(device_.device(), voxelView_, nullptr);
     if (voxelImage_) vmaDestroyImage(device_.allocator(), voxelImage_, voxelAllocation_);
     if (sampler_) vkDestroySampler(device_.device(), sampler_, nullptr);
@@ -156,33 +132,24 @@ void GIVolume::fillConstant() {
 
     // Visibility: huge mean distance so the Chebyshev test always returns "fully
     // visible" (no occlusion) until real data is baked/updated.
-    VkClearColorValue visClear{};
-    visClear.float32[0] = 1.0e4f;   // mean distance
-    visClear.float32[1] = 1.0e8f;   // mean distance^2
-    visClear.float32[2] = 0.0f;
-    visClear.float32[3] = 0.0f;
+    const std::array<float, 4> irr{0.10f, 0.10f, 0.10f, 1.0f};
+    const std::array<float, 4> vis{1.0e4f, 1.0e8f, 0.0f, 0.0f};  // mean dist, dist^2
 
-    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-    VkCommandBuffer cmd = device_.beginSingleTimeCommands();
-    auto clear = [&](StorageImage& img, const VkClearColorValue& color) {
-        img.transition(cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
-                       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
-        vkCmdClearColorImage(cmd, img.image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                             &color, 1, &range);
-        // Atlases live in GENERAL: compute writes them as storage images and the
-        // lighting pass samples them in GENERAL (avoids per-frame layout churn).
-        img.transition(cmd, VK_IMAGE_LAYOUT_GENERAL,
-                       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                       VK_ACCESS_SHADER_READ_BIT);
-    };
-    for (int i = 0; i < 2; ++i) {
-        clear(*irradiance_[i], irrClear);
-        clear(*visibility_[i], visClear);
-    }
-    device_.endSingleTimeCommands(cmd);
+    device_.withSingleTimeEncoder([&](rhi::CommandEncoder& enc) {
+        auto clear = [&](StorageImage& img, const std::array<float, 4>& color) {
+            enc.transition(img.image(), rhi::ResourceState::Undefined,
+                           rhi::ResourceState::CopyDst);
+            enc.clearColorTexture(img.image(), color);
+            // Atlases live in GENERAL: compute writes them as storage images and
+            // the lighting pass samples them in GENERAL (no per-frame churn).
+            enc.transition(img.image(), rhi::ResourceState::CopyDst,
+                           rhi::ResourceState::StorageReadWrite);
+        };
+        for (int i = 0; i < 2; ++i) {
+            clear(*irradiance_[i], irr);
+            clear(*visibility_[i], vis);
+        }
+    });
 }
 
 void GIVolume::createVoxelResources(rhi::BindGroupLayout& materialSetLayout) {
@@ -237,109 +204,21 @@ void GIVolume::createVoxelResources(rhi::BindGroupLayout& materialSetLayout) {
         std::vector<rhi::BindGroupEntry>{voxelImageEntry, uboEntry});
 
     // --- Voxelize pipeline (attachment-less raster; writes only via imageStore). ---
-    auto vertCode = readFile(shaderPath("voxelize.vert.spv"));
-    auto fragCode = readFile(shaderPath("voxelize.frag.spv"));
-    VkShaderModule vert = createShaderModule(device_.device(), vertCode);
-    VkShaderModule frag = createShaderModule(device_.device(), fragCode);
-
-    VkPipelineShaderStageCreateInfo stages[2]{};
-    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-    stages[0].module = vert;
-    stages[0].pName = "main";
-    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    stages[1].module = frag;
-    stages[1].pName = "main";
-
-    auto bindingDesc = Vertex::bindingDescription();
-    auto attrDescs = Vertex::attributeDescriptions();
-    VkPipelineVertexInputStateCreateInfo vi{};
-    vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vi.vertexBindingDescriptionCount = 1;
-    vi.pVertexBindingDescriptions = &bindingDesc;
-    vi.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size());
-    vi.pVertexAttributeDescriptions = attrDescs.data();
-
-    VkPipelineInputAssemblyStateCreateInfo ia{};
-    ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-
-    VkPipelineViewportStateCreateInfo vp{};
-    vp.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    vp.viewportCount = 1;
-    vp.scissorCount = 1;
-
-    VkPipelineRasterizationStateCreateInfo rs{};
-    rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rs.polygonMode = VK_POLYGON_MODE_FILL;
-    rs.lineWidth = 1.0f;
-    rs.cullMode = VK_CULL_MODE_NONE;  // rasterize every triangle from every axis
-
-    VkPipelineMultisampleStateCreateInfo ms{};
-    ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-    VkPipelineDepthStencilStateCreateInfo ds{};
-    ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    ds.depthTestEnable = VK_FALSE;
-    ds.depthWriteEnable = VK_FALSE;
-
-    // Attachment-less: no color blend attachments.
-    VkPipelineColorBlendStateCreateInfo cb{};
-    cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    cb.attachmentCount = 0;
-
-    std::array<VkDynamicState, 2> dyn = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-    VkPipelineDynamicStateCreateInfo dynCI{};
-    dynCI.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynCI.dynamicStateCount = static_cast<uint32_t>(dyn.size());
-    dynCI.pDynamicStates = dyn.data();
-
-    VkPushConstantRange push{};
-    push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    push.offset = 0;
-    push.size = sizeof(VoxelPush);
-
-    std::array<VkDescriptorSetLayout, 2> setLayouts = {voxelSetLayout_->handle(), materialSetLayout.handle()};
-    VkPipelineLayoutCreateInfo plCI{};
-    plCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    plCI.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
-    plCI.pSetLayouts = setLayouts.data();
-    plCI.pushConstantRangeCount = 1;
-    plCI.pPushConstantRanges = &push;
-    if (vkCreatePipelineLayout(device_.device(), &plCI, nullptr, &voxelPipelineLayout_) != VK_SUCCESS)
-        throw std::runtime_error("GIVolume: failed to create voxelize pipeline layout");
-
-    VkPipelineRenderingCreateInfo rendering{};
-    rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    rendering.colorAttachmentCount = 0;
-    rendering.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
-
-    VkGraphicsPipelineCreateInfo ci{};
-    ci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    ci.pNext = &rendering;
-    ci.stageCount = 2;
-    ci.pStages = stages;
-    ci.pVertexInputState = &vi;
-    ci.pInputAssemblyState = &ia;
-    ci.pViewportState = &vp;
-    ci.pRasterizationState = &rs;
-    ci.pMultisampleState = &ms;
-    ci.pDepthStencilState = &ds;
-    ci.pColorBlendState = &cb;
-    ci.pDynamicState = &dynCI;
-    ci.layout = voxelPipelineLayout_;
-    if (vkCreateGraphicsPipelines(device_.device(), device_.pipelineCache(), 1, &ci, nullptr,
-        &voxelPipeline_) != VK_SUCCESS)
-        throw std::runtime_error("GIVolume: failed to create voxelize pipeline");
-
-    vkDestroyShaderModule(device_.device(), frag, nullptr);
-    vkDestroyShaderModule(device_.device(), vert, nullptr);
+    rhi::Pipeline::Desc pipelineDesc;
+    pipelineDesc.vertPath = shaderPath("voxelize.vert.spv");
+    pipelineDesc.fragPath = shaderPath("voxelize.frag.spv");
+    // No color/depth formats: attachment-less pass, rasterize every triangle.
+    pipelineDesc.bindGroupLayouts = {voxelSetLayout_.get(), &materialSetLayout};
+    pipelineDesc.depthTest = false;
+    pipelineDesc.depthWrite = false;
+    pipelineDesc.cullMode = rhi::CullMode::None;
+    pipelineDesc.pushConstantSize = sizeof(VoxelPush);
+    pipelineDesc.pushConstantStages = rhi::ShaderStages::Vertex;
+    voxelPipeline_ = std::make_unique<rhi::Pipeline>(device_, pipelineDesc);
 }
 
-void GIVolume::voxelize(VkCommandBuffer cmd, Scene& scene, GpuProfiler* profiler) {
-    SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Voxelize");
+void GIVolume::voxelize(rhi::CommandEncoder& encoder, Scene& scene, GpuProfiler* profiler) {
+    SAIDA_GPU_PROFILE_SCOPE(profiler, encoder.handle(), "DDGI/Voxelize");
     const uint32_t res = static_cast<uint32_t>(desc_.voxelResolution);
     glm::vec3 extent = worldExtent();
     glm::vec3 center = desc_.origin + extent * 0.5f;
@@ -361,73 +240,38 @@ void GIVolume::voxelize(VkCommandBuffer cmd, Scene& scene, GpuProfiler* profiler
     ubo.axisVP[2] = axisVP({0, 1, 0}, {0, 0, 1}, extent.x, extent.z, extent.y); // along Y
     voxelUbo_->write(&ubo, sizeof(ubo));
 
-    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-    // Clear the grid (UNDEFINED -> TRANSFER_DST), then -> GENERAL for imageStore.
-    VkImageMemoryBarrier2 toClear = imageBarrier2(voxelImage_,
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, 0,
-        VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-    cmdImageBarrier(cmd, toClear);
-
-    VkClearColorValue zero{};
-    vkCmdClearColorImage(cmd, voxelImage_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
-
-    VkImageMemoryBarrier2 toGeneral = imageBarrier2(voxelImage_,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
-        VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
-    cmdImageBarrier(cmd, toGeneral);
+    // Clear the grid, then move it to storage-write for imageStore.
+    encoder.transition(voxelImage_, rhi::ResourceState::Undefined, rhi::ResourceState::CopyDst);
+    encoder.clearColorTexture(voxelImage_, {0.0f, 0.0f, 0.0f, 0.0f});
+    encoder.transition(voxelImage_, rhi::ResourceState::CopyDst,
+                       rhi::ResourceState::StorageReadWrite);
 
     // Attachment-less rendering at voxel resolution.
-    VkRenderingInfo rp{};
-    rp.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    rp.renderArea.extent = {res, res};
-    rp.layerCount = 1;
-    rp.colorAttachmentCount = 0;
-    vkCmdBeginRendering(cmd, &rp);
+    rhi::RenderPassDesc passDesc;
+    passDesc.width = res;
+    passDesc.height = res;
+    rhi::RenderPassEncoder rp = encoder.beginRenderPass(passDesc);
+    rp.setPipeline(*voxelPipeline_);
+    rp.setBindGroup(0, *voxelSet_);
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, voxelPipeline_);
-    VkDescriptorSet voxelSetHandle = voxelSet_->handle();
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, voxelPipelineLayout_,
-        0, 1, &voxelSetHandle, 0, nullptr);
-
-    VkViewport viewport{};
-    viewport.width = static_cast<float>(res);
-    viewport.height = static_cast<float>(res);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-    VkRect2D scissor{};
-    scissor.extent = {res, res};
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-    rhi::RenderPassEncoder voxelPass = rhi::RenderPassEncoder::fromHandle(cmd);
     for (uint32_t axis = 0; axis < 3; ++axis) {
         for (MeshNode* node : scene.meshes()) {
             Mesh* mesh = node->mesh();
             Material* mat = node->material();
             if (!mesh || !mat) continue;
-            VkDescriptorSet matSet = mat->descriptorSet();
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, voxelPipelineLayout_,
-                1, 1, &matSet, 0, nullptr);
+            rp.setBindGroup(1, mat->descriptorSet());
             VoxelPush pc{node->worldTransform(), axis};
-            vkCmdPushConstants(cmd, voxelPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
-                0, sizeof(pc), &pc);
-            mesh->bind(voxelPass);
-            mesh->draw(voxelPass);
+            rp.setPushConstants(&pc, sizeof(pc));
+            mesh->bind(rp);
+            mesh->draw(rp);
         }
     }
 
-    vkCmdEndRendering(cmd);
+    rp.end();
 
-    // GENERAL -> sampled for the main/debug pass AND the DDGI trace (compute).
-    VkImageMemoryBarrier2 toRead = imageBarrier2(voxelImage_,
-        VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-        VK_ACCESS_2_SHADER_READ_BIT);
-    cmdImageBarrier(cmd, toRead);
+    // Storage writes -> sampled for the main/debug pass AND the DDGI trace.
+    encoder.transition(voxelImage_, rhi::ResourceState::StorageReadWrite,
+                       rhi::ResourceState::ShaderRead);
 }
 
 void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
@@ -470,83 +314,70 @@ void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
     borderPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_borders.comp.spv"), setLayouts, sizeof(BorderPush));
 }
 
-namespace {
-// Global memory barrier between compute stages (covers buffer + image memory).
-void computeBarrier(VkCommandBuffer cmd, VkPipelineStageFlags2 dstStage) {
-    VkMemoryBarrier2 mb{};
-    mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-    mb.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    mb.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-    mb.dstStageMask = dstStage;
-    mb.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-    VkDependencyInfo dep{};
-    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dep.memoryBarrierCount = 1;
-    dep.pMemoryBarriers = &mb;
-    vkCmdPipelineBarrier2(cmd, &dep);
-}
-}
-
-void GIVolume::update(VkCommandBuffer cmd, VkDescriptorSet globalSet, GpuProfiler* profiler) {
+void GIVolume::update(rhi::CommandEncoder& encoder, VkDescriptorSet globalSet,
+                      GpuProfiler* profiler) {
     const int probeCount = desc_.probeCount();
-    VkDescriptorSet giSet = giComputeSets_[curr_]->handle();
+    const rhi::BindGroup& giSet = *giComputeSets_[curr_];
 
     // Make the previous frame's atlas writes (read as "prev") visible to compute.
-    computeBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+    encoder.storageBarrier();
 
     // Random rotation of the Fibonacci ray set for temporal coverage.
     std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
     glm::quat q = glm::normalize(glm::quat(dist(rng_), dist(rng_), dist(rng_), dist(rng_)));
     glm::mat4 randomRot = glm::mat4_cast(q);
 
+    rhi::ComputePassEncoder cp = encoder.beginComputePass();
+
     // --- 1. Trace ---
     {
-        SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Trace");
-        tracePipeline_->bind(cmd);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tracePipeline_->layout(), 0, 1, &globalSet, 0, nullptr);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tracePipeline_->layout(), 1, 1, &giSet, 0, nullptr);
+        SAIDA_GPU_PROFILE_SCOPE(profiler, encoder.handle(), "DDGI/Trace");
+        cp.setPipeline(*tracePipeline_);
+        cp.setBindGroup(0, globalSet);
+        cp.setBindGroup(1, giSet);
         TracePush tp{randomRot, desc_.raysPerProbe, probeCount};
-        vkCmdPushConstants(cmd, tracePipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(tp), &tp);
+        cp.setPushConstants(&tp, sizeof(tp));
         uint32_t rayGroups = (static_cast<uint32_t>(probeCount * desc_.raysPerProbe) + 63) / 64;
-        vkCmdDispatch(cmd, rayGroups, 1, 1);
+        cp.dispatch(rayGroups);
     }
 
-    computeBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);  // rays write -> blend read
+    encoder.storageBarrier();  // rays write -> blend read
 
     // --- 2. Blend (irradiance then visibility) ---
     {
-        SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Blend");
-        blendPipeline_->bind(cmd);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, blendPipeline_->layout(), 0, 1, &globalSet, 0, nullptr);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, blendPipeline_->layout(), 1, 1, &giSet, 0, nullptr);
+        SAIDA_GPU_PROFILE_SCOPE(profiler, encoder.handle(), "DDGI/Blend");
+        cp.setPipeline(*blendPipeline_);
+        cp.setBindGroup(0, globalSet);
+        cp.setBindGroup(1, giSet);
         auto blend = [&](int mode, glm::ivec2 atlas) {
             BlendPush bp{mode, desc_.raysPerProbe, probeCount, desc_.hysteresis, desc_.distExponent};
-            vkCmdPushConstants(cmd, blendPipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(bp), &bp);
-            vkCmdDispatch(cmd, (atlas.x + 7) / 8, (atlas.y + 7) / 8, 1);
+            cp.setPushConstants(&bp, sizeof(bp));
+            cp.dispatch((atlas.x + 7) / 8, (atlas.y + 7) / 8);
         };
         blend(0, irradianceAtlasSize());
         blend(1, visibilityAtlasSize());
     }
 
-    computeBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);  // blend write -> border read
+    encoder.storageBarrier();  // blend write -> border read
 
     // --- 3. Border copy ---
     {
-        SAIDA_GPU_PROFILE_SCOPE(profiler, cmd, "DDGI/Borders");
-        borderPipeline_->bind(cmd);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, borderPipeline_->layout(), 0, 1, &globalSet, 0, nullptr);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, borderPipeline_->layout(), 1, 1, &giSet, 0, nullptr);
+        SAIDA_GPU_PROFILE_SCOPE(profiler, encoder.handle(), "DDGI/Borders");
+        cp.setPipeline(*borderPipeline_);
+        cp.setBindGroup(0, globalSet);
+        cp.setBindGroup(1, giSet);
         auto border = [&](int mode, glm::ivec2 atlas) {
             BorderPush bp{mode, probeCount};
-            vkCmdPushConstants(cmd, borderPipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(bp), &bp);
-            vkCmdDispatch(cmd, (atlas.x + 7) / 8, (atlas.y + 7) / 8, 1);
+            cp.setPushConstants(&bp, sizeof(bp));
+            cp.dispatch((atlas.x + 7) / 8, (atlas.y + 7) / 8);
         };
         border(0, irradianceAtlasSize());
         border(1, visibilityAtlasSize());
     }
+    cp.end();
 
     // Border writes -> lighting fragment reads (current atlas, set 0 bindings 4/5).
-    computeBarrier(cmd, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+    encoder.computeToGraphicsBarrier();
 }
 
 } // namespace saida
