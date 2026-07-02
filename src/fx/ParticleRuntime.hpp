@@ -95,7 +95,7 @@ private:
     void createRenderResources();
     void createComputeResources();
     void recordInit(rhi::CommandEncoder& encoder) const;
-    VkDescriptorSet computeSet(uint32_t frame, uint32_t readParity) const;
+    const rhi::BindGroup& computeSet(uint32_t frame, uint32_t readParity) const;
 
     VulkanDevice& device_;
     Desc desc_;

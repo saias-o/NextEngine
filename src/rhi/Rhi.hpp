@@ -19,6 +19,7 @@
 #include "rhi/TextureUsage.hpp"
 #include "rhi/vulkan/BindGroup.hpp"
 #include "rhi/vulkan/CommandEncoder.hpp"
+#include "rhi/vulkan/Handles.hpp"
 #include "rhi/vulkan/RenderTexture.hpp"
 #include "rhi/vulkan/Sampler.hpp"
 #include "graphics/Buffer.hpp"   // Vulkan backend's Buffer (aliased below)
@@ -69,5 +70,14 @@ using Surface = saida::Swapchain;
 using RenderTexture = vulkan::RenderTexture;
 using RenderTextureDesc = vulkan::RenderTextureDesc;
 using Sampler = vulkan::Sampler;
+
+// 16.5.a — Neutral non-owning handles + small value types crossing render/
+// interfaces (views/samplers handed to bind groups, extents, sample counts).
+using TextureHandle = vulkan::TextureHandle;
+using TextureView = vulkan::TextureView;
+using SamplerHandle = vulkan::SamplerHandle;
+using Extent2D = vulkan::Extent2D;
+using Rect2D = vulkan::Rect2D;
+using SampleCount = vulkan::SampleCount;
 
 } // namespace saida::rhi

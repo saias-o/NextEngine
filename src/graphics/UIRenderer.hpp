@@ -1,14 +1,10 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include "rhi/Rhi.hpp"
+
 #include <glm/glm.hpp>
 #include <memory>
 #include <vector>
-
-namespace saida::rhi::vulkan {
-class CommandEncoder;
-class RenderPassEncoder;
-}
 
 namespace saida {
 
@@ -33,14 +29,14 @@ struct UIDrawCmd {
 
 class UIRenderer {
 public:
-    UIRenderer(VulkanDevice& device, ResourceManager& resources, VkFormat colorFormat);
+    UIRenderer(VulkanDevice& device, ResourceManager& resources, rhi::Format colorFormat);
     ~UIRenderer();
     UIRenderer(const UIRenderer&) = delete;
     UIRenderer& operator=(const UIRenderer&) = delete;
 
     void gatherUI(Scene& scene, glm::vec2 viewportSize = glm::vec2(0.0f));
-    void updateAsyncTextures(rhi::vulkan::CommandEncoder& encoder);
-    void recordCommands(rhi::vulkan::RenderPassEncoder& rp, uint32_t width, uint32_t height,
+    void updateAsyncTextures(rhi::CommandEncoder& encoder);
+    void recordCommands(rhi::RenderPassEncoder& rp, uint32_t width, uint32_t height,
                         glm::vec2 viewportOffset = glm::vec2(0.0f),
                         glm::vec2 viewportSize = glm::vec2(0.0f));
 

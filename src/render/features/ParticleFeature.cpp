@@ -129,10 +129,10 @@ void ParticleFeature::createPipelines(const RenderContext& ctx) {
     Pipeline::Desc desc;
     desc.vertPath = shaderPath(vert);
     desc.fragPath = shaderPath("particle_render.frag.spv");
-    desc.colorFormats = {rhi::vulkan::fromVk(ctx.colorFormat)};
-    desc.depthFormat = rhi::vulkan::fromVk(ctx.depthFormat);
+    desc.colorFormats = {ctx.colorFormat};
+    desc.depthFormat = ctx.depthFormat;
     desc.bindGroupLayouts = {&ctx.globalSetLayout, &alphaRuntime_->renderSetLayout()};
-    desc.samples = static_cast<uint32_t>(ctx.samples);
+    desc.samples = ctx.samples;
     desc.vertexInput = false;
     desc.depthWrite = false;
     desc.cullMode = rhi::CullMode::None;
@@ -289,7 +289,7 @@ void ParticleFeature::record(FrameContext& fc) {
         const uint32_t parity = runtime.recordCompute(fc.encoder, frame, emitterCount, emitCount, maxDt, fc.time);
 
         fc.pass.setPipeline(pipeline);
-        fc.pass.setBindGroup(0, fc.globalSet);
+        fc.pass.setBindGroup(0, *fc.globalSet);
         fc.pass.setBindGroup(1, runtime.renderSet(parity));
         Push push{};
         fc.pass.setPushConstants(&push, sizeof(Push));

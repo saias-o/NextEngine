@@ -178,18 +178,17 @@ Renderer::Renderer(VulkanDevice& device, Swapchain& swapchain, Window& window,
                    ResourceManager& resources, ImGuiLayer& imgui)
     : device_(device), swapchain_(&swapchain), window_(window), resources_(resources), imgui_(&imgui) {
     createGlobalSetLayout();
-    uiRenderer_ = std::make_unique<UIRenderer>(device_, resources_, swapchain_->colorFormat());
+    uiRenderer_ = std::make_unique<UIRenderer>(device_, resources_, rhi::vulkan::fromVk(swapchain_->colorFormat()));
     createHdrResources();
     createPipeline(resources_.materialSetLayout());
     createWebCanvasWorldPipeline();
     createTonemapPipeline();
-    buildFeatures(0, swapchain_->depthFormat(), swapchain_->samples());
+    buildFeatures(0, rhi::vulkan::fromVk(swapchain_->depthFormat()), swapchain_->samples());
     createUniformBuffers();
     shadowMap_ = std::make_unique<ShadowMap>(device_);
     gi_ = std::make_unique<GIVolume>(device_, giDescForTier(device_.capabilities().tier),
                                      resources_.materialSetLayout(), *globalSetLayout_);
     createGlobalDescriptorSets();
-    createCommandBuffers();
     gpuProfiler_ = std::make_unique<GpuProfiler>(device_, kMaxFramesInFlight);
 
     if (device_.capabilities().descriptorIndexing && device_.capabilities().multiDrawIndirect) {
@@ -244,8 +243,8 @@ void Renderer::clearViewportRect() {
     viewportSize_ = glm::vec2(0.0f);
 }
 
-VkRect2D Renderer::activeRenderRect() const {
-    VkExtent2D full = swapchain_ ? swapchain_->extent() : VkExtent2D{1, 1};
+rhi::Rect2D Renderer::activeRenderRect() const {
+    rhi::Extent2D full = swapchain_ ? swapchain_->extent() : rhi::Extent2D{1, 1};
     if (!viewportOverride_) return {{0, 0}, full};
 
     int32_t x = static_cast<int32_t>(std::max(0.0f, std::floor(viewportPos_.x)));
@@ -580,18 +579,6 @@ Renderer::TonemapPushConstants Renderer::tonemapPushConstants(
     return push;
 }
 
-void Renderer::createCommandBuffers() {
-    commandBuffers_.resize(kMaxFramesInFlight);
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = device_.commandPool();
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers_.size());
-    if (vkAllocateCommandBuffers(device_.device(), &allocInfo, commandBuffers_.data()) != VK_SUCCESS)
-        throw std::runtime_error("failed to allocate command buffers");
-}
-
-
 void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& cameraPos,
                            const Frustum* cullFrustum, Project* project,
                            const glm::mat4* view, const glm::mat4* proj) {
@@ -862,7 +849,7 @@ void Renderer::createHdrResources() {
     }
 
     postProcessor_ = std::make_unique<PostProcessor>(device_, extent,
-        VK_FORMAT_R16G16B16A16_SFLOAT, hdrTexture_->view());
+        rhi::Format::RGBA16Float, hdrTexture_->view());
     updateTonemapDescriptorSet();
 }
 
@@ -997,14 +984,14 @@ void Renderer::recordTonemapPass(rhi::CommandEncoder& encoder, uint32_t imageInd
     rp.end();
 }
 
-void Renderer::buildFeatures(uint32_t viewMask, VkFormat depthFormat,
-                            VkSampleCountFlagBits samples) {
+void Renderer::buildFeatures(uint32_t viewMask, rhi::Format depthFormat,
+                            rhi::SampleCount samples) {
     // The Renderer knows ONLY the ScenePassFeature interface. Concrete effects
     // (water, skybox, debug lines, …) plug in through the registry, so this never
     // names or includes a concrete effect — adding one touches no Renderer code.
     features_ = RenderFeatureRegistry::instance().build();
     RenderContext ctx{device_, resources_, *globalSetLayout_,
-                      VK_FORMAT_R16G16B16A16_SFLOAT, depthFormat, samples,
+                      rhi::Format::RGBA16Float, depthFormat, samples,
                       viewMask, static_cast<uint32_t>(kMaxFramesInFlight)};
     for (auto& f : features_) f->createPipelines(ctx);
 }
@@ -1021,7 +1008,7 @@ void Renderer::recordMeshDraws(rhi::RenderPassEncoder& rp, Pipeline* firstPipeli
     Pipeline* activePipeline = firstPipeline;
     uint64_t drawCalls = 0;
     uint64_t triangles = 0;
-    VkDescriptorSet globalSet = globalGroups_[currentFrame_]->handle();
+    const rhi::BindGroup& globalSet = *globalGroups_[currentFrame_];
     rp.setPipeline(*activePipeline);
     rp.setBindGroup(0, globalSet);
 
@@ -1117,17 +1104,13 @@ void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera,
     lightingBuffers_[frame]->write(&lighting, sizeof(lighting));
 }
 
-void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Scene& scene, const Camera& camera) {
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS)
-        throw std::runtime_error("failed to begin recording command buffer");
-
+void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageIndex,
+                                   Scene& scene, const Camera& camera) {
+    // GPU profiling is a desktop-only escape hatch on the raw command buffer.
+    VkCommandBuffer cmd = encoder.handle();
     GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
     if (gpuProfiler) gpuProfiler->resetQueries(cmd);
     uint32_t gpuFrameZone = gpuProfiler ? gpuProfiler->beginZone(cmd, "GPU/Frame") : UINT32_MAX;
-
-    rhi::CommandEncoder encoder(cmd);
 
     {
         SAIDA_PROFILE_SCOPE("UI/UpdateAsyncTextures");
@@ -1140,7 +1123,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     if (giUpdateThisFrame_) {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
         gi_->voxelize(encoder, scene, gpuProfiler);
-        gi_->update(encoder, globalGroups_[currentFrame_]->handle(), gpuProfiler);
+        gi_->update(encoder, *globalGroups_[currentFrame_], gpuProfiler);
     }
 
     bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
@@ -1265,7 +1248,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
 
     // Scene-pass features are recorded after opaque meshes.
     FrameContext fc{encoder, rp,
-                    currentFrame_, globalGroups_[currentFrame_]->handle(), scene,
+                    currentFrame_, globalGroups_[currentFrame_].get(), scene,
                     Time::elapsed(), false, &camera, nullptr, false, extent,
                     currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
     {
@@ -1284,9 +1267,6 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
                        rhi::ResourceState::Present);
 
     if (gpuProfiler) gpuProfiler->endZone(cmd, gpuFrameZone);
-
-    if (vkEndCommandBuffer(cmd) != VK_SUCCESS)
-        throw std::runtime_error("failed to record command buffer");
 }
 
 void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
@@ -1388,12 +1368,12 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
             {static_cast<float>(renderRect.extent.width), static_cast<float>(renderRect.extent.height)});
     }
 
-    vkResetCommandBuffer(commandBuffers_[currentFrame_], 0);
+    rhi::CommandEncoder encoder = swapchain_->beginFrameCommands(currentFrame_);
     {
         SAIDA_PROFILE_SCOPE("Renderer/RecordCommandBuffer");
-        recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex, scene, camera);
+        recordCommandBuffer(encoder, imageIndex, scene, camera);
     }
-    if (swapchain_->submitAndPresent(commandBuffers_[currentFrame_], currentFrame_, imageIndex)) {
+    if (swapchain_->submitAndPresent(encoder, currentFrame_, imageIndex)) {
         // Out of date / suboptimal / resized: the surface recreated itself;
         // rebuild the HDR chain sized to the new extent.
         cleanupHdrResources();
@@ -1437,7 +1417,7 @@ void Renderer::createXrTargets() {
 
     for (uint32_t i = 0; i < std::min<uint32_t>(xrViewCount_, 2); ++i) {
         xrPostProcessors_[i] = std::make_unique<PostProcessor>(device_, xrExtent_,
-            VK_FORMAT_R16G16B16A16_SFLOAT, xrHdrTexture_->layerView(i));
+            rhi::Format::RGBA16Float, xrHdrTexture_->layerView(i));
     }
 }
 
@@ -1488,7 +1468,7 @@ void Renderer::createXrPipelines() {
 
     // Same registry as desktop; each feature builds its stereo pipeline from the
     // viewMask. The Renderer stays ignorant of which effects exist.
-    buildFeatures(viewMask, depthFormat, VK_SAMPLE_COUNT_1_BIT);
+    buildFeatures(viewMask, rhi::vulkan::fromVk(depthFormat), VK_SAMPLE_COUNT_1_BIT);
 
     {
         tonemapSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
@@ -1606,7 +1586,7 @@ void Renderer::recordXrScenePass(rhi::CommandEncoder& encoder, Scene& scene,
 
     // passthrough is forwarded so the skybox skips itself.
     FrameContext fc{encoder, rp,
-                    currentFrame_, globalGroups_[currentFrame_]->handle(), scene,
+                    currentFrame_, globalGroups_[currentFrame_].get(), scene,
                     Time::elapsed(), true, nullptr, &eyes, passthrough, xrExtent_,
                     currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
     recordFeatures(fc);
@@ -1751,7 +1731,7 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
         GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
         gi_->voxelize(encoder, scene, gpuProfiler);
-        gi_->update(encoder, globalGroups_[currentFrame_]->handle(), gpuProfiler);
+        gi_->update(encoder, *globalGroups_[currentFrame_], gpuProfiler);
     }
     recordShadowPasses(encoder);
 

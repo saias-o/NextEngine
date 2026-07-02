@@ -59,7 +59,7 @@ uint32_t ParticleRuntime::recordCompute(rhi::CommandEncoder& encoder, uint32_t f
     const uint32_t clampedEmitters = std::min(emitterCount, desc_.maxEmitters);
     const uint32_t clampedEmitCount = std::min(emitCount, desc_.maxParticles);
     ComputePush push{desc_.maxParticles, clampedEmitters, clampedEmitCount, dt, time};
-    VkDescriptorSet set = computeSet(frame, readParity);
+    const rhi::BindGroup& set = computeSet(frame, readParity);
 
     rhi::ComputePassEncoder cp = encoder.beginComputePass();
 
@@ -177,9 +177,9 @@ void ParticleRuntime::createComputeResources() {
         setLayouts, sizeof(ComputePush));
 }
 
-VkDescriptorSet ParticleRuntime::computeSet(uint32_t frame, uint32_t readParity) const {
+const rhi::BindGroup& ParticleRuntime::computeSet(uint32_t frame, uint32_t readParity) const {
     const uint32_t f = frameIndex(frame);
-    return computeSets_[f * 2 + std::min<uint32_t>(readParity, 1u)]->handle();
+    return *computeSets_[f * 2 + std::min<uint32_t>(readParity, 1u)];
 }
 
 void ParticleRuntime::recordInit(rhi::CommandEncoder& encoder) const {

@@ -36,7 +36,10 @@ vec4 sampleHdr(vec2 viewportUV) {
 }
 
 float sampleDepth(vec2 viewportUV) {
-    return texture(TEX2D(depthInput), sourceUV(viewportUV)).r;
+    // Explicit LOD: depth has no mips (identical result) and the AO/fog loops
+    // call this from non-uniform control flow, which WGSL forbids for the
+    // implicit-derivative texture() variant.
+    return textureLod(TEX2D(depthInput), sourceUV(viewportUV), 0.0).r;
 }
 
 vec2 viewportTexel() {

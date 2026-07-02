@@ -53,10 +53,10 @@ void WaterFeature::createPipelines(const RenderContext& ctx) {
     Pipeline::Desc desc;
     desc.vertPath = shaderPath(vert);
     desc.fragPath = shaderPath("water.frag.spv");
-    desc.colorFormats = {rhi::vulkan::fromVk(ctx.colorFormat)};
-    desc.depthFormat = rhi::vulkan::fromVk(ctx.depthFormat);
+    desc.colorFormats = {ctx.colorFormat};
+    desc.depthFormat = ctx.depthFormat;
     desc.bindGroupLayouts = {&ctx.globalSetLayout, setLayout_.get()};
-    desc.samples = static_cast<uint32_t>(ctx.samples);
+    desc.samples = ctx.samples;
     desc.vertexInput = false;
     desc.cullMode = rhi::CullMode::None;
     desc.blendMode = rhi::BlendMode::Alpha;
@@ -103,7 +103,7 @@ void WaterFeature::record(FrameContext& fc) {
     ubos_[frame]->write(packed.data(), sizeof(GpuWater) * waterCount);
 
     fc.pass.setPipeline(*pipeline_);
-    fc.pass.setBindGroup(0, fc.globalSet);
+    fc.pass.setBindGroup(0, *fc.globalSet);
     fc.pass.setBindGroup(1, *sets_[frame]);
 
     for (uint32_t i = 0; i < waterCount; ++i) {

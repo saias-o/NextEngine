@@ -32,10 +32,10 @@ void SkyboxFeature::createPipelines(const RenderContext& ctx) {
     Pipeline::Desc desc;
     desc.vertPath = shaderPath("skybox.vert.spv");
     desc.fragPath = shaderPath(frag);
-    desc.colorFormats = {rhi::vulkan::fromVk(ctx.colorFormat)};
-    desc.depthFormat = rhi::vulkan::fromVk(ctx.depthFormat);
+    desc.colorFormats = {ctx.colorFormat};
+    desc.depthFormat = ctx.depthFormat;
     desc.bindGroupLayouts = {setLayout_.get()};
-    desc.samples = static_cast<uint32_t>(ctx.samples);
+    desc.samples = ctx.samples;
     desc.vertexInput = false;
     desc.depthWrite = false;
     desc.depthCompare = rhi::CompareOp::LessOrEqual;

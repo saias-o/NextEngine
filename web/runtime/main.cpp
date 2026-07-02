@@ -375,6 +375,7 @@ void initResources() {
     tonemap.vertPath = "/shaders/tonemap.vert.wgsl";
     tonemap.fragPath = "/shaders/tonemap.frag.wgsl";
     tonemap.colorFormats = {rhi::Format::BGRA8Unorm};
+    tonemap.bindGroupLayouts = {gApp.tonemapLayout.get()};
     tonemap.vertexInput = false;
     tonemap.depthTest = false;
     tonemap.depthWrite = false;

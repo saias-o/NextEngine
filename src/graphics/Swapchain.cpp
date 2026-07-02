@@ -188,6 +188,33 @@ bool Swapchain::submitAndPresent(VkCommandBuffer cmd, uint32_t frame, uint32_t i
     return false;
 }
 
+rhi::vulkan::CommandEncoder Swapchain::beginFrameCommands(uint32_t frame) {
+    if (!frameCommandBuffers_[frame]) {
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = device_.commandPool();
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = static_cast<uint32_t>(frameCommandBuffers_.size());
+        if (vkAllocateCommandBuffers(device_.device(), &allocInfo,
+                                     frameCommandBuffers_.data()) != VK_SUCCESS)
+            throw std::runtime_error("failed to allocate frame command buffers");
+    }
+    VkCommandBuffer cmd = frameCommandBuffers_[frame];
+    vkResetCommandBuffer(cmd, 0);
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS)
+        throw std::runtime_error("failed to begin frame command buffer");
+    return rhi::vulkan::CommandEncoder(cmd);
+}
+
+bool Swapchain::submitAndPresent(rhi::vulkan::CommandEncoder& encoder, uint32_t frame,
+                                 uint32_t imageIndex) {
+    if (vkEndCommandBuffer(encoder.handle()) != VK_SUCCESS)
+        throw std::runtime_error("failed to record frame command buffer");
+    return submitAndPresent(encoder.handle(), frame, imageIndex);
+}
+
 VkSurfaceFormatKHR Swapchain::chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& available) const {
     for (auto& f : available)
         if (f.format == VK_FORMAT_B8G8R8A8_SRGB &&

@@ -32,12 +32,12 @@ struct UIPushConstants {
     uint32_t _pad;
 };
 
-UIRenderer::UIRenderer(VulkanDevice& device, ResourceManager& resources, VkFormat colorFormat)
+UIRenderer::UIRenderer(VulkanDevice& device, ResourceManager& resources, rhi::Format colorFormat)
     : device_(device), resources_(resources) {
     Pipeline::Desc desc;
     desc.vertPath = shaderPath("ui.vert.spv");
     desc.fragPath = shaderPath("ui.frag.spv");
-    desc.colorFormats = {rhi::vulkan::fromVk(colorFormat)};
+    desc.colorFormats = {colorFormat};
     desc.bindGroupLayouts = {resources_.globalMaterialSetLayout()};  // raw bindless set
     desc.vertexInput = false;
     desc.depthTest = false;
@@ -158,14 +158,14 @@ void UIRenderer::traverseUI(UINode* node) {
     }
 }
 
-void UIRenderer::updateAsyncTextures(rhi::vulkan::CommandEncoder& encoder) {
+void UIRenderer::updateAsyncTextures(rhi::CommandEncoder& encoder) {
     SAIDA_PROFILE_FUNCTION();
     for (auto* wcn : webNodesToUpdate_) {
         wcn->updateTextureIfNeededAsync(encoder);
     }
 }
 
-void UIRenderer::recordCommands(rhi::vulkan::RenderPassEncoder& rp, uint32_t width, uint32_t height,
+void UIRenderer::recordCommands(rhi::RenderPassEncoder& rp, uint32_t width, uint32_t height,
                                 glm::vec2 viewportOffset, glm::vec2 viewportSize) {
     SAIDA_PROFILE_FUNCTION();
     if (drawCmds_.empty()) return;

@@ -19,10 +19,10 @@ void DebugLinesFeature::createPipelines(const RenderContext& ctx) {
     Pipeline::Desc desc;
     desc.vertPath = shaderPath("debug_line.vert.spv");
     desc.fragPath = shaderPath("debug_line.frag.spv");
-    desc.colorFormats = {rhi::vulkan::fromVk(ctx.colorFormat)};
-    desc.depthFormat = rhi::vulkan::fromVk(ctx.depthFormat);
+    desc.colorFormats = {ctx.colorFormat};
+    desc.depthFormat = ctx.depthFormat;
     desc.bindGroupLayouts = {&ctx.globalSetLayout};
-    desc.samples = static_cast<uint32_t>(ctx.samples);
+    desc.samples = ctx.samples;
     desc.depthTest = false;
     desc.depthWrite = false;
     desc.cullMode = rhi::CullMode::None;
@@ -64,7 +64,7 @@ void DebugLinesFeature::record(FrameContext& fc) {
     buffers_[fc.frameIndex]->write(verts.data(), count * sizeof(Vertex));
 
     fc.pass.setPipeline(*pipeline_);
-    fc.pass.setBindGroup(0, fc.globalSet);
+    fc.pass.setBindGroup(0, *fc.globalSet);
     fc.pass.setVertexBuffer(*buffers_[fc.frameIndex]);
     fc.pass.draw(count);
 }

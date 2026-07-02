@@ -157,7 +157,7 @@ float shadowFactor(int idx, vec3 worldPos, float ndotl) {
     float softness = lights.shadowParams.x;
     for (int x = -1; x <= 1; ++x)
         for (int y = -1; y <= 1; ++y)
-            sum += texture(SHADOW2DARRAY(shadowMap), vec4(uv + vec2(x, y) * texel * softness, float(idx), depthRef));
+            sum += SAMPLE_SHADOW2DARRAY(shadowMap, vec4(uv + vec2(x, y) * texel * softness, float(idx), depthRef));
     return sum / 9.0;
 }
 

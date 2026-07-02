@@ -30,11 +30,15 @@ layout(location = 1) in vec3 vColor;
 layout(location = 2) in vec2 vUV;
 
 void main() {
+    // Sampled before the bounds check: the early return is per-fragment
+    // (non-uniform) control flow, and WGSL forbids implicit-derivative
+    // sampling after it.
+    vec3 albedo = texture(TEX2D(texAlbedo), vUV).rgb * vColor * material.baseColor.rgb;
+
     vec3 g = (vWorldPos - vox.origin.xyz) / vox.extent.xyz;   // [0,1] inside volume
     if (any(lessThan(g, vec3(0.0))) || any(greaterThan(g, vec3(1.0))))
         return;
     ivec3 c = clamp(ivec3(g * vec3(vox.res.xyz)), ivec3(0), vox.res.xyz - 1);
 
-    vec3 albedo = texture(TEX2D(texAlbedo), vUV).rgb * vColor * material.baseColor.rgb;
     imageStore(voxelAlbedo, c, vec4(albedo, 1.0));
 }

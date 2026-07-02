@@ -22,15 +22,17 @@ layout(set = 0, binding = 0) uniform sampler2D bindlessTextures[];
 #endif
 
 void main() {
-    vec4 texColor = vec4(1.0);
-
-    if (fragHasTexture != 0) {
 #ifdef WEB
-        texColor = texture(TEX2D(uiTexture), fragUV);
+    // Sample unconditionally (fragHasTexture is a flat varying, so branching on
+    // it is non-uniform control flow — forbidden around texture() in WGSL),
+    // then select. A dummy white texture is always bound.
+    vec4 sampled = texture(TEX2D(uiTexture), fragUV);
+    vec4 texColor = fragHasTexture != 0 ? sampled : vec4(1.0);
 #else
+    vec4 texColor = vec4(1.0);
+    if (fragHasTexture != 0)
         texColor = texture(bindlessTextures[nonuniformEXT(fragTextureId)], fragUV);
 #endif
-    }
 
     outColor = fragColor * texColor;
 }

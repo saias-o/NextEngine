@@ -35,6 +35,13 @@
 #ifdef WEB
 // ── WebGPU / WGSL : texture + sampler séparés, push constant → UBO ───────────
 
+// L'analyse d'uniformité WGSL (Tint) interdit tout échantillonnage à dérivées
+// implicites (texture/textureSampleCompare) hors du flux de contrôle uniforme —
+// or nos ombres sont lues dans des boucles de lumières avec early-return par
+// fragment. La variante LOD explicite (textureSampleCompareLevel) est autorisée
+// partout et identique pour une shadow map sans mips.
+#extension GL_EXT_texture_shadow_lod : require
+
 #define DECL_TEX2D(_set, tb, sb, name) \
     layout(set = _set, binding = tb) uniform texture2D name##_t; \
     layout(set = _set, binding = sb) uniform sampler   name##_s
@@ -56,6 +63,8 @@
     layout(set = _set, binding = tb) uniform texture2DArray name##_t; \
     layout(set = _set, binding = sb) uniform samplerShadow  name##_s
 #define SHADOW2DARRAY(name) sampler2DArrayShadow(name##_t, name##_s)
+#define SAMPLE_SHADOW2DARRAY(name, coord) \
+    textureLod(SHADOW2DARRAY(name), coord, 0.0)
 
 // Le bloc par-objet (model + params) devient un UBO. Set 3 est libre côté web
 // (pas de bindless). L'accès `push.field` reste identique.
@@ -72,6 +81,7 @@
 #define TEXCUBE(name) name
 #define DECL_SHADOW2DARRAY(_set, tb, sb, name) layout(set = _set, binding = tb) uniform sampler2DArrayShadow name
 #define SHADOW2DARRAY(name) name
+#define SAMPLE_SHADOW2DARRAY(name, coord) texture(name, coord)
 #define PUSH_QUALIFIER layout(push_constant) uniform
 
 #endif

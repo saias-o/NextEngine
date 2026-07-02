@@ -2,7 +2,6 @@
 
 #include "rhi/Rhi.hpp"
 
-#include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
 #include <array>
@@ -53,14 +52,14 @@ public:
 
     // Run the DDGI update: trace rays, blend into the current atlases, copy borders.
     // globalSet = set 0 for this frame (lights, shadow maps, voxel grid).
-    void update(rhi::CommandEncoder& encoder, VkDescriptorSet globalSet,
+    void update(rhi::CommandEncoder& encoder, const rhi::BindGroup& globalSet,
                 GpuProfiler* profiler = nullptr);
 
     // Views/sampler the renderer binds into set 0 (bindings 4/5/6) for shading.
-    VkImageView irradianceView() const { return irradiance_[curr_]->view(); }
-    VkImageView visibilityView() const { return visibility_[curr_]->view(); }
-    VkImageView voxelView() const { return voxelTexture_->view(); }
-    VkSampler sampler() const { return sampler_->handle(); }
+    rhi::TextureView irradianceView() const { return irradiance_[curr_]->view(); }
+    rhi::TextureView visibilityView() const { return visibility_[curr_]->view(); }
+    rhi::TextureView voxelView() const { return voxelTexture_->view(); }
+    rhi::SamplerHandle sampler() const { return sampler_->handle(); }
 
     const GIVolumeDesc& desc() const { return desc_; }
     int probesPerRow() const { return probesPerRow_; }

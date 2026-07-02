@@ -6,10 +6,7 @@
 #include "graphics/MemoryProfiler.hpp"
 #include "graphics/Pipeline.hpp"
 #include "graphics/VulkanDevice.hpp"
-#include "rhi/vulkan/Format.hpp"
 #include "scene/Scene.hpp"
-
-#include "vk_mem_alloc.h"
 
 #include <algorithm>
 #include <array>
@@ -23,8 +20,8 @@ constexpr uint32_t kMaxBloomLevels = 6;
 constexpr uint32_t kMinBloomSize = 16;
 }
 
-PostProcessor::PostProcessor(VulkanDevice& device, VkExtent2D extent, VkFormat hdrFormat,
-                             VkImageView hdrInputView)
+PostProcessor::PostProcessor(rhi::Device& device, rhi::Extent2D extent, rhi::Format hdrFormat,
+                             rhi::TextureView hdrInputView)
     : device_(device), extent_(extent), hdrFormat_(hdrFormat), hdrInputView_(hdrInputView) {
     createTargets();
     createSampler();
@@ -42,14 +39,14 @@ PostProcessor::~PostProcessor() {
     destroyTargets();
 }
 
-void PostProcessor::setHdrInput(VkImageView hdrInputView) {
+void PostProcessor::setHdrInput(rhi::TextureView hdrInputView) {
     if (hdrInputView_ == hdrInputView) return;
     hdrInputView_ = hdrInputView;
     updateDescriptorSets();
 }
 
-VkImageView PostProcessor::bloomView() const {
-    return bloom_.empty() ? VK_NULL_HANDLE : bloom_.front().texture->view();
+rhi::TextureView PostProcessor::bloomView() const {
+    return bloom_.empty() ? rhi::TextureView{} : bloom_.front().texture->view();
 }
 
 void PostProcessor::createTargets() {
@@ -60,7 +57,7 @@ void PostProcessor::createTargets() {
         Target target{};
         target.extent = {width, height};
         rhi::RenderTextureDesc desc;
-        desc.format = rhi::vulkan::fromVk(hdrFormat_);
+        desc.format = hdrFormat_;
         desc.width = width;
         desc.height = height;
         desc.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::Sampled;
@@ -105,7 +102,7 @@ void PostProcessor::updateDescriptorSets() {
     downsampleGroups_.clear();
     upsampleGroups_.clear();
 
-    auto makeGroup = [&](VkImageView view) {
+    auto makeGroup = [&](rhi::TextureView view) {
         rhi::BindGroupEntry entry;
         entry.binding = 0;
         entry.view = view;
@@ -125,7 +122,7 @@ void PostProcessor::updateDescriptorSets() {
 void PostProcessor::createPipelines() {
     Pipeline::Desc desc;
     desc.vertPath = shaderPath("tonemap.vert.spv");
-    desc.colorFormats = {rhi::vulkan::fromVk(hdrFormat_)};
+    desc.colorFormats = {hdrFormat_};
     desc.bindGroupLayouts = {inputLayout_.get()};
     desc.vertexInput = false;
     desc.depthTest = false;

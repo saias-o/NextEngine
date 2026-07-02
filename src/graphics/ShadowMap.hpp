@@ -2,8 +2,6 @@
 
 #include "rhi/Rhi.hpp"
 
-#include <vulkan/vulkan.h>
-
 #include <functional>
 #include <memory>
 
@@ -34,8 +32,8 @@ public:
     // encoder, before the main render pass. No-op when count == 0.
     void record(rhi::CommandEncoder& encoder, int count, const DrawGeometryFn& drawGeometry);
 
-    VkImageView arrayView() const { return texture_->view(); }
-    VkSampler sampler() const { return sampler_->handle(); }
+    rhi::TextureView arrayView() const { return texture_->view(); }
+    rhi::SamplerHandle sampler() const { return sampler_->handle(); }
 
 private:
     void createTexture();

@@ -243,7 +243,7 @@ void GIVolume::voxelize(rhi::CommandEncoder& encoder, Scene& scene, GpuProfiler*
 void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
     const int probeCount = desc_.probeCount();
     raysBuffer_ = std::make_unique<Buffer>(device_,
-        static_cast<VkDeviceSize>(probeCount) * desc_.raysPerProbe * sizeof(RayData),
+        static_cast<uint64_t>(probeCount) * desc_.raysPerProbe * sizeof(RayData),
         rhi::BufferUsage::Storage, MemoryUsage::GpuOnly);
 
     // Set layout: 0=rays SSBO, 1/2=write irr/vis (storage img), 3/4=prev irr/vis.
@@ -261,7 +261,7 @@ void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
         rhi::BindGroupEntry raysEntry;
         raysEntry.binding = 0;
         raysEntry.buffer = raysBuffer_.get();
-        auto imgEntry = [](uint32_t binding, VkImageView v) {
+        auto imgEntry = [](uint32_t binding, rhi::TextureView v) {
             rhi::BindGroupEntry e; e.binding = binding; e.view = v;
             e.textureState = rhi::ResourceState::StorageReadWrite;
             return e;
@@ -280,7 +280,7 @@ void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
     borderPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_borders.comp.spv"), setLayouts, sizeof(BorderPush));
 }
 
-void GIVolume::update(rhi::CommandEncoder& encoder, VkDescriptorSet globalSet,
+void GIVolume::update(rhi::CommandEncoder& encoder, const rhi::BindGroup& globalSet,
                       GpuProfiler* profiler) {
     const int probeCount = desc_.probeCount();
     const rhi::BindGroup& giSet = *giComputeSets_[curr_];

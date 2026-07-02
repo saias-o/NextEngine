@@ -20,6 +20,7 @@
 #include "rhi/webgpu/CommandEncoder.hpp"
 #include "rhi/webgpu/Device.hpp"
 #include "rhi/webgpu/Format.hpp"
+#include "rhi/webgpu/Handles.hpp"
 #include "rhi/webgpu/Pipeline.hpp"
 #include "rhi/webgpu/RenderTexture.hpp"
 #include "rhi/webgpu/Sampler.hpp"
@@ -47,5 +48,13 @@ using ComputePassEncoder = webgpu::ComputePassEncoder;
 using RenderPassDesc = webgpu::RenderPassDesc;
 using ColorAttachment = webgpu::ColorAttachment;
 using DepthAttachment = webgpu::DepthAttachment;
+
+// 16.5.a — Neutral non-owning handles + small value types (mirror of Rhi.hpp).
+using TextureHandle = webgpu::TextureHandle;
+using TextureView = webgpu::TextureView;
+using SamplerHandle = webgpu::SamplerHandle;
+using Extent2D = webgpu::Extent2D;
+using Rect2D = webgpu::Rect2D;
+using SampleCount = webgpu::SampleCount;
 
 } // namespace saida::rhi

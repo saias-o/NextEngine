@@ -30,6 +30,13 @@
     if (!navigator.gpu) {
       statusEl.textContent = 'WebGPU indisponible — utilisez Chrome/Edge récents.';
     }
+    // Garde-fou : ouvert brut (template non buildé), aucun <script src> n'a été
+    // substitué à {{{ SCRIPT }}} — expliquer au lieu de « loading… » pour toujours.
+    document.addEventListener('DOMContentLoaded', function() {
+      if (!document.querySelector('script[src]'))
+        statusEl.textContent = 'Ceci est le template shell.html — buildez puis servez : ' +
+          './web/build_web.sh && python web/serve.py build-web, puis ouvrez http://localhost:8080/index.html';
+    });
   </script>
   {{{ SCRIPT }}}
 </body>

@@ -2,8 +2,6 @@
 
 #include "rhi/Rhi.hpp"
 
-#include <vulkan/vulkan.h>
-#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 
 #include <memory>
@@ -20,23 +18,23 @@ class VulkanDevice;
 // only rebuilds descriptors when the render targets are recreated.
 class PostProcessor {
 public:
-    PostProcessor(VulkanDevice& device, VkExtent2D extent, VkFormat hdrFormat,
-                  VkImageView hdrInputView);
+    PostProcessor(rhi::Device& device, rhi::Extent2D extent, rhi::Format hdrFormat,
+                  rhi::TextureView hdrInputView);
     ~PostProcessor();
     PostProcessor(const PostProcessor&) = delete;
     PostProcessor& operator=(const PostProcessor&) = delete;
 
-    void setHdrInput(VkImageView hdrInputView);
+    void setHdrInput(rhi::TextureView hdrInputView);
     void recordBloom(rhi::CommandEncoder& encoder, const SceneSettings& settings,
                      const glm::vec4& sourceRect, GpuProfiler* profiler);
 
-    VkImageView bloomView() const;
-    VkSampler bloomSampler() const { return linearSampler_->handle(); }
+    rhi::TextureView bloomView() const;
+    rhi::SamplerHandle bloomSampler() const { return linearSampler_->handle(); }
 
 private:
     struct Target {
         std::unique_ptr<rhi::RenderTexture> texture;
-        VkExtent2D extent{};
+        rhi::Extent2D extent{};
         // Explicitly tracked by the owner (PLAN_RHI 7.3: no automatic tracking).
         rhi::ResourceState state = rhi::ResourceState::Undefined;
     };
@@ -56,10 +54,10 @@ private:
     rhi::RenderPassEncoder beginFullscreenPass(rhi::CommandEncoder& encoder, Target& target,
                                                bool clear);
 
-    VulkanDevice& device_;
-    VkExtent2D extent_{};
-    VkFormat hdrFormat_ = VK_FORMAT_UNDEFINED;
-    VkImageView hdrInputView_ = VK_NULL_HANDLE;
+    rhi::Device& device_;
+    rhi::Extent2D extent_{};
+    rhi::Format hdrFormat_ = rhi::Format::Undefined;
+    rhi::TextureView hdrInputView_ = {};
 
     std::vector<Target> bloom_;
     std::unique_ptr<rhi::Sampler> linearSampler_;

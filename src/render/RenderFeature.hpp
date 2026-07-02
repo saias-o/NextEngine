@@ -2,7 +2,6 @@
 
 #include "rhi/Rhi.hpp"
 
-#include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
 #include <cstdint>
@@ -42,9 +41,9 @@ struct SceneDraw {
 // Everything one eye/view needs for stereo (multiview) rendering. Lives here so
 // both the Renderer and the render features can see it without a cycle.
 struct EyeRenderInfo {
-    VkImage image = VK_NULL_HANDLE;
-    VkImageView imageView = VK_NULL_HANDLE;
-    VkExtent2D extent{};
+    rhi::TextureHandle image = {};
+    rhi::TextureView imageView = {};
+    rhi::Extent2D extent{};
     glm::mat4 view{1.0f};
     glm::mat4 projection{1.0f};
     glm::vec3 eyePosition{0.0f};
@@ -57,9 +56,9 @@ struct RenderContext {
     VulkanDevice& device;
     ResourceManager& resources;
     rhi::BindGroupLayout& globalSetLayout;  // set 0: camera + lighting + environment
-    VkFormat colorFormat;                   // HDR color attachment
-    VkFormat depthFormat;
-    VkSampleCountFlagBits samples;
+    rhi::Format colorFormat;                // HDR color attachment
+    rhi::Format depthFormat;
+    rhi::SampleCount samples;
     uint32_t viewMask;
     uint32_t framesInFlight;
 
@@ -75,14 +74,14 @@ struct FrameContext {
     rhi::CommandEncoder encoder;
     rhi::RenderPassEncoder pass;
     uint32_t frameIndex;
-    VkDescriptorSet globalSet;   // set 0 for this frame (camera + lighting + env)
+    const rhi::BindGroup* globalSet;  // set 0 for this frame (camera + lighting + env)
     Scene& scene;
     float time;
     bool stereo;
     const Camera* camera = nullptr;                    // valid when !stereo
     const std::vector<EyeRenderInfo>* eyes = nullptr;  // valid when stereo
     bool passthrough = false;                          // XR see-through: skip opaque sky
-    VkExtent2D extent{};                               // current HDR scene target
+    rhi::Extent2D extent{};                            // current HDR scene target
     const SceneDraw* draws = nullptr;                  // visible opaque mesh draws
     uint32_t drawCount = 0;
 };

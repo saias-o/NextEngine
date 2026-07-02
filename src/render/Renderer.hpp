@@ -1,7 +1,5 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
-#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 
 #include <array>
@@ -167,7 +165,6 @@ private:
     // lighting/bone buffers + shadow/GI/environment views). Bind groups are
     // immutable (PLAN_RHI §7.4): re-pointing any binding means recreating.
     void rebuildGlobalSet(int frame);
-    void createCommandBuffers();
     void createGpuDrivenBuffers();
     void createCullingPipeline();
 
@@ -183,8 +180,9 @@ private:
     void recordMeshDraws(rhi::RenderPassEncoder& rp, Pipeline* firstPipeline, bool xrMultiview);
     void recordWorldWebCanvases(rhi::RenderPassEncoder& rp, Scene& scene, const Camera& camera);
     void recordShadowPasses(rhi::CommandEncoder& encoder);
-    void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Scene& scene, const Camera& camera);
-    VkRect2D activeRenderRect() const;
+    void recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageIndex, Scene& scene,
+                             const Camera& camera);
+    rhi::Rect2D activeRenderRect() const;
 
     VulkanDevice& device_;
     Swapchain* swapchain_ = nullptr;  // null in XR mode (OpenXR owns presentation)
@@ -222,8 +220,8 @@ private:
     // once and iterates them after the opaque draws — adding/removing an effect is a
     // new ScenePassFeature, never an edit here. Order = draw order.
     std::vector<std::unique_ptr<ScenePassFeature>> features_;
-    void buildFeatures(uint32_t viewMask, VkFormat depthFormat,
-                       VkSampleCountFlagBits samples);
+    void buildFeatures(uint32_t viewMask, rhi::Format depthFormat,
+                       rhi::SampleCount samples);
     void recordFeatures(FrameContext& fc);
 
     std::unique_ptr<rhi::BindGroupLayout> globalSetLayout_;
@@ -245,7 +243,6 @@ private:
     uint32_t currentInstanceCount_ = 0;
     Frustum cameraFrustum_;
 
-    std::vector<VkCommandBuffer> commandBuffers_;
     uint32_t currentFrame_ = 0;
     
     std::vector<SceneDraw> currentDraws_;
@@ -274,11 +271,11 @@ private:
     int giLastLightingMode_ = 0;
     int giLastMode_ = 0;
     bool giUpdateThisFrame_ = true;
-    std::array<VkImageView, 2> cachedGiIrradianceView_{};
-    std::array<VkImageView, 2> cachedGiVisibilityView_{};
-    std::array<VkSampler, 2> cachedGiSampler_{};
-    std::array<VkImageView, 2> cachedEnvironmentView_{};
-    std::array<VkSampler, 2> cachedEnvironmentSampler_{};
+    std::array<rhi::TextureView, 2> cachedGiIrradianceView_{};
+    std::array<rhi::TextureView, 2> cachedGiVisibilityView_{};
+    std::array<rhi::SamplerHandle, 2> cachedGiSampler_{};
+    std::array<rhi::TextureView, 2> cachedEnvironmentView_{};
+    std::array<rhi::SamplerHandle, 2> cachedEnvironmentSampler_{};
 
 #ifdef SAIDA_ENABLE_XR
     // Created only by the XR constructor. The scene is rendered once into a

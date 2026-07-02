@@ -1,7 +1,9 @@
 #pragma once
 
 #include "graphics/VmaFwd.hpp"
+#include "rhi/vulkan/CommandEncoder.hpp"
 
+#include <array>
 #include <vector>
 
 namespace saida {
@@ -33,6 +35,14 @@ public:
     // true when the swap chain must be recreated (out of date / suboptimal /
     // window resized). WebGPU backend (16.4): both are trivial, sync is no-op.
     bool submitAndPresent(VkCommandBuffer cmd, uint32_t frame, uint32_t imageIndex);
+
+    // Per-frame command lifecycle (16.5.a): the Surface owns the frame command
+    // buffers, so the Renderer never touches vkAllocate/Begin/End/Reset. The
+    // WebGPU Surface creates a fresh WGPUCommandEncoder here instead.
+    rhi::vulkan::CommandEncoder beginFrameCommands(uint32_t frame);
+    // Ends the encoder's command buffer, then submits + presents (see above).
+    bool submitAndPresent(rhi::vulkan::CommandEncoder& encoder, uint32_t frame,
+                          uint32_t imageIndex);
 
     // Waits until the window has a non-zero size, then rebuilds the swap chain.
     void recreate();
@@ -99,6 +109,10 @@ private:
     std::vector<VkSemaphore> renderFinishedSemaphores_;
     std::vector<VkSemaphore> imageAvailableSemaphores_;
     std::vector<VkFence> inFlightFences_;
+
+    // Frame command buffers (one per frame in flight), allocated lazily from the
+    // device pool on first beginFrameCommands. Freed with the pool.
+    std::array<VkCommandBuffer, kFramesInFlight> frameCommandBuffers_{};
 };
 
 } // namespace saida

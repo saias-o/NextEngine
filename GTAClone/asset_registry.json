@@ -1,7 +1,10 @@
 {
-    "9195399048151323674": {
-        "hash": 6363192048372904923,
-        "path": "scenes/main.scene",
-        "type": "Scene"
-    }
+    "assets": {
+        "9195399048151323674": {
+            "hash": 6363192048372904923,
+            "path": "scenes/main.scene",
+            "type": "Scene"
+        }
+    },
+    "version": 1
 }
