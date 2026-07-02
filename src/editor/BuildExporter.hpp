@@ -30,6 +30,12 @@ public:
     // Performs the export. Pure filesystem work; safe to call from the UI thread.
     static Result exportWindowsBuild(const Project& project, const Options& options);
 
+    // Packages the web runtime (Étape 16.6): copies the emcmake output
+    // (build-web/index.html/.js/.wasm/.data — produced by web/build_web.sh)
+    // into <outputDir>/web next to the COOP/COEP dev server (web/serve.py).
+    // Fails with a pointer at build_web.sh when the web build is missing.
+    static Result exportWebBuild(const Project& project, const Options& options);
+
     // Launches an already-built game exe (used by "Build & Run" / "Open").
     static bool launch(const std::string& exePath);
 

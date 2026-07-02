@@ -23,15 +23,35 @@ void setRuntimeRoot(const std::string& dir);
 const std::string& runtimeRoot();  // empty when unset
 
 inline std::string assetPath(const std::string& relative) {
+#ifdef __EMSCRIPTEN__
+    // Web mode (Étape 16.1): assets are packaged into MEMFS under /assets
+    // (--preload-file <dir>@/assets); a fetch/IDBFS streaming backend can
+    // replace this later without touching call sites.
+    return "/assets/" + relative;
+#else
     const std::string& root = runtimeRoot();
     if (!root.empty()) return root + "/" + relative;
     return std::string(SAIDA_PROJECT_ROOT) + "/" + relative;
+#endif
 }
 
 inline std::string shaderPath(const std::string& name) {
+#ifdef __EMSCRIPTEN__
+    // Web mode: the transpiled WGSL lives in MEMFS under /shaders. The web
+    // backend swaps the extension (.spv -> .wgsl) so desktop call sites that
+    // name SPIR-V files keep working unchanged.
+    std::string webName = name;
+    const std::string spv = ".spv";
+    if (webName.size() > spv.size() &&
+        webName.compare(webName.size() - spv.size(), spv.size(), spv) == 0) {
+        webName = webName.substr(0, webName.size() - spv.size()) + ".wgsl";
+    }
+    return "/shaders/" + webName;
+#else
     const std::string& root = runtimeRoot();
     if (!root.empty()) return root + "/shaders/" + name;
     return std::string(SAIDA_SHADER_DIR) + "/" + name;
+#endif
 }
 
 inline std::string pathFromFileUrl(const std::string& pathOrUrl) {

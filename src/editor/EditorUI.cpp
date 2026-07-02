@@ -972,23 +972,23 @@ void EditorUI::drawBuildWindow(Project* project) {
                 ImGui::Checkbox("Strip local debugging symbols to reduce binary size", &buildEnableLto_);
             }
             else if (selectedBuildPlatform_ == BuildPlatform::WebGL) {
-                // WebGL Settings
-                ImGui::SeparatorText("WebGL (WebAssembly) Settings");
+                // Web (WebGPU / WASM) — Étape 16.6
+                ImGui::SeparatorText("Web (WebGPU / WebAssembly) Settings");
 
-                ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.20f, 1.0f), "[WebGL 2.0 & WebGPU Target Engines]");
+                ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.20f, 1.0f),
+                                   "[WebGPU via Emscripten — rhi/webgpu backend]");
                 ImGui::Spacing();
-
-                ImGui::Text("Compiler backend: Emscripten (wasm32-unknown-emscripten)");
+                ImGui::Text("Compiler backend: Emscripten (wasm32) + emdawnwebgpu");
                 ImGui::Spacing();
-
-                static bool webgpuSupport = true;
-                ImGui::Checkbox("Inject WebGPU fallback shading modules", &webgpuSupport);
-
-                static bool threadedWasm = false;
-                ImGui::Checkbox("Enable Emscripten threads (SharedArrayBuffer)", &threadedWasm);
-
+                ImGui::Text("Output Directory:");
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##WebOutputPath", buildOutputPath_, sizeof(buildOutputPath_));
                 ImGui::Spacing();
-                ImGui::TextDisabled("Note: WebGL platform support requires setting up the Emscripten SDK environment in your global CMake configurations.");
+                ImGui::TextWrapped(
+                    "Export copies the compiled web runtime (build-web/) plus the "
+                    "COOP/COEP dev server. Compile it first from a shell with emsdk:");
+                ImGui::TextDisabled("  ./web/build_web.sh   (then Export here)");
+                ImGui::TextDisabled("  python web/serve.py <out>/web  ->  http://localhost:8080");
             }
         }
         ImGui::EndChild();
@@ -1018,11 +1018,12 @@ void EditorUI::drawBuildWindow(Project* project) {
         }
 
         const bool isWindows = (selectedBuildPlatform_ == BuildPlatform::Windows);
+        const bool isWeb = (selectedBuildPlatform_ == BuildPlatform::WebGL);
         const bool canBuild =
-            isWindows && project && project->isLoaded() && !buildScenes_.empty();
+            (isWindows || isWeb) && project && project->isLoaded() && !buildScenes_.empty();
 
-        if (!isWindows) {
-            ImGui::TextDisabled("This platform is not available yet — Windows only.");
+        if (!isWindows && !isWeb) {
+            ImGui::TextDisabled("This platform is not available yet — Windows and Web only.");
         }
 
         ImGui::BeginDisabled(!canBuild);
@@ -1032,9 +1033,10 @@ void EditorUI::drawBuildWindow(Project* project) {
             opt.mainScene = buildScenes_.empty()
                 ? std::string("scenes/main.scene")
                 : buildScenes_[buildMainSceneIndex_];
-            opt.launchAfterBuild = andRun;
-            BuildExporter::Result res =
-                BuildExporter::exportWindowsBuild(*project, opt);
+            opt.launchAfterBuild = andRun && !isWeb;
+            BuildExporter::Result res = isWeb
+                ? BuildExporter::exportWebBuild(*project, opt)
+                : BuildExporter::exportWindowsBuild(*project, opt);
             buildHasResult_      = true;
             buildLastSuccess_    = res.success;
             buildLastError_      = res.error;

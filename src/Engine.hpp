@@ -48,6 +48,12 @@ public:
 
     void run();
 
+    // Runs exactly one frame (input, scene update, UI, render). Returns false
+    // once the window wants to close. runDesktop() loops on it; the web driver
+    // (Étape 16.4) calls it from the browser's requestAnimationFrame — a
+    // blocking while(true) is forbidden under Emscripten (PLAN_WEB_EXPORT §4.5).
+    bool tick();
+
     // True only in the explicit XR runtime process, which drives an OpenXR
     // session (head-tracked stereo) instead of the desktop editor window.
     bool xrMode() const { return xrMode_; }
@@ -79,6 +85,8 @@ public:
 private:
     // Desktop frame loop (window present path) and XR frame loop (OpenXR session).
     void runDesktop();
+    double tickLastTime_ = 0.0;
+    bool tickWasLeftDown_ = false;
 #ifdef SAIDA_ENABLE_XR
     void runXr();
 #endif

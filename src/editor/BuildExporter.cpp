@@ -156,6 +156,57 @@ BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
     return r;
 }
 
+BuildExporter::Result BuildExporter::exportWebBuild(const Project& project,
+                                                    const Options& options) {
+    (void)project;
+    Result r;
+    auto fail = [&](const std::string& msg) -> Result {
+        r.success = false;
+        r.error = msg;
+        r.log += "ERROR: " + msg + "\n";
+        Log::error("WebBuild: ", msg);
+        return r;
+    };
+
+    const fs::path repoRoot = fs::path(SAIDA_PROJECT_ROOT);
+    const fs::path webBuild = repoRoot / "build-web";
+    if (!fs::exists(webBuild / "index.html"))
+        return fail("no web build found — run web/build_web.sh first (emsdk required)");
+
+    fs::path outDir = fs::path(options.outputDir);
+    if (outDir.is_relative()) outDir = repoRoot / outDir;
+    outDir /= "web";
+    std::error_code ec;
+    fs::create_directories(outDir, ec);
+    if (ec) return fail("cannot create " + outDir.string());
+    r.outputDir = outDir.string();
+    r.log += "Web export -> " + outDir.string() + "\n";
+
+    for (const char* name : {"index.html", "index.js", "index.wasm", "index.data"}) {
+        const fs::path src = webBuild / name;
+        if (!fs::exists(src)) continue;  // .data is optional (no preloaded assets)
+        fs::copy_file(src, outDir / name, fs::copy_options::overwrite_existing, ec);
+        if (ec) return fail("failed to copy " + src.string());
+        r.log += std::string("  copied ") + name + "\n";
+    }
+    fs::copy_file(repoRoot / "web" / "serve.py", outDir / "serve.py",
+                  fs::copy_options::overwrite_existing, ec);
+    if (!ec) r.log += "  copied serve.py (COOP/COEP dev server)\n";
+
+    {
+        std::ofstream readme(outDir / "README.txt", std::ios::trunc);
+        readme << "SaidaEngine web build\n"
+               << "Serve with COOP/COEP headers (required for WASM threads):\n"
+               << "  python serve.py . 8080\n"
+               << "then open http://localhost:8080/index.html in a WebGPU browser.\n";
+    }
+
+    r.success = true;
+    r.log += "Web export succeeded.\n";
+    Log::info("Web export succeeded: ", outDir.string());
+    return r;
+}
+
 bool BuildExporter::launch(const std::string& exePath) {
 #ifdef _WIN32
     const fs::path exe(exePath);

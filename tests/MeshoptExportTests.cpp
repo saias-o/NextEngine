@@ -83,7 +83,9 @@ std::vector<Tri> triangleSoup(const std::vector<glm::vec3>& pos,
 void testCubeRoundTrip() {
     const saida::ExportMesh cube = makeCube();
     const auto path = testFile();
-    require(saida::exportMeshoptGlb({cube}, path.string()));
+    saida::MeshoptExportOptions lossless;
+    lossless.quantize = false;
+    require(saida::exportMeshoptGlb({cube}, path.string(), lossless));
 
     // Re-parse the GLB we just wrote.
     cgltf_options opts = {};
@@ -129,9 +131,57 @@ void testCubeRoundTrip() {
     cgltf_free(data);
 }
 
+void testQuantizedRoundTrip() {
+    const saida::ExportMesh cube = makeCube();
+    const auto path = testFile();
+    saida::MeshoptExportOptions options;
+    options.quantize = true;
+    require(saida::exportMeshoptGlb({cube}, path.string(), options));
+
+    cgltf_options opts = {};
+    cgltf_data* data = nullptr;
+    require(cgltf_parse_file(&opts, path.string().c_str(), &data) == cgltf_result_success);
+    require(cgltf_load_buffers(&opts, data, path.string().c_str()) == cgltf_result_success);
+    require(saida::decodeMeshoptBuffers(data));
+
+    cgltf_primitive& prim = data->meshes[0].primitives[0];
+    cgltf_accessor* posAcc = nullptr;
+    cgltf_accessor* nrmAcc = nullptr;
+    for (size_t a = 0; a < prim.attributes_count; ++a) {
+        if (prim.attributes[a].type == cgltf_attribute_type_position)
+            posAcc = prim.attributes[a].data;
+        if (prim.attributes[a].type == cgltf_attribute_type_normal)
+            nrmAcc = prim.attributes[a].data;
+    }
+    require(posAcc && nrmAcc);
+    // Normals are int8-normalized (KHR_mesh_quantization)...
+    require(nrmAcc->component_type == cgltf_component_type_r_8);
+    require(nrmAcc->normalized != 0);
+    // ...positions stay exact floats...
+    require(posAcc->component_type == cgltf_component_type_r_32f);
+    std::vector<glm::vec3> positions(posAcc->count);
+    for (size_t v = 0; v < posAcc->count; ++v)
+        cgltf_accessor_read_float(posAcc, v, glm::value_ptr(positions[v]), 3);
+    std::vector<uint32_t> indices(prim.indices->count);
+    for (size_t i = 0; i < prim.indices->count; ++i)
+        indices[i] = static_cast<uint32_t>(cgltf_accessor_read_index(prim.indices, i));
+    std::vector<glm::vec3> srcPos;
+    for (const saida::Vertex& v : cube.vertices) srcPos.push_back(v.pos);
+    require(triangleSoup(srcPos, cube.indices) == triangleSoup(positions, indices));
+    // ...and normals decode back within int8 precision (axis-aligned cube: exact).
+    for (size_t v = 0; v < nrmAcc->count; ++v) {
+        glm::vec3 n;
+        cgltf_accessor_read_float(nrmAcc, v, glm::value_ptr(n), 3);
+        require(std::abs(glm::length(n) - 1.0f) < 0.02f);
+    }
+
+    cgltf_free(data);
+}
+
 } // namespace
 
 int main() {
     testCubeRoundTrip();
+    testQuantizedRoundTrip();
     return 0;
 }

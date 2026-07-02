@@ -29,3 +29,4 @@ build_*.txt
 # Packaged game build output (artifacts, never source)
 MyGame/build/
 **/build/export/
+build-web/

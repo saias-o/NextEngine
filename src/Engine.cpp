@@ -372,10 +372,15 @@ void Engine::clearRenderViewport() {
 void Engine::runDesktop() {
     TimerResolutionScope timerResolution;
     Profiler::instance().setThreadName("Main");
-    double last = glfwGetTime();
-    while (!window_->shouldClose()) {
-        SAIDA_PROFILE_FRAME_BEGIN();
-        {
+    tickLastTime_ = glfwGetTime();
+    while (tick()) {}
+    device_->waitIdle();
+}
+
+bool Engine::tick() {
+    if (window_->shouldClose()) return false;
+    SAIDA_PROFILE_FRAME_BEGIN();
+    {
         SAIDA_PROFILE_SCOPE("Frame");
 
         {
@@ -384,17 +389,16 @@ void Engine::runDesktop() {
         }
 
         const double frameStart = glfwGetTime();
-        float realDt = static_cast<float>(frameStart - last);
-        last = frameStart;
+        float realDt = static_cast<float>(frameStart - tickLastTime_);
+        tickLastTime_ = frameStart;
 
         Time::update(realDt);  // sets scaled delta + elapsed
         Input::newFrame();     // single per-frame input snapshot
 
-        static bool wasLeftDown = false;
         bool isLeftDown = Input::isMouseButtonDown(MouseButton::Left);
         bool isLeftPressed = Input::isMouseButtonPressed(MouseButton::Left);
-        bool isLeftReleased = !isLeftDown && wasLeftDown;
-        wasLeftDown = isLeftDown;
+        bool isLeftReleased = !isLeftDown && tickWasLeftDown_;
+        tickWasLeftDown_ = isLeftDown;
 
         Scene* activeScene = sceneOverride_ ? sceneOverride_ : scene_.get();
 
@@ -473,10 +477,9 @@ void Engine::runDesktop() {
             SAIDA_PROFILE_SCOPE("Frame/Throttle");
             sleepUntil(frameStart + 1.0 / static_cast<double>(maxFps));
         }
-        }
-        SAIDA_PROFILE_FRAME_END();
     }
-    vkDeviceWaitIdle(device_->device());
+    SAIDA_PROFILE_FRAME_END();
+    return !window_->shouldClose();
 }
 
 #ifdef SAIDA_ENABLE_XR

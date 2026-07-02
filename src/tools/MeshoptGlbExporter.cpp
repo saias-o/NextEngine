@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 #include <cstddef>  // offsetof
+#include <cstring>
 #include <fstream>
 #include <limits>
 
@@ -26,11 +27,82 @@ void writeU32(std::ofstream& os, uint32_t v) {
     os.write(reinterpret_cast<const char*>(b), 4);
 }
 
+// glTF componentType constants.
+constexpr int kByte = 5120;
+constexpr int kUnsignedShort = 5123;
+constexpr int kUnsignedInt = 5125;
+constexpr int kFloat = 5126;
+
+// Per-mesh packed layout description in quantized mode.
+struct QuantLayout {
+    bool uv0Quantized = false;
+    bool uv1Quantized = false;
+    size_t offNormal = 12;   // after float3 position
+    size_t offTangent = 16;
+    size_t offUv0 = 20;
+    size_t offUv1 = 0;       // computed
+    size_t stride = 0;       // computed
+};
+
+bool uvFitsUnorm(const std::vector<Vertex>& verts, glm::vec2 Vertex::*member) {
+    for (const Vertex& v : verts) {
+        const glm::vec2& uv = v.*member;
+        if (uv.x < 0.0f || uv.x > 1.0f || uv.y < 0.0f || uv.y > 1.0f) return false;
+    }
+    return true;
+}
+
+QuantLayout planQuantLayout(const std::vector<Vertex>& verts) {
+    QuantLayout q;
+    q.uv0Quantized = uvFitsUnorm(verts, &Vertex::texCoord);
+    q.uv1Quantized = uvFitsUnorm(verts, &Vertex::lightmapUV);
+    q.offUv1 = q.offUv0 + (q.uv0Quantized ? 4 : 8);
+    q.stride = q.offUv1 + (q.uv1Quantized ? 4 : 8);
+    // Keep the stride a multiple of 4 (accessor alignment + encoder friendliness).
+    q.stride = (q.stride + 3) & ~size_t(3);
+    return q;
+}
+
+std::vector<uint8_t> packQuantized(const std::vector<Vertex>& verts, const QuantLayout& q) {
+    std::vector<uint8_t> packed(verts.size() * q.stride, 0);
+    for (size_t i = 0; i < verts.size(); ++i) {
+        uint8_t* out = packed.data() + i * q.stride;
+        const Vertex& v = verts[i];
+        std::memcpy(out, &v.pos, 12);
+
+        int8_t n[4] = {int8_t(meshopt_quantizeSnorm(v.normal.x, 8)),
+                       int8_t(meshopt_quantizeSnorm(v.normal.y, 8)),
+                       int8_t(meshopt_quantizeSnorm(v.normal.z, 8)), 0};
+        std::memcpy(out + q.offNormal, n, 4);
+
+        int8_t t[4] = {int8_t(meshopt_quantizeSnorm(v.tangent.x, 8)),
+                       int8_t(meshopt_quantizeSnorm(v.tangent.y, 8)),
+                       int8_t(meshopt_quantizeSnorm(v.tangent.z, 8)),
+                       int8_t(meshopt_quantizeSnorm(v.tangent.w, 8))};
+        std::memcpy(out + q.offTangent, t, 4);
+
+        if (q.uv0Quantized) {
+            uint16_t uv[2] = {uint16_t(meshopt_quantizeUnorm(v.texCoord.x, 16)),
+                              uint16_t(meshopt_quantizeUnorm(v.texCoord.y, 16))};
+            std::memcpy(out + q.offUv0, uv, 4);
+        } else {
+            std::memcpy(out + q.offUv0, &v.texCoord, 8);
+        }
+        if (q.uv1Quantized) {
+            uint16_t uv[2] = {uint16_t(meshopt_quantizeUnorm(v.lightmapUV.x, 16)),
+                              uint16_t(meshopt_quantizeUnorm(v.lightmapUV.y, 16))};
+            std::memcpy(out + q.offUv1, uv, 4);
+        } else {
+            std::memcpy(out + q.offUv1, &v.lightmapUV, 8);
+        }
+    }
+    return packed;
+}
+
 } // namespace
 
-bool exportMeshoptGlb(const std::vector<ExportMesh>& meshes, const std::string& outPath) {
-    constexpr size_t kStride = sizeof(Vertex);
-
+bool exportMeshoptGlb(const std::vector<ExportMesh>& meshes, const std::string& outPath,
+                      const MeshoptExportOptions& options) {
     std::vector<uint8_t> bin;  // buffer 0: compressed data (lives in the BIN chunk)
     json bufferViews = json::array();
     json accessors = json::array();
@@ -55,12 +127,25 @@ bool exportMeshoptGlb(const std::vector<ExportMesh>& meshes, const std::string& 
 
         std::vector<Vertex> verts(vertexCount);
         const size_t uniqueCount = meshopt_optimizeVertexFetch(
-            verts.data(), indices.data(), indexCount, m.vertices.data(), vertexCount, kStride);
+            verts.data(), indices.data(), indexCount, m.vertices.data(), vertexCount,
+            sizeof(Vertex));
         verts.resize(uniqueCount);
 
-        // 2. Entropy-code the vertex + index streams (lossless).
-        std::vector<uint8_t> vbuf(meshopt_encodeVertexBufferBound(uniqueCount, kStride));
-        vbuf.resize(meshopt_encodeVertexBuffer(vbuf.data(), vbuf.size(), verts.data(), uniqueCount, kStride));
+        // 2. Optionally quantize into a packed layout, then entropy-code.
+        QuantLayout q;
+        const uint8_t* vertexBytes = reinterpret_cast<const uint8_t*>(verts.data());
+        size_t stride = sizeof(Vertex);
+        std::vector<uint8_t> packed;
+        if (options.quantize) {
+            q = planQuantLayout(verts);
+            packed = packQuantized(verts, q);
+            vertexBytes = packed.data();
+            stride = q.stride;
+        }
+
+        std::vector<uint8_t> vbuf(meshopt_encodeVertexBufferBound(uniqueCount, stride));
+        vbuf.resize(meshopt_encodeVertexBuffer(vbuf.data(), vbuf.size(), vertexBytes,
+                                               uniqueCount, stride));
 
         std::vector<uint8_t> ibuf(meshopt_encodeIndexBufferBound(indexCount, uniqueCount));
         ibuf.resize(meshopt_encodeIndexBuffer(ibuf.data(), ibuf.size(), indices.data(), indexCount));
@@ -75,7 +160,7 @@ bool exportMeshoptGlb(const std::vector<ExportMesh>& meshes, const std::string& 
 
         // Fallback (uncompressed) layout in buffer 1 — never read (decode overrides
         // view->data), kept only so the file is spec-consistent.
-        const size_t vUncompLen = uniqueCount * kStride;
+        const size_t vUncompLen = uniqueCount * stride;
         const size_t iUncompLen = indexCount * sizeof(uint32_t);
         const size_t vFallbackOffset = fallbackOffset; fallbackOffset += (vUncompLen + 3) & ~size_t(3);
         const size_t iFallbackOffset = fallbackOffset; fallbackOffset += (iUncompLen + 3) & ~size_t(3);
@@ -83,10 +168,10 @@ bool exportMeshoptGlb(const std::vector<ExportMesh>& meshes, const std::string& 
         const int vViewIdx = int(bufferViews.size());
         bufferViews.push_back({
             {"buffer", 1}, {"byteOffset", vFallbackOffset}, {"byteLength", vUncompLen},
-            {"byteStride", kStride}, {"target", 34962 /*ARRAY_BUFFER*/},
+            {"byteStride", stride}, {"target", 34962 /*ARRAY_BUFFER*/},
             {"extensions", {{"EXT_meshopt_compression", {
                 {"buffer", 0}, {"byteOffset", vCompOffset}, {"byteLength", vbuf.size()},
-                {"byteStride", kStride}, {"count", uniqueCount}, {"mode", "ATTRIBUTES"}}}}},
+                {"byteStride", stride}, {"count", uniqueCount}, {"mode", "ATTRIBUTES"}}}}},
         });
         const int iViewIdx = int(bufferViews.size());
         bufferViews.push_back({
@@ -102,27 +187,40 @@ bool exportMeshoptGlb(const std::vector<ExportMesh>& meshes, const std::string& 
         glm::vec3 mx(-std::numeric_limits<float>::max());
         for (const Vertex& v : verts) { mn = glm::min(mn, v.pos); mx = glm::max(mx, v.pos); }
 
-        auto floatAccessor = [&](size_t byteOffset, const char* type) {
+        auto accessor = [&](size_t byteOffset, int componentType, bool normalized,
+                            const char* type) {
             const int idx = int(accessors.size());
-            accessors.push_back({
-                {"bufferView", vViewIdx}, {"byteOffset", byteOffset},
-                {"componentType", 5126 /*FLOAT*/}, {"count", uniqueCount}, {"type", type}});
+            json a = {{"bufferView", vViewIdx}, {"byteOffset", byteOffset},
+                      {"componentType", componentType}, {"count", uniqueCount}, {"type", type}};
+            if (normalized) a["normalized"] = true;
+            accessors.push_back(a);
             return idx;
         };
 
         const int aPos = int(accessors.size());
         accessors.push_back({
-            {"bufferView", vViewIdx}, {"byteOffset", offsetof(Vertex, pos)},
-            {"componentType", 5126}, {"count", uniqueCount}, {"type", "VEC3"},
+            {"bufferView", vViewIdx}, {"byteOffset", 0},
+            {"componentType", kFloat}, {"count", uniqueCount}, {"type", "VEC3"},
             {"min", {mn.x, mn.y, mn.z}}, {"max", {mx.x, mx.y, mx.z}}});
-        const int aNrm = floatAccessor(offsetof(Vertex, normal), "VEC3");
-        const int aUv0 = floatAccessor(offsetof(Vertex, texCoord), "VEC2");
-        const int aUv1 = floatAccessor(offsetof(Vertex, lightmapUV), "VEC2");
-        const int aTan = floatAccessor(offsetof(Vertex, tangent), "VEC4");
+
+        int aNrm, aUv0, aUv1, aTan;
+        if (options.quantize) {
+            aNrm = accessor(q.offNormal, kByte, true, "VEC3");
+            aTan = accessor(q.offTangent, kByte, true, "VEC4");
+            aUv0 = q.uv0Quantized ? accessor(q.offUv0, kUnsignedShort, true, "VEC2")
+                                  : accessor(q.offUv0, kFloat, false, "VEC2");
+            aUv1 = q.uv1Quantized ? accessor(q.offUv1, kUnsignedShort, true, "VEC2")
+                                  : accessor(q.offUv1, kFloat, false, "VEC2");
+        } else {
+            aNrm = accessor(offsetof(Vertex, normal), kFloat, false, "VEC3");
+            aUv0 = accessor(offsetof(Vertex, texCoord), kFloat, false, "VEC2");
+            aUv1 = accessor(offsetof(Vertex, lightmapUV), kFloat, false, "VEC2");
+            aTan = accessor(offsetof(Vertex, tangent), kFloat, false, "VEC4");
+        }
 
         const int aIdx = int(accessors.size());
         accessors.push_back({
-            {"bufferView", iViewIdx}, {"componentType", 5125 /*UNSIGNED_INT*/},
+            {"bufferView", iViewIdx}, {"componentType", kUnsignedInt},
             {"count", indexCount}, {"type", "SCALAR"}});
 
         // 5. Mesh + node.
@@ -150,8 +248,10 @@ bool exportMeshoptGlb(const std::vector<ExportMesh>& meshes, const std::string& 
 
     json root;
     root["asset"] = {{"version", "2.0"}, {"generator", "SaidaEngine meshopt exporter"}};
-    root["extensionsUsed"] = json::array({"EXT_meshopt_compression"});
-    root["extensionsRequired"] = json::array({"EXT_meshopt_compression"});
+    json used = json::array({"EXT_meshopt_compression"});
+    if (options.quantize) used.push_back("KHR_mesh_quantization");
+    root["extensionsUsed"] = used;
+    root["extensionsRequired"] = used;
     root["buffers"] = json::array({
         {{"byteLength", bin.size()}},
         {{"byteLength", fallbackOffset},
@@ -186,7 +286,8 @@ bool exportMeshoptGlb(const std::vector<ExportMesh>& meshes, const std::string& 
     if (!os) { Log::error("MeshoptGlbExporter: write failed for ", outPath); return false; }
 
     Log::info("MeshoptGlbExporter: wrote ", outPath, " (", meshCount,
-              " meshes, BIN ", bin.size(), " bytes)");
+              " meshes, ", options.quantize ? "quantized" : "lossless",
+              ", BIN ", bin.size(), " bytes)");
     return true;
 }
 
