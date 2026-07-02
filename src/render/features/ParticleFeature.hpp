@@ -21,7 +21,7 @@ class ParticleFeature : public ScenePassFeature {
 public:
     ~ParticleFeature() override;
     void createPipelines(const RenderContext& ctx) override;
-    void record(const FrameContext& fc) override;
+    void record(FrameContext& fc) override;
 
 private:
     struct EmitterState {

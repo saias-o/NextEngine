@@ -146,7 +146,7 @@ void ParticleFeature::createPipelines(const RenderContext& ctx) {
     additivePipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
 }
 
-void ParticleFeature::record(const FrameContext& fc) {
+void ParticleFeature::record(FrameContext& fc) {
     const auto& emitters = fc.scene.particleSystems();
     if (emitters.empty() || !alphaRuntime_ || !additiveRuntime_ || !alphaPipeline_ || !additivePipeline_) {
         if (alphaRuntime_) alphaRuntime_->reset();
@@ -286,18 +286,14 @@ void ParticleFeature::record(const FrameContext& fc) {
         }
 
         runtime.flushEmitters(frame, emitterCount);
-        const uint32_t parity = runtime.recordCompute(fc.cmd, frame, emitterCount, emitCount, maxDt, fc.time);
+        const uint32_t parity = runtime.recordCompute(fc.encoder, frame, emitterCount, emitCount, maxDt, fc.time);
 
-        VkDescriptorSet particleSet = runtime.renderSet(parity);
-        VkDescriptorSet bound[2] = {fc.globalSet, particleSet};
-        pipeline.bind(fc.cmd);
-        vkCmdBindDescriptorSets(fc.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            pipeline.layout(), 0, 2, bound, 0, nullptr);
+        fc.pass.setPipeline(pipeline);
+        fc.pass.setBindGroup(0, fc.globalSet);
+        fc.pass.setBindGroup(1, runtime.renderSet(parity));
         Push push{};
-        vkCmdPushConstants(fc.cmd, pipeline.layout(),
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            0, sizeof(Push), &push);
-        vkCmdDrawIndirect(fc.cmd, runtime.indirectBuffer(), 0, 1, sizeof(VkDrawIndirectCommand));
+        fc.pass.setPushConstants(&push, sizeof(Push));
+        fc.pass.drawIndirect(runtime.indirectBuffer(), 0, 1, sizeof(VkDrawIndirectCommand));
     };
 
     runBatch(ParticleSystemNode::BlendMode::Alpha, *alphaRuntime_, *alphaPipeline_);

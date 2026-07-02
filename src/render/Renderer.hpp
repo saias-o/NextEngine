@@ -232,7 +232,7 @@ private:
     std::vector<std::unique_ptr<ScenePassFeature>> features_;
     void buildFeatures(uint32_t viewMask, VkFormat depthFormat,
                        VkSampleCountFlagBits samples);
-    void recordFeatures(const FrameContext& fc);
+    void recordFeatures(FrameContext& fc);
 
     std::unique_ptr<rhi::BindGroupLayout> globalSetLayout_;
     std::vector<std::unique_ptr<rhi::BindGroup>> globalGroups_;

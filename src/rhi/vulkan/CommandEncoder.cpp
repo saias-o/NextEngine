@@ -126,6 +126,40 @@ void CommandEncoder::storageBarrier() {
     cmdComputeToComputeBarrier(cmd_);
 }
 
+namespace {
+void memoryBarrier2(VkCommandBuffer cmd, VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
+                    VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess) {
+    VkMemoryBarrier2 mb{};
+    mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+    mb.srcStageMask = srcStage;
+    mb.srcAccessMask = srcAccess;
+    mb.dstStageMask = dstStage;
+    mb.dstAccessMask = dstAccess;
+    VkDependencyInfo dep{};
+    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dep.memoryBarrierCount = 1;
+    dep.pMemoryBarriers = &mb;
+    vkCmdPipelineBarrier2(cmd, &dep);
+}
+} // namespace
+
+void CommandEncoder::computeToGraphicsBarrier() {
+    memoryBarrier2(cmd_,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+}
+
+void CommandEncoder::computeToIndirectBarrier() {
+    memoryBarrier2(cmd_,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT |
+            VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+}
+
 RenderPassEncoder CommandEncoder::beginRenderPass(const RenderPassDesc& desc) {
     std::array<VkRenderingAttachmentInfo, 4> colorAttachments{};
     for (uint32_t i = 0; i < desc.colorCount; ++i) {

@@ -69,15 +69,15 @@ public:
     uint32_t maxParticles() const { return desc_.maxParticles; }
 
     rhi::BindGroupLayout& renderSetLayout() const { return *renderSetLayout_; }
-    VkDescriptorSet renderSet(uint32_t parity) const;
-    VkBuffer indirectBuffer() const;
+    const rhi::BindGroup& renderSet(uint32_t parity) const;
+    const Buffer& indirectBuffer() const { return *indirectBuffer_; }
 
     GpuEmitter* mappedEmitters(uint32_t frame) const;
     void flushEmitters(uint32_t frame, uint32_t count);
     void reset();
 
     // Returns the alive-list parity that renderSet() should use for the draw.
-    uint32_t recordCompute(VkCommandBuffer cmd, uint32_t frame,
+    uint32_t recordCompute(rhi::CommandEncoder& encoder, uint32_t frame,
                            uint32_t emitterCount, uint32_t emitCount,
                            float dt, float time);
 
@@ -94,10 +94,7 @@ private:
     uint32_t frameIndex(uint32_t frame) const;
     void createRenderResources();
     void createComputeResources();
-    void recordInit(VkCommandBuffer cmd) const;
-    void recordComputeBarrier(VkCommandBuffer cmd,
-                              VkPipelineStageFlags2 dstStage,
-                              VkAccessFlags2 dstAccess) const;
+    void recordInit(rhi::CommandEncoder& encoder) const;
     VkDescriptorSet computeSet(uint32_t frame, uint32_t readParity) const;
 
     VulkanDevice& device_;

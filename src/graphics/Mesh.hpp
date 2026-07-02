@@ -10,6 +10,10 @@
 
 #include "graphics/GeometryRegistry.hpp"
 
+namespace saida::rhi::vulkan {
+class RenderPassEncoder;
+}
+
 namespace saida {
 
 class VulkanDevice;
@@ -55,8 +59,8 @@ public:
     static std::unique_ptr<Mesh> fromObjFile(GeometryRegistry& registry, const std::string& path,
                                              bool generateLightmapUVs = false);
 
-    void bind(VkCommandBuffer cmd) const;
-    void draw(VkCommandBuffer cmd) const;
+    void bind(rhi::vulkan::RenderPassEncoder& rp) const;
+    void draw(rhi::vulkan::RenderPassEncoder& rp) const;
 
     GeometryAllocation geometryAllocation() const { return allocation_; }
     const GeometryAllocation& allocation() const { return allocation_; }

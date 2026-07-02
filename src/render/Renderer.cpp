@@ -1219,7 +1219,7 @@ void Renderer::buildFeatures(uint32_t viewMask, VkFormat depthFormat,
     for (auto& f : features_) f->createPipelines(ctx);
 }
 
-void Renderer::recordFeatures(const FrameContext& fc) {
+void Renderer::recordFeatures(FrameContext& fc) {
     for (auto& f : features_) f->record(fc);
 }
 
@@ -1268,8 +1268,9 @@ void Renderer::recordMeshDraws(VkCommandBuffer cmd, Pipeline* firstPipeline, boo
         vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(PushConstants), &pc);
 
-        draw.mesh->bind(cmd);
-        draw.mesh->draw(cmd);
+        rhi::RenderPassEncoder meshPass = rhi::RenderPassEncoder::fromHandle(cmd);
+        draw.mesh->bind(meshPass);
+        draw.mesh->draw(meshPass);
         ++drawCalls;
         triangles += draw.mesh->allocation().indexCount / 3;
     }
@@ -1311,8 +1312,8 @@ void Renderer::recordShadowPasses(VkCommandBuffer cmd) {
             for (const ShadowDraw& draw : shadowDraws_) {
                 glm::mat4 mvp = shadowMatrices_[layer] * draw.world;
                 rp.setPushConstants(&mvp, sizeof(mvp));
-                draw.mesh->bind(rp.handle());  // Mesh joins the encoder in 16.3.e.c
-                draw.mesh->draw(rp.handle());
+                draw.mesh->bind(rp);
+                draw.mesh->draw(rp);
             }
         });
 }
@@ -1586,7 +1587,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, Sce
     }
 
     // Scene-pass features are recorded after opaque meshes.
-    FrameContext fc{cmd, currentFrame_, globalGroups_[currentFrame_]->handle(), scene,
+    FrameContext fc{rhi::CommandEncoder(cmd), rhi::RenderPassEncoder::fromHandle(cmd),
+                    currentFrame_, globalGroups_[currentFrame_]->handle(), scene,
                     Time::elapsed(), false, &camera, nullptr, false, extent,
                     currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
     {
@@ -2052,7 +2054,8 @@ void Renderer::recordXrScenePass(VkCommandBuffer cmd, Scene& scene,
     recordMeshDraws(cmd, xrScenePipeline_.get(), true);
 
     // passthrough is forwarded so the skybox skips itself.
-    FrameContext fc{cmd, currentFrame_, globalGroups_[currentFrame_]->handle(), scene,
+    FrameContext fc{rhi::CommandEncoder(cmd), rhi::RenderPassEncoder::fromHandle(cmd),
+                    currentFrame_, globalGroups_[currentFrame_]->handle(), scene,
                     Time::elapsed(), true, nullptr, &eyes, passthrough, xrExtent_,
                     currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
     recordFeatures(fc);

@@ -4,6 +4,7 @@
 #include "core/Profiler.hpp"
 #include "graphics/Buffer.hpp"
 #include "graphics/VulkanDevice.hpp"
+#include "rhi/vulkan/CommandEncoder.hpp"
 #include "tiny_obj_loader.h"
 
 #include <algorithm>
@@ -203,16 +204,14 @@ std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::s
     return std::make_unique<Mesh>(registry, vertices, indices);
 }
 
-void Mesh::bind(VkCommandBuffer cmd) const {
+void Mesh::bind(rhi::vulkan::RenderPassEncoder& rp) const {
     // In hybrid rendering, binding is usually done globally, but if we do it per-mesh:
-    VkBuffer buffers[] = {registry_.vertexBuffer()->handle()};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(cmd, 0, 1, buffers, offsets);
-    vkCmdBindIndexBuffer(cmd, registry_.indexBuffer()->handle(), 0, VK_INDEX_TYPE_UINT32);
+    rp.setVertexBuffer(*registry_.vertexBuffer());
+    rp.setIndexBuffer(*registry_.indexBuffer());
 }
 
-void Mesh::draw(VkCommandBuffer cmd) const {
-    vkCmdDrawIndexed(cmd, allocation_.indexCount, 1, allocation_.firstIndex, allocation_.vertexOffset, 0);
+void Mesh::draw(rhi::vulkan::RenderPassEncoder& rp) const {
+    rp.drawIndexed(allocation_.indexCount, 1, allocation_.firstIndex, allocation_.vertexOffset, 0);
 }
 
 } // namespace saida

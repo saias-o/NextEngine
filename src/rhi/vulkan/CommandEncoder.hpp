@@ -134,6 +134,16 @@ public:
     // Compute→compute barrier for storage read/write chains (GI cascades).
     void storageBarrier();
 
+    // Compute writes → graphics shader reads (storage buffers/images sampled or
+    // fetched in vertex/fragment). WebGPU: no-op (driver-tracked), like all
+    // barriers here (PLAN_RHI §7.3).
+    void computeToGraphicsBarrier();
+
+    // Compute writes → indirect draw args + vertex-stage storage reads (+ more
+    // compute). The GPU-particle handoff: sim writes the indirect command and
+    // the render buffers the draw consumes.
+    void computeToIndirectBarrier();
+
     RenderPassEncoder beginRenderPass(const RenderPassDesc& desc);
     ComputePassEncoder beginComputePass() { return ComputePassEncoder(cmd_); }
 

@@ -4,6 +4,7 @@
 #include "graphics/Buffer.hpp"
 #include "graphics/ComputePipeline.hpp"
 #include "graphics/VulkanDevice.hpp"
+#include "rhi/vulkan/CommandEncoder.hpp"
 
 #include <array>
 #include <algorithm>
@@ -26,12 +27,8 @@ uint32_t ParticleRuntime::frameIndex(uint32_t frame) const {
     return std::min(frame, desc_.framesInFlight - 1);
 }
 
-VkDescriptorSet ParticleRuntime::renderSet(uint32_t parity) const {
-    return renderSets_[std::min<uint32_t>(parity, 1u)]->handle();
-}
-
-VkBuffer ParticleRuntime::indirectBuffer() const {
-    return indirectBuffer_->handle();
+const rhi::BindGroup& ParticleRuntime::renderSet(uint32_t parity) const {
+    return *renderSets_[std::min<uint32_t>(parity, 1u)];
 }
 
 void ParticleRuntime::reset() {
@@ -49,13 +46,11 @@ void ParticleRuntime::flushEmitters(uint32_t frame, uint32_t count) {
     emitterBuffers_[frameIndex(frame)]->flush(sizeof(GpuEmitter) * clamped);
 }
 
-uint32_t ParticleRuntime::recordCompute(VkCommandBuffer cmd, uint32_t frame,
+uint32_t ParticleRuntime::recordCompute(rhi::CommandEncoder& encoder, uint32_t frame,
                                         uint32_t emitterCount, uint32_t emitCount,
                                         float dt, float time) {
-    if (!cmd) return aliveReadParity_;
-
     if (!initialized_) {
-        recordInit(cmd);
+        recordInit(encoder);
         initialized_ = true;
     }
 
@@ -66,52 +61,39 @@ uint32_t ParticleRuntime::recordCompute(VkCommandBuffer cmd, uint32_t frame,
     ComputePush push{desc_.maxParticles, clampedEmitters, clampedEmitCount, dt, time};
     VkDescriptorSet set = computeSet(frame, readParity);
 
-    preparePipeline_->bind(cmd);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, preparePipeline_->layout(),
-        0, 1, &set, 0, nullptr);
-    vkCmdPushConstants(cmd, preparePipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT,
-        0, sizeof(push), &push);
-    vkCmdDispatch(cmd, 1, 1, 1);
+    rhi::ComputePassEncoder cp = encoder.beginComputePass();
 
-    recordComputeBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+    cp.setPipeline(*preparePipeline_);
+    cp.setBindGroup(0, set);
+    cp.setPushConstants(&push, sizeof(push));
+    cp.dispatch(1);
 
-    simPipeline_->bind(cmd);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, simPipeline_->layout(),
-        0, 1, &set, 0, nullptr);
-    vkCmdPushConstants(cmd, simPipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT,
-        0, sizeof(push), &push);
-    vkCmdDispatch(cmd, ComputePipeline::groupCount(desc_.maxParticles, 64), 1, 1);
+    encoder.storageBarrier();
 
-    recordComputeBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+    cp.setPipeline(*simPipeline_);
+    cp.setBindGroup(0, set);
+    cp.setPushConstants(&push, sizeof(push));
+    cp.dispatch(ComputePipeline::groupCount(desc_.maxParticles, 64));
+
+    encoder.storageBarrier();
 
     if (clampedEmitCount > 0 && clampedEmitters > 0) {
-        emitPipeline_->bind(cmd);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, emitPipeline_->layout(),
-            0, 1, &set, 0, nullptr);
-        vkCmdPushConstants(cmd, emitPipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT,
-            0, sizeof(push), &push);
-        vkCmdDispatch(cmd, ComputePipeline::groupCount(clampedEmitCount, 64), 1, 1);
+        cp.setPipeline(*emitPipeline_);
+        cp.setBindGroup(0, set);
+        cp.setPushConstants(&push, sizeof(push));
+        cp.dispatch(ComputePipeline::groupCount(clampedEmitCount, 64));
 
-        recordComputeBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-            VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+        encoder.storageBarrier();
     }
 
-    finalizePipeline_->bind(cmd);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, finalizePipeline_->layout(),
-        0, 1, &set, 0, nullptr);
-    vkCmdPushConstants(cmd, finalizePipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT,
-        0, sizeof(push), &push);
-    vkCmdDispatch(cmd, 1, 1, 1);
+    cp.setPipeline(*finalizePipeline_);
+    cp.setBindGroup(0, set);
+    cp.setPushConstants(&push, sizeof(push));
+    cp.dispatch(1);
+    cp.end();
 
-    recordComputeBarrier(cmd,
-        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
-            VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
-            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
-        VK_ACCESS_2_SHADER_READ_BIT |
-            VK_ACCESS_2_SHADER_WRITE_BIT |
-            VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+    // Sim results -> indirect draw args + vertex-stage particle fetches.
+    encoder.computeToIndirectBarrier();
 
     aliveReadParity_ = writeParity;
     return writeParity;
@@ -200,35 +182,16 @@ VkDescriptorSet ParticleRuntime::computeSet(uint32_t frame, uint32_t readParity)
     return computeSets_[f * 2 + std::min<uint32_t>(readParity, 1u)]->handle();
 }
 
-void ParticleRuntime::recordInit(VkCommandBuffer cmd) const {
-    VkDescriptorSet set = computeSet(0, aliveReadParity_);
+void ParticleRuntime::recordInit(rhi::CommandEncoder& encoder) const {
     ComputePush push{desc_.maxParticles, 0, 0, 0.0f, 0.0f};
-    initPipeline_->bind(cmd);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, initPipeline_->layout(),
-        0, 1, &set, 0, nullptr);
-    vkCmdPushConstants(cmd, initPipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT,
-        0, sizeof(push), &push);
-    vkCmdDispatch(cmd, ComputePipeline::groupCount(desc_.maxParticles, 64), 1, 1);
+    rhi::ComputePassEncoder cp = encoder.beginComputePass();
+    cp.setPipeline(*initPipeline_);
+    cp.setBindGroup(0, computeSet(0, aliveReadParity_));
+    cp.setPushConstants(&push, sizeof(push));
+    cp.dispatch(ComputePipeline::groupCount(desc_.maxParticles, 64));
+    cp.end();
 
-    recordComputeBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
-}
-
-void ParticleRuntime::recordComputeBarrier(VkCommandBuffer cmd,
-                                           VkPipelineStageFlags2 dstStage,
-                                           VkAccessFlags2 dstAccess) const {
-    VkMemoryBarrier2 barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-    barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    barrier.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-    barrier.dstStageMask = dstStage;
-    barrier.dstAccessMask = dstAccess;
-
-    VkDependencyInfo dep{};
-    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dep.memoryBarrierCount = 1;
-    dep.pMemoryBarriers = &barrier;
-    vkCmdPipelineBarrier2(cmd, &dep);
+    encoder.storageBarrier();
 }
 
 } // namespace saida

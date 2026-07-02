@@ -16,7 +16,7 @@ namespace saida {
 class OutlineFeature : public ScenePassFeature {
 public:
     void createPipelines(const RenderContext& ctx) override;
-    void record(const FrameContext& fc) override;
+    void record(FrameContext& fc) override;
 
 private:
     struct Push {

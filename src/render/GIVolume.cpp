@@ -402,6 +402,7 @@ void GIVolume::voxelize(VkCommandBuffer cmd, Scene& scene, GpuProfiler* profiler
     scissor.extent = {res, res};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
+    rhi::RenderPassEncoder voxelPass = rhi::RenderPassEncoder::fromHandle(cmd);
     for (uint32_t axis = 0; axis < 3; ++axis) {
         for (MeshNode* node : scene.meshes()) {
             Mesh* mesh = node->mesh();
@@ -413,8 +414,8 @@ void GIVolume::voxelize(VkCommandBuffer cmd, Scene& scene, GpuProfiler* profiler
             VoxelPush pc{node->worldTransform(), axis};
             vkCmdPushConstants(cmd, voxelPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
                 0, sizeof(pc), &pc);
-            mesh->bind(cmd);
-            mesh->draw(cmd);
+            mesh->bind(voxelPass);
+            mesh->draw(voxelPass);
         }
     }
 

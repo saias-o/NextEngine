@@ -65,7 +65,7 @@ void WaterFeature::createPipelines(const RenderContext& ctx) {
     pipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
 }
 
-void WaterFeature::record(const FrameContext& fc) {
+void WaterFeature::record(FrameContext& fc) {
     std::array<GpuWater, kMaxWaters> packed{};
     uint32_t waterCount = 0;
 
@@ -102,17 +102,14 @@ void WaterFeature::record(const FrameContext& fc) {
                                               static_cast<uint32_t>(ubos_.size()) - 1);
     ubos_[frame]->write(packed.data(), sizeof(GpuWater) * waterCount);
 
-    pipeline_->bind(fc.cmd);
-    VkDescriptorSet bound[2] = {fc.globalSet, sets_[frame]->handle()};
-    vkCmdBindDescriptorSets(fc.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout(),
-        0, 2, bound, 0, nullptr);
+    fc.pass.setPipeline(*pipeline_);
+    fc.pass.setBindGroup(0, fc.globalSet);
+    fc.pass.setBindGroup(1, *sets_[frame]);
 
     for (uint32_t i = 0; i < waterCount; ++i) {
         Push pc{i, fc.time};
-        vkCmdPushConstants(fc.cmd, pipeline_->layout(),
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            0, sizeof(Push), &pc);
-        vkCmdDraw(fc.cmd, kGridRes * kGridRes * 6, 1, 0, 0);
+        fc.pass.setPushConstants(&pc, sizeof(Push));
+        fc.pass.draw(kGridRes * kGridRes * 6);
     }
 }
 

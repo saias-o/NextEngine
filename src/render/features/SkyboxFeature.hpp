@@ -19,7 +19,7 @@ class SkyboxFeature : public ScenePassFeature {
 public:
     ~SkyboxFeature() override;
     void createPipelines(const RenderContext& ctx) override;
-    void record(const FrameContext& fc) override;
+    void record(FrameContext& fc) override;
 
 private:
     struct MonoPush { glm::mat4 invViewProj; float exposure; float rotation; };

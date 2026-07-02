@@ -29,7 +29,7 @@ void OutlineFeature::createPipelines(const RenderContext& ctx) {
     pipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
 }
 
-void OutlineFeature::record(const FrameContext& fc) {
+void OutlineFeature::record(FrameContext& fc) {
     if (!pipeline_ || !fc.draws || fc.drawCount == 0) return;
 
     const float viewportW = static_cast<float>(std::max(1u, fc.extent.width));
@@ -46,9 +46,8 @@ void OutlineFeature::record(const FrameContext& fc) {
         if (width <= 0.0f || color.a <= 0.0f) continue;
 
         if (!bound) {
-            pipeline_->bind(fc.cmd);
-            vkCmdBindDescriptorSets(fc.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                pipeline_->layout(), 0, 1, &fc.globalSet, 0, nullptr);
+            fc.pass.setPipeline(*pipeline_);
+            fc.pass.setBindGroup(0, fc.globalSet);
             bound = true;
         }
 
@@ -60,12 +59,10 @@ void OutlineFeature::record(const FrameContext& fc) {
         const Aabb& bounds = draw.mesh->bounds();
         pc.localCenter = glm::vec4(bounds.center(), 0.0f);
         pc.localHalfExtent = glm::vec4(glm::max(bounds.extent() * 0.5f, glm::vec3(1e-4f)), 0.0f);
-        vkCmdPushConstants(fc.cmd, pipeline_->layout(),
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            0, sizeof(Push), &pc);
+        fc.pass.setPushConstants(&pc, sizeof(Push));
 
-        draw.mesh->bind(fc.cmd);
-        draw.mesh->draw(fc.cmd);
+        draw.mesh->bind(fc.pass);
+        draw.mesh->draw(fc.pass);
     }
 }
 

@@ -68,8 +68,12 @@ struct RenderContext {
 
 // Per-frame context for recording inside the HDR scene pass, AFTER the opaque
 // draws. Mono fills `camera`; stereo fills `eyes` (and may set `passthrough`).
+// `pass` records draws into the scene pass; `encoder` is the frame-level view
+// (compute/barriers — the GPU-particle sim records through it, a pre-existing
+// in-pass dispatch the WebGPU backend will have to hoist in 16.4).
 struct FrameContext {
-    VkCommandBuffer cmd;
+    rhi::CommandEncoder encoder;
+    rhi::RenderPassEncoder pass;
     uint32_t frameIndex;
     VkDescriptorSet globalSet;   // set 0 for this frame (camera + lighting + env)
     Scene& scene;
@@ -91,7 +95,7 @@ class ScenePassFeature {
 public:
     virtual ~ScenePassFeature() = default;
     virtual void createPipelines(const RenderContext& ctx) = 0;
-    virtual void record(const FrameContext& fc) = 0;
+    virtual void record(FrameContext& fc) = 0;
 };
 
 } // namespace saida

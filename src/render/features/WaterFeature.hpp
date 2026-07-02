@@ -19,7 +19,7 @@ class WaterFeature : public ScenePassFeature {
 public:
     ~WaterFeature() override;
     void createPipelines(const RenderContext& ctx) override;
-    void record(const FrameContext& fc) override;
+    void record(FrameContext& fc) override;
 
 private:
     // Mirrors GpuWater in water_common.glsl; all-vec4 keeps std140 padding explicit.

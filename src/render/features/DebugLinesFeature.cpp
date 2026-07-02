@@ -36,7 +36,7 @@ void DebugLinesFeature::createPipelines(const RenderContext& ctx) {
             rhi::BufferUsage::Vertex, MemoryUsage::HostVisible));
 }
 
-void DebugLinesFeature::record(const FrameContext& fc) {
+void DebugLinesFeature::record(FrameContext& fc) {
     if (fc.stereo || !pipeline_) return;
     if (!fc.scene.settings().showSkeletons) return;
 
@@ -63,13 +63,10 @@ void DebugLinesFeature::record(const FrameContext& fc) {
     const uint32_t count = std::min<uint32_t>(static_cast<uint32_t>(verts.size()), kMaxVerts);
     buffers_[fc.frameIndex]->write(verts.data(), count * sizeof(Vertex));
 
-    pipeline_->bind(fc.cmd);
-    vkCmdBindDescriptorSets(fc.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout(),
-        0, 1, &fc.globalSet, 0, nullptr);
-    VkBuffer vb = buffers_[fc.frameIndex]->handle();
-    VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(fc.cmd, 0, 1, &vb, &offset);
-    vkCmdDraw(fc.cmd, count, 1, 0, 0);
+    fc.pass.setPipeline(*pipeline_);
+    fc.pass.setBindGroup(0, fc.globalSet);
+    fc.pass.setVertexBuffer(*buffers_[fc.frameIndex]);
+    fc.pass.draw(count);
 }
 
 } // namespace saida

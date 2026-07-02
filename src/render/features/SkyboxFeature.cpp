@@ -45,7 +45,7 @@ void SkyboxFeature::createPipelines(const RenderContext& ctx) {
     pipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
 }
 
-void SkyboxFeature::record(const FrameContext& fc) {
+void SkyboxFeature::record(FrameContext& fc) {
     if (fc.passthrough) return;  // XR see-through: an opaque sky would hide the world
 
     const auto& settings = fc.scene.settings();
@@ -62,10 +62,8 @@ void SkyboxFeature::record(const FrameContext& fc) {
         currentTexture_ = settings.skyboxTexture;
     }
 
-    pipeline_->bind(fc.cmd);
-    VkDescriptorSet setHandle = set_->handle();
-    vkCmdBindDescriptorSets(fc.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->layout(),
-        0, 1, &setHandle, 0, nullptr);
+    fc.pass.setPipeline(*pipeline_);
+    fc.pass.setBindGroup(0, *set_);
 
     if (!stereo_) {
         glm::mat4 view = fc.camera->view();
@@ -74,8 +72,7 @@ void SkyboxFeature::record(const FrameContext& fc) {
         pc.invViewProj = glm::inverse(fc.camera->projection() * view);
         pc.exposure = settings.skyboxExposure;
         pc.rotation = settings.skyboxRotation;
-        vkCmdPushConstants(fc.cmd, pipeline_->layout(),
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(MonoPush), &pc);
+        fc.pass.setPushConstants(&pc, sizeof(MonoPush));
     } else {
         const auto& eyes = *fc.eyes;
         StereoPush pc{};
@@ -88,11 +85,10 @@ void SkyboxFeature::record(const FrameContext& fc) {
         if (n == 1) pc.invViewProj[1] = pc.invViewProj[0];
         pc.exposure = settings.skyboxExposure;
         pc.rotation = settings.skyboxRotation;
-        vkCmdPushConstants(fc.cmd, pipeline_->layout(),
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(StereoPush), &pc);
+        fc.pass.setPushConstants(&pc, sizeof(StereoPush));
     }
 
-    vkCmdDraw(fc.cmd, 3, 1, 0, 0);
+    fc.pass.draw(3);
 }
 
 } // namespace saida

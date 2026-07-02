@@ -15,7 +15,7 @@ namespace saida {
 class DebugLinesFeature : public ScenePassFeature {
 public:
     void createPipelines(const RenderContext& ctx) override;
-    void record(const FrameContext& fc) override;
+    void record(FrameContext& fc) override;
 
 private:
     static constexpr uint32_t kMaxVerts = 16384;
