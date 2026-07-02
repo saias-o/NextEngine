@@ -14,11 +14,13 @@
 #include "rhi/CommandTypes.hpp"
 #include "rhi/Format.hpp"
 #include "rhi/PipelineState.hpp"
+#include "rhi/Sampler.hpp"
 #include "rhi/ShaderStages.hpp"
 #include "rhi/TextureUsage.hpp"
 #include "rhi/vulkan/BindGroup.hpp"
 #include "rhi/vulkan/CommandEncoder.hpp"
 #include "rhi/vulkan/RenderTexture.hpp"
+#include "rhi/vulkan/Sampler.hpp"
 #include "graphics/Buffer.hpp"   // Vulkan backend's Buffer (aliased below)
 #include "graphics/Pipeline.hpp" // Vulkan backend's Pipeline (aliased below)
 #include "graphics/Texture.hpp"  // Vulkan backend's Texture (aliased below)
@@ -66,5 +68,6 @@ using Device = saida::VulkanDevice;
 using Surface = saida::Swapchain;
 using RenderTexture = vulkan::RenderTexture;
 using RenderTextureDesc = vulkan::RenderTextureDesc;
+using Sampler = vulkan::Sampler;
 
 } // namespace saida::rhi

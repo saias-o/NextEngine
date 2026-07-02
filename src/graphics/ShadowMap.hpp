@@ -35,7 +35,7 @@ public:
     void record(rhi::CommandEncoder& encoder, int count, const DrawGeometryFn& drawGeometry);
 
     VkImageView arrayView() const { return texture_->view(); }
-    VkSampler sampler() const { return sampler_; }
+    VkSampler sampler() const { return sampler_->handle(); }
 
 private:
     void createTexture();
@@ -47,7 +47,7 @@ private:
     uint32_t resolution_;
 
     std::unique_ptr<rhi::RenderTexture> texture_;  // kMaxShadows depth layers
-    VkSampler sampler_ = VK_NULL_HANDLE;
+    std::unique_ptr<rhi::Sampler> sampler_;
 
     std::unique_ptr<rhi::Pipeline> pipeline_;  // depth-only, vertex-stage push constants
 };

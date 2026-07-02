@@ -351,6 +351,7 @@ add_library(saida_engine STATIC
     src/rhi/vulkan/BindGroup.cpp
     src/rhi/vulkan/CommandEncoder.cpp
     src/rhi/vulkan/RenderTexture.cpp
+    src/rhi/vulkan/Sampler.cpp
     src/graphics/VulkanDevice.cpp
     src/graphics/Swapchain.cpp
     src/graphics/Buffer.cpp

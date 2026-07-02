@@ -66,63 +66,15 @@
   - Cas spéciaux gérés : `ui.frag`/`web_canvas_world.frag` (bindless → `#ifdef WEB` texture unique), `culling.comp` (`writeonly` gardé desktop, readwrite sur web), `ddgi_trace` (`texelFetch(giVoxels)` séparé).
   - CMake : `WEB_READY_SHADERS` (= les 33) → `web.<name>.spv` (-DWEB) → `build/shaders/wgsl/`. Cible `WebShaders` gardée par `find_program(naga)`, sans impact desktop.
   - **Note 16.4** : les bindings web divergent (sampler séparé, push→UBO set 3) — le backend WebGPU devra aligner ses bind group layouts dessus.
-- [~] **16.3 — Extraction RHI** : déplacer le Vulkan existant derrière `rhi::*`, **sans changement de comportement** (desktop identique, validable à chaque commit). **Design : [PLAN_RHI.md](PLAN_RHI.md)** — RHI mince, backend au **compile-time** (pas de vtable), on abstrait ressources+commandes, pas la logique de rendu.
-  - [x] Design + décision d'archi (compile-time backend alias, ce qu'on n'abstrait pas)
-  - [x] 16.3.a — `src/rhi/` créé : `rhi::Capabilities` backend-neutre (`maxSamples` → uint32, plus de `Vk*`), `RenderCapabilities` devient un shim d'alias (consommateurs inchangés), `Rhi.hpp` ancre le backend compile-time. Build + 14/14 tests OK. (flags web `bindless`/`pushConstants` : ajoutés quand un consommateur les lira, 16.3.e)
-  - [x] 16.3.b — `rhi::Buffer` : API de construction neutre (`rhi::BufferUsage` au lieu de `VkBufferUsageFlags`, tailles `uint64_t`), aliasé dans `Rhi.hpp`. 27 sites convertis (mapping 1:1). `handle()` reste Vulkan (backend-interne, dé-Vulkanisé en 16.3.e avec le CommandEncoder). Build + 14/14 tests OK.
-  - [x] 16.3.c — `rhi::Texture` : `rhi::Format` neutre (+ mapping `rhi/vulkan/Format.hpp`), constructeur mémoire dé-Vulkanisé, `rhi::Texture` aliasé, 5 sites convertis. Sampler embarqué dans Texture. Build + 14/14 tests OK.
-  - [x] 16.3.d — `rhi::BindGroup(Layout)` + desc neutre `Pipeline`. **Terminé** :
-    `rhi/BindGroup.hpp` + `rhi/vulkan/BindGroup.{hpp,cpp}` (pool Vulkan caché
-    growable, groupes **immutables** — on recrée au lieu de
-    `vkUpdateDescriptorSets`), `Pipeline::Desc` neutre (+ depth-only sans
-    fragment, depth bias, `pushConstantStages`), enums neutres
-    (`rhi/PipelineState.hpp`, `rhi/ShaderStages.hpp`), `rhi::vulkan::fromVk`
-    (Format.hpp) pour les coutures Swapchain/HDR encore en `VkFormat` runtime.
-    - [x] d.a/d.b — toutes les créations de descriptors converties en
-      `BindGroup(Layout)` : `ResourceManager`/`Material` (set 1 matériau),
-      `Renderer` (set global 8 bindings avec `rebuildGlobalSet()`, set tonemap
-      desktop+XR), `GIVolume` (voxel set + compute sets ping-pong),
-      `ParticleRuntime` (render sets + compute sets), et les features
-      Skybox/Water/Particle. `UIRenderer` et le culling GPU-driven dormant de
-      `Renderer` n'avaient pas de set propre (déjà hors périmètre, cf. ci-dessous).
-    - [x] d.c — 13 des 17 sites `make_unique<Pipeline>` legacy convertis vers
-      `Pipeline::Desc` (features, PostProcessor, `unlitPipeline_`/tonemap/XR de
-      Renderer). Les ctors legacy **restent** (pas supprimés) : 4 sites mêlent
-      encore le set bindless brut (`pipeline_` GPU-driven dormant,
-      `webCanvasWorldPipeline_`/XR, `UIRenderer`) — cf. note bindless.
-    - ⚠ **Hors périmètre v1 (décidé)** : le set bindless UPDATE_AFTER_BIND
-      (`ResourceManager::globalMaterialSetLayout_`) et tout ce qui le consomme
-      (culling GPU-driven dormant — `useGpuDriven` toujours `false` —,
-      WebCanvas world-space, `UIRenderer`) restent Vulkan brut ; c'est le chemin
-      `caps.bindless` de 16.4 (fallback bind-group-par-texture). Ne pas
-      l'abstraire avant, et ne pas convertir le culling GPU-driven (code mort).
-  - [~] 16.3.e — `rhi::CommandEncoder` / passes / `ResourceState`. **Fait (clé de
-    voûte + pilote ShadowMap, e.a)** : `rhi/CommandTypes.hpp`,
-    `rhi/vulkan/CommandEncoder.{hpp,cpp}`, `rhi/vulkan/Convert.hpp` (table
-    ResourceState→layout/stage/access, volontairement conservative). L'encoder
-    est une **vue non-possédante** sur le VkCommandBuffer (escape hatch
-    `handle()`) → coexistence converti/brut dans la même frame, un sous-système
-    par commit. Les pass encoders posent viewport/scissor plein cadre par défaut
-    et mémorisent layout+pushStages au `setPipeline` (`setPushConstants` sans
-    paramètre de stage). ShadowMap : plus un seul `vkCmd*`, pipeline brut →
-    `Pipeline::Desc`, `DrawGeometryFn(RenderPassEncoder&, layer)`. **Reste —
-    mécanique, pattern = ShadowMap.cpp + Renderer::recordShadowPasses :**
-    - [ ] e.b — copies/staging : Texture, Mesh, uploads Buffer,
-      `Device::withSingleTimeEncoder` (remplace begin/endSingleTimeCommands chez
-      les appelants).
-    - [ ] e.c — features (FrameContext.cmd → encoder) + UIRenderer +
-      `Mesh::bind/draw(RenderPassEncoder&)`.
-    - [ ] e.d — PostProcessor (transitions : `transition()` + états trackés dans
-      `Target.layout` convertis en `ResourceState`).
-    - [ ] e.e — GIVolume (compute : `beginComputePass`, `storageBarrier`).
-    - [ ] e.f — ParticleRuntime (indirect draw).
-    - [ ] e.g — Renderer (~50 sites ; fallback `drawIndexedIndirectCount`
-      derrière `caps.drawIndirectCount` ; ImGui/GpuProfiler restent sur
-      `handle()`, assumé desktop-only).
-  - [ ] 16.3.f — `rhi::Device` / `Surface` (couture présentation, sync
-    acquire/present cachée) **+ création neutre des render targets** (HDR,
-    shadow array, bloom — encore VMA brut). **Design à faire d'abord** (pas
-    mécanique — session dédiée), ensuite conversion.
+- [x] **16.3 — Extraction RHI** : **TERMINÉ.** Tout le Vulkan de `render/` et `fx/` est derrière `rhi::*`, sans changement de comportement desktop. **Design : [PLAN_RHI.md](PLAN_RHI.md)** — RHI mince, backend au **compile-time** (pas de vtable), on abstrait ressources+commandes, pas la logique de rendu.
+  - [x] 16.3.a — `rhi::Capabilities` backend-neutre + `Rhi.hpp` (ancre compile-time).
+  - [x] 16.3.b — `rhi::Buffer` (`rhi::BufferUsage` neutre, 27 sites).
+  - [x] 16.3.c — `rhi::Texture` (+ `rhi::Format` neutre, sampler embarqué).
+  - [x] 16.3.d — `rhi::BindGroup(Layout)` (pool Vulkan caché growable, groupes immutables — on recrée au lieu de `vkUpdateDescriptorSets`) + `Pipeline::Desc`/`ComputePipeline` neutres. **Les ctors legacy Vulkan-typés sont supprimés** ; `BindGroupLayoutRef` couvre l'interop du set bindless brut.
+  - [x] 16.3.e — `rhi::CommandEncoder` / passes / `ResourceState` : **plus un seul `vkCmd*` dans `render/` et `fx/`**. ShadowMap (pilote), copies/staging (`Device::withSingleTimeEncoder`, `copyBufferToTexture`, `clearColorTexture`), features + `Mesh::bind/draw(RenderPassEncoder&)` + UIRenderer, PostProcessor (états `ResourceState` trackés), GIVolume (compute + voxelize via `Pipeline::Desc` attachment-less), ParticleRuntime (indirect), Renderer (~50 sites, `drawIndexedIndirectCount` derrière `caps.drawIndirectCount` avec fallback).
+  - [x] 16.3.f — `rhi::Device` (= VulkanDevice, alias), `rhi::Surface` (= Swapchain : fences + sémaphores acquire absorbés, API `waitFrame`/`acquire`/`submitAndPresent` — le Renderer et le Hub n'émettent plus un seul submit/present), `rhi::RenderTexture` (render targets neutres : HDR desktop/XR, shadow array, bloom, atlases DDGI, voxel 3D ; `StorageImage` supprimé), `rhi::Sampler` (desc neutre : tonemap, bloom, GI, shadow PCF).
+  - **Escape hatches assumés (v1, documentés)** : set bindless UPDATE_AFTER_BIND (ResourceManager) en Vulkan brut → chemin `caps.bindless` de 16.4 ; ImGuiLayer + GpuProfiler sur `handle()` (desktop-only) ; blits de mipmaps dans `Texture` (backend, pas d'abstraction neutre par design) ; lifecycle des command buffers de frame (`vkAllocate/Begin/End/ResetCommandBuffer` dans Renderer) → repris avec `Engine::tick()` + encoder-par-frame WebGPU en 16.4 ; le compute des particules s'enregistre dans la passe HDR (préexistant) → à hoister pour WebGPU en 16.4.
+  - **Note 16.4** : flags `caps.pushConstants`/`caps.bindless` à ajouter quand le backend WebGPU les lira (aujourd'hui `descriptorIndexing`/`drawIndirectCount` couvrent les consommateurs existants).
 - [ ] **16.4 — Backend WebGPU** : implémenter `rhi/webgpu/*` (Dawn / `webgpu.h` Emscripten), chemin minimal Lit + tonemap d'abord.
 - [ ] **16.5 — Parité rendu** : shadows → DDGI → particules GPU → post-process, une feature à la fois.
 - [ ] **16.6 — Packaging web** : intégration au `BuildExporter`/packager, en-têtes COOP/COEP (threads/SharedArrayBuffer), Brotli, optimisation taille WASM (LTO / `-Oz` / `wasm-opt`).

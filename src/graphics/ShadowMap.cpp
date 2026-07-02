@@ -44,20 +44,11 @@ void ShadowMap::createTexture() {
 }
 
 void ShadowMap::createSampler() {
-    VkSamplerCreateInfo ci{};
-    ci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    ci.magFilter = VK_FILTER_LINEAR;
-    ci.minFilter = VK_FILTER_LINEAR;
-    ci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    ci.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-    ci.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-    ci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-    ci.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;  // outside frustum = lit
-    ci.unnormalizedCoordinates = VK_FALSE;
-    ci.compareEnable = VK_TRUE;                            // hardware PCF
-    ci.compareOp = VK_COMPARE_OP_LESS;
-    if (vkCreateSampler(device_.device(), &ci, nullptr, &sampler_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create shadow sampler");
+    rhi::SamplerDesc desc;
+    desc.addressMode = rhi::AddressMode::ClampToBorder;
+    desc.whiteBorder = true;        // outside frustum = lit
+    desc.compareEnabled = true;     // hardware PCF
+    sampler_ = std::make_unique<rhi::Sampler>(device_, desc);
 }
 
 void ShadowMap::createPipeline() {
@@ -110,7 +101,7 @@ bool ShadowMap::resize(uint32_t newResolution) {
     resolution_ = newResolution;
 
     // Wait for device to finish before destroying resources
-    vkDeviceWaitIdle(device_.device());
+    device_.waitIdle();
 
     // Recreate the texture (sampler and pipeline don't depend on resolution).
     texture_.reset();

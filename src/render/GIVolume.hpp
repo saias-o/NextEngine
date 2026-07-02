@@ -60,7 +60,7 @@ public:
     VkImageView irradianceView() const { return irradiance_[curr_]->view(); }
     VkImageView visibilityView() const { return visibility_[curr_]->view(); }
     VkImageView voxelView() const { return voxelTexture_->view(); }
-    VkSampler sampler() const { return sampler_; }
+    VkSampler sampler() const { return sampler_->handle(); }
 
     const GIVolumeDesc& desc() const { return desc_; }
     int probesPerRow() const { return probesPerRow_; }
@@ -89,7 +89,7 @@ private:
 
     std::array<std::unique_ptr<rhi::RenderTexture>, 2> irradiance_;  // rgba16f
     std::array<std::unique_ptr<rhi::RenderTexture>, 2> visibility_;  // rg16f
-    VkSampler sampler_ = VK_NULL_HANDLE;
+    std::unique_ptr<rhi::Sampler> sampler_;
 
     // --- Voxelization (P1) ---
     std::unique_ptr<rhi::RenderTexture> voxelTexture_;  // 3D rgba16f albedo grid

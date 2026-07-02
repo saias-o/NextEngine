@@ -104,22 +104,10 @@ GIVolume::GIVolume(VulkanDevice& device, const GIVolumeDesc& desc,
               ", voxel grid ", desc_.voxelResolution, "^3");
 }
 
-GIVolume::~GIVolume() {
-    // Pipelines, bind groups, textures and buffers destroy themselves (RAII).
-    if (sampler_) vkDestroySampler(device_.device(), sampler_, nullptr);
-}
+GIVolume::~GIVolume() = default;  // everything is RAII
 
 void GIVolume::createSampler() {
-    VkSamplerCreateInfo ci{};
-    ci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    ci.magFilter = VK_FILTER_LINEAR;
-    ci.minFilter = VK_FILTER_LINEAR;
-    ci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    ci.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    ci.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    ci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    if (vkCreateSampler(device_.device(), &ci, nullptr, &sampler_) != VK_SUCCESS)
-        throw std::runtime_error("GIVolume: failed to create sampler");
+    sampler_ = std::make_unique<rhi::Sampler>(device_, rhi::SamplerDesc{});
 }
 
 void GIVolume::fillConstant() {

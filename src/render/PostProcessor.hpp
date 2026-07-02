@@ -31,7 +31,7 @@ public:
                      const glm::vec4& sourceRect, GpuProfiler* profiler);
 
     VkImageView bloomView() const;
-    VkSampler bloomSampler() const { return linearSampler_; }
+    VkSampler bloomSampler() const { return linearSampler_->handle(); }
 
 private:
     struct Target {
@@ -62,7 +62,7 @@ private:
     VkImageView hdrInputView_ = VK_NULL_HANDLE;
 
     std::vector<Target> bloom_;
-    VkSampler linearSampler_ = VK_NULL_HANDLE;
+    std::unique_ptr<rhi::Sampler> linearSampler_;
     // Pilot conversion of 16.3.d: descriptor layout/pool/sets behind rhi::.
     // Groups are immutable — re-pointing an input (setHdrInput, target resize)
     // recreates them. The layout must outlive the groups (it owns their pool).

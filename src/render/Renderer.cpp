@@ -219,7 +219,7 @@ Renderer::Renderer(VulkanDevice& device, Window& window, ResourceManager& resour
 #endif
 
 Renderer::~Renderer() {
-    vkDeviceWaitIdle(device_.device());
+    device_.waitIdle();
     features_.clear();  // destroy feature pipelines/descriptors while the device is valid
 #ifdef SAIDA_ENABLE_XR
     if (xrMode_) {
@@ -228,8 +228,6 @@ Renderer::~Renderer() {
     }
 #endif
     cleanupHdrResources();
-    if (tonemapDepthSampler_) vkDestroySampler(device_.device(), tonemapDepthSampler_, nullptr);
-    if (tonemapSampler_) vkDestroySampler(device_.device(), tonemapSampler_, nullptr);
 
     // pipeline_, culling groups and the buffers are torn down by their destructors.
 }
@@ -883,23 +881,14 @@ void Renderer::createTonemapPipeline() {
             {2, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // bloom
         });
 
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    rhi::SamplerDesc linearDesc;
+    linearDesc.mipFilter = rhi::FilterMode::Linear;
+    tonemapSampler_ = std::make_unique<rhi::Sampler>(device_, linearDesc);
 
-    if (vkCreateSampler(device_.device(), &samplerInfo, nullptr, &tonemapSampler_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create tonemap sampler");
-
-    samplerInfo.magFilter = VK_FILTER_NEAREST;
-    samplerInfo.minFilter = VK_FILTER_NEAREST;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    if (vkCreateSampler(device_.device(), &samplerInfo, nullptr, &tonemapDepthSampler_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create tonemap depth sampler");
+    rhi::SamplerDesc nearestDesc;
+    nearestDesc.magFilter = rhi::FilterMode::Nearest;
+    nearestDesc.minFilter = rhi::FilterMode::Nearest;
+    tonemapDepthSampler_ = std::make_unique<rhi::Sampler>(device_, nearestDesc);
 
     Pipeline::Desc tonemapDesc;
     tonemapDesc.vertPath = shaderPath("tonemap.vert.spv");
@@ -922,12 +911,12 @@ void Renderer::updateTonemapDescriptorSet() {
     rhi::BindGroupEntry hdrEntry;
     hdrEntry.binding = 0;
     hdrEntry.view = hdrTexture_->view();
-    hdrEntry.sampler = tonemapSampler_;
+    hdrEntry.sampler = tonemapSampler_->handle();
 
     rhi::BindGroupEntry depthEntry;
     depthEntry.binding = 1;
     depthEntry.view = depthResolveTexture_ ? depthResolveTexture_->view() : swapchain_->depthView();
-    depthEntry.sampler = tonemapDepthSampler_;
+    depthEntry.sampler = tonemapDepthSampler_->handle();
 
     rhi::BindGroupEntry bloomEntry;
     bloomEntry.binding = 2;
@@ -1509,21 +1498,14 @@ void Renderer::createXrPipelines() {
                 {2, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // bloom
             });
 
-        VkSamplerCreateInfo sci{};
-        sci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        sci.magFilter = VK_FILTER_LINEAR;
-        sci.minFilter = VK_FILTER_LINEAR;
-        sci.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        sci.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        if (vkCreateSampler(device_.device(), &sci, nullptr, &tonemapSampler_) != VK_SUCCESS)
-            throw std::runtime_error("XR: failed to create tonemap sampler");
-        sci.magFilter = VK_FILTER_NEAREST;
-        sci.minFilter = VK_FILTER_NEAREST;
-        sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-        if (vkCreateSampler(device_.device(), &sci, nullptr, &tonemapDepthSampler_) != VK_SUCCESS)
-            throw std::runtime_error("XR: failed to create tonemap depth sampler");
+        rhi::SamplerDesc linearDesc;
+        linearDesc.mipFilter = rhi::FilterMode::Linear;
+        tonemapSampler_ = std::make_unique<rhi::Sampler>(device_, linearDesc);
+
+        rhi::SamplerDesc nearestDesc;
+        nearestDesc.magFilter = rhi::FilterMode::Nearest;
+        nearestDesc.minFilter = rhi::FilterMode::Nearest;
+        tonemapDepthSampler_ = std::make_unique<rhi::Sampler>(device_, nearestDesc);
 
         updateXrTonemapDescriptorSets();
 
@@ -1548,12 +1530,12 @@ void Renderer::updateXrTonemapDescriptorSets() {
         rhi::BindGroupEntry hdrEntry;
         hdrEntry.binding = 0;
         hdrEntry.view = xrHdrTexture_->layerView(i);
-        hdrEntry.sampler = tonemapSampler_;
+        hdrEntry.sampler = tonemapSampler_->handle();
 
         rhi::BindGroupEntry depthEntry;
         depthEntry.binding = 1;
         depthEntry.view = xrDepthTexture_->layerView(i);
-        depthEntry.sampler = tonemapDepthSampler_;
+        depthEntry.sampler = tonemapDepthSampler_->handle();
 
         rhi::BindGroupEntry bloomEntry;
         bloomEntry.binding = 2;

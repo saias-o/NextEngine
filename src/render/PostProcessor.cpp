@@ -38,7 +38,7 @@ PostProcessor::~PostProcessor() {
     downsampleGroups_.clear();  // groups return their sets to the layout's pool
     upsampleGroups_.clear();
     inputLayout_.reset();
-    if (linearSampler_) vkDestroySampler(device_.device(), linearSampler_, nullptr);
+    linearSampler_.reset();
     destroyTargets();
 }
 
@@ -83,17 +83,9 @@ void PostProcessor::destroyTargets() {
 }
 
 void PostProcessor::createSampler() {
-    VkSamplerCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    info.magFilter = VK_FILTER_LINEAR;
-    info.minFilter = VK_FILTER_LINEAR;
-    info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    if (vkCreateSampler(device_.device(), &info, nullptr, &linearSampler_) != VK_SUCCESS) {
-        throw std::runtime_error("PostProcessor: failed to create sampler");
-    }
+    rhi::SamplerDesc desc;
+    desc.mipFilter = rhi::FilterMode::Linear;
+    linearSampler_ = std::make_unique<rhi::Sampler>(device_, desc);
 }
 
 void PostProcessor::createDescriptorResources() {
@@ -117,7 +109,7 @@ void PostProcessor::updateDescriptorSets() {
         rhi::BindGroupEntry entry;
         entry.binding = 0;
         entry.view = view;
-        entry.sampler = linearSampler_;
+        entry.sampler = linearSampler_->handle();
         return std::make_unique<rhi::BindGroup>(*inputLayout_,
                                                 std::vector<rhi::BindGroupEntry>{entry});
     };

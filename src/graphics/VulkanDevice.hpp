@@ -80,6 +80,9 @@ public:
     VkCommandBuffer beginSingleTimeCommands() const;
     void endSingleTimeCommands(VkCommandBuffer cmd) const;
 
+    // Blocks until the GPU is idle (target recreation, shutdown).
+    void waitIdle() const { vkDeviceWaitIdle(device_); }
+
 private:
     void createInstance();
     void setupDebugMessenger();

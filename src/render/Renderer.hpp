@@ -214,8 +214,8 @@ private:
     std::unique_ptr<Pipeline> tonemapPipeline_;
     std::unique_ptr<rhi::BindGroupLayout> tonemapSetLayout_;
     std::unique_ptr<rhi::BindGroup> tonemapSet_;
-    VkSampler tonemapSampler_ = VK_NULL_HANDLE;
-    VkSampler tonemapDepthSampler_ = VK_NULL_HANDLE;
+    std::unique_ptr<rhi::Sampler> tonemapSampler_;         // linear (HDR + bloom)
+    std::unique_ptr<rhi::Sampler> tonemapDepthSampler_;    // nearest (AO depth)
     float exposure_ = 1.0f;
 
     // Scene-pass features (skybox, water, debug lines, …). The Renderer builds them
