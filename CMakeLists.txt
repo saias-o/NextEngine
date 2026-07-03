@@ -704,6 +704,20 @@ saida_app_target(saida_tool)
 target_link_libraries(saida_tool PRIVATE saida_engine)
 target_compile_options(saida_tool PRIVATE -Wall -Wextra)
 
+if (BUILD_TESTING)
+    add_test(
+        NAME saida_tool_validate_scenario_valid
+        COMMAND $<TARGET_FILE:saida_tool> validate-scenario
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scenario-valid.json
+    )
+    add_test(
+        NAME saida_tool_validate_scenario_invalid
+        COMMAND $<TARGET_FILE:saida_tool> validate-scenario
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scenario-invalid-action.json
+    )
+    set_tests_properties(saida_tool_validate_scenario_invalid PROPERTIES WILL_FAIL TRUE)
+endif()
+
 if (WIN32)
     add_custom_command(TARGET saida_tool POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

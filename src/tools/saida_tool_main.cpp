@@ -5,12 +5,14 @@
 //
 // Sous-commandes :
 //   describe-engine [--pretty]   Ecrit l'EngineManifest JSON sur stdout (B4).
+//   validate-scenario <file>     Valide un asset scenario sans GPU (B2).
 //   help | --help | -h           Affiche l'aide.
 //
 // Convention : les diagnostics vont sur stderr, la sortie machine sur stdout.
 
 #include "authoring/EngineManifest.hpp"
 #include "authoring/SaidaOp.hpp"
+#include "scenario/ScenarioAsset.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -35,6 +37,7 @@ int usage(std::ostream& out) {
            "Usage:\n"
            "  saida_tool describe-engine [--pretty]\n"
            "  saida_tool validate-ops <ops.json> [--pretty]\n"
+           "  saida_tool validate-scenario <scenario.json> [--pretty]\n"
            "  saida_tool help\n"
            "\n"
            "Commands:\n"
@@ -44,6 +47,9 @@ int usage(std::ostream& out) {
            "  validate-ops      Statically validate a JSON array of SaidaOps\n"
            "                    (schema + per-type shape). Prints a JSON report;\n"
            "                    exit 0 if all valid, 1 if any invalid.\n"
+           "  validate-scenario Statically validate a Saida scenario asset\n"
+           "                    (format + registered actions/conditions). Prints a\n"
+           "                    JSON report; exit 0 if valid, 1 if invalid.\n"
            "\n"
            "Exit codes: 0 ok, 1 invalid input, 2 usage/IO error.\n";
     return kExitUsage;
@@ -133,6 +139,62 @@ int cmdValidateOps(const std::vector<std::string>& args) {
     return allValid ? kExitOk : kExitInvalid;
 }
 
+int cmdValidateScenario(const std::vector<std::string>& args) {
+    std::string path;
+    bool pretty = false;
+    for (const std::string& a : args) {
+        if (a == "--pretty") {
+            pretty = true;
+        } else if (!a.empty() && a[0] == '-' && a != "-") {
+            std::cerr << "validate-scenario: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (path.empty()) {
+            path = a;
+        } else {
+            std::cerr << "validate-scenario: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (path.empty()) {
+        std::cerr << "validate-scenario: missing <scenario.json> (use '-' for stdin)\n";
+        return kExitUsage;
+    }
+
+    std::string text, ioError;
+    if (!readInput(path, text, ioError)) {
+        std::cerr << "validate-scenario: " << ioError << "\n";
+        return kExitUsage;
+    }
+
+    const json parsed = json::parse(text, nullptr, /*allow_exceptions=*/false);
+    if (parsed.is_discarded()) {
+        std::cerr << "validate-scenario: input is not valid JSON\n";
+        return kExitUsage;
+    }
+
+    saida::ScenarioAsset asset;
+    std::vector<saida::ScenarioIssue> issues;
+    const bool ok = saida::ScenarioAsset::parse(parsed, asset, &issues);
+
+    json issueJson = json::array();
+    for (const auto& issue : issues)
+        issueJson.push_back(json{{"path", issue.path}, {"message", issue.message}});
+
+    const std::size_t issueCount = issueJson.size();
+    json report{{"ok", ok},
+                {"issueCount", issueCount},
+                {"issues", std::move(issueJson)}};
+    if (ok) {
+        report["id"] = asset.id;
+        report["version"] = asset.version;
+        report["steps"] = asset.steps.size();
+        report["roles"] = asset.roles.size();
+    }
+
+    std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
+    return ok ? kExitOk : kExitInvalid;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -151,6 +213,9 @@ int main(int argc, char** argv) {
     }
     if (command == "validate-ops") {
         return cmdValidateOps(rest);
+    }
+    if (command == "validate-scenario") {
+        return cmdValidateScenario(rest);
     }
 
     std::cerr << "saida_tool: unknown command '" << command << "'\n\n";
