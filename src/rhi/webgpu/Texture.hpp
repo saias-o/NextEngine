@@ -34,7 +34,7 @@ public:
     void updatePixels(const uint8_t* pixels, size_t size);
 
 private:
-    void upload(const uint8_t* pixels);
+    void upload(const uint8_t* pixels, bool srgb);
 
     Device& device_;
     WGPUTexture texture_ = nullptr;
@@ -43,6 +43,7 @@ private:
     uint32_t width_ = 0;
     uint32_t height_ = 0;
     uint32_t mipLevels_ = 1;
+    bool srgb_ = false;  // mip downsample averages RGB in linear space when true
     uint32_t bindlessIndex_ = ~0u;
 };
 
