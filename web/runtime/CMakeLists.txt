@@ -55,6 +55,7 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/render/features/WaterFeature.cpp
     ${SAIDA_ROOT}/src/render/PostProcessor.cpp
     ${SAIDA_ROOT}/src/render/Renderer.cpp
+    ${SAIDA_ROOT}/src/scenario/ScenarioRegistry.cpp
     ${SAIDA_ROOT}/src/scene/Behaviour.cpp
     ${SAIDA_ROOT}/src/scene/BehaviourRegistry.cpp
     ${SAIDA_ROOT}/src/scene/CameraNode.cpp

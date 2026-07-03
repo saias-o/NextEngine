@@ -91,13 +91,28 @@ par l'environnement **MSYS2 UCRT64**. Ne pas appeler `c++.exe` directement
 depuis PowerShell : cela peut echouer sans diagnostic utile. Utiliser
 `bash.exe` MSYS2, avec `/ucrt64/bin` en tete du `PATH`.
 
-Dans le sandbox Codex, `C:\msys64\tmp` peut etre interdit en ecriture. Dans ce
-cas, creer des temporaires dans le workspace et forcer MSYS2/GCC a les utiliser
-avant de lancer Ninja :
+Dans une session Codex, toujours creer des temporaires dans le workspace et
+forcer MSYS2/GCC a les utiliser avant de lancer Ninja :
 
 ```powershell
 New-Item -ItemType Directory -Force -Path build\tmp, build\msys_home | Out-Null
-C:\msys64\usr\bin\bash.exe -lc 'cd /c/Users/evand/Documents/SaidaEngine && export HOME=/c/Users/evand/Documents/SaidaEngine/build/msys_home && export TMPDIR=/c/Users/evand/Documents/SaidaEngine/build/tmp && export TMP=/c/Users/evand/Documents/SaidaEngine/build/tmp && export TEMP=/c/Users/evand/Documents/SaidaEngine/build/tmp && export PATH=/ucrt64/bin:/usr/bin:$PATH && cmake --build build --parallel'
+C:\msys64\usr\bin\bash.exe -lc 'cd /c/Users/evand/Documents/NextEngine && export HOME=/c/Users/evand/Documents/NextEngine/build/msys_home && export TMPDIR=/c/Users/evand/Documents/NextEngine/build/tmp && export TMP=/c/Users/evand/Documents/NextEngine/build/tmp && export TEMP=/c/Users/evand/Documents/NextEngine/build/tmp && export PATH=/ucrt64/bin:/usr/bin:$PATH && cmake --build build --parallel'
+```
+
+Pour un target specifique :
+
+```powershell
+New-Item -ItemType Directory -Force -Path build\tmp, build\msys_home | Out-Null
+C:\msys64\usr\bin\bash.exe -lc 'cd /c/Users/evand/Documents/NextEngine && export HOME=/c/Users/evand/Documents/NextEngine/build/msys_home && export TMPDIR=/c/Users/evand/Documents/NextEngine/build/tmp && export TMP=/c/Users/evand/Documents/NextEngine/build/tmp && export TEMP=/c/Users/evand/Documents/NextEngine/build/tmp && export PATH=/ucrt64/bin:/usr/bin:$PATH && cmake --build build --target saida_authoring_op_tests saida_tool --parallel'
+```
+
+Pour le runtime web (`build-web`), Emscripten peut appeler `python.exe` via son
+pylauncher. Dans Codex, ajouter explicitement Python au `PATH` (sur cette
+machine : `C:\Python313`) avant `/ucrt64/bin` :
+
+```powershell
+New-Item -ItemType Directory -Force -Path build-web\tmp, build-web\msys_home | Out-Null
+C:\msys64\usr\bin\bash.exe -lc 'cd /c/Users/evand/Documents/NextEngine && export HOME=/c/Users/evand/Documents/NextEngine/build-web/msys_home && export TMPDIR=/c/Users/evand/Documents/NextEngine/build-web/tmp && export TMP=/c/Users/evand/Documents/NextEngine/build-web/tmp && export TEMP=/c/Users/evand/Documents/NextEngine/build-web/tmp && export PATH=/c/Python313:/ucrt64/bin:/usr/bin:$PATH && cmake --build build-web --parallel'
 ```
 
 Symptomes typiques quand cette redirection manque :
@@ -105,6 +120,8 @@ Symptomes typiques quand cette redirection manque :
 - `Cannot create temporary file in C:\msys64\tmp\: Permission denied`;
 - `c++.exe` ou Ninja sort avec un code d'erreur sans diagnostic C++ clair;
 - MSYS2 tente de creer `/home/CodexSandboxOffline` puis retombe sur `/tmp`.
+- Emscripten echoue avec `pylauncher: CreateProcess failed (2): "python.exe"`
+  pendant la regeneration de `build-web`.
 
 Successful builds produce:
 

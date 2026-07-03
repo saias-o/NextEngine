@@ -650,6 +650,13 @@ réel vers texture et un hot-reload transactionnel des documents/dépendances Rm
 
 ## Pièges connus / environnement
 
+- **Codex + MSYS2** : depuis PowerShell, ne pas appeler `c++.exe` directement.
+  Utiliser `C:\msys64\usr\bin\bash.exe -lc`, mettre `/ucrt64/bin` en tete du
+  `PATH`, et rediriger `HOME`, `TMPDIR`, `TMP`, `TEMP` vers `build/msys_home`
+  et `build/tmp`. Pour `build-web`, ajouter aussi `/c/Python313` au `PATH` avant
+  `/ucrt64/bin`, sinon Emscripten peut echouer avec `pylauncher: CreateProcess
+  failed (2): "python.exe"`. Voir la section "Consignes build Codex" du
+  README pour les commandes copiables.
 - **Linker MSYS2 cassé sur libstdc++ dynamique.** Sur cette machine, lier
   dynamiquement libstdc++ fait **crasher `ld` (exit 116, sans message)** dès
   qu'il y a des symboles `<iostream>` ou d'exceptions. Contournement en place

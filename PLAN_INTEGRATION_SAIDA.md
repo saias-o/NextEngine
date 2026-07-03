@@ -147,6 +147,10 @@ Saida Headless Tools (saida_tool)
   `set_transform` déplace `Palm_A` en live (sans re-export), `set_property`
   modifie le Soleil, ops invalides rejetées sans muter. Harness opt-in `?edit`
   dans `web/runtime/shell.html`.
+- **A2 avance (2026-07-03).** `EngineManifest` expose maintenant, en headless,
+  nodes reflechis, behaviours reflechis, signaux/slots et contrat scenario
+  (actions/conditions) via `saida_tool describe-engine`. Sortie testee stable
+  (hash identique sur deux exports) et couverte par `saida_authoring_op_tests`.
 
 ### 5.2 Plateforme (`GitHub/saida`)
 
@@ -199,7 +203,7 @@ Dépôt : **E** = moteur (`NextEngine`) · **P** = plateforme (`GitHub/saida`).
 | # | Tâche | Dépend | Critère de fait |
 |---|---|---|---|
 | A1 | Définir le type `SaidaOp` (schéma, versionné, sérialisable) | — | ✅ `src/authoring/SaidaOp.{hpp,cpp}` : struct {opVersion, type, sceneId, payload}, parse strict, `toJson` canonique, registre `knownOpTypes()` (source unique manifest+applier), round-trip testé (2026-07-03) |
-| A2 | Définir `EngineManifest` complet (nodes, behaviours, **propriétés réfléchies**, signaux, actions scénario, versions) | — | `saida_tool describe-engine --json` produit le manifest |
+| A2 | Définir `EngineManifest` complet (nodes, behaviours, **propriétés réfléchies**, signaux, actions scénario, versions) | — | 🔵 fait : `saida_tool describe-engine` produit un manifest deterministe avec versions, ops, nodes/proprietes reflechies, behaviours, signaux/slots et scenario actions/conditions ; reste : schema formel final + extension au contrat assets/scripts |
 | A3 | Extraire `SaidaAuthoringCore` depuis `src/mcp/McpBridge.cpp` vers `src/authoring/`, sans dépendance ImGui/éditeur | A1 | MCP + éditeur + headless appellent le même core |
 | A4 | Validation stricte des ops (types/behaviours/propriétés inconnus, cycles, racine, chemins hors projet) | A1,A2 | 🔵 fait : forme (version/type/payload), nodes/propriétés inconnus, racine protégée, `reparent_node` avec rejet self/descendant (cycles) — testé ; reste : behaviours, chemins hors projet |
 | A5 | Ops inversibles (undo/redo) et diff lisible | A1 | ✅ chaque op de modif renvoie une SaidaOp `inverse` re-appliquable (set_transform/rename/reparent/set_property/create→delete) ; apply→invert round-trip testé desktop + navigateur ; `delete_node` marqué `invertible:false` (restauration par snapshot, invariant 0.6) (2026-07-03) |
@@ -248,7 +252,7 @@ Détail : [PLAN_LIVE_EDIT_WEB.md](PLAN_LIVE_EDIT_WEB.md).
 |---|---|---|---|
 | D1 | Intégrer le canvas runtime WASM/WebGPU dans la page Next.js | A.5(S1) | ✅ scène rendue in-app (2026-07-03, voir §5.4) |
 | D2 | Charger un ProjectSnapshot dans le runtime d'édition | B3,S4 | projet réel affiché |
-| D3 | Panels React pilotés par EngineManifest : hierarchy, inspector, assets, console | A2 | 🔵 amorcé : `EngineManifestPanel` (plateforme) rend le contrat depuis `runtime.manifest()` — types de nœuds + propriétés réfléchies (kind, min/max, enum), vérifié navigateur (2026-07-03). Reste : hierarchy, sélection, édition→SaidaOp, assets, console |
+| D3 | Panels React pilotés par EngineManifest : hierarchy, inspector, assets, console | A2 | 🔵 amorcé : `EngineManifestPanel` (plateforme) rend le contrat depuis `runtime.manifest()` — types de nœuds + propriétés réfléchies (kind, min/max, enum), puis onglets nodes/behaviours/scenario avec signaux/slots/actions/conditions (typecheck + build web verts, 2026-07-03). Reste : hierarchy, sélection, édition→SaidaOp, assets, console |
 | D4 | Émettre des SaidaOps depuis l'UI (gizmos, inspector) | C3 | édition → op acceptée |
 | D5 | Recevoir et appliquer les ops distantes (multi-clients) | C3,S3 | 2 users, même scène |
 | D6 | **Optimistic-local** pour manipulations continues (invariant 0.4) | D4 | drag fluide, commit au relâchement |

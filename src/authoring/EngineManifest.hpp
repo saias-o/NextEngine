@@ -13,7 +13,8 @@
 
 namespace saida::authoring {
 
-// { engineVersion, opVersion, nodes:[...], ops:[...] }
+// { engineVersion, opVersion, nodes:[...], behaviours:[...], ops:[...],
+//   scenario:{ actions:[...], conditions:[...] } }
 nlohmann::json buildEngineManifest();
 
 // Versions de contrat (invariant 0.6 : le pont inter-versions est le snapshot).

@@ -2,9 +2,16 @@
 
 #include "authoring/SaidaOp.hpp"
 #include "core/Reflection.hpp"
+#include "scenario/ScenarioRegistry.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/WaterNode.hpp"
+
+#ifndef __EMSCRIPTEN__
+#include "scene/ReflectedTypes.hpp"
+#endif
+
+#include <utility>
 
 namespace saida::authoring {
 namespace {
@@ -17,6 +24,34 @@ nlohmann::json reflectedNodeManifest() {
     return out;
 }
 
+nlohmann::json scenarioManifest() {
+    nlohmann::json actions = nlohmann::json::array();
+    for (const auto& name : ScenarioActionRegistry::names())
+        actions.push_back(nlohmann::json{{"name", name}});
+
+    nlohmann::json conditions = nlohmann::json::array();
+    for (const auto& name : ScenarioConditionRegistry::names()) {
+        nlohmann::json condition{{"name", name}};
+        if (ScenarioConditionRegistry::isComposite(name))
+            condition["composite"] = true;
+        conditions.push_back(std::move(condition));
+    }
+
+    return nlohmann::json{{"actions", std::move(actions)},
+                          {"conditions", std::move(conditions)}};
+}
+
+nlohmann::json nodePropertiesByType(const nlohmann::json& nodes) {
+    nlohmann::json out;
+    out["*"] = nlohmann::json::array({"name", "enabled"});
+    for (const auto& node : nodes) {
+        if (!node.contains("name") || !node["name"].is_string()) continue;
+        out[node["name"].get<std::string>()] =
+            node.value("properties", nlohmann::json::array());
+    }
+    return out;
+}
+
 } // namespace
 
 nlohmann::json buildEngineManifest() {
@@ -24,26 +59,31 @@ nlohmann::json buildEngineManifest() {
     m["engineVersion"] = kEngineVersion;
     m["opVersion"] = kOpVersion;
 
-    // Types de nodes que l'applier sait instancier/editer au stade du spike.
+#ifndef __EMSCRIPTEN__
+    registerReflectedTypes();
+    nlohmann::json reflected = reflect::TypeRegistry::instance().manifest();
+    nlohmann::json nodes = nlohmann::json::array({
+        nlohmann::json{{"name", "Node"}, {"category", "node"}},
+        nlohmann::json{{"name", "MeshNode"}, {"category", "node"}},
+    });
+    for (const auto& node : reflected.value("nodes", nlohmann::json::array()))
+        nodes.push_back(node);
+    m["nodes"] = std::move(nodes);
+    m["behaviours"] = reflected.value("behaviours", nlohmann::json::array());
+#else
     m["nodes"] = nlohmann::json::array({
         nlohmann::json{{"name", "Node"}, {"category", "node"}},
         nlohmann::json{{"name", "MeshNode"}, {"category", "node"}},
         reflectedNodeManifest<LightNode>(),
-        reflectedNodeManifest<WaterNode>(),
         reflectedNodeManifest<ParticleSystemNode>(),
+        reflectedNodeManifest<WaterNode>(),
     });
+    m["behaviours"] = nlohmann::json::array();
+#endif
 
-    // Ops du contrat SaidaOp — source unique de verite : le registre (Phase A1).
     m["ops"] = knownOpTypes();
-
-    // set_property "allege" : proprietes cablees a la main (pas encore la vraie
-    // reflexion — c'est la question ouverte du palier S2).
-    m["properties"] = {
-        {"*", nlohmann::json::array({"name", "enabled"})},
-        {"LightNode", reflect::localDesc<LightNode>().manifest().value("properties", nlohmann::json::array())},
-        {"Water", reflect::localDesc<WaterNode>().manifest().value("properties", nlohmann::json::array())},
-        {"ParticleSystem", reflect::localDesc<ParticleSystemNode>().manifest().value("properties", nlohmann::json::array())},
-    };
+    m["properties"] = nodePropertiesByType(m["nodes"]);
+    m["scenario"] = scenarioManifest();
 
     return m;
 }

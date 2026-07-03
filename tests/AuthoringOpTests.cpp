@@ -366,7 +366,9 @@ void testInverseOps() {
 
 void testManifestContainsReflectedProperties() {
     json manifest = saida::authoring::buildEngineManifest();
+    json manifestAgain = saida::authoring::buildEngineManifest();
     require(manifest["opVersion"].get<int>() == saida::authoring::kOpVersion);
+    require(manifest == manifestAgain);
     require(manifest["properties"]["LightNode"].is_array());
     require(manifest["properties"]["Water"].is_array());
     require(manifest["properties"]["ParticleSystem"].is_array());
@@ -378,6 +380,53 @@ void testManifestContainsReflectedProperties() {
         }
     }
     require(hasLightIntensity);
+}
+
+void testManifestContainsBehavioursSignalsAndScenario() {
+    json manifest = saida::authoring::buildEngineManifest();
+    require(manifest["behaviours"].is_array());
+    require(manifest["scenario"]["actions"].is_array());
+    require(manifest["scenario"]["conditions"].is_array());
+
+    bool hasRotatorSignal = false;
+    bool hasHealthSlot = false;
+    bool hasScenarioRunnerSignals = false;
+    for (const auto& behaviour : manifest["behaviours"]) {
+        if (behaviour["name"] == "Rotator") {
+            for (const auto& signal : behaviour.value("signals", json::array()))
+                if (signal["name"] == "fullRotation" && signal["arity"] == 0)
+                    hasRotatorSignal = true;
+        }
+        if (behaviour["name"] == "Health") {
+            for (const auto& slot : behaviour.value("slots", json::array()))
+                if (slot["name"] == "damage")
+                    hasHealthSlot = true;
+        }
+        if (behaviour["name"] == "ScenarioRunner") {
+            for (const auto& signal : behaviour.value("signals", json::array()))
+                if (signal["name"] == "finished")
+                    hasScenarioRunnerSignals = true;
+        }
+    }
+    require(hasRotatorSignal);
+    require(hasHealthSlot);
+    require(hasScenarioRunnerSignals);
+
+    bool hasSignalEmit = false;
+    for (const auto& action : manifest["scenario"]["actions"])
+        if (action["name"] == "signal.emit") hasSignalEmit = true;
+    require(hasSignalEmit);
+
+    bool hasCompositeAll = false;
+    bool hasTimelineFinished = false;
+    for (const auto& condition : manifest["scenario"]["conditions"]) {
+        if (condition["name"] == "all" && condition.value("composite", false))
+            hasCompositeAll = true;
+        if (condition["name"] == "timeline.finished")
+            hasTimelineFinished = true;
+    }
+    require(hasCompositeAll);
+    require(hasTimelineFinished);
 }
 
 void testSnapshotReflectsAppliedOps() {
@@ -416,6 +465,7 @@ int main() {
     testValidateOpShape();
     testManifestListsRegistryOps();
     testManifestContainsReflectedProperties();
+    testManifestContainsBehavioursSignalsAndScenario();
     testSnapshotReflectsAppliedOps();
     return 0;
 }

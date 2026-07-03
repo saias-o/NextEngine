@@ -50,6 +50,10 @@ void registerNode() {
 } // namespace
 
 void registerReflectedTypes() {
+    static bool registered = false;
+    if (registered) return;
+    registered = true;
+
     registerBehaviour<RotatorBehaviour>();
     registerBehaviour<AudioSourceBehaviour>();
     registerBehaviour<CameraFollowBehaviour>();
