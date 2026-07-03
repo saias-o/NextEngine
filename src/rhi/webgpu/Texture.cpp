@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <stdexcept>
 #include <vector>
@@ -41,13 +42,22 @@ Texture::Texture(Device& device, const std::string& path, bool srgb)
     : device_(device) {
     int texWidth = 0, texHeight = 0, channels = 0;
     stbi_uc* pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &channels, STBI_rgb_alpha);
-    if (!pixels)
-        throw std::runtime_error("webgpu: failed to load texture '" + path + "'");
+    bool freeStb = pixels != nullptr;
+    // A missing file degrades to a 2x2 magenta placeholder, never a crash.
+    static const stbi_uc kMagenta[2 * 2 * 4] = {
+        255, 0, 255, 255,  24, 24, 24, 255,
+        24, 24, 24, 255,  255, 0, 255, 255,
+    };
+    if (!pixels) {
+        std::printf("webgpu: failed to load texture '%s' — magenta placeholder\n", path.c_str());
+        pixels = const_cast<stbi_uc*>(kMagenta);
+        texWidth = texHeight = 2;
+    }
 
     Texture loaded(device, pixels, static_cast<uint32_t>(texWidth),
                    static_cast<uint32_t>(texHeight),
                    srgb ? rhi::Format::RGBA8Srgb : rhi::Format::RGBA8Unorm);
-    stbi_image_free(pixels);
+    if (freeStb) stbi_image_free(pixels);
 
     texture_ = loaded.texture_;
     view_ = loaded.view_;

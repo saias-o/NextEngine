@@ -1,17 +1,20 @@
 {
-    "11074124625600234662": {
-        "hash": 3109435565661246091,
-        "path": "scenes/beach.scene",
-        "type": "Scene"
+    "assets": {
+        "11074124625600234662": {
+            "hash": 3109435565661246091,
+            "path": "scenes/beach.scene",
+            "type": "Scene"
+        },
+        "12246554237784339958": {
+            "hash": 11746319502404893978,
+            "path": "assets/skies/sunset.png",
+            "type": "Texture"
+        },
+        "4242424242": {
+            "hash": 11746319502404893978,
+            "path": "assets/skies/sunset.png",
+            "type": "Texture"
+        }
     },
-    "12246554237784339958": {
-        "hash": 11746319502404893978,
-        "path": "assets/skies/sunset.png",
-        "type": "Texture"
-    },
-    "4242424242": {
-        "hash": 0,
-        "path": "C:/Users/evand/Documents/SaidaEngine/BeachDemo/assets/skies/sunset.png",
-        "type": "Texture"
-    }
+    "version": 1
 }

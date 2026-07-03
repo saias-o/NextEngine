@@ -1,5 +1,6 @@
 #include "graphics/Texture.hpp"
 
+#include "core/Log.hpp"
 #include "core/Profiler.hpp"
 #include "graphics/Buffer.hpp"
 #include "graphics/MemoryProfiler.hpp"
@@ -8,10 +9,27 @@
 #include "rhi/vulkan/Format.hpp"
 
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "stb_image.h"
 #include "vk_mem_alloc.h"
 
 #include <stdexcept>
+
+namespace {
+// A missing texture file must never crash the app (a stale/renamed asset path
+// should degrade, not abort). Returns a freshly malloc'd 2x2 magenta/charcoal
+// checker — the classic "missing texture" placeholder — freeable via
+// stbi_image_free (which is just free()).
+void* magentaPlaceholder() {
+    auto* px = static_cast<unsigned char*>(std::malloc(2 * 2 * 4));
+    const unsigned char m[4] = {255, 0, 255, 255};
+    const unsigned char d[4] = {24, 24, 24, 255};
+    std::memcpy(px + 0, m, 4);  std::memcpy(px + 4, d, 4);
+    std::memcpy(px + 8, d, 4);  std::memcpy(px + 12, m, 4);
+    return px;
+}
+} // namespace
 
 namespace saida {
 
@@ -47,8 +65,14 @@ Texture::Texture(VulkanDevice& device, const std::string& path, bool srgb) : dev
         pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     }
     
-    if (!pixels)
-        throw std::runtime_error("failed to load texture '" + path + "'");
+    if (!pixels) {
+        Log::warn("failed to load texture '", path, "' — using magenta placeholder");
+        isHdr = false;
+        format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+        texWidth = texHeight = 2;
+        texChannels = 4;
+        pixels = magentaPlaceholder();
+    }
 
     width_ = static_cast<uint32_t>(texWidth);
     height_ = static_cast<uint32_t>(texHeight);

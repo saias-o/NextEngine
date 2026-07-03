@@ -321,7 +321,12 @@ Texture* ResourceManager::getTexture(AssetID id, bool srgb) {
         return it->second.get();
 
     if (!registry_) return nullptr;
-    std::string path = registry_->getPath(id);
+    // Resolve against the project root: registry paths are project-relative, so a
+    // renamed/moved project dir still finds its assets (absolute paths would not).
+    // Fall back to the raw path if there is no project root (already-absolute or
+    // cwd-relative entries still load).
+    std::string path = registry_->getAbsolutePath(id);
+    if (path.empty()) path = registry_->getPath(id);
     if (path.empty()) return nullptr;
 
     auto tex = std::make_unique<Texture>(device_, path, srgb);

@@ -18,7 +18,6 @@ import json, math, os, struct, zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKY_REL = "assets/skies/sunset.png"
-SKY_ABS = os.path.join(HERE, "assets", "skies", "sunset.png").replace("\\", "/")
 SKY_ID = 4242424242  # fixed id referenced by the scene (kept small so it is exact JSON)
 
 # The sun's position in the sky (a unit vector). The skybox image AND the directional
@@ -298,10 +297,11 @@ def main():
     write_sky_png(os.path.join(HERE, "assets", "skies", "sunset.png"))
     print("wrote", SKY_REL)
 
-    # Registry: absolute path so the texture loads regardless of the working directory.
-    # hash=0 keeps the editor's asset auto-sync from re-mapping this entry.
+    # Registry: project-relative path so the texture loads regardless of where the
+    # project dir lives or what it is renamed to (the engine resolves it against the
+    # project root). hash=0 keeps the editor's asset auto-sync from re-mapping it.
     with open(os.path.join(HERE, "asset_registry.json"), "w") as f:
-        json.dump({str(SKY_ID): {"path": SKY_ABS, "hash": 0, "type": "Texture"}}, f, indent=4)
+        json.dump({str(SKY_ID): {"path": SKY_REL, "hash": 0, "type": "Texture"}}, f, indent=4)
     print("wrote asset_registry.json")
 
     with open(os.path.join(HERE, "scenes", "beach.scene"), "w") as f:
