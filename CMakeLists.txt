@@ -750,6 +750,19 @@ if (BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-invalid-dupid.json
     )
     set_tests_properties(saida_tool_validate_scene_invalid PROPERTIES WILL_FAIL TRUE)
+
+    # Phase B2 : validate-script — compile-check JS via QuickJS (no exec).
+    add_test(
+        NAME saida_tool_validate_script_valid
+        COMMAND $<TARGET_FILE:saida_tool> validate-script
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/script-valid.js
+    )
+    add_test(
+        NAME saida_tool_validate_script_invalid
+        COMMAND $<TARGET_FILE:saida_tool> validate-script
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/script-invalid.js
+    )
+    set_tests_properties(saida_tool_validate_script_invalid PROPERTIES WILL_FAIL TRUE)
 endif()
 
 if (WIN32)

@@ -7,6 +7,7 @@
 //   describe-engine [--pretty]   Ecrit l'EngineManifest JSON sur stdout (B4).
 //   validate-ops <file>          Valide statiquement des SaidaOps (B2).
 //   validate-scene <file>        Valide la structure d'un snapshot de scene (B2).
+//   validate-script <file>       Compile-check un script JS/MJS (QuickJS) (B2).
 //   validate-scenario <file>     Valide un asset scenario sans GPU (B2).
 //   apply-ops <scene> <ops>      Applique des ops -> snapshot deterministe (B3).
 //   help | --help | -h           Affiche l'aide.
@@ -19,6 +20,8 @@
 #include "authoring/SceneSnapshot.hpp"
 #include "scene/Scene.hpp"
 #include "scenario/ScenarioAsset.hpp"
+#include "scripting/JsContext.hpp"
+#include "scripting/JsRuntime.hpp"
 
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>
@@ -27,6 +30,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -47,6 +51,7 @@ int usage(std::ostream& out) {
            "  saida_tool describe-engine [--pretty]\n"
            "  saida_tool validate-ops <ops.json> [--pretty]\n"
            "  saida_tool validate-scene <scene.json> [--pretty]\n"
+           "  saida_tool validate-script <script.js> [--module|--script] [--pretty]\n"
            "  saida_tool validate-scenario <scenario.json> [--pretty]\n"
            "  saida_tool apply-ops <scene.json> <ops.json> [--out <file>]\n"
            "  saida_tool help\n"
@@ -61,6 +66,10 @@ int usage(std::ostream& out) {
            "  validate-scene    Structurally validate a scene snapshot (node types,\n"
            "                    unique ids, transform/children shape). Prints a JSON\n"
            "                    report; exit 0 if valid, 1 if any issue.\n"
+           "  validate-script   Compile-check a JS/MJS script with QuickJS (no exec,\n"
+           "                    no engine bindings). Module mode follows the .mjs\n"
+           "                    extension unless --module/--script overrides it.\n"
+           "                    exit 0 if it compiles, 1 on a syntax error.\n"
            "  validate-scenario Statically validate a Saida scenario asset\n"
            "                    (format + registered actions/conditions). Prints a\n"
            "                    JSON report; exit 0 if valid, 1 if invalid.\n"
@@ -310,6 +319,69 @@ int cmdValidateScene(const std::vector<std::string>& args) {
     return ok ? kExitOk : kExitInvalid;
 }
 
+// Compile-only JS syntax check (QuickJS, no execution, no engine bindings, no
+// GPU). Module vs global parse mode follows the .mjs extension unless overridden
+// by --module / --script.
+int cmdValidateScript(const std::vector<std::string>& args) {
+    std::string path;
+    bool pretty = false;
+    int moduleOverride = -1;  // -1 = auto, 0 = global, 1 = module
+    for (const std::string& a : args) {
+        if (a == "--pretty") {
+            pretty = true;
+        } else if (a == "--module") {
+            moduleOverride = 1;
+        } else if (a == "--script") {
+            moduleOverride = 0;
+        } else if (!a.empty() && a[0] == '-' && a != "-") {
+            std::cerr << "validate-script: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (path.empty()) {
+            path = a;
+        } else {
+            std::cerr << "validate-script: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (path.empty()) {
+        std::cerr << "validate-script: missing <script.js|.mjs> (use '-' for stdin)\n";
+        return kExitUsage;
+    }
+
+    std::string source, ioError;
+    if (!readInput(path, source, ioError)) {
+        std::cerr << "validate-script: " << ioError << "\n";
+        return kExitUsage;
+    }
+
+    bool asModule = false;
+    if (moduleOverride >= 0) {
+        asModule = moduleOverride == 1;
+    } else {
+        const std::size_t dot = path.rfind('.');
+        asModule = dot != std::string::npos && path.substr(dot) == ".mjs";
+    }
+    const std::string filename = path == "-" ? (asModule ? "<stdin>.mjs" : "<stdin>.js") : path;
+
+    // QuickJS init/teardown log via Log::info, which writes to stdout. Route
+    // stdout to stderr for the runtime's lifetime so the report stays the only
+    // machine output on stdout.
+    std::string error;
+    bool ok;
+    std::streambuf* prevCout = std::cout.rdbuf(std::cerr.rdbuf());
+    {
+        saida::JsRuntime runtime;
+        std::unique_ptr<saida::JsContext> ctx = runtime.createContext();
+        ok = ctx->compileCheck(source, filename, asModule, error);
+    }  // runtime/context destroyed here — their logs still routed to stderr
+    std::cout.rdbuf(prevCout);
+
+    json report{{"ok", ok}, {"module", asModule}};
+    if (!ok) report["error"] = error;
+    std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
+    return ok ? kExitOk : kExitInvalid;
+}
+
 int cmdApplyOps(const std::vector<std::string>& args) {
     std::string scenePath, opsPath, outPath;
     bool pretty = false;
@@ -445,6 +517,9 @@ int main(int argc, char** argv) {
     }
     if (command == "validate-scene") {
         return cmdValidateScene(rest);
+    }
+    if (command == "validate-script") {
+        return cmdValidateScript(rest);
     }
     if (command == "apply-ops") {
         return cmdApplyOps(rest);

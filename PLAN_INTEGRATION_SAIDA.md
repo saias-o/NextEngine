@@ -224,12 +224,12 @@ Dépôt : **E** = moteur (`NextEngine`) · **P** = plateforme (`GitHub/saida`).
 
 Détail : [PLAN_LIVE_EDIT_WEB.md](PLAN_LIVE_EDIT_WEB.md).
 
-### Phase B — Headless & snapshots (E) 🔵 (B1 amorcé, B2 🔵, B3 ✅, B4 ✅)
+### Phase B — Headless & snapshots (E) 🔵 (B1 amorcé, B2 ✅, B3 ✅, B4 ✅)
 
 | # | Tâche | Dépend | Critère de fait |
 |---|---|---|---|
 | B1 | Outil `saida_tool` (sans fenêtre, exit codes fiables, `--json-logs`) | A3 | 🔵 binaire `saida_tool` créé (`src/tools/saida_tool_main.cpp`, cible CMake, link `saida_engine` headless) : exit 0=ok / 1=invalide / 2=usage, stdout machine / stderr diag, `help`. Reste : `--json-logs`, autres sous-commandes |
-| B2 | `validate-ops` / `validate-scene` / `validate-script` / `validate-scenario` | A4 | 🔵 `validate-ops` (dry-run `validateOpShape()`), `validate-scenario` (actions/conditions) et `validate-scene` faits : `validate-scene <file>` valide la structure d'un snapshot sans GPU (type/name string, ids **uniques**, forme transform/children), rapport JSON `{ok,nodeCount,issues}`, exit 0/1/2, stdin `-`, CTest valide/dup-id (2026-07-04). Reste : validate-script |
+| B2 | `validate-ops` / `validate-scene` / `validate-script` / `validate-scenario` | A4 | ✅ quatre validateurs headless : `validate-ops` (dry-run `validateOpShape()`), `validate-scene` (structure snapshot : type/name, ids **uniques**, forme transform/children), `validate-script` (compile-check QuickJS `compileCheck`, sans exécution ni bindings, mode module/global auto sur `.mjs`, stdout gardé pur en routant les logs d'init vers stderr) et `validate-scenario` (actions/conditions). Rapport JSON, exit 0/1/2, stdin `-`, CTests valide/invalide pour chacun (2026-07-04) |
 | B3 | `apply-ops <proj> <ops.json> --out <snapshot>` | A3,A6 | ✅ `saida_tool apply-ops <scene> <ops> [--out]` : deserialisation **sans GPU** (`deserializeSceneSnapshot`, inverse du snapshot headless — hierarchie, transforms, propriétés réfléchies, groupes, settings, connexions), applique le batch de façon **atomique** (tout op rejeté → exit 1, rien écrit), renumérote les nodes créés de façon déterministe (ids chargés préservés) → snapshot **byte-reproductible** ; round-trip serialize→deserialize stable, testé (CTest apply_ops valid/invalid + `saida_authoring_op_tests`) (2026-07-04) |
 | B4 | `describe-engine --json` (export manifest) | A2 | ✅ `saida_tool describe-engine [--pretty]` : manifest JSON sur stdout, **déterministe/hashable** (sha256 stable, invariant 0.6), vérifié (2026-07-03) |
 | B5 | Sécurité des chemins (pas de `..`, pas d'absolu, sandbox) | — | 🔵 primitive `resolveSandboxedProjectPath()` faite dans `core/Paths`, tests d'échappement purs (`..`, absolu, drive Windows, file URL) ; pont MCP branché pour scripts/UI/scénarios/import modèle (chemins relatifs conservés pour attachements). Reste : CLI apply-ops + asset loaders bas niveau |
