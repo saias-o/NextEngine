@@ -243,6 +243,41 @@ void testReparentNode() {
     require(d->parent() == a);
 }
 
+// Phase B2 : validation de forme statique (sans scene) — dry-run.
+void testValidateOpShape() {
+    using saida::authoring::parseSaidaOp;
+    using saida::authoring::validateOpShape;
+
+    auto shapeOf = [](const json& j) -> std::string {
+        auto r = parseSaidaOp(j);
+        if (!r.ok) return r.error;               // deja rejete au parse
+        return validateOpShape(r.op);            // "" si forme valide
+    };
+
+    // Formes valides -> chaine vide.
+    require(shapeOf(json{{"type", "set_transform"},
+                         {"payload", {{"nodeId", "A"}, {"position", {1, 2, 3}}}}}).empty());
+    require(shapeOf(json{{"type", "reparent_node"},
+                         {"payload", {{"nodeId", "A"}}}}).empty());  // newParent optionnel
+    require(shapeOf(json{{"type", "set_property"},
+                         {"payload", {{"nodeId", "A"}, {"property", "intensity"}, {"value", 2}}}}).empty());
+    require(shapeOf(json{{"type", "create_node"},
+                         {"payload", {{"nodeType", "LightNode"}}}}).empty());
+
+    // Formes invalides -> message non vide.
+    require(!shapeOf(json{{"type", "set_transform"}, {"payload", {{"nodeId", "A"}}}}).empty()); // aucun champ
+    require(!shapeOf(json{{"type", "set_transform"},
+                          {"payload", {{"nodeId", "A"}, {"position", {1, 2}}}}}).empty());      // vec3 tronque
+    require(!shapeOf(json{{"type", "set_transform"},
+                          {"payload", {{"nodeId", ""}, {"position", {1, 2, 3}}}}}).empty());    // nodeId vide
+    require(!shapeOf(json{{"type", "rename_node"}, {"payload", {{"nodeId", "A"}}}}).empty());   // name manquant
+    require(!shapeOf(json{{"type", "set_property"},
+                          {"payload", {{"nodeId", "A"}, {"property", "x"}}}}).empty());          // value manquante
+    require(!shapeOf(json{{"type", "create_node"}, {"payload", json::object()}}).empty());       // nodeType manquant
+    // Type inconnu : rejete des le parse.
+    require(!shapeOf(json{{"type", "explode_scene"}, {"payload", json::object()}}).empty());
+}
+
 void testManifestListsRegistryOps() {
     json manifest = saida::authoring::buildEngineManifest();
     const auto& types = saida::authoring::knownOpTypes();
@@ -378,6 +413,7 @@ int main() {
     testSaidaOpParseRejections();
     testReparentNode();
     testInverseOps();
+    testValidateOpShape();
     testManifestListsRegistryOps();
     testManifestContainsReflectedProperties();
     testSnapshotReflectsAppliedOps();

@@ -51,4 +51,11 @@ SaidaOpParseResult parseSaidaOp(const std::string& text);
 const std::vector<std::string>& knownOpTypes();
 bool isKnownOpType(const std::string& type);
 
+// Validation de FORME (statique, sans scene) : le payload porte-t-il les champs
+// requis par le type d'op, avec les bons types JSON ? Renvoie "" si la forme est
+// valide, sinon un message d'erreur stable. Ne verifie PAS la semantique liee a
+// l'etat (node existant, propriete reflechie du bon type) : ca reste le role de
+// l'applier sur une scene vivante. Utilisee par le dry-run (CLI, IA, gateway).
+std::string validateOpShape(const SaidaOp& op);
+
 } // namespace saida::authoring
