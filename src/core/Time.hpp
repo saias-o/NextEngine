@@ -12,10 +12,16 @@ public:
     static float unscaledDelta() { return unscaledDelta_; }
     static float elapsed() { return elapsed_; }        // scaled seconds since start
     static float scale() { return scale_; }
-    static void setScale(float s) { 
-        scale_ = s; 
-        delta_ = unscaledDelta_ * scale_; 
+    static void setScale(float s) {
+        scale_ = s;
+        delta_ = unscaledDelta_ * scale_;
     }
+
+    // Advance the clock. The desktop Engine calls this once per frame via its
+    // own loop; a standalone frame host that does not use Engine (the web
+    // runtime, which plays the Engine's role) calls it directly. Prefer letting
+    // the Engine own timing wherever an Engine exists.
+    static void advance(float realDeltaSeconds) { update(realDeltaSeconds); }
 
 private:
     friend class Engine;

@@ -1,11 +1,15 @@
 #include "render/RenderFeatureRegistry.hpp"
 
 // The ONE place that knows the concrete built-in effects. The Renderer does not.
-#include "render/features/WaterFeature.hpp"
 #include "render/features/SkyboxFeature.hpp"
+#include "render/features/ParticleFeature.hpp"
+#ifndef SAIDA_RHI_WEBGPU
+// Editor/desktop-only effects (planar reflection, selection overlay, debug
+// gizmos). Not yet ported to the WebGPU backend; the web runtime is content.
+#include "render/features/WaterFeature.hpp"
 #include "render/features/DebugLinesFeature.hpp"
 #include "render/features/OutlineFeature.hpp"
-#include "render/features/ParticleFeature.hpp"
+#endif
 
 #include <algorithm>
 
@@ -36,11 +40,15 @@ void registerBuiltinRenderFeatures() {
     done = true;
 
     auto& r = RenderFeatureRegistry::instance();
+#ifndef SAIDA_RHI_WEBGPU
     r.add(100, [] { return std::make_unique<WaterFeature>(); });      // before sky: writes depth
     r.add(150, [] { return std::make_unique<OutlineFeature>(); });    // after opaques/water, before sky
+#endif
     r.add(200, [] { return std::make_unique<SkyboxFeature>(); });     // fills the far plane
     r.add(250, [] { return std::make_unique<ParticleFeature>(); });   // transparent HDR FX
+#ifndef SAIDA_RHI_WEBGPU
     r.add(300, [] { return std::make_unique<DebugLinesFeature>(); }); // overlay, no depth
+#endif
 }
 
 } // namespace saida

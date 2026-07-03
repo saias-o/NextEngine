@@ -25,7 +25,7 @@ private:
     struct MonoPush { glm::mat4 invViewProj; float exposure; float rotation; };
     struct StereoPush { glm::mat4 invViewProj[2]; float exposure; float rotation; };
 
-    VulkanDevice* device_ = nullptr;
+    rhi::Device* device_ = nullptr;
     ResourceManager* resources_ = nullptr;
     bool stereo_ = false;
 

@@ -19,7 +19,8 @@ class ParticleFeature : public ScenePassFeature {
 public:
     ~ParticleFeature() override;
     void createPipelines(const RenderContext& ctx) override;
-    void record(FrameContext& fc) override;
+    void recordPrePass(const PrePassContext& pc) override;  // CPU sim + GPU compute
+    void record(FrameContext& fc) override;                 // indirect draw only
 
 private:
     struct EmitterState {
@@ -44,6 +45,14 @@ private:
     static constexpr uint32_t kFramesInFlightFallback = 2;
     static constexpr uint32_t kVertsPerParticle = 6;
 
+    // Result of a blend batch's pre-pass compute, consumed by record()'s draw.
+    struct BatchDraw {
+        Pipeline* pipeline = nullptr;
+        ParticleRuntime* runtime = nullptr;
+        uint32_t parity = 0;
+        bool draw = false;
+    };
+
     rhi::Device* device_ = nullptr;
     ParticleQualityBudget budget_;
     uint64_t recordSerial_ = 0;
@@ -52,6 +61,8 @@ private:
     std::unique_ptr<ParticleRuntime> alphaRuntime_;
     std::unique_ptr<ParticleRuntime> additiveRuntime_;
     std::unordered_map<ParticleSystemNode*, EmitterState> states_;
+    BatchDraw alphaBatch_;
+    BatchDraw additiveBatch_;
 };
 
 } // namespace saida

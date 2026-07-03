@@ -1238,21 +1238,16 @@ void Renderer::recordTonemapPass(rhi::CommandEncoder& encoder, uint32_t imageInd
 
 void Renderer::buildFeatures(uint32_t viewMask, rhi::Format depthFormat,
                             rhi::SampleCount samples) {
-#ifdef SAIDA_RHI_WEBGPU
-    (void)viewMask;
-    (void)depthFormat;
-    (void)samples;
-    features_.clear();
-#else
     // The Renderer knows ONLY the ScenePassFeature interface. Concrete effects
-    // (water, skybox, debug lines, …) plug in through the registry, so this never
+    // (water, skybox, particles, …) plug in through the registry, so this never
     // names or includes a concrete effect — adding one touches no Renderer code.
+    // On web the registry only carries the ported subset (skybox + GPU
+    // particles); WaterFeature/Outline/DebugLines stay desktop-only.
     features_ = RenderFeatureRegistry::instance().build();
     RenderContext ctx{device_, resources_, *globalSetLayout_,
                       rhi::Format::RGBA16Float, depthFormat, samples,
                       viewMask, static_cast<uint32_t>(kMaxFramesInFlight)};
     for (auto& f : features_) f->createPipelines(ctx);
-#endif
 }
 
 void Renderer::recordFeatures(FrameContext& fc) {
@@ -1439,6 +1434,16 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
     glm::vec4 clearColor = settings.clearColor;
     rhi::Rect2D renderRect = activeRenderRect();
     rhi::Extent2D extent = renderRect.extent;
+
+    // Feature pre-pass: compute that must run OUTSIDE the scene render pass (GPU
+    // particle sim). Recorded here between the shadow passes and the HDR pass;
+    // the resulting particles are drawn inside the pass by the same feature.
+    {
+        SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Scene/FeaturesPrePass");
+        PrePassContext ppc{encoder, currentFrame_, scene, Time::elapsed(), false,
+                           &camera, nullptr, extent};
+        for (auto& f : features_) f->recordPrePass(ppc);
+    }
 
 #ifdef SAIDA_RHI_WEBGPU
     const bool msaa = false;
@@ -1845,6 +1850,13 @@ void Renderer::recordXrScenePass(rhi::CommandEncoder& encoder, Scene& scene,
     const bool passthrough = XRPassthrough::enabled();
     glm::vec4 clearColor = settings.clearColor;
     if (passthrough) clearColor.a = 0.0f;
+
+    // Feature pre-pass compute (GPU particle sim) — outside any render pass.
+    {
+        PrePassContext ppc{encoder, currentFrame_, scene, Time::elapsed(), true,
+                           nullptr, &eyes, xrExtent_};
+        for (auto& f : features_) f->recordPrePass(ppc);
+    }
 
     // Both eye layers come back from sampling with stale contents (cleared below).
     encoder.transition(xrHdrTexture_->image(), rhi::ResourceState::ColorAttachment,

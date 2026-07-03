@@ -32,8 +32,14 @@ fi
 emcmake cmake -S web/runtime -B build-web -G Ninja -DCMAKE_BUILD_TYPE="$CONFIG"
 cmake --build build-web
 
+# Drop any pre-compressed artefacts from an earlier build: serve.py serves .br
+# when present, so a stale .br would silently shadow the fresh wasm/js/data.
+# Re-run web/compress_brotli.sh after this when packaging for deploy.
+rm -f build-web/*.br
+
 echo
 echo "sizes:"
 ls -la build-web/index.* | awk '{printf "  %-18s %10d bytes\n", $NF, $5}'
 echo
 echo "run: python web/serve.py build-web   ->   http://localhost:8080/index.html"
+echo "deploy: web/compress_brotli.sh build-web   (regenerates .br)"

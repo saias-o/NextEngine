@@ -5,7 +5,10 @@
 #include "rhi/webgpu/Device.hpp"
 #include "rhi/webgpu/Pipeline.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 namespace saida::rhi::webgpu {
@@ -19,6 +22,43 @@ WGPULoadOp toWgpu(rhi::LoadOp op) {
         case rhi::LoadOp::DontCare: return WGPULoadOp_Clear;  // no dont-care on web
     }
     return WGPULoadOp_Clear;
+}
+
+// IEEE-754 float32 → float16 (round-toward-zero mantissa; sufficient for the GI
+// atlas init constants that are the only non-zero clears on web).
+uint16_t floatToHalf(float f) {
+    uint32_t x;
+    std::memcpy(&x, &f, 4);
+    const uint32_t sign = (x >> 16) & 0x8000u;
+    int32_t exp = int32_t((x >> 23) & 0xFFu) - 127 + 15;
+    const uint32_t mant = x & 0x7FFFFFu;
+    if (exp <= 0) return uint16_t(sign);                  // subnormal/underflow → ±0
+    if (exp >= 31) return uint16_t(sign | 0x7C00u);       // overflow → ±inf
+    return uint16_t(sign | (uint32_t(exp) << 10) | (mant >> 13));
+}
+
+// Encode `c` into one texel of `fmt`; returns bytes written (bpp), 0 if unsupported.
+uint32_t encodeTexel(WGPUTextureFormat fmt, const std::array<float, 4>& c, uint8_t* out) {
+    auto u8 = [](float v) { return uint8_t(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
+    switch (fmt) {
+        case WGPUTextureFormat_RGBA8Unorm:
+        case WGPUTextureFormat_RGBA8UnormSrgb:
+            out[0] = u8(c[0]); out[1] = u8(c[1]); out[2] = u8(c[2]); out[3] = u8(c[3]); return 4;
+        case WGPUTextureFormat_BGRA8Unorm:
+        case WGPUTextureFormat_BGRA8UnormSrgb:
+            out[0] = u8(c[2]); out[1] = u8(c[1]); out[2] = u8(c[0]); out[3] = u8(c[3]); return 4;
+        case WGPUTextureFormat_RG16Float: {
+            uint16_t h[2] = {floatToHalf(c[0]), floatToHalf(c[1])};
+            std::memcpy(out, h, 4); return 4;
+        }
+        case WGPUTextureFormat_RGBA16Float: {
+            uint16_t h[4] = {floatToHalf(c[0]), floatToHalf(c[1]), floatToHalf(c[2]), floatToHalf(c[3])};
+            std::memcpy(out, h, 8); return 8;
+        }
+        case WGPUTextureFormat_RGBA32Float:
+            std::memcpy(out, c.data(), 16); return 16;
+        default: return 0;
+    }
 }
 
 } // namespace
@@ -212,17 +252,40 @@ void CommandEncoder::copyBufferToTexture(const Buffer& src, WGPUTexture dst,
 }
 
 void CommandEncoder::clearColorTexture(WGPUTexture texture, const std::array<float, 4>& color) {
-    // WebGPU has no clear-texture command outside a pass. Zero clears are done
-    // by copying from the Device's cached all-zero buffer (the GI voxel grid
-    // needs one per frame). Non-zero clears would need a render pass; the only
-    // caller is the GI atlas init constant, which tolerates staying zero.
-    if (color[0] != 0.0f || color[1] != 0.0f || color[2] != 0.0f) {
-        std::printf("rhi::webgpu: clearColorTexture ignores non-zero clears (16.5)\n");
+    // WebGPU has no clear-texture command outside a render pass. Two paths:
+    //  - zero: copy from the Device's cached all-zero buffer, in-encoder (the GI
+    //    voxel grid is re-cleared every frame, so this stays on the fast path);
+    //  - non-zero: queue.writeTexture with the constant encoded per texel (only
+    //    the GI atlas init constants, uploaded once at startup — ordered before
+    //    the first submit, so the no-op state transitions around it are fine).
+    const WGPUTextureFormat fmt = wgpuTextureGetFormat(texture);
+    const uint32_t w = wgpuTextureGetWidth(texture);
+    const uint32_t h = wgpuTextureGetHeight(texture);
+    const uint32_t d = wgpuTextureGetDepthOrArrayLayers(texture);
+    const bool isZero = color[0] == 0.0f && color[1] == 0.0f &&
+                        color[2] == 0.0f && color[3] == 0.0f;
+
+    if (!isZero) {
+        uint8_t texel[16];
+        const uint32_t bpp = encodeTexel(fmt, color, texel);
+        if (bpp == 0) {
+            std::printf("rhi::webgpu: clearColorTexture: unsupported non-zero format %d\n", int(fmt));
+            return;
+        }
+        std::vector<uint8_t> data(size_t(w) * h * d * bpp);
+        for (size_t i = 0; i < data.size(); i += bpp) std::memcpy(&data[i], texel, bpp);
+        WGPUTexelCopyTextureInfo dst = {};
+        dst.texture = texture;
+        WGPUTexelCopyBufferLayout layout = {};
+        layout.bytesPerRow = w * bpp;      // writeTexture rows need no 256 alignment
+        layout.rowsPerImage = h;
+        WGPUExtent3D ext = {w, h, d};
+        wgpuQueueWriteTexture(device_.queue(), &dst, data.data(), data.size(), &layout, &ext);
         return;
     }
 
     uint32_t bpp = 0;
-    switch (wgpuTextureGetFormat(texture)) {
+    switch (fmt) {
         case WGPUTextureFormat_R32Float:
         case WGPUTextureFormat_RG16Float:
         case WGPUTextureFormat_RGBA8Unorm:
@@ -233,14 +296,10 @@ void CommandEncoder::clearColorTexture(WGPUTexture texture, const std::array<flo
         case WGPUTextureFormat_RGBA16Float:   bpp = 8; break;
         case WGPUTextureFormat_RGBA32Float:   bpp = 16; break;
         default:
-            std::printf("rhi::webgpu: clearColorTexture: unsupported format %d\n",
-                        int(wgpuTextureGetFormat(texture)));
+            std::printf("rhi::webgpu: clearColorTexture: unsupported format %d\n", int(fmt));
             return;
     }
 
-    const uint32_t w = wgpuTextureGetWidth(texture);
-    const uint32_t h = wgpuTextureGetHeight(texture);
-    const uint32_t d = wgpuTextureGetDepthOrArrayLayers(texture);
     const uint32_t bytesPerRow = (w * bpp + 255u) & ~255u;  // copy alignment
 
     WGPUTexelCopyBufferInfo src = {};

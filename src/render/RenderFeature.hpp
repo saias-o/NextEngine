@@ -85,6 +85,21 @@ struct FrameContext {
     uint32_t drawCount = 0;
 };
 
+// Context for the pre-pass hook, recorded BEFORE the scene render pass opens.
+// A feature that needs compute (e.g. GPU particle simulation) must dispatch it
+// here: both WebGPU and Vulkan dynamic rendering forbid compute passes inside a
+// render pass. No `pass` here — only the frame-level `encoder` is available.
+struct PrePassContext {
+    rhi::CommandEncoder& encoder;
+    uint32_t frameIndex;
+    Scene& scene;
+    float time;
+    bool stereo;
+    const Camera* camera = nullptr;
+    const std::vector<EyeRenderInfo>* eyes = nullptr;
+    rhi::Extent2D extent{};
+};
+
 // A self-contained extra draw in the HDR scene pass. Register one with the Renderer
 // and it gets `createPipelines` once and `record` every frame — so adding an effect
 // (water, skybox, decals, particles, …) is a new file + one registration line and
@@ -93,6 +108,9 @@ class ScenePassFeature {
 public:
     virtual ~ScenePassFeature() = default;
     virtual void createPipelines(const RenderContext& ctx) = 0;
+    // Optional compute recorded before the scene pass opens (see PrePassContext).
+    // Default: nothing — most features only draw inside the pass.
+    virtual void recordPrePass(const PrePassContext& pc) { (void)pc; }
     virtual void record(FrameContext& fc) = 0;
 };
 

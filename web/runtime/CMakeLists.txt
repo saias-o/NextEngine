@@ -36,11 +36,15 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/graphics/ShadowMap.cpp
     ${SAIDA_ROOT}/src/graphics/StbImageUsage.cpp
     ${SAIDA_ROOT}/src/graphics/TinyObjUsage.cpp
+    ${SAIDA_ROOT}/src/fx/ParticleEffect.cpp
+    ${SAIDA_ROOT}/src/fx/ParticlePresetLibrary.cpp
     ${SAIDA_ROOT}/src/fx/ParticleQuality.cpp
     ${SAIDA_ROOT}/src/fx/ParticleRuntime.cpp
     ${SAIDA_ROOT}/src/project/AssetRegistry.cpp
     ${SAIDA_ROOT}/src/render/GIVolume.cpp
+    ${SAIDA_ROOT}/src/render/RenderFeatureRegistry.cpp
     ${SAIDA_ROOT}/src/render/features/ParticleFeature.cpp
+    ${SAIDA_ROOT}/src/render/features/SkyboxFeature.cpp
     ${SAIDA_ROOT}/src/render/PostProcessor.cpp
     ${SAIDA_ROOT}/src/render/Renderer.cpp
     ${SAIDA_ROOT}/src/scene/Behaviour.cpp

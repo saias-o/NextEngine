@@ -2,10 +2,12 @@
 
 #include "core/Paths.hpp"
 #include "core/Camera.hpp"
+#ifndef SAIDA_RHI_WEBGPU
 #include "graphics/VulkanDevice.hpp"
+#include "rhi/vulkan/Format.hpp"
+#endif
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Texture.hpp"
-#include "rhi/vulkan/Format.hpp"
 #include "scene/Scene.hpp"
 
 #include <algorithm>
@@ -21,10 +23,24 @@ void SkyboxFeature::createPipelines(const RenderContext& ctx) {
     resources_ = &ctx.resources;
     stereo_ = ctx.stereo();
 
+#ifdef SAIDA_RHI_WEBGPU
+    // Web has no combined image sampler: separate texture (0) + sampler (1),
+    // mirroring web_compat.glsl's DECL_TEX2D(0, 0, 1, skyboxTex).
+    setLayout_ = std::make_unique<rhi::BindGroupLayout>(*device_,
+        std::vector<rhi::webgpu::BindGroupLayoutEntry>{
+            [] { rhi::webgpu::BindGroupLayoutEntry e{}; e.binding = 0;
+                 e.type = rhi::BindingType::SampledTexture;
+                 e.visibility = rhi::ShaderStages::Fragment; return e; }(),
+            [] { rhi::webgpu::BindGroupLayoutEntry e{}; e.binding = 1;
+                 e.type = rhi::BindingType::Sampler;
+                 e.visibility = rhi::ShaderStages::Fragment; return e; }(),
+        });
+#else
     setLayout_ = std::make_unique<rhi::BindGroupLayout>(*device_,
         std::vector<rhi::BindGroupLayoutEntry>{
             {0, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},
         });
+#endif
 
     // Depth test on (LEQUAL — sky is at z=1), no depth write, two-sided.
     const char* frag = stereo_ ? "multiview.skybox.frag.spv" : "skybox.frag.spv";
@@ -54,11 +70,22 @@ void SkyboxFeature::record(FrameContext& fc) {
     if (!tex) return;
 
     if (settings.skyboxTexture != currentTexture_ || !set_) {
+#ifdef SAIDA_RHI_WEBGPU
+        rhi::BindGroupEntry texEntry;
+        texEntry.binding = 0;
+        texEntry.view = tex->imageView();
+        rhi::BindGroupEntry samplerEntry;
+        samplerEntry.binding = 1;
+        samplerEntry.sampler = tex->sampler();
+        set_ = std::make_unique<rhi::BindGroup>(*setLayout_,
+            std::vector<rhi::BindGroupEntry>{texEntry, samplerEntry});
+#else
         rhi::BindGroupEntry entry;
         entry.binding = 0;
         entry.view = tex->imageView();
         entry.sampler = tex->sampler();
         set_ = std::make_unique<rhi::BindGroup>(*setLayout_, std::vector<rhi::BindGroupEntry>{entry});
+#endif
         currentTexture_ = settings.skyboxTexture;
     }
 

@@ -104,11 +104,18 @@ uint32_t ParticleRuntime::recordCompute(rhi::CommandEncoder& encoder, uint32_t f
 
 void ParticleRuntime::createRenderResources() {
 #ifdef SAIDA_RHI_WEBGPU
+    // WebGPU forbids read-write storage in the vertex stage; the render shader
+    // only reads these (particle + alive buffers), so mark them read-only.
+    auto readOnlyVert = [](uint32_t binding) {
+        rhi::webgpu::BindGroupLayoutEntry e{};
+        e.binding = binding;
+        e.type = rhi::BindingType::StorageBuffer;
+        e.visibility = rhi::ShaderStages::Vertex;
+        e.readOnlyStorage = true;
+        return e;
+    };
     renderSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
-        std::vector<rhi::webgpu::BindGroupLayoutEntry>{
-            {0, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Vertex},
-            {1, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Vertex},
-        });
+        std::vector<rhi::webgpu::BindGroupLayoutEntry>{readOnlyVert(0), readOnlyVert(1)});
 #else
     renderSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
         std::vector<rhi::BindGroupLayoutEntry>{
@@ -121,12 +128,22 @@ void ParticleRuntime::createRenderResources() {
 
 void ParticleRuntime::createComputeResources() {
 #ifdef SAIDA_RHI_WEBGPU
+    // Bindings 1 (ReadAlive) and 5 (Emitter) are `readonly` in every compute
+    // shader; WebGPU requires the layout access to match the WGSL exactly.
     std::vector<rhi::webgpu::BindGroupLayoutEntry> computeEntries;
+    for (uint32_t i = 0; i < 7; ++i) {
+        rhi::webgpu::BindGroupLayoutEntry e{};
+        e.binding = i;
+        e.type = rhi::BindingType::StorageBuffer;
+        e.visibility = rhi::ShaderStages::Compute;
+        e.readOnlyStorage = (i == 1 || i == 5);
+        computeEntries.push_back(e);
+    }
 #else
     std::vector<rhi::BindGroupLayoutEntry> computeEntries;
-#endif
     for (uint32_t i = 0; i < 7; ++i)
         computeEntries.push_back({i, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute});
+#endif
     computeSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_, computeEntries);
 
     emitterBuffers_.resize(desc_.framesInFlight);

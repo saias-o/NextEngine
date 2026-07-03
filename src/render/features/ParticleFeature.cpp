@@ -28,12 +28,6 @@ uint32_t hashPtr(const void* p) {
     return static_cast<uint32_t>(v) | 1u;
 }
 
-glm::vec3 cameraPositionFor(const FrameContext& fc) {
-    if (!fc.stereo && fc.camera) return fc.camera->position;
-    if (fc.eyes && !fc.eyes->empty()) return (*fc.eyes)[0].eyePosition;
-    return glm::vec3(0.0f);
-}
-
 bool sphereInFrustum(const Frustum& frustum, const glm::vec3& center, float radius) {
     for (const glm::vec4& plane : frustum.planes) {
         if (glm::dot(glm::vec3(plane), center) + plane.w < -radius) return false;
@@ -153,8 +147,20 @@ void ParticleFeature::createPipelines(const RenderContext& ctx) {
     additivePipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
 }
 
-void ParticleFeature::record(FrameContext& fc) {
-    const auto& emitters = fc.scene.particleSystems();
+namespace {
+glm::vec3 cameraPositionFrom(bool stereo, const Camera* camera,
+                             const std::vector<EyeRenderInfo>* eyes) {
+    if (!stereo && camera) return camera->position;
+    if (eyes && !eyes->empty()) return (*eyes)[0].eyePosition;
+    return glm::vec3(0.0f);
+}
+} // namespace
+
+void ParticleFeature::recordPrePass(const PrePassContext& pc) {
+    alphaBatch_ = BatchDraw{};
+    additiveBatch_ = BatchDraw{};
+
+    const auto& emitters = pc.scene.particleSystems();
     if (emitters.empty() || !alphaRuntime_ || !additiveRuntime_ || !alphaPipeline_ || !additivePipeline_) {
         if (alphaRuntime_) alphaRuntime_->reset();
         if (additiveRuntime_) additiveRuntime_->reset();
@@ -162,16 +168,16 @@ void ParticleFeature::record(FrameContext& fc) {
     }
 
     ++recordSerial_;
-    const glm::vec3 cameraPosition = cameraPositionFor(fc);
+    const glm::vec3 cameraPosition = cameraPositionFrom(pc.stereo, pc.camera, pc.eyes);
     std::array<Frustum, 2> frustums{};
     uint32_t frustumCount = 0;
-    if (!fc.stereo && fc.camera) {
-        frustums[0] = fc.camera->getFrustum();
+    if (!pc.stereo && pc.camera) {
+        frustums[0] = pc.camera->getFrustum();
         frustumCount = 1;
-    } else if (fc.eyes) {
-        frustumCount = std::min<uint32_t>(2u, static_cast<uint32_t>(fc.eyes->size()));
+    } else if (pc.eyes) {
+        frustumCount = std::min<uint32_t>(2u, static_cast<uint32_t>(pc.eyes->size()));
         for (uint32_t i = 0; i < frustumCount; ++i) {
-            const EyeRenderInfo& eye = (*fc.eyes)[i];
+            const EyeRenderInfo& eye = (*pc.eyes)[i];
             frustums[i] = frustumFromViewProjection(eye.view, eye.projection);
         }
     }
@@ -193,9 +199,9 @@ void ParticleFeature::record(FrameContext& fc) {
 
         float dt = 0.0f;
         if (state.lastTime >= 0.0f) {
-            dt = glm::clamp(fc.time - state.lastTime, 0.0f, 0.1f);
+            dt = glm::clamp(pc.time - state.lastTime, 0.0f, 0.1f);
         }
-        state.lastTime = fc.time;
+        state.lastTime = pc.time;
         if (emitter->playing) {
             state.emittedFinished = false;
         }
@@ -261,8 +267,12 @@ void ParticleFeature::record(FrameContext& fc) {
         else ++it;
     }
 
-    const uint32_t frame = std::min<uint32_t>(fc.frameIndex, alphaRuntime_->framesInFlight() - 1);
-    auto runBatch = [&](ParticleSystemNode::BlendMode mode, ParticleRuntime& runtime, Pipeline& pipeline) {
+    const uint32_t frame = std::min<uint32_t>(pc.frameIndex, alphaRuntime_->framesInFlight() - 1);
+    // Records the sim compute for one blend mode and stashes the draw for the
+    // in-pass record() below. Compute MUST be dispatched here (pre-pass), never
+    // inside the scene render pass.
+    auto runBatch = [&](ParticleSystemNode::BlendMode mode, ParticleRuntime& runtime,
+                        Pipeline& pipeline, BatchDraw& batch) {
         ParticleRuntime::GpuEmitter* gpuEmitters = runtime.mappedEmitters(frame);
         if (!gpuEmitters) return;
 
@@ -293,18 +303,31 @@ void ParticleFeature::record(FrameContext& fc) {
         }
 
         runtime.flushEmitters(frame, emitterCount);
-        const uint32_t parity = runtime.recordCompute(fc.encoder, frame, emitterCount, emitCount, maxDt, fc.time);
-
-        fc.pass.setPipeline(pipeline);
-        fc.pass.setBindGroup(0, *fc.globalSet);
-        fc.pass.setBindGroup(1, runtime.renderSet(parity));
-        Push push{};
-        fc.pass.setPushConstants(&push, sizeof(Push));
-        fc.pass.drawIndirect(runtime.indirectBuffer(), 0, 1, ParticleRuntime::kDrawIndirectCommandSize);
+        batch.parity = runtime.recordCompute(pc.encoder, frame, emitterCount, emitCount, maxDt, pc.time);
+        batch.pipeline = &pipeline;
+        batch.runtime = &runtime;
+        batch.draw = true;
     };
 
-    runBatch(ParticleSystemNode::BlendMode::Alpha, *alphaRuntime_, *alphaPipeline_);
-    runBatch(ParticleSystemNode::BlendMode::Additive, *additiveRuntime_, *additivePipeline_);
+    runBatch(ParticleSystemNode::BlendMode::Alpha, *alphaRuntime_, *alphaPipeline_, alphaBatch_);
+    runBatch(ParticleSystemNode::BlendMode::Additive, *additiveRuntime_, *additivePipeline_, additiveBatch_);
+}
+
+void ParticleFeature::record(FrameContext& fc) {
+    // Draw only: the sim compute already ran in recordPrePass (WebGPU/Vulkan
+    // forbid compute inside a render pass). Parity/pipeline come from the batch.
+    auto drawBatch = [&](const BatchDraw& batch) {
+        if (!batch.draw || !batch.pipeline || !batch.runtime) return;
+        fc.pass.setPipeline(*batch.pipeline);
+        fc.pass.setBindGroup(0, *fc.globalSet);
+        fc.pass.setBindGroup(1, batch.runtime->renderSet(batch.parity));
+        Push push{};
+        fc.pass.setPushConstants(&push, sizeof(Push));
+        fc.pass.drawIndirect(batch.runtime->indirectBuffer(), 0, 1,
+                             ParticleRuntime::kDrawIndirectCommandSize);
+    };
+    drawBatch(alphaBatch_);
+    drawBatch(additiveBatch_);
 }
 
 } // namespace saida
