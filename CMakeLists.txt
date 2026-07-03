@@ -721,6 +721,22 @@ if (BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scenario-invalid-action.json
     )
     set_tests_properties(saida_tool_validate_scenario_invalid PROPERTIES WILL_FAIL TRUE)
+
+    # Phase B3 : apply-ops charge un snapshot sans GPU, applique des ops, emet un
+    # snapshot deterministe (exit 0). Un op invalide rejette le batch (exit 1).
+    add_test(
+        NAME saida_tool_apply_ops_valid
+        COMMAND $<TARGET_FILE:saida_tool> apply-ops
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot.json
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ops-apply-valid.json
+    )
+    add_test(
+        NAME saida_tool_apply_ops_invalid
+        COMMAND $<TARGET_FILE:saida_tool> apply-ops
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot.json
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ops-apply-invalid.json
+    )
+    set_tests_properties(saida_tool_apply_ops_invalid PROPERTIES WILL_FAIL TRUE)
 endif()
 
 if (WIN32)

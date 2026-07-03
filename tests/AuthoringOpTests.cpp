@@ -451,6 +451,63 @@ void testSnapshotReflectsAppliedOps() {
     require(child["transform"]["position"].is_array());
 }
 
+// Phase B3 : le snapshot headless se re-desserialise sans GPU et round-trip
+// (serialize -> deserialize -> serialize) est stable au bit pres. C'est le socle
+// de l'outil apply-ops et de la representation d'edition/collaboration.
+void testHeadlessSnapshotRoundTrip() {
+    saida::Scene scene;
+    scene.setName("Root");
+    scene.assignSerializedId(1);
+
+    auto light = std::make_unique<saida::LightNode>("Sun", saida::LightType::Directional);
+    light->assignSerializedId(2);
+    light->intensity = 2.25f;
+    light->transform().position = {1.0f, 2.0f, 3.0f};
+    light->addToGroup("lights");
+    scene.addChild(std::move(light));
+
+    auto* group = scene.createChild<saida::Node>("Group");
+    group->assignSerializedId(3);
+    group->createChild<saida::ParticleSystemNode>()->assignSerializedId(4);
+
+    const std::string s1 = saida::authoring::serializeSceneSnapshot(scene, nullptr);
+
+    saida::Scene reloaded;
+    std::string error;
+    require(saida::authoring::deserializeSceneSnapshot(s1, reloaded, &error));
+    require(error.empty());
+
+    // Structure + ids + reflected props restaures.
+    require(reloaded.name() == "Root");
+    require(reloaded.id() == 1);
+    require(reloaded.children().size() == 2);
+    saida::Node* sun = findChildByName(reloaded, "Sun");
+    require(sun != nullptr);
+    require(sun->id() == 2);
+    require(sun->isInGroup("lights"));
+    require(close(sun->transform().position.y, 2.0f));
+    auto* sunLight = dynamic_cast<saida::LightNode*>(sun);
+    require(sunLight != nullptr);
+    require(close(sunLight->intensity, 2.25f));
+    require(sunLight->type == saida::LightType::Directional);
+
+    // Round-trip stable au bit pres.
+    const std::string s2 = saida::authoring::serializeSceneSnapshot(reloaded, nullptr);
+    require(s1 == s2);
+
+    // Une op s'applique sur la scene rechargee (chaine load -> apply -> save).
+    json res = applyOp(reloaded, setProperty("Sun", "intensity", 7.0f));
+    require(res["ok"].get<bool>());
+    require(close(sunLight->intensity, 7.0f));
+
+    // Document malforme : echec propre, scene laissee vide.
+    saida::Scene bad;
+    require(!saida::authoring::deserializeSceneSnapshot(std::string("{\"nope\":1}"), bad, &error));
+    require(!error.empty());
+    require(bad.children().empty());
+    require(!saida::authoring::deserializeSceneSnapshot(std::string("not json"), bad, &error));
+}
+
 } // namespace
 
 int main() {
@@ -467,5 +524,6 @@ int main() {
     testManifestContainsReflectedProperties();
     testManifestContainsBehavioursSignalsAndScenario();
     testSnapshotReflectsAppliedOps();
+    testHeadlessSnapshotRoundTrip();
     return 0;
 }

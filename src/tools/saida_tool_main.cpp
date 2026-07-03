@@ -5,22 +5,30 @@
 //
 // Sous-commandes :
 //   describe-engine [--pretty]   Ecrit l'EngineManifest JSON sur stdout (B4).
+//   validate-ops <file>          Valide statiquement des SaidaOps (B2).
 //   validate-scenario <file>     Valide un asset scenario sans GPU (B2).
+//   apply-ops <scene> <ops>      Applique des ops -> snapshot deterministe (B3).
 //   help | --help | -h           Affiche l'aide.
 //
 // Convention : les diagnostics vont sur stderr, la sortie machine sur stdout.
 
 #include "authoring/EngineManifest.hpp"
 #include "authoring/SaidaOp.hpp"
+#include "authoring/SaidaOpApplier.hpp"
+#include "authoring/SceneSnapshot.hpp"
+#include "scene/Scene.hpp"
 #include "scenario/ScenarioAsset.hpp"
 
 #include <nlohmann/json.hpp>
+#include <glm/glm.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -38,6 +46,7 @@ int usage(std::ostream& out) {
            "  saida_tool describe-engine [--pretty]\n"
            "  saida_tool validate-ops <ops.json> [--pretty]\n"
            "  saida_tool validate-scenario <scenario.json> [--pretty]\n"
+           "  saida_tool apply-ops <scene.json> <ops.json> [--out <file>]\n"
            "  saida_tool help\n"
            "\n"
            "Commands:\n"
@@ -50,8 +59,13 @@ int usage(std::ostream& out) {
            "  validate-scenario Statically validate a Saida scenario asset\n"
            "                    (format + registered actions/conditions). Prints a\n"
            "                    JSON report; exit 0 if valid, 1 if invalid.\n"
+           "  apply-ops         Load a resource-free scene snapshot (or .saidaproj),\n"
+           "                    apply a JSON array of SaidaOps in order, then emit a\n"
+           "                    deterministic snapshot to --out (or stdout). All ops\n"
+           "                    must apply cleanly (atomic); exit 1 if any is rejected\n"
+           "                    and nothing is written.\n"
            "\n"
-           "Exit codes: 0 ok, 1 invalid input, 2 usage/IO error.\n";
+           "Files may be '-' for stdin. Exit codes: 0 ok, 1 invalid input, 2 usage/IO.\n";
     return kExitUsage;
 }
 
@@ -195,6 +209,117 @@ int cmdValidateScenario(const std::vector<std::string>& args) {
     return ok ? kExitOk : kExitInvalid;
 }
 
+int cmdApplyOps(const std::vector<std::string>& args) {
+    std::string scenePath, opsPath, outPath;
+    bool pretty = false;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        const std::string& a = args[i];
+        if (a == "--pretty") {
+            pretty = true;
+        } else if (a == "--out") {
+            if (i + 1 >= args.size()) {
+                std::cerr << "apply-ops: --out needs a path\n";
+                return kExitUsage;
+            }
+            outPath = args[++i];
+        } else if (!a.empty() && a[0] == '-' && a != "-") {
+            std::cerr << "apply-ops: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (scenePath.empty()) {
+            scenePath = a;
+        } else if (opsPath.empty()) {
+            opsPath = a;
+        } else {
+            std::cerr << "apply-ops: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (scenePath.empty() || opsPath.empty()) {
+        std::cerr << "apply-ops: needs <scene.json> <ops.json> (use '-' for stdin, "
+                     "at most one)\n";
+        return kExitUsage;
+    }
+    if (scenePath == "-" && opsPath == "-") {
+        std::cerr << "apply-ops: only one input may read from stdin\n";
+        return kExitUsage;
+    }
+
+    std::string sceneText, opsText, ioError;
+    if (!readInput(scenePath, sceneText, ioError)) {
+        std::cerr << "apply-ops: " << ioError << "\n";
+        return kExitUsage;
+    }
+    if (!readInput(opsPath, opsText, ioError)) {
+        std::cerr << "apply-ops: " << ioError << "\n";
+        return kExitUsage;
+    }
+
+    const json opsParsed = json::parse(opsText, nullptr, /*allow_exceptions=*/false);
+    if (opsParsed.is_discarded()) {
+        std::cerr << "apply-ops: ops input is not valid JSON\n";
+        return kExitUsage;
+    }
+    const json ops = opsParsed.is_array() ? opsParsed : json::array({opsParsed});
+
+    saida::Scene scene;
+    std::string sceneError;
+    if (!saida::authoring::deserializeSceneSnapshot(sceneText, scene, &sceneError)) {
+        std::cerr << "apply-ops: cannot load scene: " << sceneError << "\n";
+        return kExitUsage;
+    }
+
+    // Snapshot the loaded ids up front: create_node mints fresh ids via
+    // generateNodeId(), which is seeded per-process — non-reproducible. We keep
+    // loaded ids and renumber only the new nodes below.
+    std::unordered_set<saida::NodeId> loadedIds;
+    saida::NodeId maxLoadedId = 0;
+    scene.traverse([&](saida::Node& n, const glm::mat4&) {
+        loadedIds.insert(n.id());
+        maxLoadedId = std::max(maxLoadedId, n.id());
+    });
+
+    // Apply in order; the first rejected op aborts the whole batch (atomic — an
+    // op-log must never leave a half-applied snapshot). No GPU resources, so ops
+    // needing one (e.g. create_node MeshNode) are reported as failures.
+    for (std::size_t i = 0; i < ops.size(); ++i) {
+        const json res = json::parse(
+            saida::authoring::applyOpJson(scene, nullptr, ops[i].dump()));
+        if (!res.value("ok", false)) {
+            json report{{"ok", false}, {"failedIndex", i},
+                        {"error", res.value("error", std::string("unknown error"))},
+                        {"applied", i}};
+            std::cerr << report.dump() << "\n";
+            return kExitInvalid;
+        }
+    }
+
+    // Deterministic ids: renumber every node created by the ops (id absent from
+    // the loaded set) to a sequential id above the loaded max, in depth-first
+    // order. Loaded ids are preserved; the snapshot is byte-reproducible.
+    saida::NodeId nextId = maxLoadedId + 1;
+    scene.traverse([&](saida::Node& n, const glm::mat4&) {
+        if (loadedIds.find(n.id()) == loadedIds.end())
+            n.assignSerializedId(nextId++);
+    });
+
+    const std::string snapshot =
+        saida::authoring::serializeSceneSnapshot(scene, nullptr);
+
+    if (outPath.empty() || outPath == "-") {
+        std::cout << snapshot << "\n";
+    } else {
+        std::ofstream out(outPath, std::ios::binary);
+        if (!out) {
+            std::cerr << "apply-ops: cannot write '" << outPath << "'\n";
+            return kExitUsage;
+        }
+        out << snapshot << "\n";
+        json report{{"ok", true}, {"applied", ops.size()}, {"out", outPath}};
+        std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
+    }
+    return kExitOk;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -216,6 +341,9 @@ int main(int argc, char** argv) {
     }
     if (command == "validate-scenario") {
         return cmdValidateScenario(rest);
+    }
+    if (command == "apply-ops") {
+        return cmdApplyOps(rest);
     }
 
     std::cerr << "saida_tool: unknown command '" << command << "'\n\n";
