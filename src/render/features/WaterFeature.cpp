@@ -2,8 +2,10 @@
 
 #include "core/Paths.hpp"
 #include "graphics/Buffer.hpp"
+#ifndef SAIDA_RHI_WEBGPU
 #include "graphics/VulkanDevice.hpp"
 #include "rhi/vulkan/Format.hpp"
+#endif
 #include "scene/Scene.hpp"
 #include "scene/Node.hpp"
 #include "scene/WaterNode.hpp"
@@ -26,14 +28,21 @@ void WaterFeature::createPipelines(const RenderContext& ctx) {
     // set 1: the per-node water UBO array (vertex needs it for waves + shore flatten,
     // fragment for shading), one buffer + set per frame-in-flight so a frame never
     // rewrites data the GPU is still reading.
+#ifdef SAIDA_RHI_WEBGPU
+    setLayout_ = std::make_unique<rhi::BindGroupLayout>(*device_,
+        std::vector<rhi::webgpu::BindGroupLayoutEntry>{
+            {0, rhi::BindingType::UniformBuffer, rhi::ShaderStages::Vertex | rhi::ShaderStages::Fragment},
+        });
+#else
     setLayout_ = std::make_unique<rhi::BindGroupLayout>(*device_,
         std::vector<rhi::BindGroupLayoutEntry>{
             {0, rhi::BindingType::UniformBuffer, rhi::ShaderStages::Vertex | rhi::ShaderStages::Fragment},
         });
+#endif
 
     ubos_.resize(frames);
     sets_.resize(frames);
-    const VkDeviceSize bufSize = sizeof(GpuWater) * kMaxWaters;
+    const uint64_t bufSize = sizeof(GpuWater) * kMaxWaters;
     for (uint32_t i = 0; i < frames; ++i) {
         ubos_[i] = std::make_unique<Buffer>(*device_, bufSize,
             rhi::BufferUsage::Uniform, MemoryUsage::HostVisible);

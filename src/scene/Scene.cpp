@@ -3,10 +3,10 @@
 #include "core/Profiler.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/LightNode.hpp"
+#include "scene/WaterNode.hpp"  // water renders on web too (BeachDemo)
 #ifndef SAIDA_RHI_WEBGPU
 #include "scene/UICanvasNode.hpp"
 #include "scene/WebCanvasNode.hpp"
-#include "scene/WaterNode.hpp"
 #endif
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/SerializationHelpers.hpp"
@@ -139,6 +139,9 @@ void Scene::flattenHierarchy() {
         if (n.asLight()) {
             lights_.push_back(static_cast<LightNode*>(&n));
         }
+        if (auto* water = dynamic_cast<WaterNode*>(&n)) {
+            waterNodes_.push_back(water);
+        }
 #ifndef SAIDA_RHI_WEBGPU
         if (!uiCanvas_) {
             if (auto* canvas = dynamic_cast<UICanvasNode*>(&n)) {
@@ -147,9 +150,6 @@ void Scene::flattenHierarchy() {
         }
         if (auto* webCanvas = dynamic_cast<WebCanvasNode*>(&n)) {
             webCanvases_.push_back(webCanvas);
-        }
-        if (auto* water = dynamic_cast<WaterNode*>(&n)) {
-            waterNodes_.push_back(water);
         }
 #endif
         if (auto* ps = dynamic_cast<ParticleSystemNode*>(&n)) {

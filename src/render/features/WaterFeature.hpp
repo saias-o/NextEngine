@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/RenderFeature.hpp"
+#include "graphics/Buffer.hpp"    // Buffer is a class (Vulkan) or alias (web) — not fwd-declarable
 #include "graphics/Pipeline.hpp"
 #include "rhi/Rhi.hpp"
 
@@ -10,9 +11,6 @@
 #include <vector>
 
 namespace saida {
-
-class VulkanDevice;
-class Buffer;
 
 // Render feature for WaterNode: procedural grid, set 0 globals, set 1 water data.
 class WaterFeature : public ScenePassFeature {
@@ -47,7 +45,7 @@ private:
     static constexpr uint32_t kGridRes = 128;  // must match RES in water.vert
     static constexpr uint32_t kMaxWaters = 8;  // must match WATER_MAX in water_common.glsl
 
-    VulkanDevice* device_ = nullptr;
+    rhi::Device* device_ = nullptr;
     std::unique_ptr<Pipeline> pipeline_;
 
     // set 1: a UBO array of GpuWater, double-buffered per frame-in-flight.

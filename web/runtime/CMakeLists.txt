@@ -45,6 +45,7 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/render/RenderFeatureRegistry.cpp
     ${SAIDA_ROOT}/src/render/features/ParticleFeature.cpp
     ${SAIDA_ROOT}/src/render/features/SkyboxFeature.cpp
+    ${SAIDA_ROOT}/src/render/features/WaterFeature.cpp
     ${SAIDA_ROOT}/src/render/PostProcessor.cpp
     ${SAIDA_ROOT}/src/render/Renderer.cpp
     ${SAIDA_ROOT}/src/scene/Behaviour.cpp
@@ -56,6 +57,7 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/scene/NodeId.cpp
     ${SAIDA_ROOT}/src/scene/ParticleSystemNode.cpp
     ${SAIDA_ROOT}/src/scene/Scene.cpp
+    ${SAIDA_ROOT}/src/scene/WaterNode.cpp
     ${SAIDA_ROOT}/src/rhi/webgpu/BindGroup.cpp
     ${SAIDA_ROOT}/src/rhi/webgpu/Buffer.cpp
     ${SAIDA_ROOT}/src/rhi/webgpu/CommandEncoder.cpp
@@ -87,6 +89,9 @@ target_link_options(saida_web PRIVATE
     $<$<CONFIG:Release>:-Oz>
     # WGSL shaders packaged into MEMFS at /shaders (16.1 web FS: preload).
     "SHELL:--preload-file ${SAIDA_ROOT}/build/shaders/wgsl@/shaders"
+    # BeachDemo scene + sky texture, mapped to /project (parity-test scene).
+    "SHELL:--preload-file ${SAIDA_ROOT}/BeachDemo/scenes/beach.scene@/project/beach.scene"
+    "SHELL:--preload-file ${SAIDA_ROOT}/BeachDemo/assets/skies/sunset.png@/project/sunset.png"
     "SHELL:--shell-file ${CMAKE_CURRENT_SOURCE_DIR}/shell.html"
 )
 target_compile_options(saida_web PRIVATE --use-port=emdawnwebgpu)
