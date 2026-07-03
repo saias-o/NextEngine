@@ -220,14 +220,14 @@ Dépôt : **E** = moteur (`NextEngine`) · **P** = plateforme (`GitHub/saida`).
 
 Détail : [PLAN_LIVE_EDIT_WEB.md](PLAN_LIVE_EDIT_WEB.md).
 
-### Phase B — Headless & snapshots (E) ⬜
+### Phase B — Headless & snapshots (E) 🔵 (B1 amorcé, B4 ✅)
 
 | # | Tâche | Dépend | Critère de fait |
 |---|---|---|---|
-| B1 | Outil `saida_tool` (sans fenêtre, exit codes fiables, `--json-logs`) | A3 | binaire CLI dédié |
+| B1 | Outil `saida_tool` (sans fenêtre, exit codes fiables, `--json-logs`) | A3 | 🔵 binaire `saida_tool` créé (`src/tools/saida_tool_main.cpp`, cible CMake, link `saida_engine` headless) : exit 0=ok / 2=usage, stdout machine / stderr diag, `help`. Reste : `--json-logs`, autres sous-commandes |
 | B2 | `validate-project` / `validate-scene` / `validate-script` / `validate-scenario` | A4 | codes retour stables |
 | B3 | `apply-ops <proj> <ops.json> --out <snapshot>` | A3,A6 | snapshot déterministe |
-| B4 | `describe-engine --json` (export manifest) | A2 | manifest hashable |
+| B4 | `describe-engine --json` (export manifest) | A2 | ✅ `saida_tool describe-engine [--pretty]` : manifest JSON sur stdout, **déterministe/hashable** (sha256 stable, invariant 0.6), vérifié (2026-07-03) |
 | B5 | Sécurité des chemins (pas de `..`, pas d'absolu, sandbox) | — | tests d'échappement |
 
 ### Phase C — Collaboration SaaS minimale (P) ⬜

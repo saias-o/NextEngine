@@ -692,3 +692,22 @@ if (WIN32)
         "$<TARGET_FILE_DIR:SaidaEngineHub>"
     )
 endif()
+
+# ── Headless tooling CLI (Phase B — PLAN_INTEGRATION_SAIDA.md) ───────────────
+# No window, no GPU: links saida_engine only to reach the authoring-core
+# (EngineManifest / SaidaOp). Socle des workers Temporal (describe/validate/
+# apply-ops). Never opens a Vulkan context — safe to run in CI/headless.
+add_executable(saida_tool
+    src/tools/saida_tool_main.cpp
+)
+saida_app_target(saida_tool)
+target_link_libraries(saida_tool PRIVATE saida_engine)
+target_compile_options(saida_tool PRIVATE -Wall -Wextra)
+
+if (WIN32)
+    add_custom_command(TARGET saida_tool POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:glfw>"
+        "$<TARGET_FILE_DIR:saida_tool>"
+    )
+endif()
