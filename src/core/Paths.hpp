@@ -22,6 +22,23 @@ namespace saida {
 void setRuntimeRoot(const std::string& dir);
 const std::string& runtimeRoot();  // empty when unset
 
+struct SandboxedPathResult {
+    bool ok = false;
+    std::string absolute;
+    std::string relative;
+    std::string error;
+
+    explicit operator bool() const { return ok; }
+};
+
+// Resolve a user-supplied project-relative path under projectRoot. This is the
+// shared guard for tools/MCP/web workers: callers may pass "foo.js" and a
+// defaultDirectory such as "scripts", but absolute paths, drive-qualified paths
+// and parent traversal are rejected before touching the filesystem.
+SandboxedPathResult resolveSandboxedProjectPath(const std::string& projectRoot,
+                                                const std::string& userPath,
+                                                const std::string& defaultDirectory = {});
+
 inline std::string assetPath(const std::string& relative) {
 #ifdef __EMSCRIPTEN__
     // Web mode (Étape 16.1): assets are packaged into MEMFS under /assets

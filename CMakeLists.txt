@@ -544,7 +544,12 @@ endif()
 if (BUILD_TESTING)
     add_executable(saida_core_tests tests/CoreTests.cpp)
     saida_test_target(saida_core_tests)
+    target_sources(saida_core_tests PRIVATE src/core/Paths.cpp)
     target_include_directories(saida_core_tests PRIVATE src)
+    target_compile_definitions(saida_core_tests PRIVATE
+        SAIDA_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+        SAIDA_SHADER_DIR="${SHADER_OUT_DIR}"
+    )
     target_compile_options(saida_core_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_core_tests COMMAND $<TARGET_FILE:saida_core_tests>)
 
