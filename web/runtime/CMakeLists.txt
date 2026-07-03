@@ -96,10 +96,12 @@ target_link_options(saida_web PRIVATE
 )
 target_compile_options(saida_web PRIVATE --use-port=emdawnwebgpu)
 
-# The link step embeds the WGSL shaders (index.data) and the shell page: relink
-# when any of them change, not just when a .cpp does.
+# The link step embeds the WGSL shaders + BeachDemo assets (index.data) and the
+# shell page: relink when any of them change, not just when a .cpp does.
 file(GLOB WEB_WGSL_SHADERS ${SAIDA_ROOT}/build/shaders/wgsl/*.wgsl)
 set_property(TARGET saida_web APPEND PROPERTY LINK_DEPENDS
-    ${WEB_WGSL_SHADERS} ${CMAKE_CURRENT_SOURCE_DIR}/shell.html)
+    ${WEB_WGSL_SHADERS} ${CMAKE_CURRENT_SOURCE_DIR}/shell.html
+    ${SAIDA_ROOT}/BeachDemo/scenes/beach.scene
+    ${SAIDA_ROOT}/BeachDemo/assets/skies/sunset.png)
 
 set_target_properties(saida_web PROPERTIES SUFFIX ".html" OUTPUT_NAME "index")
