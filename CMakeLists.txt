@@ -737,6 +737,19 @@ if (BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ops-apply-invalid.json
     )
     set_tests_properties(saida_tool_apply_ops_invalid PROPERTIES WILL_FAIL TRUE)
+
+    # Phase B2 : validate-scene — structure d'un snapshot (types, ids uniques).
+    add_test(
+        NAME saida_tool_validate_scene_valid
+        COMMAND $<TARGET_FILE:saida_tool> validate-scene
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot.json
+    )
+    add_test(
+        NAME saida_tool_validate_scene_invalid
+        COMMAND $<TARGET_FILE:saida_tool> validate-scene
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-invalid-dupid.json
+    )
+    set_tests_properties(saida_tool_validate_scene_invalid PROPERTIES WILL_FAIL TRUE)
 endif()
 
 if (WIN32)

@@ -6,6 +6,7 @@
 // Sous-commandes :
 //   describe-engine [--pretty]   Ecrit l'EngineManifest JSON sur stdout (B4).
 //   validate-ops <file>          Valide statiquement des SaidaOps (B2).
+//   validate-scene <file>        Valide la structure d'un snapshot de scene (B2).
 //   validate-scenario <file>     Valide un asset scenario sans GPU (B2).
 //   apply-ops <scene> <ops>      Applique des ops -> snapshot deterministe (B3).
 //   help | --help | -h           Affiche l'aide.
@@ -45,6 +46,7 @@ int usage(std::ostream& out) {
            "Usage:\n"
            "  saida_tool describe-engine [--pretty]\n"
            "  saida_tool validate-ops <ops.json> [--pretty]\n"
+           "  saida_tool validate-scene <scene.json> [--pretty]\n"
            "  saida_tool validate-scenario <scenario.json> [--pretty]\n"
            "  saida_tool apply-ops <scene.json> <ops.json> [--out <file>]\n"
            "  saida_tool help\n"
@@ -56,6 +58,9 @@ int usage(std::ostream& out) {
            "  validate-ops      Statically validate a JSON array of SaidaOps\n"
            "                    (schema + per-type shape). Prints a JSON report;\n"
            "                    exit 0 if all valid, 1 if any invalid.\n"
+           "  validate-scene    Structurally validate a scene snapshot (node types,\n"
+           "                    unique ids, transform/children shape). Prints a JSON\n"
+           "                    report; exit 0 if valid, 1 if any issue.\n"
            "  validate-scenario Statically validate a Saida scenario asset\n"
            "                    (format + registered actions/conditions). Prints a\n"
            "                    JSON report; exit 0 if valid, 1 if invalid.\n"
@@ -209,6 +214,102 @@ int cmdValidateScenario(const std::vector<std::string>& args) {
     return ok ? kExitOk : kExitInvalid;
 }
 
+// Walk a scene-snapshot node subtree, appending structural issues. Pure JSON
+// checks (no GPU) : every node needs a string type/name, ids must be unique
+// integers, transforms and children must be well-shaped.
+void walkSceneNode(const json& n, const std::string& path, json& issues,
+                   std::unordered_set<long long>& ids, std::size_t& nodeCount) {
+    auto issue = [&](const std::string& msg) {
+        issues.push_back(json{{"path", path}, {"message", msg}});
+    };
+    if (!n.is_object()) {
+        issue("node must be a JSON object");
+        return;
+    }
+    ++nodeCount;
+    if (!n.contains("type") || !n["type"].is_string())
+        issue("node needs a string 'type'");
+    if (!n.contains("name") || !n["name"].is_string())
+        issue("node needs a string 'name'");
+    if (n.contains("id")) {
+        if (!n["id"].is_number_integer()) {
+            issue("'id' must be an integer");
+        } else if (!ids.insert(n["id"].get<long long>()).second) {
+            issue("duplicate node id " + std::to_string(n["id"].get<long long>()));
+        }
+    }
+    if (auto t = n.find("transform"); t != n.end()) {
+        if (!t->is_object()) {
+            issue("'transform' must be an object");
+        } else {
+            for (const char* k : {"position", "scale"})
+                if (t->contains(k) && (!(*t)[k].is_array() || (*t)[k].size() != 3))
+                    issue(std::string("transform '") + k + "' must be a 3-number array");
+            if (t->contains("rotation") &&
+                (!(*t)["rotation"].is_array() || (*t)["rotation"].size() != 4))
+                issue("transform 'rotation' must be a 4-number array");
+        }
+    }
+    if (auto c = n.find("children"); c != n.end()) {
+        if (!c->is_array()) {
+            issue("'children' must be an array");
+        } else {
+            std::size_t i = 0;
+            for (const json& child : *c)
+                walkSceneNode(child, path + "/children[" + std::to_string(i++) + "]", issues,
+                              ids, nodeCount);
+        }
+    }
+}
+
+int cmdValidateScene(const std::vector<std::string>& args) {
+    std::string path;
+    bool pretty = false;
+    for (const std::string& a : args) {
+        if (a == "--pretty") {
+            pretty = true;
+        } else if (!a.empty() && a[0] == '-' && a != "-") {
+            std::cerr << "validate-scene: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (path.empty()) {
+            path = a;
+        } else {
+            std::cerr << "validate-scene: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (path.empty()) {
+        std::cerr << "validate-scene: missing <scene.json> (use '-' for stdin)\n";
+        return kExitUsage;
+    }
+
+    std::string text, ioError;
+    if (!readInput(path, text, ioError)) {
+        std::cerr << "validate-scene: " << ioError << "\n";
+        return kExitUsage;
+    }
+    const json doc = json::parse(text, nullptr, /*allow_exceptions=*/false);
+    if (doc.is_discarded()) {
+        std::cerr << "validate-scene: input is not valid JSON\n";
+        return kExitUsage;
+    }
+
+    json issues = json::array();
+    std::unordered_set<long long> ids;
+    std::size_t nodeCount = 0;
+    if (!doc.is_object() || !doc.contains("scene") || !doc["scene"].is_object()) {
+        issues.push_back(json{{"path", ""}, {"message", "document needs a 'scene' object"}});
+    } else {
+        walkSceneNode(doc["scene"], "scene", issues, ids, nodeCount);
+    }
+
+    const bool ok = issues.empty();
+    json report{{"ok", ok}, {"nodeCount", nodeCount},
+                {"issueCount", issues.size()}, {"issues", std::move(issues)}};
+    std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
+    return ok ? kExitOk : kExitInvalid;
+}
+
 int cmdApplyOps(const std::vector<std::string>& args) {
     std::string scenePath, opsPath, outPath;
     bool pretty = false;
@@ -341,6 +442,9 @@ int main(int argc, char** argv) {
     }
     if (command == "validate-scenario") {
         return cmdValidateScenario(rest);
+    }
+    if (command == "validate-scene") {
+        return cmdValidateScene(rest);
     }
     if (command == "apply-ops") {
         return cmdApplyOps(rest);
