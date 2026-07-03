@@ -8,6 +8,9 @@
 // editor's full SceneSerializer/reflection/GLTF stack.
 
 #include "rhi/webgpu/RhiWeb.hpp"
+#include "authoring/EngineManifest.hpp"
+#include "authoring/SceneSnapshot.hpp"
+#include "authoring/SaidaOpApplier.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/Mesh.hpp"
 #include "graphics/ResourceManager.hpp"
@@ -15,6 +18,7 @@
 #include "render/RenderFeatureRegistry.hpp"
 #include "core/Camera.hpp"
 #include "core/Time.hpp"
+#include "scene/CameraNode.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/WaterNode.hpp"
@@ -30,8 +34,10 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <cstdio>
+#include <cmath>
 #include <fstream>
 #include <memory>
+#include <string>
 #include <vector>
 
 using namespace saida;
@@ -50,10 +56,13 @@ struct App {
     Camera camera;
     Mesh* cubeMesh = nullptr;
     AssetID whiteTex = kAssetInvalid;
+    AssetID durableSkyboxTexture = kAssetInvalid;
     double time = 0.0;
 };
 
 App gApp;
+
+void loadNode(const json& node, Node& parent);
 
 // ---- JSON readers (arrays → glm) ----
 
@@ -82,10 +91,26 @@ void applyTransform(Node& n, const json& node) {
     n.transform().scale = readVec3(t.value("scale", json::array()), glm::vec3(1.0f));
 }
 
+void applyCommonNodeFields(Node& n, const json& node) {
+    if (node.contains("id") && node["id"].is_number_unsigned())
+        n.assignSerializedId(node["id"].get<NodeId>());
+    if (node.contains("name") && node["name"].is_string())
+        n.setName(node["name"].get<std::string>());
+    if (node.contains("enabled") && node["enabled"].is_boolean())
+        n.setEnabled(node["enabled"].get<bool>());
+    if (node.contains("importedFrom") && node["importedFrom"].is_string())
+        n.setImportedFromPath(node["importedFrom"].get<std::string>());
+    if (node.contains("groups") && node["groups"].is_array()) {
+        for (const json& group : node["groups"])
+            if (group.is_string()) n.addToGroup(group.get<std::string>());
+    }
+    applyTransform(n, node);
+}
+
 // Build a Lit material from a MeshNode's inline PBR fields.
 Material* materialFromNode(const json& node) {
     MaterialDesc d;
-    d.albedoId = gApp.whiteTex;                        // texture:0 in the scene = white
+    d.albedoId = node.value("texture", kAssetInvalid); // texture:0 = durable "none", resolved to default white
     d.baseColor = readVec4(node.value("baseColor", json::array()), glm::vec4(1.0f));
     d.emissiveColor = readVec4(node.value("emissive", json::array()), glm::vec4(0.0f));
     d.metallic = readF(node, "metallic", 0.0f);
@@ -96,7 +121,7 @@ Material* materialFromNode(const json& node) {
 
 void loadWater(const json& node, Node& parent) {
     auto w = std::make_unique<WaterNode>();
-    applyTransform(*w, node);
+    applyCommonNodeFields(*w, node);
     w->size = readF(node, "size", w->size);
     w->deepColor = readVec3(node.value("deepColor", json::array()), w->deepColor);
     w->foamColor = readVec3(node.value("foamColor", json::array()), w->foamColor);
@@ -141,12 +166,15 @@ void loadWater(const json& node, Node& parent) {
 void loadLight(const json& node, Node& parent) {
     const auto type = static_cast<LightType>(node.value("lightType", 0));
     auto l = std::make_unique<LightNode>(node.value("name", std::string("Light")), type);
-    applyTransform(*l, node);
+    applyCommonNodeFields(*l, node);
     l->color = readVec3(node.value("color", json::array()), glm::vec3(1.0f));
     l->intensity = readF(node, "intensity", 1.0f);
     l->range = readF(node, "range", l->range);
     l->direction = readVec3(node.value("direction", json::array()), glm::vec3(0, -1, 0));
+    l->spotInnerAngle = readF(node, "spotInnerAngle", l->spotInnerAngle);
+    l->spotOuterAngle = readF(node, "spotOuterAngle", l->spotOuterAngle);
     l->castShadows = node.value("castShadows", false);
+    l->bakeMode = static_cast<LightBakeMode>(node.value("bakeMode", 0));
     parent.addChild(std::move(l));
 }
 
@@ -166,15 +194,32 @@ void applyCamera(const json& node) {
     gApp.camera.farZ = readF(node, "farZ", 600.0f);
 }
 
+void loadCamera(const json& node, Node& parent) {
+    auto c = std::make_unique<CameraNode>(node.value("name", std::string("Camera")));
+    applyCommonNodeFields(*c, node);
+    c->fovDegrees = readF(node, "fovDegrees", c->fovDegrees);
+    c->nearZ = readF(node, "nearZ", c->nearZ);
+    c->farZ = readF(node, "farZ", c->farZ);
+    c->priority = node.value("priority", c->priority);
+    c->active = node.value("active", c->active);
+    Node& ref = *c;
+    parent.addChild(std::move(c));
+    applyCamera(node);
+    for (const json& child : node.value("children", json::array())) loadNode(child, ref);
+}
+
 void loadNode(const json& node, Node& parent) {
     const std::string type = node.value("type", "");
-    if (!node.value("enabled", true)) return;
 
     if (type == "MeshNode") {
         auto m = std::make_unique<MeshNode>(node.value("name", std::string("Mesh")),
                                             gApp.cubeMesh, materialFromNode(node));
-        applyTransform(*m, node);
+        applyCommonNodeFields(*m, node);
         m->castShadows() = node.value("castShadows", true);
+        if (node.contains("meshEnabled")) m->setMeshEnabled(node["meshEnabled"].get<bool>());
+        if (node.contains("outlineEnabled")) m->setOutlineEnabled(node["outlineEnabled"].get<bool>());
+        if (node.contains("outlineColor")) m->outlineColor() = readVec4(node["outlineColor"], m->outlineColor());
+        if (node.contains("outlineWidth")) m->outlineWidth() = node["outlineWidth"].get<float>();
         Node& ref = *m;
         parent.addChild(std::move(m));
         for (const json& c : node.value("children", json::array())) loadNode(c, ref);
@@ -182,16 +227,21 @@ void loadNode(const json& node, Node& parent) {
     }
     if (type == "Water")  { loadWater(node, parent); return; }
     if (type == "LightNode") { loadLight(node, parent); return; }
-    if (type == "Camera")  { applyCamera(node); return; }
+    if (type == "Camera")  { loadCamera(node, parent); return; }
 
     // Unknown/plain node: keep the hierarchy, recurse into children.
-    for (const json& c : node.value("children", json::array())) loadNode(c, parent);
+    auto generic = std::make_unique<Node>(node.value("name", std::string("Node")));
+    applyCommonNodeFields(*generic, node);
+    Node& ref = *generic;
+    parent.addChild(std::move(generic));
+    for (const json& c : node.value("children", json::array())) loadNode(c, ref);
 }
 
 void applySettings(const json& s) {
     SceneSettings& out = gApp.scene->settings();
     out.ambientLight = glm::vec4(readVec3(s.value("ambient", json::array()), glm::vec3(0.1f)), 1.0f);
     out.clearColor = glm::vec4(readVec3(s.value("clearColor", json::array()), glm::vec3(0.0f)), 1.0f);
+    out.enablePostProcessing = s.value("postProcessing", true);
     out.aoEnabled = s.value("aoEnabled", true);
     out.aoRadius = readF(s, "aoRadius", out.aoRadius);
     out.aoIntensity = readF(s, "aoIntensity", out.aoIntensity);
@@ -200,6 +250,7 @@ void applySettings(const json& s) {
     out.bloomThreshold = readF(s, "bloomThreshold", out.bloomThreshold);
     out.bloomIntensity = readF(s, "bloomIntensity", out.bloomIntensity);
     out.bloomRadius = readF(s, "bloomRadius", out.bloomRadius);
+    out.changeRenderingAtLoad = s.value("changeRenderingAtLoad", out.changeRenderingAtLoad);
     out.fogEnabled = s.value("fogEnabled", false);
     out.fogColor = glm::vec4(readVec3(s.value("fogColor", json::array()), glm::vec3(0.5f)), 1.0f);
     out.fogStart = readF(s, "fogStart", out.fogStart);
@@ -230,6 +281,130 @@ AssetID loadSkyTexture() {
     return id;
 }
 
+std::string durableSceneSnapshotJson() {
+    json doc = json::parse(saida::authoring::serializeSceneSnapshot(*gApp.scene, *gApp.resources));
+    if (gApp.durableSkyboxTexture != kAssetInvalid &&
+        doc.contains("scene") && doc["scene"].contains("settings")) {
+        doc["scene"]["settings"]["skyboxTexture"] = gApp.durableSkyboxTexture;
+    }
+    return doc.dump(2);
+}
+
+void canonicalizeReferenceNode(json& node) {
+    const std::string type = node.value("type", "");
+    node.erase("includeInLightBaking");
+    if (type == "MeshNode") {
+        if (!node.contains("meshEnabled")) node["meshEnabled"] = true;
+        if (!node.contains("castShadows")) node["castShadows"] = true;
+        if (!node.contains("outlineEnabled")) node["outlineEnabled"] = false;
+        if (!node.contains("outlineColor")) node["outlineColor"] = json::array({0.02f, 0.02f, 0.02f, 1.0f});
+        if (!node.contains("outlineWidth")) node["outlineWidth"] = 3.0f;
+    } else if (type == "LightNode") {
+        if (!node.contains("range")) node["range"] = 10.0f;
+        if (!node.contains("spotInnerAngle")) node["spotInnerAngle"] = 25.0f;
+        if (!node.contains("spotOuterAngle")) node["spotOuterAngle"] = 35.0f;
+        if (!node.contains("castShadows")) node["castShadows"] = true;
+        if (!node.contains("bakeMode")) node["bakeMode"] = 0;
+    } else if (type == "Camera") {
+        if (!node.contains("groups")) node["groups"] = json::array({"camera"});
+        if (!node.contains("priority")) node["priority"] = 0;
+        if (!node.contains("active")) node["active"] = true;
+    }
+
+    if (!node.contains("behaviours")) node["behaviours"] = json::array();
+    if (!node.contains("children")) node["children"] = json::array();
+    for (json& child : node["children"]) canonicalizeReferenceNode(child);
+}
+
+void canonicalizeReferenceDoc(json& doc) {
+    if (doc.contains("scene")) canonicalizeReferenceNode(doc["scene"]);
+}
+
+bool firstJsonDiff(const json& actual, const json& expected,
+                   const std::string& path, std::string& out) {
+    if (actual.type() != expected.type()) {
+        out = path + " type differs";
+        return true;
+    }
+    if (actual.is_object()) {
+        for (auto it = actual.begin(); it != actual.end(); ++it) {
+            if (!expected.contains(it.key())) {
+                out = path + "." + it.key() + " missing from expected";
+                return true;
+            }
+            if (firstJsonDiff(it.value(), expected.at(it.key()), path + "." + it.key(), out))
+                return true;
+        }
+        for (auto it = expected.begin(); it != expected.end(); ++it) {
+            if (!actual.contains(it.key())) {
+                out = path + "." + it.key() + " missing from actual";
+                return true;
+            }
+        }
+        return false;
+    }
+    if (actual.is_array()) {
+        if (actual.size() != expected.size()) {
+            out = path + " size differs: actual " + std::to_string(actual.size()) +
+                  ", expected " + std::to_string(expected.size());
+            return true;
+        }
+        for (size_t i = 0; i < actual.size(); ++i) {
+            if (firstJsonDiff(actual[i], expected[i], path + "[" + std::to_string(i) + "]", out))
+                return true;
+        }
+        return false;
+    }
+    if (actual.is_number() && expected.is_number()) {
+        if (actual.is_number_float() || expected.is_number_float()) {
+            const double av = actual.get<double>();
+            const double ev = expected.get<double>();
+            if (std::fabs(av - ev) <= 0.00001) return false;
+        }
+    }
+    if (actual != expected) {
+        out = path + " differs: actual=" + actual.dump() + ", expected=" + expected.dump();
+        return true;
+    }
+    return false;
+}
+
+std::string compareSnapshotWithPreloadedScene() {
+    json result;
+    if (!gApp.scene || !gApp.resources) {
+        result["ok"] = false;
+        result["error"] = "runtime not ready";
+        return result.dump();
+    }
+
+    std::ifstream in("/project/beach.scene");
+    if (!in) {
+        result["ok"] = false;
+        result["error"] = "reference scene missing";
+        return result.dump();
+    }
+
+    try {
+        json expected;
+        in >> expected;
+        canonicalizeReferenceDoc(expected);
+        json actual = json::parse(durableSceneSnapshotJson());
+        std::string diff;
+        const bool differs = firstJsonDiff(actual, expected, "$", diff);
+        result["ok"] = !differs;
+        result["reference"] = "/project/beach.scene";
+        result["actualChildren"] = actual["scene"].value("children", json::array()).size();
+        result["expectedChildren"] = expected["scene"].value("children", json::array()).size();
+        result["runtimeSkyboxTexture"] = gApp.scene->settings().skyboxTexture;
+        result["durableSkyboxTexture"] = gApp.durableSkyboxTexture;
+        if (differs) result["firstDiff"] = diff;
+    } catch (const std::exception& e) {
+        result["ok"] = false;
+        result["error"] = e.what();
+    }
+    return result.dump(2);
+}
+
 void initRuntime() {
     rhi::Device& device = *gApp.device;
     registerBuiltinRenderFeatures();  // water + skybox + particles on web
@@ -247,10 +422,15 @@ void initRuntime() {
     json doc;
     in >> doc;
     const json& root = doc["scene"];
+    applyCommonNodeFields(*gApp.scene, root);
 
-    if (root.contains("settings")) applySettings(root["settings"]);
+    if (root.contains("settings")) {
+        applySettings(root["settings"]);
+        gApp.durableSkyboxTexture = root["settings"].value("skyboxTexture", kAssetInvalid);
+    }
     const AssetID skyId = loadSkyTexture();
     if (skyId != kAssetInvalid) gApp.scene->settings().skyboxTexture = skyId;
+    gApp.scene->readConnections(root);
 
     for (const json& c : root.value("children", json::array())) loadNode(c, *gApp.scene);
 
@@ -272,6 +452,49 @@ void frame() {
 }
 
 } // namespace
+
+// --- Spike S0/S1: authoring-core bindings (PLAN_LIVE_EDIT_WEB.md §4) ----------
+// String-in / string-out (JSON). Piloté depuis le JS via Module.ccall.
+// `gApp` a une linkage interne mais reste visible dans cette TU.
+extern "C" {
+
+EMSCRIPTEN_KEEPALIVE
+const char* saida_apply_op(const char* opJson) {
+    static std::string out;
+    if (!gApp.scene || !gApp.resources) {
+        out = R"({"ok":false,"error":"runtime not ready"})";
+        return out.c_str();
+    }
+    out = saida::authoring::applyOpJson(*gApp.scene, *gApp.resources,
+                                        opJson ? opJson : "");
+    return out.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char* saida_engine_manifest() {
+    static std::string m = saida::authoring::buildEngineManifest().dump();
+    return m.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char* saida_scene_snapshot() {
+    static std::string out;
+    if (!gApp.scene || !gApp.resources) {
+        out = R"({"ok":false,"error":"runtime not ready"})";
+        return out.c_str();
+    }
+    out = durableSceneSnapshotJson();
+    return out.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char* saida_scene_snapshot_compare() {
+    static std::string out;
+    out = compareSnapshotWithPreloadedScene();
+    return out.c_str();
+}
+
+} // extern "C"
 
 int main() {
     glfwInit();

@@ -24,6 +24,56 @@ les travaux longs. R2/S3 porte les gros blobs. Postgres garde la verite metier.*
 
 ---
 
+## 0. Invariants verrouilles (revision 2026-07-03)
+
+Ces sept invariants priment sur le reste du document en cas d'ambiguite. Ils
+tranchent les points qui, non fixes, feraient capoter l'edition web.
+
+1. **Un seul renderer de scene : le vrai runtime SaidaEngine WASM/WebGPU.**
+   L'Etape 16 du moteur est livree (Renderer complet dans le navigateur). On ne
+   reimplemente PAS de renderer web tiers (Three.js/Babylon) pour les scenes :
+   ce serait un second modele de scene et une divergence de parite. Three.js
+   reste tolere uniquement pour la preview d'assets isoles (sortie 2Dto3D).
+
+2. **L'authoring-core est compile DANS le runtime web.**
+   Le build web de jeu exclut ImGui/editeur/MCP (cf. `PLAN_WEB_EXPORT.md` 1.3),
+   MAIS le runtime d'EDITION web linke `src/authoring/` (SaidaOp + Validator +
+   Applier + Manifest). Il doit pouvoir recevoir une SaidaOp acceptee, muter le
+   scene-graph vivant et re-render, **sans recompiler ni re-exporter le moteur**.
+   Sans cet invariant, "editer/visualiser dans le navigateur" est impossible.
+
+3. **Une seule representation durable de la scene.**
+   `SceneSerializer` (format `.scene`/`.saidaproj` existant, `src/project/`)
+   reste le format canonique. Appliquer un op-log doit produire *exactement* ce
+   que `SceneSerializer` serialise, et un `ProjectSnapshot` se materialise dans
+   ce format existant. Invariant teste par round-trip : ops -> snapshot ->
+   materialisation -> rechargement -> re-serialisation stable. Pas de troisieme
+   format concurrent.
+
+4. **Manipulations continues = optimiste local, commit unique.**
+   Drag de gizmo / slider inspector = apply optimiste local immediat, throttle
+   des ops intermediaires, **un seul SaidaOp commit au relachement**. Jamais un
+   aller-retour serveur par frame. Le mouvement transitoire peut passer par Yjs
+   awareness ; seul le resultat durable devient une SaidaOp.
+
+5. **Sur le web, "vibecoder" = SaidaOp + JS QuickJS + UI RmlUi, jamais du C++.**
+   La generation/edition de code cote navigateur se limite aux SaidaOps (scene,
+   structure, scenario), aux scripts `ScriptBehaviour` JavaScript et a l'UI
+   RmlUi/HTML. Aucune compilation de C++ utilisateur cote web. Les behaviours
+   C++ natifs restent desktop/offline. Le discours produit doit refleter ca.
+
+6. **Le pont inter-versions du moteur est le snapshot, pas l'op-log.**
+   L'op-log est intra-version. Quand `engineVersion` change, on migre en
+   materialisant le snapshot -> rechargement dans le nouveau moteur ->
+   re-serialisation. On ne rejoue pas un op-log a travers des versions moteur.
+
+7. **La Collaboration Gateway est reconstructible depuis Postgres.**
+   Zero etat critique uniquement en memoire. Au redemarrage, la gateway
+   reconstruit 100 % de l'etat depuis Postgres (dernier snapshot + ops
+   appended). Un crash serveur ne perd aucune op validee.
+
+---
+
 ## 1. Principe directeur
 
 La plateforme web ne doit pas contourner le modele du moteur.
@@ -252,32 +302,48 @@ Contraintes :
 - chemins d'entree/sortie explicites ;
 - validation de securite des chemins.
 
-### 3.5 Finaliser le vrai runtime WebGPU
+### 3.5 Deux runtimes web distincts : jeu exporte vs runtime d'edition
 
-L'etat actuel du depot indique que WebGPU fonctionne deja comme validation
-technique, mais le vrai export complet n'est pas encore termine.
+L'Etape 16 du moteur est livree : le vrai `Renderer` tourne dans le navigateur
+en WASM/WebGPU (shadows, DDGI, eau, skybox, particules GPU, AO, bloom, tonemap,
+valide sur BeachDemo). Il faut maintenant distinguer deux cibles web :
 
-Claude doit poursuivre :
+**A. Runtime de jeu exporte** (build final du joueur)
+- exclut ImGui/editeur/MCP/OpenXR (cf. `PLAN_WEB_EXPORT.md` 1.3) ;
+- charge un ProjectSnapshot fige, joue le jeu ;
+- optimise pour la taille (Brotli, plus tard KTX2/streaming).
 
-- terminer le port du vrai Renderer sur le backend WebGPU ;
-- eliminer les derniers handles Vulkan du chemin web ;
-- verifier WebCanvasNode dans le runtime web ;
-- supporter les scenes reelles, scripts, UI, audio, assets et settings ;
+**B. Runtime d'EDITION web** (le canvas de l'editeur SaidaEngine Online)
+- meme Renderer WASM/WebGPU, MAIS **linke l'authoring-core `src/authoring/`**
+  (SaidaOpApplier + Validator + Manifest) — invariant 0.2 ;
+- expose au JS/glue une API pour : charger un snapshot, **appliquer une SaidaOp
+  recue et muter le scene-graph vivant**, lire l'etat courant, re-render ;
+- pas d'ImGui : les panneaux d'edition sont en React cote page (invariant 0.1) ;
+- sait faire Play/Stop sur la scene deja chargee sans re-export.
+
+Cette cible B est le pivot de toute l'integration. Elle doit etre de-risquee tot
+par le **spike live-edit web** (voir roadmap Phase A.5), avant de construire la
+gateway collaboration.
+
+Claude doit egalement :
+
+- verifier WebCanvasNode dans les deux runtimes web ;
+- supporter scenes reelles, scripts QuickJS, UI, audio, assets, settings ;
+- exposer un binding stable `applyOp(json) -> {ok, diff|error}` cote runtime B ;
 - definir des presets qualite web ;
-- mesurer taille wasm/js/data ;
-- servir avec COOP/COEP quand necessaire ;
-- garder une strategie d'assets simple au debut, puis streaming.
+- mesurer taille wasm/js/data et servir COOP/COEP quand necessaire.
 
-Etapes conseillees :
+Etapes conseillees (runtime d'edition B) :
 
 1. runtime web charge un ProjectSnapshot minimal ;
 2. rendu scene simple ;
-3. scripts QuickJS ;
-4. WebCanvas screen-space ;
-5. input ;
-6. assets projet ;
-7. scenes plus lourdes ;
-8. optimisation taille/perf.
+3. binding `applyOp` : une `SetTransformOp` recue bouge un node en live ;
+4. scripts QuickJS ;
+5. WebCanvas screen-space ;
+6. input ;
+7. assets projet ;
+8. scenes plus lourdes ;
+9. optimisation taille/perf.
 
 ### 3.6 Stabiliser WebCanvas comme UI de jeu
 
@@ -438,6 +504,14 @@ Gestion conflits :
 - script/UI text : Yjs pendant edition, `write_script` ou `write_ui` au commit ;
 - assets : remplacement par nouvelle reference, pas mutation du blob.
 
+Manipulations continues (invariant 0.4) : le drag de gizmo ou un slider
+inspector ne doit PAS faire un aller-retour serveur par frame. Le client applique
+l'op en optimiste local (le runtime B re-render immediatement), throttle les ops
+intermediaires (ou les porte via Yjs awareness), et n'emet **un seul SaidaOp
+durable qu'au relachement**. Le serveur reconcilie ensuite (last accepted op
+wins). Sans ca, l'editeur est injouable des que la latence gateway depasse
+quelques dizaines de ms.
+
 ### 4.5 Snapshots et revisions
 
 Le serveur doit garder :
@@ -552,10 +626,16 @@ Securite worker :
 
 Priorite v1 :
 
-- utiliser un template WASM/WebGPU precompile ;
+- utiliser un template WASM/WebGPU precompile, **pinne par `engineVersion`** ;
 - injecter assets, scenes, scripts et manifest ;
 - eviter de recompiler le moteur pour chaque jeu ;
 - compiler seulement quand le moteur ou les modules natifs changent.
+
+Versioning (invariant 0.6) : chaque projet reference l'`engineVersion` de son
+template. Quand le moteur monte de version, la migration se fait par snapshot
+(materialiser -> recharger dans le nouveau moteur -> re-serialiser), jamais en
+rejouant un ancien op-log a travers deux versions. Le runtime web B et le
+template d'export doivent exposer la meme `engineVersion` que le manifest.
 
 Sortie :
 
@@ -703,9 +783,29 @@ serveur collaboration.
 
 1. Definir `SaidaOp`.
 2. Definir `EngineManifest`.
-3. Extraire `SaidaAuthoringCore` depuis MCP.
+3. Extraire `SaidaAuthoringCore` depuis MCP (`src/mcp/McpBridge.cpp`, ~976 l.)
+   vers `src/authoring/`, sans dependance ImGui/editeur.
 4. Ajouter validation stricte.
 5. Ajouter tests unitaires des ops.
+6. Round-trip : ops -> snapshot -> `.saidaproj` -> reload -> re-serialize stable
+   (invariant 0.3, meme sortie que `SceneSerializer`).
+
+### Phase A.5 - Spike live-edit web (GO / NO-GO)
+
+Point de decision de toute l'integration. A valider AVANT la gateway (Phase C).
+Plan detaille, squelette du binding `applyOp` et criteres go/no-go :
+`PLAN_LIVE_EDIT_WEB.md`.
+
+1. Linker `src/authoring/` dans le runtime web B (invariant 0.2).
+2. Exposer un binding `applyOp(json) -> {ok, diff|error}`.
+3. Le navigateur charge un ProjectSnapshot minimal.
+4. Il recoit une `SetTransformOp` (d'abord en dur, puis via WebSocket) : le node
+   bouge en live et la scene re-render, sans re-export du moteur.
+5. Mesurer la taille wasm ajoutee par l'authoring-core.
+
+Critere : si le runtime web ne peut pas appliquer une op et re-render en live,
+toute l'architecture d'edition web est remise en cause. Ne pas avancer sur C/D
+tant que ce spike n'est pas vert.
 
 ### Phase B - Headless et snapshots
 
@@ -795,7 +895,17 @@ Ne pas faire :
 - maintenir deux modeles de scene differents ;
 - casser le contrat nodes + behaviours + signaux ;
 - faire du cloud rendering par defaut ;
-- rendre obligatoire une recompilation moteur a chaque export web.
+- rendre obligatoire une recompilation moteur a chaque export web ;
+- reimplementer un renderer web tiers (Three.js/Babylon) pour les scenes au lieu
+  du runtime SaidaEngine WASM/WebGPU (invariant 0.1) ;
+- oublier de linker l'authoring-core dans le runtime d'edition web, et retomber
+  sur un re-export a chaque modif (invariant 0.2) ;
+- introduire un format de projet concurrent de `.saidaproj`/`SceneSerializer`
+  (invariant 0.3) ;
+- faire un aller-retour serveur par frame pendant un drag (invariant 0.4) ;
+- rejouer un op-log a travers des versions moteur au lieu de migrer par snapshot
+  (invariant 0.6) ;
+- garder de l'etat collaboration critique uniquement en memoire (invariant 0.7).
 
 ---
 

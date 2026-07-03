@@ -291,6 +291,10 @@ add_subdirectory(third_party/rmlui ${CMAKE_BINARY_DIR}/rmlui)
 # it, so changing application code does not recompile the engine.
 add_library(saida_engine STATIC
     src/Engine.cpp
+    src/authoring/EngineManifest.cpp
+    src/authoring/SceneSnapshot.cpp
+    src/authoring/SaidaOp.cpp
+    src/authoring/SaidaOpApplier.cpp
     src/core/FileWatcher.cpp
     src/core/Window.cpp
     src/core/Camera.cpp
@@ -555,6 +559,12 @@ if (BUILD_TESTING)
     target_link_libraries(saida_reflection_tests PRIVATE saida_engine)
     target_compile_options(saida_reflection_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_reflection_tests COMMAND $<TARGET_FILE:saida_reflection_tests>)
+
+    add_executable(saida_authoring_op_tests tests/AuthoringOpTests.cpp)
+    saida_test_target(saida_authoring_op_tests)
+    target_link_libraries(saida_authoring_op_tests PRIVATE saida_engine)
+    target_compile_options(saida_authoring_op_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_authoring_op_tests COMMAND $<TARGET_FILE:saida_authoring_op_tests>)
 
     add_executable(saida_particle_effect_tests tests/ParticleEffectTests.cpp)
     saida_test_target(saida_particle_effect_tests)

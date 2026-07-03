@@ -26,6 +26,13 @@ set(GLM_INCLUDE_DIR ${SAIDA_ROOT}/third_party/glm CACHE PATH "Directory containi
 
 add_executable(saida_web
     main.cpp
+    # Spike S0 (PLAN_LIVE_EDIT_WEB.md): authoring-core linke dans le runtime
+    # d'edition web (invariant 0.2). Reference par le binding saida_apply_op.
+    ${SAIDA_ROOT}/src/authoring/EngineManifest.cpp
+    ${SAIDA_ROOT}/src/authoring/SceneSnapshot.cpp
+    ${SAIDA_ROOT}/src/authoring/SaidaOp.cpp
+    ${SAIDA_ROOT}/src/authoring/SaidaOpApplier.cpp
+    ${SAIDA_ROOT}/src/core/Reflection.cpp
     ${SAIDA_ROOT}/src/core/Profiler.cpp
     ${SAIDA_ROOT}/src/core/Camera.cpp
     ${SAIDA_ROOT}/src/graphics/GeometryRegistry.cpp
@@ -50,6 +57,7 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/render/Renderer.cpp
     ${SAIDA_ROOT}/src/scene/Behaviour.cpp
     ${SAIDA_ROOT}/src/scene/BehaviourRegistry.cpp
+    ${SAIDA_ROOT}/src/scene/CameraNode.cpp
     ${SAIDA_ROOT}/src/scene/LightNode.cpp
     ${SAIDA_ROOT}/src/scene/MeshLod.cpp
     ${SAIDA_ROOT}/src/scene/MeshNode.cpp
@@ -86,6 +94,9 @@ target_link_options(saida_web PRIVATE
     -sUSE_GLFW=3
     -sALLOW_MEMORY_GROWTH
     -sEXIT_RUNTIME=0
+    # Spike S0: exposer ccall/cwrap pour piloter saida_apply_op depuis le JS.
+    -sEXPORTED_RUNTIME_METHODS=ccall,cwrap
+    -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_saida_apply_op,_saida_engine_manifest,_saida_scene_snapshot,_saida_scene_snapshot_compare
     $<$<CONFIG:Release>:-Oz>
     # WGSL shaders packaged into MEMFS at /shaders (16.1 web FS: preload).
     "SHELL:--preload-file ${SAIDA_ROOT}/build/shaders/wgsl@/shaders"

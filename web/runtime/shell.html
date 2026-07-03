@@ -12,20 +12,189 @@
     canvas { background: #000; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,.5);
              image-rendering: pixelated; }
     #status { opacity: .7; min-height: 1.2em; }
+    /* Harness d'édition (spike S1) — visible uniquement avec ?edit dans l'URL. */
+    #editbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+               justify-content: center; }
+    #editbar .tag { font: 11px/1 ui-monospace, monospace; letter-spacing: .06em;
+                    text-transform: uppercase; opacity: .5; }
+    #editbar button { background: #1b2030; color: #cfd6e4; border: 1px solid #2c3448;
+                      border-radius: 5px; padding: 5px 10px; cursor: pointer; font: inherit; }
+    #editbar button:hover { background: #232a3d; border-color: #3a4258; }
+    #editbar code { font: 11px/1.4 ui-monospace, monospace; opacity: .6; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <canvas id="canvas" width="1280" height="720" oncontextmenu="event.preventDefault()"></canvas>
     <div id="status">loading…</div>
+    <div id="editbar" hidden></div>
   </div>
   <script>
     var statusEl = document.getElementById('status');
+
+    // --- Spike live-edit web, palier S1 (PLAN_LIVE_EDIT_WEB.md) --------------
+    // Petite surface d'édition exposée au JS. Le C++ ne connaît que des SaidaOp
+    // JSON ; ici on se contente de les fabriquer et de les envoyer via ccall.
+    // Opt-in par ?edit dans l'URL : le runtime de jeu reste intact par défaut.
+    function makeSaidaApi() {
+      var call = function(name, arg) {
+        return arg === undefined
+          ? Module.ccall(name, 'string', [], [])
+          : Module.ccall(name, 'string', ['string'], [arg]);
+      };
+      var api = {
+        ws: null,
+        wsState: 'closed',
+        lastWsApply: null,
+        // Applique une SaidaOp ; renvoie {ok, applied, diff} ou {ok:false, error}.
+        applyOp: function(op) {
+          var res = JSON.parse(call('saida_apply_op', JSON.stringify(op)));
+          if (!res.ok) console.warn('saida_apply_op rejeté :', res.error);
+          return res;
+        },
+        manifest: function() { return JSON.parse(call('saida_engine_manifest')); },
+        snapshot: function() { return JSON.parse(call('saida_scene_snapshot')); },
+        snapshotCompare: function() { return JSON.parse(call('saida_scene_snapshot_compare')); },
+        connectWebSocket: function(url) {
+          var self = this;
+          if (self.ws && self.ws.readyState === WebSocket.OPEN)
+            self.ws.close();
+          self.wsState = 'connecting';
+          self.ws = new WebSocket(url);
+          self.ws.onopen = function() {
+            self.wsState = 'open';
+            console.log('Saida edit WS connected:', url);
+            window.dispatchEvent(new CustomEvent('saida-ws-state', { detail: self.wsState }));
+          };
+          self.ws.onclose = function() {
+            self.wsState = 'closed';
+            console.log('Saida edit WS closed');
+            window.dispatchEvent(new CustomEvent('saida-ws-state', { detail: self.wsState }));
+          };
+          self.ws.onerror = function(e) {
+            self.wsState = 'error';
+            console.warn('Saida edit WS error:', e);
+            window.dispatchEvent(new CustomEvent('saida-ws-state', { detail: self.wsState }));
+          };
+          self.ws.onmessage = function(e) {
+            var op = JSON.parse(e.data);
+            var res = self.applyOp(op);
+            self.lastWsApply = res;
+            window.dispatchEvent(new CustomEvent('saida-ws-apply', { detail: res }));
+          };
+          return self.ws;
+        },
+        sendOp: function(op) {
+          if (!this.ws || this.ws.readyState !== WebSocket.OPEN)
+            return { ok: false, error: 'WebSocket not open' };
+          this.ws.send(JSON.stringify(op));
+          return { ok: true, sent: true };
+        },
+      };
+      return api;
+    }
+
+    // Barre de démo : prouve qu'une op reçue mute la scène vivante et re-render,
+    // sans re-export. Cibles issues de BeachDemo (noms uniques, valeurs de base
+    // connues → réversible).
+    function buildEditBar(saida) {
+      var bar = document.getElementById('editbar');
+      var out = document.createElement('code');
+
+      var palmHome = true;   // Palm_A base x = -14
+      var sunBright = true;
+      var wsStatus = document.createElement('code');
+      wsStatus.textContent = 'ws: ' + saida.wsState;
+
+      var setOut = function(value) {
+        out.textContent = JSON.stringify(value);
+      };
+      window.addEventListener('saida-ws-state', function(e) {
+        wsStatus.textContent = 'ws: ' + e.detail;
+      });
+      window.addEventListener('saida-ws-apply', function(e) {
+        setOut(e.detail);
+      });
+
+      var actions = [
+        ['Slide palm', function() {
+          palmHome = !palmHome;
+          return saida.applyOp({ type: 'set_transform', payload: {
+            nodeId: 'Palm_A', position: [palmHome ? -14 : 4, 0.6, 12] } });
+        }],
+        ['Sun dim/bright', function() {
+          sunBright = !sunBright;
+          return saida.applyOp({ type: 'set_property', payload: {
+            nodeId: 'Sun', property: 'intensity', value: sunBright ? 8 : 1.5 } });
+        }],
+        ['WS palm', function() {
+          palmHome = !palmHome;
+          return saida.sendOp({ type: 'set_transform', payload: {
+            nodeId: 'Palm_A', position: [palmHome ? -14 : 4, 0.6, 12] } });
+        }],
+        ['WS sun', function() {
+          sunBright = !sunBright;
+          return saida.sendOp({ type: 'set_property', payload: {
+            nodeId: 'Sun', property: 'intensity', value: sunBright ? 8 : 1.5 } });
+        }],
+        ['S4 compare', function() {
+          if (typeof Module._saida_scene_snapshot_compare !== 'function') {
+            return {
+              ok: false,
+              error: 'missing wasm export',
+              compare: typeof Module._saida_scene_snapshot_compare,
+              snapshot: typeof Module._saida_scene_snapshot,
+              applyOp: typeof Module._saida_apply_op
+            };
+          }
+          return saida.snapshotCompare();
+        }],
+      ];
+
+      var tag = document.createElement('span');
+      tag.className = 'tag'; tag.textContent = 'edit';
+      bar.appendChild(tag);
+      bar.appendChild(wsStatus);
+      actions.forEach(function(a) {
+        var b = document.createElement('button');
+        b.textContent = a[0];
+        b.onclick = function() {
+          try {
+            setOut(a[1]());
+          } catch (e) {
+            setOut({ ok: false, error: String(e) });
+            throw e;
+          }
+        };
+        bar.appendChild(b);
+      });
+      bar.appendChild(out);
+      bar.hidden = false;
+    }
+
+    function requestedEditWsUrl() {
+      var params = new URLSearchParams(location.search);
+      if (!params.has('ws')) return null;
+      var value = params.get('ws');
+      if (!value || value === '1' || value === 'true')
+        return 'ws://127.0.0.1:8787';
+      return value;
+    }
+
     var Module = {
       canvas: document.getElementById('canvas'),
       print: function(t) { console.log(t); statusEl.textContent = t; },
       printErr: function(t) { console.error(t); },
+      locateFile: function(path, prefix) { return prefix + path + '?v=s4-snapshot'; },
       setStatus: function(t) { if (t) statusEl.textContent = t; },
+      onRuntimeInitialized: function() {
+        window.saida = makeSaidaApi();
+        console.log('SaidaEngine authoring manifest:', window.saida.manifest());
+        var wsUrl = requestedEditWsUrl();
+        if (wsUrl) window.saida.connectWebSocket(wsUrl);
+        if (/(?:^|[?&])edit(?:[=&]|$)/.test(location.search))
+          buildEditBar(window.saida);
+      },
     };
     if (!navigator.gpu) {
       statusEl.textContent = 'WebGPU indisponible — utilisez Chrome/Edge récents.';
