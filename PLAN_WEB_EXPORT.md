@@ -1,6 +1,8 @@
 # Plan complet — Export Web (Étape 16)
 
-> **Statut : proposition à valider avant démarrage.**
+> **Statut : implémenté et validé.** Document de conception conservé comme
+> référence historique des décisions d'architecture ; l'état d'avancement à
+> jour est dans [TODO.md](TODO.md) et [CLAUDE.md](CLAUDE.md).
 > Cible : exporter un jeu Saida vers le navigateur, **optimisé**.
 > Décisions actées : **parité rendu complète** + **RHI propre** (abstraction
 > GPU avec backends Vulkan et WebGPU).
@@ -286,8 +288,9 @@ livrable tôt (phase 16.1) et bénéfique **aussi en desktop**.
 
 ---
 
-## 12. Prochaine action
+## 12. Bilan
 
-Après validation de ce plan, démarrage par **16.0 (spike)** pour verrouiller la
-toolchain Emscripten + WebGPU, **en parallèle de 16.1 (assets)** qui ne touche
-pas au backend et bénéficie déjà au desktop.
+Toutes les phases (16.0 à 16.6) sont terminées et validées : le vrai `Renderer`
+tourne dans le navigateur sur la scène de référence BeachDemo, rendu identique
+au desktop. Détail par sous-étape et pistes futures (KTX2/Basis, streaming
+fetch/IDBFS, MSAA web) dans [TODO.md](TODO.md).
