@@ -67,8 +67,8 @@ struct RenderContext {
 // Per-frame context for recording inside the HDR scene pass, AFTER the opaque
 // draws. Mono fills `camera`; stereo fills `eyes` (and may set `passthrough`).
 // `pass` records draws into the scene pass; `encoder` is the frame-level view
-// (compute/barriers — the GPU-particle sim records through it, a pre-existing
-// in-pass dispatch the WebGPU backend will have to hoist in 16.4).
+// for barriers. Compute that a feature needs (GPU-particle sim) is NOT recorded
+// here — it goes in recordPrePass, before the render pass opens.
 struct FrameContext {
     rhi::CommandEncoder& encoder;
     rhi::RenderPassEncoder& pass;

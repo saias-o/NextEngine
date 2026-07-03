@@ -81,12 +81,8 @@ glm::mat4 directionalMatrix(const glm::vec3& dir, float distance) {
     return proj * view;
 }
 
-#ifndef SAIDA_RHI_WEBGPU
-struct WebCanvasWorldDraw {
-    WebCanvasNode* node = nullptr;
-    float distance = 0.0f;
-};
-
+// Indirect draw args layout (shared by the GPU-driven path and, on web, the
+// still-compiled-but-dormant draw-list gather). Backend-neutral.
 struct DrawIndexedIndirectCommand {
     uint32_t indexCount = 0;
     uint32_t instanceCount = 0;
@@ -96,6 +92,12 @@ struct DrawIndexedIndirectCommand {
 };
 static_assert(sizeof(DrawIndexedIndirectCommand) == 20,
               "DrawIndexedIndirectCommand must match Vulkan/WebGPU indirect args");
+
+#ifndef SAIDA_RHI_WEBGPU
+struct WebCanvasWorldDraw {
+    WebCanvasNode* node = nullptr;
+    float distance = 0.0f;
+};
 
 std::vector<WebCanvasWorldDraw> collectWorldWebCanvasDraws(Scene& scene, glm::vec3 viewpoint) {
     std::vector<WebCanvasWorldDraw> draws;
@@ -113,18 +115,6 @@ std::vector<WebCanvasWorldDraw> collectWorldWebCanvasDraws(Scene& scene, glm::ve
     });
     return draws;
 }
-#endif
-
-#ifdef SAIDA_RHI_WEBGPU
-struct DrawIndexedIndirectCommand {
-    uint32_t indexCount = 0;
-    uint32_t instanceCount = 0;
-    uint32_t firstIndex = 0;
-    int32_t vertexOffset = 0;
-    uint32_t firstInstance = 0;
-};
-static_assert(sizeof(DrawIndexedIndirectCommand) == 20,
-              "DrawIndexedIndirectCommand must match Vulkan/WebGPU indirect args");
 #endif
 
 // DDGI volume configuration scaled by the GPU's quality tier. Denser probes +
@@ -165,12 +155,6 @@ uint32_t sampleCountValue(VkSampleCountFlagBits samples) {
         case VK_SAMPLE_COUNT_1_BIT:
         default: return 1;
     }
-}
-
-uint64_t imageBytes(VkExtent2D extent, uint32_t bytesPerPixel,
-                    uint32_t layers = 1, uint32_t samples = 1) {
-    return static_cast<uint64_t>(extent.width) * extent.height *
-           layers * samples * bytesPerPixel;
 }
 #endif
 
