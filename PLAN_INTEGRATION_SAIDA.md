@@ -248,7 +248,7 @@ Détail : [PLAN_LIVE_EDIT_WEB.md](PLAN_LIVE_EDIT_WEB.md).
 |---|---|---|---|
 | D1 | Intégrer le canvas runtime WASM/WebGPU dans la page Next.js | A.5(S1) | ✅ scène rendue in-app (2026-07-03, voir §5.4) |
 | D2 | Charger un ProjectSnapshot dans le runtime d'édition | B3,S4 | projet réel affiché |
-| D3 | Panels React pilotés par EngineManifest : hierarchy, inspector, assets, console | A2 | inspection typée |
+| D3 | Panels React pilotés par EngineManifest : hierarchy, inspector, assets, console | A2 | 🔵 amorcé : `EngineManifestPanel` (plateforme) rend le contrat depuis `runtime.manifest()` — types de nœuds + propriétés réfléchies (kind, min/max, enum), vérifié navigateur (2026-07-03). Reste : hierarchy, sélection, édition→SaidaOp, assets, console |
 | D4 | Émettre des SaidaOps depuis l'UI (gizmos, inspector) | C3 | édition → op acceptée |
 | D5 | Recevoir et appliquer les ops distantes (multi-clients) | C3,S3 | 2 users, même scène |
 | D6 | **Optimistic-local** pour manipulations continues (invariant 0.4) | D4 | drag fluide, commit au relâchement |
