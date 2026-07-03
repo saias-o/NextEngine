@@ -738,6 +738,15 @@ if (BUILD_TESTING)
     )
     set_tests_properties(saida_tool_apply_ops_invalid PROPERTIES WILL_FAIL TRUE)
 
+    # C7: --skip-invalid folds an op-log where later ops target a deleted node;
+    # the stale ops are dropped (not aborted) and the fold succeeds (exit 0).
+    add_test(
+        NAME saida_tool_apply_ops_skip_invalid
+        COMMAND $<TARGET_FILE:saida_tool> apply-ops --skip-invalid
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot.json
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ops-apply-conflict.json
+    )
+
     # Phase B2 : validate-scene — structure d'un snapshot (types, ids uniques).
     add_test(
         NAME saida_tool_validate_scene_valid

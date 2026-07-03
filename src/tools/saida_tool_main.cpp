@@ -53,7 +53,7 @@ int usage(std::ostream& out) {
            "  saida_tool validate-scene <scene.json> [--pretty]\n"
            "  saida_tool validate-script <script.js> [--module|--script] [--pretty]\n"
            "  saida_tool validate-scenario <scenario.json> [--pretty]\n"
-           "  saida_tool apply-ops <scene.json> <ops.json> [--out <file>]\n"
+           "  saida_tool apply-ops <scene.json> <ops.json> [--out <file>] [--skip-invalid]\n"
            "  saida_tool help\n"
            "\n"
            "Commands:\n"
@@ -77,7 +77,10 @@ int usage(std::ostream& out) {
            "                    apply a JSON array of SaidaOps in order, then emit a\n"
            "                    deterministic snapshot to --out (or stdout). All ops\n"
            "                    must apply cleanly (atomic); exit 1 if any is rejected\n"
-           "                    and nothing is written.\n"
+           "                    and nothing is written. --skip-invalid instead drops\n"
+           "                    ops that fail against the current state (reported on\n"
+           "                    stderr) — used to fold a collaboration op-log where a\n"
+           "                    later op targets a node an earlier op deleted.\n"
            "\n"
            "Files may be '-' for stdin. Exit codes: 0 ok, 1 invalid input, 2 usage/IO.\n";
     return kExitUsage;
@@ -385,10 +388,13 @@ int cmdValidateScript(const std::vector<std::string>& args) {
 int cmdApplyOps(const std::vector<std::string>& args) {
     std::string scenePath, opsPath, outPath;
     bool pretty = false;
+    bool skipInvalid = false;
     for (std::size_t i = 0; i < args.size(); ++i) {
         const std::string& a = args[i];
         if (a == "--pretty") {
             pretty = true;
+        } else if (a == "--skip-invalid") {
+            skipInvalid = true;
         } else if (a == "--out") {
             if (i + 1 >= args.size()) {
                 std::cerr << "apply-ops: --out needs a path\n";
@@ -451,19 +457,33 @@ int cmdApplyOps(const std::vector<std::string>& args) {
         maxLoadedId = std::max(maxLoadedId, n.id());
     });
 
-    // Apply in order; the first rejected op aborts the whole batch (atomic — an
-    // op-log must never leave a half-applied snapshot). No GPU resources, so ops
-    // needing one (e.g. create_node MeshNode) are reported as failures.
+    // Apply in order. Default is atomic: the first rejected op aborts the whole
+    // batch (an interactive op-log must never leave a half-applied snapshot).
+    // With --skip-invalid, ops that fail to apply against the current state are
+    // dropped and recorded instead of aborting — this is how the Collaboration
+    // Gateway folds an op-log where later ops reference nodes an earlier op
+    // deleted (conflict resolution / invariant 0.6). The real applier stays the
+    // single authority for what is applicable (no logic duplicated server-side).
+    // No GPU resources, so ops needing one (create_node MeshNode) also fail.
+    json skipped = json::array();
     for (std::size_t i = 0; i < ops.size(); ++i) {
         const json res = json::parse(
             saida::authoring::applyOpJson(scene, nullptr, ops[i].dump()));
         if (!res.value("ok", false)) {
-            json report{{"ok", false}, {"failedIndex", i},
-                        {"error", res.value("error", std::string("unknown error"))},
+            const std::string error = res.value("error", std::string("unknown error"));
+            if (skipInvalid) {
+                skipped.push_back(json{{"index", i}, {"error", error}});
+                continue;
+            }
+            json report{{"ok", false}, {"failedIndex", i}, {"error", error},
                         {"applied", i}};
             std::cerr << report.dump() << "\n";
             return kExitInvalid;
         }
+    }
+    if (skipInvalid && !skipped.empty()) {
+        // Diagnostics on stderr so stdout stays a pure snapshot when no --out.
+        std::cerr << json{{"skipped", skipped}}.dump() << "\n";
     }
 
     // Deterministic ids: renumber every node created by the ops (id absent from
@@ -487,7 +507,8 @@ int cmdApplyOps(const std::vector<std::string>& args) {
             return kExitUsage;
         }
         out << snapshot << "\n";
-        json report{{"ok", true}, {"applied", ops.size()}, {"out", outPath}};
+        json report{{"ok", true}, {"applied", ops.size() - skipped.size()},
+                    {"skipped", skipped.size()}, {"out", outPath}};
         std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
     }
     return kExitOk;
