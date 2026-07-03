@@ -202,7 +202,7 @@ Dépôt : **E** = moteur (`NextEngine`) · **P** = plateforme (`GitHub/saida`).
 | A2 | Définir `EngineManifest` complet (nodes, behaviours, **propriétés réfléchies**, signaux, actions scénario, versions) | — | `saida_tool describe-engine --json` produit le manifest |
 | A3 | Extraire `SaidaAuthoringCore` depuis `src/mcp/McpBridge.cpp` vers `src/authoring/`, sans dépendance ImGui/éditeur | A1 | MCP + éditeur + headless appellent le même core |
 | A4 | Validation stricte des ops (types/behaviours/propriétés inconnus, cycles, racine, chemins hors projet) | A1,A2 | 🔵 fait : forme (version/type/payload), nodes/propriétés inconnus, racine protégée, `reparent_node` avec rejet self/descendant (cycles) — testé ; reste : behaviours, chemins hors projet |
-| A5 | Ops inversibles (undo/redo) et diff lisible | A1 | apply→invert round-trip |
+| A5 | Ops inversibles (undo/redo) et diff lisible | A1 | ✅ chaque op de modif renvoie une SaidaOp `inverse` re-appliquable (set_transform/rename/reparent/set_property/create→delete) ; apply→invert round-trip testé desktop + navigateur ; `delete_node` marqué `invertible:false` (restauration par snapshot, invariant 0.6) (2026-07-03) |
 | A6 | Round-trip ops → snapshot → `.saidaproj` → reload → re-serialize **stable** (invariant 0.3) | A3 | sortie identique à `SceneSerializer` |
 
 > Amorce déjà en place (spike) : `src/authoring/EngineManifest.*` +

@@ -1,5 +1,6 @@
 #include "authoring/SaidaOpApplier.hpp"
 
+#include "authoring/EngineManifest.hpp"
 #include "authoring/SaidaOp.hpp"
 #include "core/Reflection.hpp"
 #include "graphics/Material.hpp"
@@ -47,6 +48,18 @@ std::string err(const std::string& msg) {
 std::string ok(const std::string& applied, json diff) {
     return json{{"ok", true}, {"applied", applied}, {"diff", std::move(diff)}}.dump();
 }
+// Phase A5 : les ops reussies portent leur inverse ("inverse" = une SaidaOp
+// prete a re-appliquer). C'est la brique undo/redo et dry-run (apply -> invert).
+std::string ok(const std::string& applied, json diff, json inverse) {
+    return json{{"ok", true}, {"applied", applied}, {"diff", std::move(diff)},
+                {"inverse", std::move(inverse)}}.dump();
+}
+json inverseOp(const std::string& type, json payload) {
+    return json{{"opVersion", kOpVersion}, {"type", type}, {"payload", std::move(payload)}};
+}
+json vec3Json(const glm::vec3& v) { return json::array({v.x, v.y, v.z}); }
+// Convention scene : quaternions en [x, y, z, w].
+json quatJson(const glm::quat& q) { return json::array({q.x, q.y, q.z, q.w}); }
 
 const reflect::TypeDesc* reflectedNodeDesc(Node& n) {
     const std::string type = n.typeName() ? n.typeName() : "";
@@ -108,20 +121,24 @@ std::string opSetTransform(Scene& scene, const json& p) {
     Node* n = findByName(scene, target);
     if (!n) return err("unknown node '" + target + "'");
     json diff;
+    json invPayload{{"nodeId", target}};  // ne restaure que les champs touches
     if (p.contains("position")) {
+        invPayload["position"] = vec3Json(n->transform().position);
         n->transform().position = readVec3(p["position"], n->transform().position);
         diff["position"] = p["position"];
     }
     if (p.contains("rotation")) {
+        invPayload["rotation"] = quatJson(n->transform().rotation);
         n->transform().rotation = readQuat(p["rotation"], n->transform().rotation);
         diff["rotation"] = p["rotation"];
     }
     if (p.contains("scale")) {
+        invPayload["scale"] = vec3Json(n->transform().scale);
         n->transform().scale = readVec3(p["scale"], n->transform().scale);
         diff["scale"] = p["scale"];
     }
     Node::g_transformVersion++;
-    return ok("set_transform", diff);
+    return ok("set_transform", diff, inverseOp("set_transform", std::move(invPayload)));
 }
 
 std::string opCreateNode(Scene& scene, ResourceManager* resources, const json& p) {
@@ -143,7 +160,9 @@ std::string opCreateNode(Scene& scene, ResourceManager* resources, const json& p
         return err("unsupported nodeType '" + type + "' (spike)");
     }
     Node::g_hierarchyVersion++;
-    return ok("create_node", json{{"created", name}, {"nodeType", type}});
+    // Inverse : supprimer le node cree (reference par nom au stade spike).
+    json inv = inverseOp("delete_node", json{{"nodeId", name}});
+    return ok("create_node", json{{"created", name}, {"nodeType", type}}, std::move(inv));
 }
 
 std::string opDeleteNode(Scene& scene, const json& p) {
@@ -155,7 +174,10 @@ std::string opDeleteNode(Scene& scene, const json& p) {
     if (!parent) return err("node '" + target + "' has no parent");
     parent->removeChild(n);
     Node::g_hierarchyVersion++;
-    return ok("delete_node", json{{"deleted", target}});
+    // delete_node n'est PAS op-inversible (reconstruire le sous-arbre supprime
+    // exige sa serialisation ; le pont de restauration est le snapshot,
+    // invariant 0.6). L'op reussit mais ne propose pas d'inverse.
+    return ok("delete_node", json{{"deleted", target}, {"invertible", false}});
 }
 
 std::string opRenameNode(Scene& scene, const json& p) {
@@ -165,7 +187,9 @@ std::string opRenameNode(Scene& scene, const json& p) {
     Node* n = findByName(scene, target);
     if (!n) return err("unknown node '" + target + "'");
     n->setName(newName);
-    return ok("rename_node", json{{"from", target}, {"to", newName}});
+    // Inverse : renommer en sens inverse (nouveau nom -> ancien nom).
+    json inv = inverseOp("rename_node", json{{"nodeId", newName}, {"name", target}});
+    return ok("rename_node", json{{"from", target}, {"to", newName}}, std::move(inv));
 }
 
 std::string opReparentNode(Scene& scene, const json& p) {
@@ -185,8 +209,16 @@ std::string opReparentNode(Scene& scene, const json& p) {
 
     Node* oldParent = n->parent();
     if (!oldParent) return err("node '" + target + "' has no parent");
-    if (oldParent == newParent)
-        return ok("reparent_node", json{{"nodeId", target}, {"unchanged", true}});
+    if (oldParent == newParent) {
+        json inv = inverseOp("reparent_node",
+                             json{{"nodeId", target}, {"newParent", newParent->name()}});
+        return ok("reparent_node", json{{"nodeId", target}, {"unchanged", true}},
+                  std::move(inv));
+    }
+
+    // Inverse : renvoyer le node sous son ancien parent. Capture avant mutation
+    // (oldParent == scene racine -> newParent vide dans l'inverse).
+    const std::string oldParentName = (oldParent == &scene) ? std::string() : oldParent->name();
 
     // La transform locale est conservee (la position monde peut changer) —
     // c'est le contrat le plus simple et deterministe pour l'op-log.
@@ -194,9 +226,11 @@ std::string opReparentNode(Scene& scene, const json& p) {
     if (!owned) return err("failed to detach node '" + target + "'");
     newParent->addChild(std::move(owned));
     Node::g_hierarchyVersion++;
+    json inv = inverseOp("reparent_node",
+                         json{{"nodeId", target}, {"newParent", oldParentName}});
     return ok("reparent_node", json{{"nodeId", target},
                                     {"from", oldParent->name()},
-                                    {"to", newParent->name()}});
+                                    {"to", newParent->name()}}, std::move(inv));
 }
 
 std::string opSetProperty(Scene& scene, const json& p) {
@@ -207,19 +241,28 @@ std::string opSetProperty(Scene& scene, const json& p) {
     if (!p.contains("value")) return err("set_property needs a 'value'");
     const json& v = p["value"];
 
+    // Inverse d'un set_property : re-set la meme propriete a la valeur d'avant.
+    // Le nodeId de l'inverse doit referencer le node APRES l'op (cas 'name').
+    auto setPropInverse = [&](const std::string& nodeIdAfter, const json& before) {
+        return inverseOp("set_property", json{{"nodeId", nodeIdAfter},
+                                              {"property", prop}, {"value", before}});
+    };
+
     if (prop == "name") {
         if (!v.is_string()) return err("property 'name' expects string");
         const std::string before = n->name();
         n->setName(v.get<std::string>());
         return ok("set_property", json{{"nodeId", target}, {"property", prop},
-                                      {"before", before}, {"after", n->name()}});
+                                      {"before", before}, {"after", n->name()}},
+                  setPropInverse(n->name(), before));
     }
     if (prop == "enabled") {
         if (!v.is_boolean()) return err("property 'enabled' expects bool");
         const bool before = n->enabled();
         n->setEnabled(v.get<bool>());
         return ok("set_property", json{{"nodeId", target}, {"property", prop},
-                                      {"before", before}, {"after", n->enabled()}});
+                                      {"before", before}, {"after", n->enabled()}},
+                  setPropInverse(target, before));
     }
 
     const reflect::TypeDesc* desc = reflectedNodeDesc(*n);
@@ -246,9 +289,11 @@ std::string opSetProperty(Scene& scene, const json& p) {
     }
     json after;
     reflected->get(n, after);
+    json inv = setPropInverse(target, before);
     return ok("set_property", json{{"nodeId", target}, {"nodeType", n->typeName()},
                                   {"property", prop}, {"kind", reflected->kind},
-                                  {"before", std::move(before)}, {"after", std::move(after)}});
+                                  {"before", std::move(before)}, {"after", std::move(after)}},
+              std::move(inv));
 }
 
 } // namespace

@@ -43,6 +43,13 @@ bool close(float a, float b) {
     return std::abs(a - b) < 0.0001f;
 }
 
+// Recherche directe parmi les enfants (les tests referencent par nom).
+saida::Node* findChildByName(saida::Node& parent, const std::string& name) {
+    for (const auto& c : parent.children())
+        if (c->name() == name) return c.get();
+    return nullptr;
+}
+
 void testReflectedLightProperty() {
     saida::Scene scene;
     auto light = std::make_unique<saida::LightNode>("Sun", saida::LightType::Directional);
@@ -250,6 +257,78 @@ void testManifestListsRegistryOps() {
     require(!saida::authoring::isKnownOpType("explode_scene"));
 }
 
+// Phase A5 : chaque op de modification renvoie un inverse re-appliquable
+// (apply -> invert restaure l'etat). Fondation undo/redo + dry-run IA.
+void testInverseOps() {
+    saida::Scene scene;
+    auto* a = scene.createChild<saida::Node>("A");
+    auto* b = scene.createChild<saida::Node>("B");
+    auto* c = a->createChild<saida::Node>("C");
+    auto light = std::make_unique<saida::LightNode>("Sun", saida::LightType::Directional);
+    saida::LightNode* sun = light.get();
+    scene.addChild(std::move(light));
+    (void)b; (void)c;
+
+    // set_transform : position restauree apres apply + apply(inverse).
+    a->transform().position = {1.0f, 2.0f, 3.0f};
+    json res = applyOp(scene, json{{"type", "set_transform"},
+                                   {"payload", {{"nodeId", "A"}, {"position", {9.0f, 9.0f, 9.0f}}}}});
+    require(res["ok"].get<bool>());
+    require(res.contains("inverse"));
+    require(close(a->transform().position.x, 9.0f));
+    json inv = applyOp(scene, res["inverse"]);
+    require(inv["ok"].get<bool>());
+    require(close(a->transform().position.x, 1.0f));
+    require(close(a->transform().position.y, 2.0f));
+    require(close(a->transform().position.z, 3.0f));
+
+    // set_property reflechi : intensity restauree.
+    res = applyOp(scene, setProperty("Sun", "intensity", 5.0f));
+    require(res["ok"].get<bool>());
+    require(close(sun->intensity, 5.0f));
+    applyOp(scene, res["inverse"]);
+    require(close(sun->intensity, 1.0f));
+
+    // set_property name : l'inverse reference le NOUVEAU nom, restaure l'ancien.
+    res = applyOp(scene, setProperty("Sun", "name", "Star"));
+    require(res["ok"].get<bool>());
+    require(sun->name() == "Star");
+    require(res["inverse"]["payload"]["nodeId"] == "Star");
+    applyOp(scene, res["inverse"]);
+    require(sun->name() == "Sun");
+
+    // rename_node : idem, inverse restaure le nom d'origine.
+    res = applyOp(scene, json{{"type", "rename_node"},
+                              {"payload", {{"nodeId", "A"}, {"name", "Alpha"}}}});
+    require(res["ok"].get<bool>());
+    require(a->name() == "Alpha");
+    applyOp(scene, res["inverse"]);
+    require(a->name() == "A");
+
+    // reparent_node : C revient sous A apres apply(inverse).
+    res = applyOp(scene, json{{"type", "reparent_node"},
+                              {"payload", {{"nodeId", "C"}, {"newParent", "B"}}}});
+    require(res["ok"].get<bool>());
+    require(c->parent() == b);
+    applyOp(scene, res["inverse"]);
+    require(c->parent() == a);
+
+    // create_node : inverse = delete_node du node cree.
+    res = applyOp(scene, json{{"type", "create_node"},
+                              {"payload", {{"nodeType", "LightNode"}, {"name", "Temp"}}}});
+    require(res["ok"].get<bool>());
+    require(res["inverse"]["type"] == "delete_node");
+    require(findChildByName(scene, "Temp") != nullptr);
+    applyOp(scene, res["inverse"]);
+    require(findChildByName(scene, "Temp") == nullptr);
+
+    // delete_node : honnetement marque non op-inversible (restauration snapshot).
+    res = applyOp(scene, json{{"type", "delete_node"}, {"payload", {{"nodeId", "B"}}}});
+    require(res["ok"].get<bool>());
+    require(!res.contains("inverse"));
+    require(res["diff"]["invertible"].get<bool>() == false);
+}
+
 void testManifestContainsReflectedProperties() {
     json manifest = saida::authoring::buildEngineManifest();
     require(manifest["opVersion"].get<int>() == saida::authoring::kOpVersion);
@@ -298,6 +377,7 @@ int main() {
     testSaidaOpRoundTrip();
     testSaidaOpParseRejections();
     testReparentNode();
+    testInverseOps();
     testManifestListsRegistryOps();
     testManifestContainsReflectedProperties();
     testSnapshotReflectsAppliedOps();
