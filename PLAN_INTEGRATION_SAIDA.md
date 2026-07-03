@@ -234,11 +234,11 @@ Détail : [PLAN_LIVE_EDIT_WEB.md](PLAN_LIVE_EDIT_WEB.md).
 | B4 | `describe-engine --json` (export manifest) | A2 | ✅ `saida_tool describe-engine [--pretty]` : manifest JSON sur stdout, **déterministe/hashable** (sha256 stable, invariant 0.6), vérifié (2026-07-03) |
 | B5 | Sécurité des chemins (pas de `..`, pas d'absolu, sandbox) | — | 🔵 primitive `resolveSandboxedProjectPath()` faite dans `core/Paths`, tests d'échappement purs (`..`, absolu, drive Windows, file URL) ; pont MCP branché pour scripts/UI/scénarios/import modèle (chemins relatifs conservés pour attachements). Reste : CLI apply-ops + asset loaders bas niveau |
 
-### Phase C — Collaboration SaaS minimale (P) ⬜
+### Phase C — Collaboration SaaS minimale (P) 🔵 (C1 ✅)
 
 | # | Tâche | Dépend | Critère de fait |
 |---|---|---|---|
-| C1 | Tables Postgres : `Project`, `ProjectRevision`, `OperationLog`, `SceneDocument`, `CollaborationSession` (Prisma) | — | migration + seed |
+| C1 | Tables Postgres : `Project`, `ProjectRevision`, `OperationLog`, `SceneDocument`, `CollaborationSession` (Prisma) | — | ✅ `Project` existant ; ajout `OperationLog` (journal append-only, revision monotone + inverse), `ProjectRevision` (checkpoint → snapshot, raison OP_THRESHOLD/PERIODIC/PRE_BUILD/MANUAL), `SceneDocument` (snapshot `.saidaproj` inline ou R2/S3 + sha256), `CollaborationSession` (audit connexion + `lastRevisionAck` pour resync) — pensé invariant 0.7 (reconstructible depuis Postgres). Migration écrite main, **byte-identique** à `prisma migrate diff` (zéro drift), `prisma validate`+`generate`+typecheck db verts (2026-07-04, `GitHub/saida`) |
 | C2 | Collaboration Gateway (Fastify WebSocket) | A2,A4 | service démarrable |
 | C3 | Boucle : auth → valide (manifest+état) → append → apply → revision++ → broadcast | C1,C2 | 1 client applique une op |
 | C4 | Revision monotone + snapshots périodiques (N ops / X min / avant build) | C1 | snapshot matérialisable |
