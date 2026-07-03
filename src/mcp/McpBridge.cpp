@@ -1,6 +1,7 @@
 #include "mcp/McpBridge.hpp"
 
 #include "core/Log.hpp"
+#include "core/Paths.hpp"
 #include "core/Reflection.hpp"
 #include "editor/Command.hpp"
 #include "editor/EditorUI.hpp"
@@ -396,26 +397,26 @@ std::string projectRootOf(const ToolCtx& ctx) {
     return std::string(SAIDA_PROJECT_ROOT);
 }
 
+SandboxedPathResult resolveToolPath(const ToolCtx& ctx, const std::string& path,
+                                    const std::string& defaultDirectory = {}) {
+    SandboxedPathResult resolved =
+        resolveSandboxedProjectPath(projectRootOf(ctx), path, defaultDirectory);
+    if (!resolved) fail(resolved.error + ": " + path);
+    return resolved;
+}
+
 json toolWriteScript(const ToolCtx& ctx, const json& args) {
     if (!args.contains("path") || !args.contains("code")) fail("missing 'path'/'code'");
-    std::string rel = args["path"].get<std::string>();
-    fs::path rp(rel);
-    std::string projectRel = rel, abs;
-    if (rp.is_absolute()) {
-        abs = rel;
-    } else {
-        if (!ctx.project || !ctx.project->isLoaded()) fail("no project loaded; pass an absolute path");
-        if (!rp.has_parent_path()) projectRel = "scripts/" + rel;  // default scripts/
-        abs = ctx.project->rootPath() + "/" + projectRel;
-    }
-    spit(abs, args["code"].get<std::string>());
+    SandboxedPathResult scriptPath =
+        resolveToolPath(ctx, args["path"].get<std::string>(), "scripts");
+    spit(scriptPath.absolute, args["code"].get<std::string>());
 
-    json out{{"path", abs}};
+    json out{{"path", scriptPath.absolute}, {"relativePath", scriptPath.relative}};
     if (args.contains("attachTo")) {
         requireEdit(ctx);
         Node* node = ctx.doc->find(parseNodeId(args["attachTo"]));
         if (!node) fail("attachTo node not found");
-        ctx.exec(std::make_unique<AttachScriptCommand>(node->id(), projectRel));
+        ctx.exec(std::make_unique<AttachScriptCommand>(node->id(), scriptPath.relative));
         out["attached"] = true;
     }
     return out;
@@ -423,18 +424,14 @@ json toolWriteScript(const ToolCtx& ctx, const json& args) {
 
 json toolWriteUi(const ToolCtx& ctx, const json& args) {
     if (!args.contains("path") || !args.contains("code")) fail("missing 'path'/'code'");
-    std::string rel = args["path"].get<std::string>();
-    fs::path rp(rel);
-    std::string abs = rp.is_absolute() ? rel : projectRootOf(ctx) + "/" + rel;
-    spit(abs, args["code"].get<std::string>());
-    return {{"path", abs}};
+    SandboxedPathResult uiPath = resolveToolPath(ctx, args["path"].get<std::string>());
+    spit(uiPath.absolute, args["code"].get<std::string>());
+    return {{"path", uiPath.absolute}, {"relativePath", uiPath.relative}};
 }
 
 std::string scenarioAbsPath(const ToolCtx& ctx, const json& args) {
     if (!args.contains("path")) fail("missing 'path'");
-    fs::path p(args["path"].get<std::string>());
-    if (p.is_absolute()) return p.string();
-    return projectRootOf(ctx) + "/" + p.string();
+    return resolveToolPath(ctx, args["path"].get<std::string>()).absolute;
 }
 
 json scenarioIssuesJson(const std::vector<ScenarioIssue>& issues) {
@@ -518,16 +515,20 @@ json toolAttachScenario(const ToolCtx& ctx, const json& args) {
     requireEdit(ctx);
     Node* node = requireNode(ctx, args);
     if (!args.contains("path")) fail("missing 'path'");
-    std::string scenarioPath = args["path"].get<std::string>();
+    SandboxedPathResult scenarioPath = resolveToolPath(ctx, args["path"].get<std::string>());
     auto* runner = node->getBehaviour<ScenarioRunnerBehaviour>();
     if (!runner) {
         ctx.exec(std::make_unique<AddBehaviourCommand>(node->id(), "ScenarioRunner"));
         runner = node->getBehaviour<ScenarioRunnerBehaviour>();
     }
     if (!runner) fail("failed to attach ScenarioRunner");
-    runner->scenarioPath = scenarioPath;
+    runner->scenarioPath = scenarioPath.relative;
     if (args.contains("autoStart")) runner->autoStart = args["autoStart"].get<bool>();
-    return {{"ok", true}, {"id", idStr(node->id())}, {"behaviour", "ScenarioRunner"}};
+    return {{"ok", true},
+            {"id", idStr(node->id())},
+            {"behaviour", "ScenarioRunner"},
+            {"path", scenarioPath.absolute},
+            {"relativePath", scenarioPath.relative}};
 }
 
 std::string cppType(const std::string& t) {
@@ -721,15 +722,15 @@ json toolImportModel(const ToolCtx& ctx, const json& args) {
     requireEdit(ctx);
     if (!args.contains("path")) fail("missing 'path'");
     if (!ctx.resources) fail("no resources bound");
-    fs::path pp(args["path"].get<std::string>());
-    std::string abs = pp.is_absolute() ? pp.string() : projectRootOf(ctx) + "/" + pp.string();
-    if (!fs::exists(abs)) fail("model not found: " + abs);
+    SandboxedPathResult modelPath = resolveToolPath(ctx, args["path"].get<std::string>());
+    if (!fs::exists(modelPath.absolute)) fail("model not found: " + modelPath.absolute);
 
-    auto node = std::make_unique<Node>(args.value("name", pp.stem().string()));
-    node->setImportedFromPath(abs);
+    auto node = std::make_unique<Node>(args.value("name", fs::path(modelPath.relative).stem().string()));
+    node->setImportedFromPath(modelPath.relative);
     GLTFLoadOptions opts;
     opts.autoMeshLods = args.value("lod", true);  // autoLOD by default
-    if (!GLTFLoader::load(abs, *node, *ctx.resources, opts)) fail("failed to import model: " + abs);
+    if (!GLTFLoader::load(modelPath.absolute, *node, *ctx.resources, opts))
+        fail("failed to import model: " + modelPath.absolute);
     node->regenerateId();
     NodeId id = node->id();
 
