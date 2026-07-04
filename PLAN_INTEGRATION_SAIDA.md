@@ -639,3 +639,110 @@ viewport `onClick(px,py)` → convertir en NDC (`x=px/w*2-1`, `y=1-py/h*2`) →
   défaut → `source /c/Users/evand/emsdk/emsdk_env.sh` avant `cmake --build build-web`,
   puis `node scripts/sync-engine-runtime.mjs` côté `GitHub/saida`. Tout passe par
   SaidaOps validées (invariants §3).
+
+---
+
+### Avancement Codex - Lot 1 (2026-07-04)
+
+**Livre cote plateforme et moteur :**
+
+- **CI minimale ajoutee dans les deux repos.** `GitHub/saida/.github/workflows/ci.yml` installe Node 22, valide Prisma, genere le client Prisma, lance typecheck, tests et build. `NextEngine/.github/workflows/ci.yml` configure un runner Windows/MSYS2 UCRT64, installe la toolchain moteur, build `saida_tool` + `saida_authoring_op_tests`, puis lance les CTests authoring/headless. Cette CI garde le contrat `SaidaOp` et la plateforme dans le meme filet de verification.
+- **D2/D5 branche cote UI.** `apps/web/app/lib/use-live-edit-session.ts` isole l'etat live React : bootstrap par `connectLiveEdit`, chargement du snapshot serveur via `runtime.loadSnapshot`, ouverture WS `/v1/projects/:id/collab?since=revision`, refresh snapshot apres ops locales, ops distantes et rollback local. `workspace/page.tsx` ne poll plus `engine.snapshot()` en mode demo ; il depend du snapshot serveur et du log collaboration.
+- **D9 selection viewport amorcee.** `EngineViewport` expose un hook de picking propre (`onPick`) qui convertit le clic canvas en NDC puis appelle `runtime.pick(x,y)`. Le workspace selectionne le node correspondant dans la hierarchie via nom/id. Les modes move/rotate restent a brancher en gizmos continus (D6/D9 suite).
+- **D4 inspecteur editable.** `SceneInspectorPanel` edite maintenant `name`, `enabled`, transform (`position`, `rotation`, `scale`) et proprietes reflechies scalaires/bool/enum du `EngineManifest`. Les mutations passent par les helpers types `ops.renameNode`, `ops.setTransform`, `ops.setProperty`, puis par `session.emitOp` : meme chemin valide que les peers et futurs agents.
+- **Nettoyage repo.** Suppression de l'artefact `apps/web/public/logo.png~` et ajout de `*~` au `.gitignore`.
+
+**Verification locale effectuee :**
+
+- `npm run typecheck` : vert.
+- `npm run test` : vert (`44` tests API passes, `5` skips attendus sans binaire natif sur PATH ; `7/7` shared).
+- `npm run build` : vert.
+- `npx prisma validate --schema packages/db/prisma/schema.prisma` : vert.
+
+**Non encore prouve dans ce lot :**
+
+- E2E navigateur a deux onglets avec infra locale complete demarree (Postgres/Redis/Temporal/MinIO/API/Web/auth/projet). Le code de branchement est en place, mais il faut une passe Playwright/manuelle avec sessions reelles pour valider visuellement : snapshot serveur charge, WS connecte, op inspecteur visible dans l'autre onglet, selection par picking.
+- Manipulations continues move/rotate : le mode select picke ; les gizmos avec preview locale + commit unique au relachement restent le prochain morceau D6/D9.
+
+---
+
+### Avancement Codex - Lot 2 (2026-07-04)
+
+**Livre cote plateforme :**
+
+- **Chat IA projet persistant.** Ajout des modeles Prisma `AiConversation`, `AiMessage`, `AiAgentRun`, `AiAction` et migration `20260704170000_ai_conversations`. Les conversations sont scopees par projet, historisees, et reliees aux propositions/actions agent.
+- **Agent LLM explicite, sans fake.** `apps/api/src/llm.ts` appelle un endpoint `openai-compatible` configure par `AGENT_LLM_*`. Si la cle ou le modele manque, le run echoue avec `AGENT_LLM_NOT_CONFIGURED` et aucune modification de scene n'est faite.
+- **Pipeline agent SaidaOps.** `apps/api/src/project-agent.ts` branche `POST /v1/projects/:id/agent/messages` sur le contexte moteur reel : `EngineManifest` + scene compacte courante. La sortie modele passe par `extractProposedOps`, validation WASM `validateOp`, puis `dryRunOps` atomique avant d'etre stockee comme `AiAction.PROPOSED`.
+- **Application revue -> live edit.** `POST /v1/projects/:id/agent/actions/:actionId/apply` re-dry-run l'action contre le head courant, applique chaque op via `hub.applyExternalOp`, et broadcast aux clients connectes dans le meme ordre total que les edits humains.
+- **Frontend chat branche.** Le panneau chat de `saidaengine/workspace` charge l'historique, envoie les prompts, affiche les runs echoues/proposes/appliques, et expose un bouton `Apply` pour appliquer explicitement les ops proposees.
+- **Configuration prod.** `.env.example`, `config.ts` et `env.ts` documentent/verrouillent `AGENT_LLM_ENABLED`, `AGENT_LLM_BASE_URL`, `AGENT_LLM_API_KEY`/`OPENAI_API_KEY`, `AGENT_LLM_MODEL`, timeout et taille d'historique. En production, si l'agent est active, la config LLM doit etre presente.
+
+**Verification locale effectuee :**
+
+- `npx prisma validate --schema packages/db/prisma/schema.prisma` : vert.
+- `npm run db:generate` : client Prisma regenere.
+- `npm run typecheck -w @saida/api` : vert.
+- `npm run typecheck -w @saida/web` : vert.
+- `npm run test -w @saida/api` : vert (`46` passes, `5` skips attendus sans binaire natif sur PATH).
+- `npm run build -w @saida/web` : vert.
+
+**Non encore prouve / reporte proprement :**
+
+- E2E navigateur complet avec API + Postgres + auth + deux sessions : a faire au prochain lot pour prouver visuellement chat -> proposition -> apply -> scene update live chez plusieurs collaborateurs.
+- Pieces jointes de chat (`AiAttachment`/S3/R2/dedupe), credits/quota par run et worker Temporal pour jobs longs : hors Lot 2, a implementer avant ouverture publique large.
+- `write_script`/`write_ui` restent bloques par le modele durable de fichiers projet : l'agent peut deja produire/appliquer les SaidaOps actuellement supportees par le contrat moteur, mais l'ecriture de scripts doit passer par un stockage projet round-trippable avant d'entrer dans le contrat.
+
+---
+
+### Avancement Codex - Lot 3 (2026-07-04)
+
+**Livre cote plateforme :**
+
+- **Fichiers projet durables.** `GET/POST /v1/projects/:id/files` liste et cree des versions de `ProjectFile` a partir d'assets disponibles de l'organisation. Les chemins sont normalises et refuses s'ils sont absolus, contiennent `..`, backslash, segments invalides ou extensions non autorisees.
+- **Telechargement fichier projet.** `GET /v1/projects/:id/files/:fileId/download` retourne une URL signee S3/R2 pour un fichier projet autorise.
+- **Uploads generiques controles.** `ALLOWED_UPLOAD_MEDIA_TYPES` complete `ALLOWED_IMAGE_TYPES` pour autoriser textes, scripts, JSON, PDF, audio et glTF utiles a l'editeur/chat. Les limites de taille, quota stockage et statut `AssetStatus` restent ceux du pipeline existant.
+- **Marketplace protegee.** Comme les uploads ne sont plus seulement image, `marketplace.ts` impose maintenant que `coverAssetId` pointe vers un asset image ; builds/downloads restent des assets disponibles.
+- **Pieces jointes chat persistantes.** Ajout de `AiAttachment` dans Prisma/migration. `POST /v1/projects/:id/agent/messages` accepte jusqu'a 8 attachments `{assetId,path?}`, cree les `AiAttachment`, et peut lier chaque asset a un `ProjectFile` versionne sous son chemin projet.
+- **Contexte agent enrichi.** Le prompt agent recoit la liste recente des pieces jointes projet/chat (nom, projectFileId, mediaType, taille) sans ingester le contenu complet : pas de fuite implicite ni explosion tokens.
+- **Frontend branche.** Le trombone du chat upload de vrais fichiers via `/v1/uploads/*`, les envoie avec le prompt, affiche les chips de pieces jointes dans le fil, et l'onglet Project du browser charge les vrais `ProjectFile` au lieu d'une liste statique.
+
+**Verification locale effectuee :**
+
+- `npx prisma validate --schema packages/db/prisma/schema.prisma` : vert.
+- `npm run db:generate` : client Prisma regenere.
+- `npm run typecheck -w @saida/api` : vert.
+- `npm run typecheck -w @saida/web` : vert.
+- `npm run test -w @saida/api` : vert (`46` passes, `5` skips attendus).
+- `npm run build -w @saida/web` : vert.
+
+**Non encore prouve / suite logique :**
+
+- E2E navigateur complet avec MinIO/S3 local : uploader un fichier chat, verifier creation `Asset` + `ProjectFile` + `AiAttachment`, puis voir l'onglet Project se rafraichir apres envoi.
+- Lecture selective du contenu texte par l'agent : a faire avec limites strictes (taille, media types, redaction eventuelle) avant `write_script`/`write_ui`.
+- Modeles credits/quota par run agent et worker Temporal restent a faire avant prod publique.
+
+---
+
+### Avancement Codex - Lot 4 (2026-07-04)
+
+**Livre cote plateforme :**
+
+- **Lecture selective des attachments par l'agent.** `apps/api/src/agent-attachments.ts` determine quels fichiers sont lisibles par le LLM : media types texte connus ou extensions texte sous `application/octet-stream`, taille strictement bornee, et nombre d'extraits limite.
+- **Reader S3 borne.** `apps/api/src/s3.ts` expose `getObjectBytes({bucket,key,maxBytes})` avec range request. L'agent ne telecharge jamais un objet complet par accident.
+- **Contexte non fiable explicite.** Les extraits injectes dans le prompt sont encadres par `BEGIN/END UNTRUSTED ATTACHMENT` et precedes d'une consigne systeme : le contenu fichier est contexte utilisateur, pas instruction prioritaire.
+- **Limites configurables.** `.env.example` et `config.ts` ajoutent `AGENT_ATTACHMENT_MAX_BYTES`, `AGENT_ATTACHMENT_MAX_SNIPPETS`, `AGENT_ATTACHMENT_MAX_TOTAL_CHARS`.
+- **Integration agent.** `project-agent.ts` enrichit maintenant le prompt avec metadata + extraits bornes des derniers attachments disponibles, en reliant `AiAttachment` -> `Asset` -> S3/R2. Les fichiers binaires/audio/PDF restent visibles en metadata mais ne sont pas lus comme texte.
+- **Tests de garde-fou.** `agent-attachments.test.ts` couvre media types lisibles, refus des binaires/trop gros, nettoyage des caracteres de controle, troncature, et balisage non fiable.
+
+**Verification locale effectuee :**
+
+- `npm run typecheck -w @saida/api` : vert.
+- `npm run typecheck -w @saida/web` : vert.
+- `npm run test -w @saida/api` : vert (`49` passes, `5` skips attendus).
+- `npm run build -w @saida/web` : vert.
+
+**Non encore prouve / suite logique :**
+
+- E2E avec MinIO reel : verifier que les range requests fonctionnent sur l'object store cible et que le prompt contient bien les extraits attendus.
+- Redaction/filtrage avance des secrets dans fichiers texte avant prompt LLM.
+- Ops `write_script`/`write_ui` : maintenant debloquables cote plateforme, mais le contrat moteur doit encore definir l'application durable fichier+scene sans casser le round-trip.
