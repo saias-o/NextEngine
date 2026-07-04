@@ -349,10 +349,12 @@ Repris du mandat §9, l'intégration est prête quand :
 - **Phase A** : jusqu'où élargir le sous-ensemble spike (`set_transform`,
   `create_node`, `delete_node`, `set_property`) avant d'extraire totalement le
   noyau `SaidaOp` depuis MCP ? *Contrat actuel (2026-07-04)* : `set_transform`,
-  `create_node`, `delete_node`, `rename_node`, `reparent_node`, `set_property`,
-  `set_scene_setting` — tous validés (forme WASM), inversibles, foldables. Restent
-  à cadrer : `add/remove_behaviour`, `set_behaviour_property`, `write_script`,
-  `write_ui`, connexions de signaux.
+  `create_node` (palette réfléchie complète via NodeRegistry), `delete_node`,
+  `rename_node`, `reparent_node`, `set_property`, `set_scene_setting`,
+  `add_behaviour`, `remove_behaviour`, `set_behaviour_property` — tous validés
+  (forme WASM), inversibles, foldables ; les behaviours round-trippent dans le
+  snapshot headless. Restent à cadrer : `write_script`, `write_ui`, connexions
+  de signaux.
 - **Identité des nodes côté ops** : le spike référence par nom ; le système final
   doit utiliser `NodeId` (id/génération) — figer le schéma en A1.
 - **Import d'asset en édition web** : MEMFS preload vs fetch/IDBFS — hors spike,
