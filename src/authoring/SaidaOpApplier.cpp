@@ -296,6 +296,75 @@ std::string opSetProperty(Scene& scene, const json& p) {
               std::move(inv));
 }
 
+// set_scene_setting : édite l'ambiance de scène (SceneSettings) par nom. Sous-
+// ensemble curé, pertinent pour l'éditeur (fog/bloom/ambient/ibl/gi/skybox).
+// Renvoie un inverse re-appliquable (undo). Les couleurs sont stockées en vec4
+// mais éditées en vec3 (xyz), w conservé.
+std::string opSetSceneSetting(Scene& scene, const json& p) {
+    const std::string key = p.value("setting", std::string());
+    if (key.empty()) return err("set_scene_setting needs 'setting'");
+    if (!p.contains("value")) return err("set_scene_setting needs a 'value'");
+    const json& v = p["value"];
+    SceneSettings& s = scene.settings();
+
+    auto sceneInverse = [&](const json& before) {
+        return inverseOp("set_scene_setting", json{{"setting", key}, {"value", before}});
+    };
+    auto okScene = [&](const json& before, const json& after) {
+        return ok("set_scene_setting",
+                  json{{"setting", key}, {"before", before}, {"after", after}},
+                  sceneInverse(before));
+    };
+    auto setFloat = [&](float& field) -> std::string {
+        if (!v.is_number()) return err("scene setting '" + key + "' expects a number");
+        const float before = field;
+        field = v.get<float>();
+        return okScene(before, field);
+    };
+    auto setBool = [&](bool& field) -> std::string {
+        if (!v.is_boolean()) return err("scene setting '" + key + "' expects a bool");
+        const bool before = field;
+        field = v.get<bool>();
+        return okScene(before, field);
+    };
+    // Colour stored as vec4; edited as a vec3, alpha preserved.
+    auto setColor = [&](glm::vec4& field) -> std::string {
+        if (!v.is_array() || v.size() != 3) return err("scene setting '" + key + "' expects a vec3");
+        const json before = json::array({field.x, field.y, field.z});
+        field.x = v[0].get<float>();
+        field.y = v[1].get<float>();
+        field.z = v[2].get<float>();
+        return okScene(before, json::array({field.x, field.y, field.z}));
+    };
+
+    if (key == "fogEnabled") return setBool(s.fogEnabled);
+    if (key == "bloomEnabled") return setBool(s.bloomEnabled);
+    if (key == "aoEnabled") return setBool(s.aoEnabled);
+    if (key == "iblEnabled") return setBool(s.iblEnabled);
+    if (key == "giEnabled") return setBool(s.giEnabled);
+    if (key == "enablePostProcessing") return setBool(s.enablePostProcessing);
+
+    if (key == "fogStart") return setFloat(s.fogStart);
+    if (key == "fogDensity") return setFloat(s.fogDensity);
+    if (key == "bloomThreshold") return setFloat(s.bloomThreshold);
+    if (key == "bloomIntensity") return setFloat(s.bloomIntensity);
+    if (key == "bloomRadius") return setFloat(s.bloomRadius);
+    if (key == "aoRadius") return setFloat(s.aoRadius);
+    if (key == "aoIntensity") return setFloat(s.aoIntensity);
+    if (key == "aoPower") return setFloat(s.aoPower);
+    if (key == "giIntensity") return setFloat(s.giIntensity);
+    if (key == "iblDiffuseIntensity") return setFloat(s.iblDiffuseIntensity);
+    if (key == "iblSpecularIntensity") return setFloat(s.iblSpecularIntensity);
+    if (key == "skyboxExposure") return setFloat(s.skyboxExposure);
+    if (key == "skyboxRotation") return setFloat(s.skyboxRotation);
+
+    if (key == "ambientLight") return setColor(s.ambientLight);
+    if (key == "clearColor") return setColor(s.clearColor);
+    if (key == "fogColor") return setColor(s.fogColor);
+
+    return err("unknown scene setting '" + key + "'");
+}
+
 } // namespace
 
 std::string applyOpJson(Scene& scene, ResourceManager* resources,
@@ -314,6 +383,7 @@ std::string applyOpJson(Scene& scene, ResourceManager* resources,
     if (type == "rename_node")   return opRenameNode(scene, p);
     if (type == "reparent_node") return opReparentNode(scene, p);
     if (type == "set_property")  return opSetProperty(scene, p);
+    if (type == "set_scene_setting") return opSetSceneSetting(scene, p);
     return err("op type '" + type + "' is registered but not implemented");
 }
 

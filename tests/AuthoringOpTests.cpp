@@ -508,6 +508,47 @@ void testHeadlessSnapshotRoundTrip() {
     require(!saida::authoring::deserializeSceneSnapshot(std::string("not json"), bad, &error));
 }
 
+// set_scene_setting : édite SceneSettings par nom (float/bool/vec3), inversible.
+void testSceneSettingOp() {
+    saida::Scene scene;
+    auto sceneSetting = [&](const std::string& key, json value) {
+        return json{{"type", "set_scene_setting"}, {"payload", {{"setting", key}, {"value", std::move(value)}}}};
+    };
+
+    // float
+    json res = applyOp(scene, sceneSetting("fogDensity", 0.08f));
+    require(res["ok"].get<bool>());
+    require(close(scene.settings().fogDensity, 0.08f));
+    require(res.contains("inverse"));
+
+    // bool
+    const bool bloomBefore = scene.settings().bloomEnabled;
+    res = applyOp(scene, sceneSetting("bloomEnabled", !bloomBefore));
+    require(res["ok"].get<bool>());
+    require(scene.settings().bloomEnabled == !bloomBefore);
+
+    // vec3 colour into vec4 field (alpha preserved)
+    scene.settings().ambientLight = {0.1f, 0.2f, 0.3f, 1.0f};
+    res = applyOp(scene, sceneSetting("ambientLight", json::array({0.5f, 0.6f, 0.7f})));
+    require(res["ok"].get<bool>());
+    require(close(scene.settings().ambientLight.x, 0.5f));
+    require(close(scene.settings().ambientLight.z, 0.7f));
+    require(close(scene.settings().ambientLight.w, 1.0f));  // alpha untouched
+
+    // inverse restores the previous colour
+    applyOp(scene, res["inverse"]);
+    require(close(scene.settings().ambientLight.x, 0.1f));
+    require(close(scene.settings().ambientLight.z, 0.3f));
+
+    // rejections: unknown setting, wrong type
+    res = applyOp(scene, sceneSetting("doesNotExist", 1.0f));
+    require(!res["ok"].get<bool>());
+    res = applyOp(scene, sceneSetting("fogDensity", true));
+    require(!res["ok"].get<bool>());
+    res = applyOp(scene, sceneSetting("bloomEnabled", 3.0f));
+    require(!res["ok"].get<bool>());
+}
+
 } // namespace
 
 int main() {
@@ -525,5 +566,6 @@ int main() {
     testManifestContainsBehavioursSignalsAndScenario();
     testSnapshotReflectsAppliedOps();
     testHeadlessSnapshotRoundTrip();
+    testSceneSettingOp();
     return 0;
 }
