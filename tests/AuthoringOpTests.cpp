@@ -138,6 +138,27 @@ void testCreateNodeResourceBoundaries() {
                               {"payload", {{"nodeType", "MeshNode"}, {"name", "NeedsGpu"}}}});
     require(!res["ok"].get<bool>());
     require(scene.children().size() == 1);
+
+    // Reflected node palette via NodeRegistry (no GPU): Water, ParticleSystem.
+    res = applyOp(scene, json{{"type", "create_node"},
+                              {"payload", {{"nodeType", "Water"}, {"name", "Sea"}}}});
+    require(res["ok"].get<bool>());
+    saida::Node* sea = findChildByName(scene, "Sea");
+    require(sea != nullptr && dynamic_cast<saida::WaterNode*>(sea) != nullptr);
+
+    res = applyOp(scene, json{{"type", "create_node"},
+                              {"payload", {{"nodeType", "ParticleSystem"}, {"name", "Sparks"}}}});
+    require(res["ok"].get<bool>());
+    require(dynamic_cast<saida::ParticleSystemNode*>(findChildByName(scene, "Sparks")) != nullptr);
+
+    // A property set on a freshly-created reflected node applies.
+    res = applyOp(scene, setProperty("Sea", "amplitude", 0.5f));
+    require(res["ok"].get<bool>());
+
+    // Unknown types are still rejected.
+    res = applyOp(scene, json{{"type", "create_node"},
+                              {"payload", {{"nodeType", "Wobbulator"}, {"name", "X"}}}});
+    require(!res["ok"].get<bool>());
 }
 
 // Phase A1 : le contrat SaidaOp est versionne, serialisable, round-trip stable.

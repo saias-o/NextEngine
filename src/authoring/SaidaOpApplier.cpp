@@ -8,7 +8,9 @@
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/Node.hpp"
+#include "scene/NodeRegistry.hpp"
 #include "scene/ParticleSystemNode.hpp"
+#include "scene/ReflectedTypes.hpp"
 #include "scene/Scene.hpp"
 #include "scene/WaterNode.hpp"
 
@@ -150,14 +152,20 @@ std::string opCreateNode(Scene& scene, ResourceManager* resources, const json& p
     if (!parent) return err("unknown parent '" + parentName + "'");
 
     if (type == "MeshNode") {
+        // MeshNode references a mesh + material owned by the ResourceManager, so
+        // it can only be created where those exist (editor/runtime, not headless).
         if (!resources) return err("create_node MeshNode needs ResourceManager");
         Mesh* mesh = resources->getMesh(kAssetBuiltinCube);
         Material* mat = resources->getMaterial(MaterialDesc{});
         parent->addChild(std::make_unique<MeshNode>(name, mesh, mat));
-    } else if (type == "LightNode") {
-        parent->addChild(std::make_unique<LightNode>(name, LightType::Point));
     } else {
-        return err("unsupported nodeType '" + type + "' (spike)");
+        // Every other reflected node type is built by name from the NodeRegistry
+        // (LightNode, Water, ParticleSystem, …) — no GPU resources needed.
+        registerReflectedTypes();  // idempotent: ensure the registry is populated
+        std::unique_ptr<Node> node = NodeRegistry::instance().create(type);
+        if (!node) return err("unsupported nodeType '" + type + "'");
+        node->setName(name);
+        parent->addChild(std::move(node));
     }
     Node::g_hierarchyVersion++;
     // Inverse : supprimer le node cree (reference par nom au stade spike).
