@@ -251,7 +251,7 @@ Détail : [PLAN_LIVE_EDIT_WEB.md](PLAN_LIVE_EDIT_WEB.md).
 | # | Tâche | Dépend | Critère de fait |
 |---|---|---|---|
 | D1 | Intégrer le canvas runtime WASM/WebGPU dans la page Next.js | A.5(S1) | ✅ scène rendue in-app (2026-07-03, voir §5.4) |
-| D2 | Charger un ProjectSnapshot dans le runtime d'édition | B3,S4 | projet réel affiché |
+| D2 | Charger un ProjectSnapshot dans le runtime d'édition | B3,S4 | 🔵 backend fait : `GET /v1/projects/:id/scene` renvoie la scène courante reconstruite (`reconstructScene` = dernier snapshot + fold des ops depuis) `{revision,doc}` ; l'éditeur charge ce snapshot puis se connecte au WS `?since=revision` (rejoue seulement les ops récentes → ouverture rapide quel que soit l'historique). Reste : chargement du doc dans le runtime côté client (frontend) |
 | D3 | Panels React pilotés par EngineManifest : hierarchy, inspector, assets, console | A2 | 🔵 amorcé : `EngineManifestPanel` (plateforme) rend le contrat depuis `runtime.manifest()` — types de nœuds + propriétés réfléchies (kind, min/max, enum), puis onglets nodes/behaviours/scenario avec signaux/slots/actions/conditions ; `SceneHierarchyPanel` lit `runtime.snapshot()` et affiche la hiérarchie vivante avec sélection locale ; `SceneInspectorPanel` affiche les champs snapshot du nœud sélectionné en lecture seule (typecheck + build web verts, navigateur vérifié, 2026-07-03). Reste : inspecteur de propriétés éditable, édition→SaidaOp, assets, console |
 | D4 | Émettre des SaidaOps depuis l'UI (gizmos, inspector) | C3 | édition → op acceptée |
 | D5 | Recevoir et appliquer les ops distantes (multi-clients) | C3,S3 | 2 users, même scène |
@@ -259,14 +259,14 @@ Détail : [PLAN_LIVE_EDIT_WEB.md](PLAN_LIVE_EDIT_WEB.md).
 | D7 | Édition texte scripts/UI via Yjs + commit `write_script`/`write_ui` | C6 | script hot-reload |
 | D8 | Historique des opérations + rollback de revision | C4 | restaurer revision N |
 
-### Phase E — IA agentique / vibecoding (P + E) ⬜
+### Phase E — IA agentique / vibecoding (P + E) 🔵 (socle E2/E3 ✅)
 
 | # | Tâche | Dépend | Critère de fait |
 |---|---|---|---|
-| E1 | Agent lit EngineManifest + scène compacte | A2,D2 | contexte borné |
-| E2 | Agent produit des SaidaOps (pas de JSON de scène libre) | A1 | ops schéma-valides |
-| E3 | Dry-run obligatoire + diff visible avant application | A5,B3 | prévisualisation |
-| E4 | Validation headless post-application | B2 | échec bloquant |
+| E1 | Agent lit EngineManifest + scène compacte | A2,D2 | contexte borné (manifest `describe-engine` + `GET .../scene` dispo ; reste : agent) |
+| E2 | Agent produit des SaidaOps (pas de JSON de scène libre) | A1 | ✅ socle : `POST /v1/projects/:id/ops` applique un batch d'ops via `hub.applyExternalOp` (même ordre total que les humains, broadcast live) ; chaque op passe la validation WASM du contrat. Reste : l'agent producteur lui-même |
+| E3 | Dry-run obligatoire + diff visible avant application | A5,B3 | ✅ `POST /v1/projects/:id/ops/dry-run` : validation de forme (WASM) + fold **atomique** des ops proposées sur la scène courante (vrai applier) sans persister → snapshot résultant pour prévisualiser le diff (`ops-preview.ts`, testé) |
+| E4 | Validation headless post-application | B2 | 🔵 briques prêtes (`validate-scene`/`validate-ops`/`apply-ops` atomique) ; reste : brancher la vérif post-apply bloquante dans le pipeline agent |
 | E5 | Crédits (réserve→commit/refund) + audit (`AiConversation`/`AiToolCall`) | — | ledger cohérent |
 | E6 | Garde-fous : pas de shell, pas de C++ web, pas de cross-projet (invariant 0.5) | — | tentatives rejetées |
 
