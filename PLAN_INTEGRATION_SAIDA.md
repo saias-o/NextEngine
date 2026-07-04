@@ -263,7 +263,7 @@ Détail : [PLAN_LIVE_EDIT_WEB.md](PLAN_LIVE_EDIT_WEB.md).
 
 | # | Tâche | Dépend | Critère de fait |
 |---|---|---|---|
-| E1 | Agent lit EngineManifest + scène compacte | A2,D2 | contexte borné (manifest `describe-engine` + `GET .../scene` dispo ; reste : agent) |
+| E1 | Agent lit EngineManifest + scène compacte | A2,D2 | 🔵 contexte prêt côté serveur : `GET /v1/engine/manifest` sert le manifest déterministe (vendé depuis `describe-engine`, `getEngineManifest`) + `GET /v1/projects/:id/scene` la scène courante. Reste : l'agent qui consomme ce contexte |
 | E2 | Agent produit des SaidaOps (pas de JSON de scène libre) | A1 | ✅ socle : `POST /v1/projects/:id/ops` applique un batch d'ops via `hub.applyExternalOp` (même ordre total que les humains, broadcast live) ; chaque op passe la validation WASM du contrat. Reste : l'agent producteur lui-même |
 | E3 | Dry-run obligatoire + diff visible avant application | A5,B3 | ✅ `POST /v1/projects/:id/ops/dry-run` : validation de forme (WASM) + fold **atomique** des ops proposées sur la scène courante (vrai applier) sans persister → snapshot résultant pour prévisualiser le diff (`ops-preview.ts`, testé) |
 | E4 | Validation headless post-application | B2 | 🔵 briques prêtes (`validate-scene`/`validate-ops`/`apply-ops` atomique) ; reste : brancher la vérif post-apply bloquante dans le pipeline agent |
@@ -348,7 +348,11 @@ Repris du mandat §9, l'intégration est prête quand :
 
 - **Phase A** : jusqu'où élargir le sous-ensemble spike (`set_transform`,
   `create_node`, `delete_node`, `set_property`) avant d'extraire totalement le
-  noyau `SaidaOp` depuis MCP ?
+  noyau `SaidaOp` depuis MCP ? *Contrat actuel (2026-07-04)* : `set_transform`,
+  `create_node`, `delete_node`, `rename_node`, `reparent_node`, `set_property`,
+  `set_scene_setting` — tous validés (forme WASM), inversibles, foldables. Restent
+  à cadrer : `add/remove_behaviour`, `set_behaviour_property`, `write_script`,
+  `write_ui`, connexions de signaux.
 - **Identité des nodes côté ops** : le spike référence par nom ; le système final
   doit utiliser `NodeId` (id/génération) — figer le schéma en A1.
 - **Import d'asset en édition web** : MEMFS preload vs fetch/IDBFS — hors spike,
