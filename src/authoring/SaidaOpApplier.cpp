@@ -5,6 +5,8 @@
 #include "core/Reflection.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/ResourceManager.hpp"
+#include "scene/Behaviour.hpp"
+#include "scene/BehaviourRegistry.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/Node.hpp"
@@ -373,6 +375,89 @@ std::string opSetSceneSetting(Scene& scene, const json& p) {
     return err("unknown scene setting '" + key + "'");
 }
 
+// --- behaviours (gameplay logic) --------------------------------------------
+
+Behaviour* findBehaviourByType(Node& n, const std::string& type) {
+    for (const auto& b : n.behaviours())
+        if (b->typeName() && type == b->typeName()) return b.get();
+    return nullptr;
+}
+
+std::string opAddBehaviour(Scene& scene, const json& p) {
+    const std::string target = p.value("nodeId", std::string());
+    const std::string btype = p.value("behaviourType", std::string());
+    Node* n = findByName(scene, target);
+    if (!n) return err("unknown node '" + target + "'");
+    if (btype.empty()) return err("add_behaviour needs 'behaviourType'");
+
+    registerReflectedTypes();  // idempotent: ensure the factory registry is ready
+    // One behaviour of a given type per node keeps add/remove/inverse unambiguous.
+    if (findBehaviourByType(*n, btype))
+        return err("node '" + target + "' already has behaviour '" + btype + "'");
+    std::unique_ptr<Behaviour> b = BehaviourRegistry::instance().create(btype);
+    if (!b) return err("unknown behaviour type '" + btype + "'");
+    n->addBehaviour(std::move(b));
+
+    json inv = inverseOp("remove_behaviour",
+                         json{{"nodeId", target}, {"behaviourType", btype}});
+    return ok("add_behaviour", json{{"nodeId", target}, {"behaviourType", btype}},
+              std::move(inv));
+}
+
+std::string opRemoveBehaviour(Scene& scene, const json& p) {
+    const std::string target = p.value("nodeId", std::string());
+    const std::string btype = p.value("behaviourType", std::string());
+    Node* n = findByName(scene, target);
+    if (!n) return err("unknown node '" + target + "'");
+    Behaviour* b = findBehaviourByType(*n, btype);
+    if (!b) return err("node '" + target + "' has no behaviour '" + btype + "'");
+    n->removeBehaviour(b);
+    // Not op-invertible: restoring the removed behaviour's properties needs the
+    // snapshot (same rule as delete_node, invariant 0.6).
+    return ok("remove_behaviour",
+              json{{"nodeId", target}, {"behaviourType", btype}, {"invertible", false}});
+}
+
+std::string opSetBehaviourProperty(Scene& scene, const json& p) {
+    const std::string target = p.value("nodeId", std::string());
+    const std::string btype = p.value("behaviourType", std::string());
+    const std::string prop = p.value("property", std::string());
+    Node* n = findByName(scene, target);
+    if (!n) return err("unknown node '" + target + "'");
+    if (!p.contains("value")) return err("set_behaviour_property needs a 'value'");
+    const json& v = p["value"];
+
+    registerReflectedTypes();
+    Behaviour* b = findBehaviourByType(*n, btype);
+    if (!b) return err("node '" + target + "' has no behaviour '" + btype + "'");
+    const reflect::TypeDesc* desc = reflect::TypeRegistry::instance().find(btype);
+    if (!desc) return err("behaviour '" + btype + "' has no reflected contract");
+    const reflect::PropertyDesc* reflected = desc->findProperty(prop);
+    if (!reflected) return err("unknown behaviour property '" + prop + "' on " + btype);
+
+    std::string why;
+    if (!valueMatchesKind(*reflected, v, why))
+        return err("property '" + prop + "' expects " + reflected->kind + " (" + why + ")");
+
+    json before;
+    try {
+        reflected->get(b, before);
+        reflected->set(b, v);
+    } catch (const std::exception& e) {
+        return err("failed to set behaviour property '" + prop + "': " + std::string(e.what()));
+    }
+    json after;
+    reflected->get(b, after);
+    json inv = inverseOp("set_behaviour_property",
+                         json{{"nodeId", target}, {"behaviourType", btype},
+                              {"property", prop}, {"value", before}});
+    return ok("set_behaviour_property",
+              json{{"nodeId", target}, {"behaviourType", btype}, {"property", prop},
+                   {"kind", reflected->kind}, {"before", std::move(before)},
+                   {"after", std::move(after)}},
+              std::move(inv));
+}
+
 } // namespace
 
 std::string applyOpJson(Scene& scene, ResourceManager* resources,
@@ -392,6 +477,9 @@ std::string applyOpJson(Scene& scene, ResourceManager* resources,
     if (type == "reparent_node") return opReparentNode(scene, p);
     if (type == "set_property")  return opSetProperty(scene, p);
     if (type == "set_scene_setting") return opSetSceneSetting(scene, p);
+    if (type == "add_behaviour") return opAddBehaviour(scene, p);
+    if (type == "remove_behaviour") return opRemoveBehaviour(scene, p);
+    if (type == "set_behaviour_property") return opSetBehaviourProperty(scene, p);
     return err("op type '" + type + "' is registered but not implemented");
 }
 

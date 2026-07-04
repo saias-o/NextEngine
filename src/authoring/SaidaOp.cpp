@@ -17,6 +17,9 @@ const std::vector<std::string>& knownOpTypes() {
         "reparent_node",
         "set_property",
         "set_scene_setting",
+        "add_behaviour",
+        "remove_behaviour",
+        "set_behaviour_property",
     };
     return types;
 }
@@ -159,6 +162,19 @@ std::string validateOpShape(const SaidaOp& op) {
     if (op.type == "set_scene_setting") {
         if (!hasNonEmptyString(p, "setting")) return "set_scene_setting needs 'setting'";
         if (!p.contains("value")) return "set_scene_setting needs a 'value'";
+        return "";
+    }
+    if (op.type == "add_behaviour" || op.type == "remove_behaviour") {
+        if (!hasNonEmptyString(p, "nodeId")) return op.type + " needs 'nodeId'";
+        if (!hasNonEmptyString(p, "behaviourType")) return op.type + " needs 'behaviourType'";
+        return "";
+    }
+    if (op.type == "set_behaviour_property") {
+        if (!hasNonEmptyString(p, "nodeId")) return "set_behaviour_property needs 'nodeId'";
+        if (!hasNonEmptyString(p, "behaviourType"))
+            return "set_behaviour_property needs 'behaviourType'";
+        if (!hasNonEmptyString(p, "property")) return "set_behaviour_property needs 'property'";
+        if (!p.contains("value")) return "set_behaviour_property needs a 'value'";
         return "";
     }
     return "op type '" + op.type + "' has no shape validator";

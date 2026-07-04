@@ -570,6 +570,70 @@ void testSceneSettingOp() {
     require(!res["ok"].get<bool>());
 }
 
+// Behaviour authoring ops: attach gameplay logic, set reflected props, remove;
+// behaviours round-trip through the headless snapshot.
+void testBehaviourOps() {
+    saida::Scene scene;
+    auto* n = scene.createChild<saida::Node>("Spinner");
+    n->assignSerializedId(5);
+
+    auto behaviourOp = [](const std::string& type, json payload) {
+        return json{{"type", type}, {"payload", std::move(payload)}};
+    };
+
+    // add_behaviour → inverse is remove_behaviour
+    json res = applyOp(scene, behaviourOp("add_behaviour",
+                                          {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"}}));
+    require(res["ok"].get<bool>());
+    require(res["inverse"]["type"] == "remove_behaviour");
+
+    // duplicate of the same type rejected
+    res = applyOp(scene, behaviourOp("add_behaviour",
+                                     {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"}}));
+    require(!res["ok"].get<bool>());
+
+    // unknown behaviour type rejected
+    res = applyOp(scene, behaviourOp("add_behaviour",
+                                     {{"nodeId", "Spinner"}, {"behaviourType", "Nonesuch"}}));
+    require(!res["ok"].get<bool>());
+
+    // set_behaviour_property (Rotator.speed is a float)
+    res = applyOp(scene, behaviourOp("set_behaviour_property",
+                                     {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"},
+                                      {"property", "speed"}, {"value", 90.0f}}));
+    require(res["ok"].get<bool>());
+    require(close(res["diff"]["after"].get<float>(), 90.0f));
+    require(res["inverse"]["type"] == "set_behaviour_property");
+
+    // unknown behaviour property rejected
+    res = applyOp(scene, behaviourOp("set_behaviour_property",
+                                     {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"},
+                                      {"property", "wobble"}, {"value", 1.0f}}));
+    require(!res["ok"].get<bool>());
+
+    // headless snapshot carries the behaviour + its property
+    json snap = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
+    const json& child = snap["scene"]["children"][0];
+    require(child["behaviours"].size() == 1);
+    require(child["behaviours"][0]["type"] == "Rotator");
+    require(close(child["behaviours"][0]["speed"].get<float>(), 90.0f));
+
+    // round-trip: deserialize + re-serialize is stable at the byte level
+    saida::Scene reloaded;
+    std::string err2;
+    require(saida::authoring::deserializeSceneSnapshot(snap, reloaded, &err2));
+    json snap2 = json::parse(saida::authoring::serializeSceneSnapshot(reloaded, nullptr));
+    require(snap == snap2);
+
+    // remove_behaviour (marked non-op-invertible)
+    res = applyOp(scene, behaviourOp("remove_behaviour",
+                                     {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"}}));
+    require(res["ok"].get<bool>());
+    require(res["diff"]["invertible"].get<bool>() == false);
+    snap = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
+    require(snap["scene"]["children"][0]["behaviours"].empty());
+}
+
 } // namespace
 
 int main() {
@@ -588,5 +652,6 @@ int main() {
     testSnapshotReflectsAppliedOps();
     testHeadlessSnapshotRoundTrip();
     testSceneSettingOp();
+    testBehaviourOps();
     return 0;
 }

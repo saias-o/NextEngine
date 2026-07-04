@@ -3,10 +3,13 @@
 #include "core/FormatVersions.hpp"
 #include "core/Reflection.hpp"
 #include "graphics/ResourceManager.hpp"
+#include "scene/Behaviour.hpp"
+#include "scene/BehaviourRegistry.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/ParticleSystemNode.hpp"
+#include "scene/ReflectedTypes.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SerializationHelpers.hpp"
 #include "scene/WaterNode.hpp"
@@ -45,7 +48,20 @@ json serializeNodeWithoutResources(const Node& node) {
     out["name"] = node.name();
     out["enabled"] = node.enabled();
     out["transform"] = transformToJson(node.transform());
-    out["behaviours"] = json::array();
+
+    // Behaviours (gameplay logic) — same {type, enabled, ...reflected props}
+    // shape as the full serializer, so the headless snapshot carries logic too.
+    json behavioursJson = json::array();
+    for (const auto& b : node.behaviours()) {
+        if (const char* tn = b->typeName()) {
+            json bj;
+            bj["type"] = tn;
+            bj["enabled"] = b->enabled();
+            b->save(bj);
+            behavioursJson.push_back(std::move(bj));
+        }
+    }
+    out["behaviours"] = std::move(behavioursJson);
 
     if (!node.importedFromPath().empty())
         out["importedFrom"] = node.importedFromPath();
@@ -147,6 +163,22 @@ void loadNodeFields(Node& node, const json& j) {
 
     if (const reflect::TypeDesc* desc = reflectedNodeDesc(node))
         desc->loadFrom(&node, j);
+
+    // Behaviours: rebuild by type from the registry, then load reflected props.
+    if (auto it = j.find("behaviours"); it != j.end() && it->is_array()) {
+        registerReflectedTypes();  // idempotent: ensure the factory registry is ready
+        for (const auto& bj : *it) {
+            if (!bj.contains("type") || !bj["type"].is_string()) continue;
+            const std::string tn = bj["type"].get<std::string>();
+            if (tn == "SceneSettings") continue;  // legacy; handled by scene settings
+            if (auto b = BehaviourRegistry::instance().create(tn)) {
+                if (bj.contains("enabled") && bj["enabled"].is_boolean())
+                    b->setEnabled(bj["enabled"].get<bool>());
+                b->load(bj);
+                node.addBehaviour(std::move(b));
+            }
+        }
+    }
 }
 
 std::unique_ptr<Node> deserializeNodeHeadless(const json& j) {
