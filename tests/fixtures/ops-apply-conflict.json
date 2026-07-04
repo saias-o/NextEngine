@@ -1,0 +1,5 @@
+[
+  { "type": "delete_node", "payload": { "nodeId": "Sun" } },
+  { "type": "set_transform", "payload": { "nodeId": "Sun", "position": [9.0, 9.0, 9.0] } },
+  { "type": "set_property", "payload": { "nodeId": "Sun", "property": "intensity", "value": 3.0 } }
+]

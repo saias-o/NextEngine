@@ -5,10 +5,14 @@
 #include "core/Reflection.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/ResourceManager.hpp"
+#include "scene/Behaviour.hpp"
+#include "scene/BehaviourRegistry.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/Node.hpp"
+#include "scene/NodeRegistry.hpp"
 #include "scene/ParticleSystemNode.hpp"
+#include "scene/ReflectedTypes.hpp"
 #include "scene/Scene.hpp"
 #include "scene/WaterNode.hpp"
 
@@ -150,14 +154,20 @@ std::string opCreateNode(Scene& scene, ResourceManager* resources, const json& p
     if (!parent) return err("unknown parent '" + parentName + "'");
 
     if (type == "MeshNode") {
+        // MeshNode references a mesh + material owned by the ResourceManager, so
+        // it can only be created where those exist (editor/runtime, not headless).
         if (!resources) return err("create_node MeshNode needs ResourceManager");
         Mesh* mesh = resources->getMesh(kAssetBuiltinCube);
         Material* mat = resources->getMaterial(MaterialDesc{});
         parent->addChild(std::make_unique<MeshNode>(name, mesh, mat));
-    } else if (type == "LightNode") {
-        parent->addChild(std::make_unique<LightNode>(name, LightType::Point));
     } else {
-        return err("unsupported nodeType '" + type + "' (spike)");
+        // Every other reflected node type is built by name from the NodeRegistry
+        // (LightNode, Water, ParticleSystem, …) — no GPU resources needed.
+        registerReflectedTypes();  // idempotent: ensure the registry is populated
+        std::unique_ptr<Node> node = NodeRegistry::instance().create(type);
+        if (!node) return err("unsupported nodeType '" + type + "'");
+        node->setName(name);
+        parent->addChild(std::move(node));
     }
     Node::g_hierarchyVersion++;
     // Inverse : supprimer le node cree (reference par nom au stade spike).
@@ -296,6 +306,210 @@ std::string opSetProperty(Scene& scene, const json& p) {
               std::move(inv));
 }
 
+// set_scene_setting : édite l'ambiance de scène (SceneSettings) par nom. Sous-
+// ensemble curé, pertinent pour l'éditeur (fog/bloom/ambient/ibl/gi/skybox).
+// Renvoie un inverse re-appliquable (undo). Les couleurs sont stockées en vec4
+// mais éditées en vec3 (xyz), w conservé.
+std::string opSetSceneSetting(Scene& scene, const json& p) {
+    const std::string key = p.value("setting", std::string());
+    if (key.empty()) return err("set_scene_setting needs 'setting'");
+    if (!p.contains("value")) return err("set_scene_setting needs a 'value'");
+    const json& v = p["value"];
+    SceneSettings& s = scene.settings();
+
+    auto sceneInverse = [&](const json& before) {
+        return inverseOp("set_scene_setting", json{{"setting", key}, {"value", before}});
+    };
+    auto okScene = [&](const json& before, const json& after) {
+        return ok("set_scene_setting",
+                  json{{"setting", key}, {"before", before}, {"after", after}},
+                  sceneInverse(before));
+    };
+    auto setFloat = [&](float& field) -> std::string {
+        if (!v.is_number()) return err("scene setting '" + key + "' expects a number");
+        const float before = field;
+        field = v.get<float>();
+        return okScene(before, field);
+    };
+    auto setBool = [&](bool& field) -> std::string {
+        if (!v.is_boolean()) return err("scene setting '" + key + "' expects a bool");
+        const bool before = field;
+        field = v.get<bool>();
+        return okScene(before, field);
+    };
+    // Colour stored as vec4; edited as a vec3, alpha preserved.
+    auto setColor = [&](glm::vec4& field) -> std::string {
+        if (!v.is_array() || v.size() != 3) return err("scene setting '" + key + "' expects a vec3");
+        const json before = json::array({field.x, field.y, field.z});
+        field.x = v[0].get<float>();
+        field.y = v[1].get<float>();
+        field.z = v[2].get<float>();
+        return okScene(before, json::array({field.x, field.y, field.z}));
+    };
+
+    if (key == "fogEnabled") return setBool(s.fogEnabled);
+    if (key == "bloomEnabled") return setBool(s.bloomEnabled);
+    if (key == "aoEnabled") return setBool(s.aoEnabled);
+    if (key == "iblEnabled") return setBool(s.iblEnabled);
+    if (key == "giEnabled") return setBool(s.giEnabled);
+    if (key == "enablePostProcessing") return setBool(s.enablePostProcessing);
+
+    if (key == "fogStart") return setFloat(s.fogStart);
+    if (key == "fogDensity") return setFloat(s.fogDensity);
+    if (key == "bloomThreshold") return setFloat(s.bloomThreshold);
+    if (key == "bloomIntensity") return setFloat(s.bloomIntensity);
+    if (key == "bloomRadius") return setFloat(s.bloomRadius);
+    if (key == "aoRadius") return setFloat(s.aoRadius);
+    if (key == "aoIntensity") return setFloat(s.aoIntensity);
+    if (key == "aoPower") return setFloat(s.aoPower);
+    if (key == "giIntensity") return setFloat(s.giIntensity);
+    if (key == "iblDiffuseIntensity") return setFloat(s.iblDiffuseIntensity);
+    if (key == "iblSpecularIntensity") return setFloat(s.iblSpecularIntensity);
+    if (key == "skyboxExposure") return setFloat(s.skyboxExposure);
+    if (key == "skyboxRotation") return setFloat(s.skyboxRotation);
+
+    if (key == "ambientLight") return setColor(s.ambientLight);
+    if (key == "clearColor") return setColor(s.clearColor);
+    if (key == "fogColor") return setColor(s.fogColor);
+
+    return err("unknown scene setting '" + key + "'");
+}
+
+// --- behaviours (gameplay logic) --------------------------------------------
+
+Behaviour* findBehaviourByType(Node& n, const std::string& type) {
+    for (const auto& b : n.behaviours())
+        if (b->typeName() && type == b->typeName()) return b.get();
+    return nullptr;
+}
+
+std::string opAddBehaviour(Scene& scene, const json& p) {
+    const std::string target = p.value("nodeId", std::string());
+    const std::string btype = p.value("behaviourType", std::string());
+    Node* n = findByName(scene, target);
+    if (!n) return err("unknown node '" + target + "'");
+    if (btype.empty()) return err("add_behaviour needs 'behaviourType'");
+
+    registerReflectedTypes();  // idempotent: ensure the factory registry is ready
+    // One behaviour of a given type per node keeps add/remove/inverse unambiguous.
+    if (findBehaviourByType(*n, btype))
+        return err("node '" + target + "' already has behaviour '" + btype + "'");
+    std::unique_ptr<Behaviour> b = BehaviourRegistry::instance().create(btype);
+    if (!b) return err("unknown behaviour type '" + btype + "'");
+    n->addBehaviour(std::move(b));
+
+    json inv = inverseOp("remove_behaviour",
+                         json{{"nodeId", target}, {"behaviourType", btype}});
+    return ok("add_behaviour", json{{"nodeId", target}, {"behaviourType", btype}},
+              std::move(inv));
+}
+
+std::string opRemoveBehaviour(Scene& scene, const json& p) {
+    const std::string target = p.value("nodeId", std::string());
+    const std::string btype = p.value("behaviourType", std::string());
+    Node* n = findByName(scene, target);
+    if (!n) return err("unknown node '" + target + "'");
+    Behaviour* b = findBehaviourByType(*n, btype);
+    if (!b) return err("node '" + target + "' has no behaviour '" + btype + "'");
+    n->removeBehaviour(b);
+    // Not op-invertible: restoring the removed behaviour's properties needs the
+    // snapshot (same rule as delete_node, invariant 0.6).
+    return ok("remove_behaviour",
+              json{{"nodeId", target}, {"behaviourType", btype}, {"invertible", false}});
+}
+
+std::string opSetBehaviourProperty(Scene& scene, const json& p) {
+    const std::string target = p.value("nodeId", std::string());
+    const std::string btype = p.value("behaviourType", std::string());
+    const std::string prop = p.value("property", std::string());
+    Node* n = findByName(scene, target);
+    if (!n) return err("unknown node '" + target + "'");
+    if (!p.contains("value")) return err("set_behaviour_property needs a 'value'");
+    const json& v = p["value"];
+
+    registerReflectedTypes();
+    Behaviour* b = findBehaviourByType(*n, btype);
+    if (!b) return err("node '" + target + "' has no behaviour '" + btype + "'");
+    const reflect::TypeDesc* desc = reflect::TypeRegistry::instance().find(btype);
+    if (!desc) return err("behaviour '" + btype + "' has no reflected contract");
+    const reflect::PropertyDesc* reflected = desc->findProperty(prop);
+    if (!reflected) return err("unknown behaviour property '" + prop + "' on " + btype);
+
+    std::string why;
+    if (!valueMatchesKind(*reflected, v, why))
+        return err("property '" + prop + "' expects " + reflected->kind + " (" + why + ")");
+
+    json before;
+    try {
+        reflected->get(b, before);
+        reflected->set(b, v);
+    } catch (const std::exception& e) {
+        return err("failed to set behaviour property '" + prop + "': " + std::string(e.what()));
+    }
+    json after;
+    reflected->get(b, after);
+    json inv = inverseOp("set_behaviour_property",
+                         json{{"nodeId", target}, {"behaviourType", btype},
+                              {"property", prop}, {"value", before}});
+    return ok("set_behaviour_property",
+              json{{"nodeId", target}, {"behaviourType", btype}, {"property", prop},
+                   {"kind", reflected->kind}, {"before", std::move(before)},
+                   {"after", std::move(after)}},
+              std::move(inv));
+}
+
+// Signal connections are data-driven links stored in the scene's "connections"
+// block (SignalConnectionDef {from, signal, to, slot}), round-tripped by the
+// snapshot and wired by SignalWiring at Play. Here we only edit the data — node
+// refs come in as names (like every other op) and resolve to NodeId at rest.
+std::string opAddSignalConnection(Scene& scene, const json& p) {
+    const std::string fromName = p.value("from", std::string());
+    const std::string signal = p.value("signal", std::string());
+    const std::string toName = p.value("to", std::string());
+    const std::string slot = p.value("slot", std::string());
+
+    Node* from = findByName(scene, fromName);
+    if (!from) return err("unknown node '" + fromName + "'");
+    Node* to = findByName(scene, toName);
+    if (!to) return err("unknown node '" + toName + "'");
+
+    for (const auto& c : scene.connections()) {
+        if (c.from == from->id() && c.to == to->id() && c.signal == signal && c.slot == slot)
+            return err("signal connection already exists");
+    }
+
+    scene.connections().push_back(
+        SignalConnectionDef{from->id(), signal, to->id(), slot});
+
+    json diff{{"from", fromName}, {"signal", signal}, {"to", toName}, {"slot", slot}};
+    return ok("add_signal_connection", diff,
+              inverseOp("remove_signal_connection", diff));
+}
+
+std::string opRemoveSignalConnection(Scene& scene, const json& p) {
+    const std::string fromName = p.value("from", std::string());
+    const std::string signal = p.value("signal", std::string());
+    const std::string toName = p.value("to", std::string());
+    const std::string slot = p.value("slot", std::string());
+
+    Node* from = findByName(scene, fromName);
+    if (!from) return err("unknown node '" + fromName + "'");
+    Node* to = findByName(scene, toName);
+    if (!to) return err("unknown node '" + toName + "'");
+
+    auto& conns = scene.connections();
+    for (auto it = conns.begin(); it != conns.end(); ++it) {
+        if (it->from == from->id() && it->to == to->id() &&
+            it->signal == signal && it->slot == slot) {
+            conns.erase(it);
+            json diff{{"from", fromName}, {"signal", signal}, {"to", toName}, {"slot", slot}};
+            return ok("remove_signal_connection", diff,
+                      inverseOp("add_signal_connection", diff));
+        }
+    }
+    return err("signal connection not found");
+}
+
 } // namespace
 
 std::string applyOpJson(Scene& scene, ResourceManager* resources,
@@ -314,6 +528,12 @@ std::string applyOpJson(Scene& scene, ResourceManager* resources,
     if (type == "rename_node")   return opRenameNode(scene, p);
     if (type == "reparent_node") return opReparentNode(scene, p);
     if (type == "set_property")  return opSetProperty(scene, p);
+    if (type == "set_scene_setting") return opSetSceneSetting(scene, p);
+    if (type == "add_behaviour") return opAddBehaviour(scene, p);
+    if (type == "remove_behaviour") return opRemoveBehaviour(scene, p);
+    if (type == "set_behaviour_property") return opSetBehaviourProperty(scene, p);
+    if (type == "add_signal_connection") return opAddSignalConnection(scene, p);
+    if (type == "remove_signal_connection") return opRemoveSignalConnection(scene, p);
     return err("op type '" + type + "' is registered but not implemented");
 }
 

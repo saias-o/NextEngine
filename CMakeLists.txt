@@ -721,6 +721,57 @@ if (BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scenario-invalid-action.json
     )
     set_tests_properties(saida_tool_validate_scenario_invalid PROPERTIES WILL_FAIL TRUE)
+
+    # Phase B3 : apply-ops charge un snapshot sans GPU, applique des ops, emet un
+    # snapshot deterministe (exit 0). Un op invalide rejette le batch (exit 1).
+    add_test(
+        NAME saida_tool_apply_ops_valid
+        COMMAND $<TARGET_FILE:saida_tool> apply-ops
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot.json
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ops-apply-valid.json
+    )
+    add_test(
+        NAME saida_tool_apply_ops_invalid
+        COMMAND $<TARGET_FILE:saida_tool> apply-ops
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot.json
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ops-apply-invalid.json
+    )
+    set_tests_properties(saida_tool_apply_ops_invalid PROPERTIES WILL_FAIL TRUE)
+
+    # C7: --skip-invalid folds an op-log where later ops target a deleted node;
+    # the stale ops are dropped (not aborted) and the fold succeeds (exit 0).
+    add_test(
+        NAME saida_tool_apply_ops_skip_invalid
+        COMMAND $<TARGET_FILE:saida_tool> apply-ops --skip-invalid
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot.json
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ops-apply-conflict.json
+    )
+
+    # Phase B2 : validate-scene — structure d'un snapshot (types, ids uniques).
+    add_test(
+        NAME saida_tool_validate_scene_valid
+        COMMAND $<TARGET_FILE:saida_tool> validate-scene
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot.json
+    )
+    add_test(
+        NAME saida_tool_validate_scene_invalid
+        COMMAND $<TARGET_FILE:saida_tool> validate-scene
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-invalid-dupid.json
+    )
+    set_tests_properties(saida_tool_validate_scene_invalid PROPERTIES WILL_FAIL TRUE)
+
+    # Phase B2 : validate-script — compile-check JS via QuickJS (no exec).
+    add_test(
+        NAME saida_tool_validate_script_valid
+        COMMAND $<TARGET_FILE:saida_tool> validate-script
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/script-valid.js
+    )
+    add_test(
+        NAME saida_tool_validate_script_invalid
+        COMMAND $<TARGET_FILE:saida_tool> validate-script
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/script-invalid.js
+    )
+    set_tests_properties(saida_tool_validate_script_invalid PROPERTIES WILL_FAIL TRUE)
 endif()
 
 if (WIN32)

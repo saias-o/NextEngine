@@ -5,22 +5,35 @@
 //
 // Sous-commandes :
 //   describe-engine [--pretty]   Ecrit l'EngineManifest JSON sur stdout (B4).
+//   validate-ops <file>          Valide statiquement des SaidaOps (B2).
+//   validate-scene <file>        Valide la structure d'un snapshot de scene (B2).
+//   validate-script <file>       Compile-check un script JS/MJS (QuickJS) (B2).
 //   validate-scenario <file>     Valide un asset scenario sans GPU (B2).
+//   apply-ops <scene> <ops>      Applique des ops -> snapshot deterministe (B3).
 //   help | --help | -h           Affiche l'aide.
 //
 // Convention : les diagnostics vont sur stderr, la sortie machine sur stdout.
 
 #include "authoring/EngineManifest.hpp"
 #include "authoring/SaidaOp.hpp"
+#include "authoring/SaidaOpApplier.hpp"
+#include "authoring/SceneSnapshot.hpp"
+#include "scene/Scene.hpp"
 #include "scenario/ScenarioAsset.hpp"
+#include "scripting/JsContext.hpp"
+#include "scripting/JsRuntime.hpp"
 
 #include <nlohmann/json.hpp>
+#include <glm/glm.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -37,7 +50,10 @@ int usage(std::ostream& out) {
            "Usage:\n"
            "  saida_tool describe-engine [--pretty]\n"
            "  saida_tool validate-ops <ops.json> [--pretty]\n"
+           "  saida_tool validate-scene <scene.json> [--pretty]\n"
+           "  saida_tool validate-script <script.js> [--module|--script] [--pretty]\n"
            "  saida_tool validate-scenario <scenario.json> [--pretty]\n"
+           "  saida_tool apply-ops <scene.json> <ops.json> [--out <file>] [--skip-invalid]\n"
            "  saida_tool help\n"
            "\n"
            "Commands:\n"
@@ -47,11 +63,26 @@ int usage(std::ostream& out) {
            "  validate-ops      Statically validate a JSON array of SaidaOps\n"
            "                    (schema + per-type shape). Prints a JSON report;\n"
            "                    exit 0 if all valid, 1 if any invalid.\n"
+           "  validate-scene    Structurally validate a scene snapshot (node types,\n"
+           "                    unique ids, transform/children shape). Prints a JSON\n"
+           "                    report; exit 0 if valid, 1 if any issue.\n"
+           "  validate-script   Compile-check a JS/MJS script with QuickJS (no exec,\n"
+           "                    no engine bindings). Module mode follows the .mjs\n"
+           "                    extension unless --module/--script overrides it.\n"
+           "                    exit 0 if it compiles, 1 on a syntax error.\n"
            "  validate-scenario Statically validate a Saida scenario asset\n"
            "                    (format + registered actions/conditions). Prints a\n"
            "                    JSON report; exit 0 if valid, 1 if invalid.\n"
+           "  apply-ops         Load a resource-free scene snapshot (or .saidaproj),\n"
+           "                    apply a JSON array of SaidaOps in order, then emit a\n"
+           "                    deterministic snapshot to --out (or stdout). All ops\n"
+           "                    must apply cleanly (atomic); exit 1 if any is rejected\n"
+           "                    and nothing is written. --skip-invalid instead drops\n"
+           "                    ops that fail against the current state (reported on\n"
+           "                    stderr) — used to fold a collaboration op-log where a\n"
+           "                    later op targets a node an earlier op deleted.\n"
            "\n"
-           "Exit codes: 0 ok, 1 invalid input, 2 usage/IO error.\n";
+           "Files may be '-' for stdin. Exit codes: 0 ok, 1 invalid input, 2 usage/IO.\n";
     return kExitUsage;
 }
 
@@ -195,6 +226,294 @@ int cmdValidateScenario(const std::vector<std::string>& args) {
     return ok ? kExitOk : kExitInvalid;
 }
 
+// Walk a scene-snapshot node subtree, appending structural issues. Pure JSON
+// checks (no GPU) : every node needs a string type/name, ids must be unique
+// integers, transforms and children must be well-shaped.
+void walkSceneNode(const json& n, const std::string& path, json& issues,
+                   std::unordered_set<long long>& ids, std::size_t& nodeCount) {
+    auto issue = [&](const std::string& msg) {
+        issues.push_back(json{{"path", path}, {"message", msg}});
+    };
+    if (!n.is_object()) {
+        issue("node must be a JSON object");
+        return;
+    }
+    ++nodeCount;
+    if (!n.contains("type") || !n["type"].is_string())
+        issue("node needs a string 'type'");
+    if (!n.contains("name") || !n["name"].is_string())
+        issue("node needs a string 'name'");
+    if (n.contains("id")) {
+        if (!n["id"].is_number_integer()) {
+            issue("'id' must be an integer");
+        } else if (!ids.insert(n["id"].get<long long>()).second) {
+            issue("duplicate node id " + std::to_string(n["id"].get<long long>()));
+        }
+    }
+    if (auto t = n.find("transform"); t != n.end()) {
+        if (!t->is_object()) {
+            issue("'transform' must be an object");
+        } else {
+            for (const char* k : {"position", "scale"})
+                if (t->contains(k) && (!(*t)[k].is_array() || (*t)[k].size() != 3))
+                    issue(std::string("transform '") + k + "' must be a 3-number array");
+            if (t->contains("rotation") &&
+                (!(*t)["rotation"].is_array() || (*t)["rotation"].size() != 4))
+                issue("transform 'rotation' must be a 4-number array");
+        }
+    }
+    if (auto c = n.find("children"); c != n.end()) {
+        if (!c->is_array()) {
+            issue("'children' must be an array");
+        } else {
+            std::size_t i = 0;
+            for (const json& child : *c)
+                walkSceneNode(child, path + "/children[" + std::to_string(i++) + "]", issues,
+                              ids, nodeCount);
+        }
+    }
+}
+
+int cmdValidateScene(const std::vector<std::string>& args) {
+    std::string path;
+    bool pretty = false;
+    for (const std::string& a : args) {
+        if (a == "--pretty") {
+            pretty = true;
+        } else if (!a.empty() && a[0] == '-' && a != "-") {
+            std::cerr << "validate-scene: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (path.empty()) {
+            path = a;
+        } else {
+            std::cerr << "validate-scene: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (path.empty()) {
+        std::cerr << "validate-scene: missing <scene.json> (use '-' for stdin)\n";
+        return kExitUsage;
+    }
+
+    std::string text, ioError;
+    if (!readInput(path, text, ioError)) {
+        std::cerr << "validate-scene: " << ioError << "\n";
+        return kExitUsage;
+    }
+    const json doc = json::parse(text, nullptr, /*allow_exceptions=*/false);
+    if (doc.is_discarded()) {
+        std::cerr << "validate-scene: input is not valid JSON\n";
+        return kExitUsage;
+    }
+
+    json issues = json::array();
+    std::unordered_set<long long> ids;
+    std::size_t nodeCount = 0;
+    if (!doc.is_object() || !doc.contains("scene") || !doc["scene"].is_object()) {
+        issues.push_back(json{{"path", ""}, {"message", "document needs a 'scene' object"}});
+    } else {
+        walkSceneNode(doc["scene"], "scene", issues, ids, nodeCount);
+    }
+
+    const bool ok = issues.empty();
+    json report{{"ok", ok}, {"nodeCount", nodeCount},
+                {"issueCount", issues.size()}, {"issues", std::move(issues)}};
+    std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
+    return ok ? kExitOk : kExitInvalid;
+}
+
+// Compile-only JS syntax check (QuickJS, no execution, no engine bindings, no
+// GPU). Module vs global parse mode follows the .mjs extension unless overridden
+// by --module / --script.
+int cmdValidateScript(const std::vector<std::string>& args) {
+    std::string path;
+    bool pretty = false;
+    int moduleOverride = -1;  // -1 = auto, 0 = global, 1 = module
+    for (const std::string& a : args) {
+        if (a == "--pretty") {
+            pretty = true;
+        } else if (a == "--module") {
+            moduleOverride = 1;
+        } else if (a == "--script") {
+            moduleOverride = 0;
+        } else if (!a.empty() && a[0] == '-' && a != "-") {
+            std::cerr << "validate-script: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (path.empty()) {
+            path = a;
+        } else {
+            std::cerr << "validate-script: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (path.empty()) {
+        std::cerr << "validate-script: missing <script.js|.mjs> (use '-' for stdin)\n";
+        return kExitUsage;
+    }
+
+    std::string source, ioError;
+    if (!readInput(path, source, ioError)) {
+        std::cerr << "validate-script: " << ioError << "\n";
+        return kExitUsage;
+    }
+
+    bool asModule = false;
+    if (moduleOverride >= 0) {
+        asModule = moduleOverride == 1;
+    } else {
+        const std::size_t dot = path.rfind('.');
+        asModule = dot != std::string::npos && path.substr(dot) == ".mjs";
+    }
+    const std::string filename = path == "-" ? (asModule ? "<stdin>.mjs" : "<stdin>.js") : path;
+
+    // QuickJS init/teardown log via Log::info, which writes to stdout. Route
+    // stdout to stderr for the runtime's lifetime so the report stays the only
+    // machine output on stdout.
+    std::string error;
+    bool ok;
+    std::streambuf* prevCout = std::cout.rdbuf(std::cerr.rdbuf());
+    {
+        saida::JsRuntime runtime;
+        std::unique_ptr<saida::JsContext> ctx = runtime.createContext();
+        ok = ctx->compileCheck(source, filename, asModule, error);
+    }  // runtime/context destroyed here — their logs still routed to stderr
+    std::cout.rdbuf(prevCout);
+
+    json report{{"ok", ok}, {"module", asModule}};
+    if (!ok) report["error"] = error;
+    std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
+    return ok ? kExitOk : kExitInvalid;
+}
+
+int cmdApplyOps(const std::vector<std::string>& args) {
+    std::string scenePath, opsPath, outPath;
+    bool pretty = false;
+    bool skipInvalid = false;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        const std::string& a = args[i];
+        if (a == "--pretty") {
+            pretty = true;
+        } else if (a == "--skip-invalid") {
+            skipInvalid = true;
+        } else if (a == "--out") {
+            if (i + 1 >= args.size()) {
+                std::cerr << "apply-ops: --out needs a path\n";
+                return kExitUsage;
+            }
+            outPath = args[++i];
+        } else if (!a.empty() && a[0] == '-' && a != "-") {
+            std::cerr << "apply-ops: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (scenePath.empty()) {
+            scenePath = a;
+        } else if (opsPath.empty()) {
+            opsPath = a;
+        } else {
+            std::cerr << "apply-ops: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (scenePath.empty() || opsPath.empty()) {
+        std::cerr << "apply-ops: needs <scene.json> <ops.json> (use '-' for stdin, "
+                     "at most one)\n";
+        return kExitUsage;
+    }
+    if (scenePath == "-" && opsPath == "-") {
+        std::cerr << "apply-ops: only one input may read from stdin\n";
+        return kExitUsage;
+    }
+
+    std::string sceneText, opsText, ioError;
+    if (!readInput(scenePath, sceneText, ioError)) {
+        std::cerr << "apply-ops: " << ioError << "\n";
+        return kExitUsage;
+    }
+    if (!readInput(opsPath, opsText, ioError)) {
+        std::cerr << "apply-ops: " << ioError << "\n";
+        return kExitUsage;
+    }
+
+    const json opsParsed = json::parse(opsText, nullptr, /*allow_exceptions=*/false);
+    if (opsParsed.is_discarded()) {
+        std::cerr << "apply-ops: ops input is not valid JSON\n";
+        return kExitUsage;
+    }
+    const json ops = opsParsed.is_array() ? opsParsed : json::array({opsParsed});
+
+    saida::Scene scene;
+    std::string sceneError;
+    if (!saida::authoring::deserializeSceneSnapshot(sceneText, scene, &sceneError)) {
+        std::cerr << "apply-ops: cannot load scene: " << sceneError << "\n";
+        return kExitUsage;
+    }
+
+    // Snapshot the loaded ids up front: create_node mints fresh ids via
+    // generateNodeId(), which is seeded per-process — non-reproducible. We keep
+    // loaded ids and renumber only the new nodes below.
+    std::unordered_set<saida::NodeId> loadedIds;
+    saida::NodeId maxLoadedId = 0;
+    scene.traverse([&](saida::Node& n, const glm::mat4&) {
+        loadedIds.insert(n.id());
+        maxLoadedId = std::max(maxLoadedId, n.id());
+    });
+
+    // Apply in order. Default is atomic: the first rejected op aborts the whole
+    // batch (an interactive op-log must never leave a half-applied snapshot).
+    // With --skip-invalid, ops that fail to apply against the current state are
+    // dropped and recorded instead of aborting — this is how the Collaboration
+    // Gateway folds an op-log where later ops reference nodes an earlier op
+    // deleted (conflict resolution / invariant 0.6). The real applier stays the
+    // single authority for what is applicable (no logic duplicated server-side).
+    // No GPU resources, so ops needing one (create_node MeshNode) also fail.
+    json skipped = json::array();
+    for (std::size_t i = 0; i < ops.size(); ++i) {
+        const json res = json::parse(
+            saida::authoring::applyOpJson(scene, nullptr, ops[i].dump()));
+        if (!res.value("ok", false)) {
+            const std::string error = res.value("error", std::string("unknown error"));
+            if (skipInvalid) {
+                skipped.push_back(json{{"index", i}, {"error", error}});
+                continue;
+            }
+            json report{{"ok", false}, {"failedIndex", i}, {"error", error},
+                        {"applied", i}};
+            std::cerr << report.dump() << "\n";
+            return kExitInvalid;
+        }
+    }
+    if (skipInvalid && !skipped.empty()) {
+        // Diagnostics on stderr so stdout stays a pure snapshot when no --out.
+        std::cerr << json{{"skipped", skipped}}.dump() << "\n";
+    }
+
+    // Deterministic ids: renumber every node created by the ops (id absent from
+    // the loaded set) to a sequential id above the loaded max, in depth-first
+    // order. Loaded ids are preserved; the snapshot is byte-reproducible.
+    saida::NodeId nextId = maxLoadedId + 1;
+    scene.traverse([&](saida::Node& n, const glm::mat4&) {
+        if (loadedIds.find(n.id()) == loadedIds.end())
+            n.assignSerializedId(nextId++);
+    });
+
+    const std::string snapshot =
+        saida::authoring::serializeSceneSnapshot(scene, nullptr);
+
+    if (outPath.empty() || outPath == "-") {
+        std::cout << snapshot << "\n";
+    } else {
+        std::ofstream out(outPath, std::ios::binary);
+        if (!out) {
+            std::cerr << "apply-ops: cannot write '" << outPath << "'\n";
+            return kExitUsage;
+        }
+        out << snapshot << "\n";
+        json report{{"ok", true}, {"applied", ops.size() - skipped.size()},
+                    {"skipped", skipped.size()}, {"out", outPath}};
+        std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
+    }
+    return kExitOk;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -216,6 +535,15 @@ int main(int argc, char** argv) {
     }
     if (command == "validate-scenario") {
         return cmdValidateScenario(rest);
+    }
+    if (command == "validate-scene") {
+        return cmdValidateScene(rest);
+    }
+    if (command == "validate-script") {
+        return cmdValidateScript(rest);
+    }
+    if (command == "apply-ops") {
+        return cmdApplyOps(rest);
     }
 
     std::cerr << "saida_tool: unknown command '" << command << "'\n\n";

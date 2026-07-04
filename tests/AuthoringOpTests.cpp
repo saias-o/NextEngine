@@ -138,6 +138,27 @@ void testCreateNodeResourceBoundaries() {
                               {"payload", {{"nodeType", "MeshNode"}, {"name", "NeedsGpu"}}}});
     require(!res["ok"].get<bool>());
     require(scene.children().size() == 1);
+
+    // Reflected node palette via NodeRegistry (no GPU): Water, ParticleSystem.
+    res = applyOp(scene, json{{"type", "create_node"},
+                              {"payload", {{"nodeType", "Water"}, {"name", "Sea"}}}});
+    require(res["ok"].get<bool>());
+    saida::Node* sea = findChildByName(scene, "Sea");
+    require(sea != nullptr && dynamic_cast<saida::WaterNode*>(sea) != nullptr);
+
+    res = applyOp(scene, json{{"type", "create_node"},
+                              {"payload", {{"nodeType", "ParticleSystem"}, {"name", "Sparks"}}}});
+    require(res["ok"].get<bool>());
+    require(dynamic_cast<saida::ParticleSystemNode*>(findChildByName(scene, "Sparks")) != nullptr);
+
+    // A property set on a freshly-created reflected node applies.
+    res = applyOp(scene, setProperty("Sea", "amplitude", 0.5f));
+    require(res["ok"].get<bool>());
+
+    // Unknown types are still rejected.
+    res = applyOp(scene, json{{"type", "create_node"},
+                              {"payload", {{"nodeType", "Wobbulator"}, {"name", "X"}}}});
+    require(!res["ok"].get<bool>());
 }
 
 // Phase A1 : le contrat SaidaOp est versionne, serialisable, round-trip stable.
@@ -451,6 +472,217 @@ void testSnapshotReflectsAppliedOps() {
     require(child["transform"]["position"].is_array());
 }
 
+// Phase B3 : le snapshot headless se re-desserialise sans GPU et round-trip
+// (serialize -> deserialize -> serialize) est stable au bit pres. C'est le socle
+// de l'outil apply-ops et de la representation d'edition/collaboration.
+void testHeadlessSnapshotRoundTrip() {
+    saida::Scene scene;
+    scene.setName("Root");
+    scene.assignSerializedId(1);
+
+    auto light = std::make_unique<saida::LightNode>("Sun", saida::LightType::Directional);
+    light->assignSerializedId(2);
+    light->intensity = 2.25f;
+    light->transform().position = {1.0f, 2.0f, 3.0f};
+    light->addToGroup("lights");
+    scene.addChild(std::move(light));
+
+    auto* group = scene.createChild<saida::Node>("Group");
+    group->assignSerializedId(3);
+    group->createChild<saida::ParticleSystemNode>()->assignSerializedId(4);
+
+    const std::string s1 = saida::authoring::serializeSceneSnapshot(scene, nullptr);
+
+    saida::Scene reloaded;
+    std::string error;
+    require(saida::authoring::deserializeSceneSnapshot(s1, reloaded, &error));
+    require(error.empty());
+
+    // Structure + ids + reflected props restaures.
+    require(reloaded.name() == "Root");
+    require(reloaded.id() == 1);
+    require(reloaded.children().size() == 2);
+    saida::Node* sun = findChildByName(reloaded, "Sun");
+    require(sun != nullptr);
+    require(sun->id() == 2);
+    require(sun->isInGroup("lights"));
+    require(close(sun->transform().position.y, 2.0f));
+    auto* sunLight = dynamic_cast<saida::LightNode*>(sun);
+    require(sunLight != nullptr);
+    require(close(sunLight->intensity, 2.25f));
+    require(sunLight->type == saida::LightType::Directional);
+
+    // Round-trip stable au bit pres.
+    const std::string s2 = saida::authoring::serializeSceneSnapshot(reloaded, nullptr);
+    require(s1 == s2);
+
+    // Une op s'applique sur la scene rechargee (chaine load -> apply -> save).
+    json res = applyOp(reloaded, setProperty("Sun", "intensity", 7.0f));
+    require(res["ok"].get<bool>());
+    require(close(sunLight->intensity, 7.0f));
+
+    // Document malforme : echec propre, scene laissee vide.
+    saida::Scene bad;
+    require(!saida::authoring::deserializeSceneSnapshot(std::string("{\"nope\":1}"), bad, &error));
+    require(!error.empty());
+    require(bad.children().empty());
+    require(!saida::authoring::deserializeSceneSnapshot(std::string("not json"), bad, &error));
+}
+
+// set_scene_setting : édite SceneSettings par nom (float/bool/vec3), inversible.
+void testSceneSettingOp() {
+    saida::Scene scene;
+    auto sceneSetting = [&](const std::string& key, json value) {
+        return json{{"type", "set_scene_setting"}, {"payload", {{"setting", key}, {"value", std::move(value)}}}};
+    };
+
+    // float
+    json res = applyOp(scene, sceneSetting("fogDensity", 0.08f));
+    require(res["ok"].get<bool>());
+    require(close(scene.settings().fogDensity, 0.08f));
+    require(res.contains("inverse"));
+
+    // bool
+    const bool bloomBefore = scene.settings().bloomEnabled;
+    res = applyOp(scene, sceneSetting("bloomEnabled", !bloomBefore));
+    require(res["ok"].get<bool>());
+    require(scene.settings().bloomEnabled == !bloomBefore);
+
+    // vec3 colour into vec4 field (alpha preserved)
+    scene.settings().ambientLight = {0.1f, 0.2f, 0.3f, 1.0f};
+    res = applyOp(scene, sceneSetting("ambientLight", json::array({0.5f, 0.6f, 0.7f})));
+    require(res["ok"].get<bool>());
+    require(close(scene.settings().ambientLight.x, 0.5f));
+    require(close(scene.settings().ambientLight.z, 0.7f));
+    require(close(scene.settings().ambientLight.w, 1.0f));  // alpha untouched
+
+    // inverse restores the previous colour
+    applyOp(scene, res["inverse"]);
+    require(close(scene.settings().ambientLight.x, 0.1f));
+    require(close(scene.settings().ambientLight.z, 0.3f));
+
+    // rejections: unknown setting, wrong type
+    res = applyOp(scene, sceneSetting("doesNotExist", 1.0f));
+    require(!res["ok"].get<bool>());
+    res = applyOp(scene, sceneSetting("fogDensity", true));
+    require(!res["ok"].get<bool>());
+    res = applyOp(scene, sceneSetting("bloomEnabled", 3.0f));
+    require(!res["ok"].get<bool>());
+}
+
+// Behaviour authoring ops: attach gameplay logic, set reflected props, remove;
+// behaviours round-trip through the headless snapshot.
+void testBehaviourOps() {
+    saida::Scene scene;
+    auto* n = scene.createChild<saida::Node>("Spinner");
+    n->assignSerializedId(5);
+
+    auto behaviourOp = [](const std::string& type, json payload) {
+        return json{{"type", type}, {"payload", std::move(payload)}};
+    };
+
+    // add_behaviour → inverse is remove_behaviour
+    json res = applyOp(scene, behaviourOp("add_behaviour",
+                                          {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"}}));
+    require(res["ok"].get<bool>());
+    require(res["inverse"]["type"] == "remove_behaviour");
+
+    // duplicate of the same type rejected
+    res = applyOp(scene, behaviourOp("add_behaviour",
+                                     {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"}}));
+    require(!res["ok"].get<bool>());
+
+    // unknown behaviour type rejected
+    res = applyOp(scene, behaviourOp("add_behaviour",
+                                     {{"nodeId", "Spinner"}, {"behaviourType", "Nonesuch"}}));
+    require(!res["ok"].get<bool>());
+
+    // set_behaviour_property (Rotator.speed is a float)
+    res = applyOp(scene, behaviourOp("set_behaviour_property",
+                                     {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"},
+                                      {"property", "speed"}, {"value", 90.0f}}));
+    require(res["ok"].get<bool>());
+    require(close(res["diff"]["after"].get<float>(), 90.0f));
+    require(res["inverse"]["type"] == "set_behaviour_property");
+
+    // unknown behaviour property rejected
+    res = applyOp(scene, behaviourOp("set_behaviour_property",
+                                     {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"},
+                                      {"property", "wobble"}, {"value", 1.0f}}));
+    require(!res["ok"].get<bool>());
+
+    // headless snapshot carries the behaviour + its property
+    json snap = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
+    const json& child = snap["scene"]["children"][0];
+    require(child["behaviours"].size() == 1);
+    require(child["behaviours"][0]["type"] == "Rotator");
+    require(close(child["behaviours"][0]["speed"].get<float>(), 90.0f));
+
+    // round-trip: deserialize + re-serialize is stable at the byte level
+    saida::Scene reloaded;
+    std::string err2;
+    require(saida::authoring::deserializeSceneSnapshot(snap, reloaded, &err2));
+    json snap2 = json::parse(saida::authoring::serializeSceneSnapshot(reloaded, nullptr));
+    require(snap == snap2);
+
+    // remove_behaviour (marked non-op-invertible)
+    res = applyOp(scene, behaviourOp("remove_behaviour",
+                                     {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"}}));
+    require(res["ok"].get<bool>());
+    require(res["diff"]["invertible"].get<bool>() == false);
+    snap = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
+    require(snap["scene"]["children"][0]["behaviours"].empty());
+}
+
+void testSignalConnectionOps() {
+    saida::Scene scene;
+    scene.addChild(std::make_unique<saida::LightNode>("A", saida::LightType::Point));
+    scene.addChild(std::make_unique<saida::LightNode>("B", saida::LightType::Point));
+
+    auto connOp = [](const std::string& type) {
+        return json{{"type", type},
+                    {"payload", {{"from", "A"}, {"signal", "died"},
+                                 {"to", "B"}, {"slot", "onDied"}}}};
+    };
+
+    // add: succeeds, is invertible to remove_signal_connection
+    json res = applyOp(scene, connOp("add_signal_connection"));
+    require(res["ok"].get<bool>());
+    require(res["inverse"]["type"] == "remove_signal_connection");
+    require(scene.connections().size() == 1);
+
+    // duplicate add is rejected without mutating
+    res = applyOp(scene, connOp("add_signal_connection"));
+    require(!res["ok"].get<bool>());
+    require(scene.connections().size() == 1);
+
+    // unknown node is rejected
+    res = applyOp(scene, json{{"type", "add_signal_connection"},
+                              {"payload", {{"from", "A"}, {"signal", "died"},
+                                           {"to", "Ghost"}, {"slot", "onDied"}}}});
+    require(!res["ok"].get<bool>());
+
+    // the connection round-trips through the headless snapshot
+    json snap = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
+    require(snap["scene"].contains("connections"));
+    require(snap["scene"]["connections"].size() == 1);
+    saida::Scene reloaded;
+    std::string err;
+    require(saida::authoring::deserializeSceneSnapshot(snap, reloaded, &err));
+    json snap2 = json::parse(saida::authoring::serializeSceneSnapshot(reloaded, nullptr));
+    require(snap == snap2);
+
+    // remove: succeeds, is invertible to add_signal_connection
+    res = applyOp(scene, connOp("remove_signal_connection"));
+    require(res["ok"].get<bool>());
+    require(res["inverse"]["type"] == "add_signal_connection");
+    require(scene.connections().empty());
+
+    // removing a missing connection is rejected
+    res = applyOp(scene, connOp("remove_signal_connection"));
+    require(!res["ok"].get<bool>());
+}
+
 } // namespace
 
 int main() {
@@ -467,5 +699,9 @@ int main() {
     testManifestContainsReflectedProperties();
     testManifestContainsBehavioursSignalsAndScenario();
     testSnapshotReflectsAppliedOps();
+    testHeadlessSnapshotRoundTrip();
+    testSceneSettingOp();
+    testBehaviourOps();
+    testSignalConnectionOps();
     return 0;
 }

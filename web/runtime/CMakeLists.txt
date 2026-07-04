@@ -64,6 +64,10 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/scene/MeshNode.cpp
     ${SAIDA_ROOT}/src/scene/Node.cpp
     ${SAIDA_ROOT}/src/scene/NodeId.cpp
+    # create_node op (SaidaOpApplier) builds reflected nodes by name via the
+    # NodeRegistry; ReflectedTypesWeb.cpp registers the web-renderable subset.
+    ${SAIDA_ROOT}/src/scene/NodeRegistry.cpp
+    ${SAIDA_ROOT}/src/scene/ReflectedTypesWeb.cpp
     ${SAIDA_ROOT}/src/scene/ParticleSystemNode.cpp
     ${SAIDA_ROOT}/src/scene/Scene.cpp
     ${SAIDA_ROOT}/src/scene/WaterNode.cpp
@@ -97,7 +101,7 @@ target_link_options(saida_web PRIVATE
     -sEXIT_RUNTIME=0
     # Spike S0: exposer ccall/cwrap pour piloter saida_apply_op depuis le JS.
     -sEXPORTED_RUNTIME_METHODS=ccall,cwrap
-    -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_saida_apply_op,_saida_engine_manifest,_saida_scene_snapshot,_saida_scene_snapshot_compare
+    -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_saida_apply_op,_saida_engine_manifest,_saida_scene_snapshot,_saida_scene_snapshot_compare,_saida_load_snapshot,_saida_pick
     $<$<CONFIG:Release>:-Oz>
     # WGSL shaders packaged into MEMFS at /shaders (16.1 web FS: preload).
     "SHELL:--preload-file ${SAIDA_ROOT}/build/shaders/wgsl@/shaders"
