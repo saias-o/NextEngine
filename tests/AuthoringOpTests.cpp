@@ -634,6 +634,55 @@ void testBehaviourOps() {
     require(snap["scene"]["children"][0]["behaviours"].empty());
 }
 
+void testSignalConnectionOps() {
+    saida::Scene scene;
+    scene.addChild(std::make_unique<saida::LightNode>("A", saida::LightType::Point));
+    scene.addChild(std::make_unique<saida::LightNode>("B", saida::LightType::Point));
+
+    auto connOp = [](const std::string& type) {
+        return json{{"type", type},
+                    {"payload", {{"from", "A"}, {"signal", "died"},
+                                 {"to", "B"}, {"slot", "onDied"}}}};
+    };
+
+    // add: succeeds, is invertible to remove_signal_connection
+    json res = applyOp(scene, connOp("add_signal_connection"));
+    require(res["ok"].get<bool>());
+    require(res["inverse"]["type"] == "remove_signal_connection");
+    require(scene.connections().size() == 1);
+
+    // duplicate add is rejected without mutating
+    res = applyOp(scene, connOp("add_signal_connection"));
+    require(!res["ok"].get<bool>());
+    require(scene.connections().size() == 1);
+
+    // unknown node is rejected
+    res = applyOp(scene, json{{"type", "add_signal_connection"},
+                              {"payload", {{"from", "A"}, {"signal", "died"},
+                                           {"to", "Ghost"}, {"slot", "onDied"}}}});
+    require(!res["ok"].get<bool>());
+
+    // the connection round-trips through the headless snapshot
+    json snap = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
+    require(snap["scene"].contains("connections"));
+    require(snap["scene"]["connections"].size() == 1);
+    saida::Scene reloaded;
+    std::string err;
+    require(saida::authoring::deserializeSceneSnapshot(snap, reloaded, &err));
+    json snap2 = json::parse(saida::authoring::serializeSceneSnapshot(reloaded, nullptr));
+    require(snap == snap2);
+
+    // remove: succeeds, is invertible to add_signal_connection
+    res = applyOp(scene, connOp("remove_signal_connection"));
+    require(res["ok"].get<bool>());
+    require(res["inverse"]["type"] == "add_signal_connection");
+    require(scene.connections().empty());
+
+    // removing a missing connection is rejected
+    res = applyOp(scene, connOp("remove_signal_connection"));
+    require(!res["ok"].get<bool>());
+}
+
 } // namespace
 
 int main() {
@@ -653,5 +702,6 @@ int main() {
     testHeadlessSnapshotRoundTrip();
     testSceneSettingOp();
     testBehaviourOps();
+    testSignalConnectionOps();
     return 0;
 }

@@ -20,6 +20,8 @@ const std::vector<std::string>& knownOpTypes() {
         "add_behaviour",
         "remove_behaviour",
         "set_behaviour_property",
+        "add_signal_connection",
+        "remove_signal_connection",
     };
     return types;
 }
@@ -175,6 +177,15 @@ std::string validateOpShape(const SaidaOp& op) {
             return "set_behaviour_property needs 'behaviourType'";
         if (!hasNonEmptyString(p, "property")) return "set_behaviour_property needs 'property'";
         if (!p.contains("value")) return "set_behaviour_property needs a 'value'";
+        return "";
+    }
+    if (op.type == "add_signal_connection" || op.type == "remove_signal_connection") {
+        // from/to are node names (resolved to NodeId by the applier, like every
+        // other SaidaOp node ref); signal/slot are reflected names on those nodes.
+        if (!hasNonEmptyString(p, "from")) return op.type + " needs 'from'";
+        if (!hasNonEmptyString(p, "signal")) return op.type + " needs 'signal'";
+        if (!hasNonEmptyString(p, "to")) return op.type + " needs 'to'";
+        if (!hasNonEmptyString(p, "slot")) return op.type + " needs 'slot'";
         return "";
     }
     return "op type '" + op.type + "' has no shape validator";

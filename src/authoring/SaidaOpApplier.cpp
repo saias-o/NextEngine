@@ -458,6 +458,58 @@ std::string opSetBehaviourProperty(Scene& scene, const json& p) {
               std::move(inv));
 }
 
+// Signal connections are data-driven links stored in the scene's "connections"
+// block (SignalConnectionDef {from, signal, to, slot}), round-tripped by the
+// snapshot and wired by SignalWiring at Play. Here we only edit the data — node
+// refs come in as names (like every other op) and resolve to NodeId at rest.
+std::string opAddSignalConnection(Scene& scene, const json& p) {
+    const std::string fromName = p.value("from", std::string());
+    const std::string signal = p.value("signal", std::string());
+    const std::string toName = p.value("to", std::string());
+    const std::string slot = p.value("slot", std::string());
+
+    Node* from = findByName(scene, fromName);
+    if (!from) return err("unknown node '" + fromName + "'");
+    Node* to = findByName(scene, toName);
+    if (!to) return err("unknown node '" + toName + "'");
+
+    for (const auto& c : scene.connections()) {
+        if (c.from == from->id() && c.to == to->id() && c.signal == signal && c.slot == slot)
+            return err("signal connection already exists");
+    }
+
+    scene.connections().push_back(
+        SignalConnectionDef{from->id(), signal, to->id(), slot});
+
+    json diff{{"from", fromName}, {"signal", signal}, {"to", toName}, {"slot", slot}};
+    return ok("add_signal_connection", diff,
+              inverseOp("remove_signal_connection", diff));
+}
+
+std::string opRemoveSignalConnection(Scene& scene, const json& p) {
+    const std::string fromName = p.value("from", std::string());
+    const std::string signal = p.value("signal", std::string());
+    const std::string toName = p.value("to", std::string());
+    const std::string slot = p.value("slot", std::string());
+
+    Node* from = findByName(scene, fromName);
+    if (!from) return err("unknown node '" + fromName + "'");
+    Node* to = findByName(scene, toName);
+    if (!to) return err("unknown node '" + toName + "'");
+
+    auto& conns = scene.connections();
+    for (auto it = conns.begin(); it != conns.end(); ++it) {
+        if (it->from == from->id() && it->to == to->id() &&
+            it->signal == signal && it->slot == slot) {
+            conns.erase(it);
+            json diff{{"from", fromName}, {"signal", signal}, {"to", toName}, {"slot", slot}};
+            return ok("remove_signal_connection", diff,
+                      inverseOp("add_signal_connection", diff));
+        }
+    }
+    return err("signal connection not found");
+}
+
 } // namespace
 
 std::string applyOpJson(Scene& scene, ResourceManager* resources,
@@ -480,6 +532,8 @@ std::string applyOpJson(Scene& scene, ResourceManager* resources,
     if (type == "add_behaviour") return opAddBehaviour(scene, p);
     if (type == "remove_behaviour") return opRemoveBehaviour(scene, p);
     if (type == "set_behaviour_property") return opSetBehaviourProperty(scene, p);
+    if (type == "add_signal_connection") return opAddSignalConnection(scene, p);
+    if (type == "remove_signal_connection") return opRemoveSignalConnection(scene, p);
     return err("op type '" + type + "' is registered but not implemented");
 }
 

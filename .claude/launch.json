@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-runtime",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["web/serve.py", "build-web", "8080"],
+      "port": 8080
+    }
+  ]
+}

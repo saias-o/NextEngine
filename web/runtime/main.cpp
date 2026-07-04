@@ -33,6 +33,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <cmath>
 #include <fstream>
@@ -451,6 +452,114 @@ void frame() {
     }
 }
 
+// D2 (PLAN_INTEGRATION_SAIDA.md §12, Track 1-B): rebuild the live scene from a
+// scene-document JSON (the `doc` returned by the platform's GET /scene). Reuses
+// the same focused loaders as boot (loadNode/applySettings) so a snapshot round-
+// trips into the exact node types the web runtime can render. Replacing the Scene
+// unique_ptr is safe: the Renderer is scene-agnostic (scene passed per drawFrame),
+// and this runs synchronously from JS between frames (single-threaded main loop).
+//
+// MVP scope is the empty/Manual scene (root + settings, no meshes) — headless
+// snapshots omit mesh/material refs (SceneSnapshot.cpp), so content-rich scenes
+// need the asset-ref round-trip of Track 1-F before they render here.
+bool loadSceneDoc(const json& doc) {
+    if (!doc.is_object() || !doc.contains("scene") || !doc["scene"].is_object())
+        return false;
+
+    gApp.scene = std::make_unique<Scene>();
+    const json& root = doc["scene"];
+    applyCommonNodeFields(*gApp.scene, root);
+
+    if (root.contains("settings")) {
+        applySettings(root["settings"]);
+        gApp.durableSkyboxTexture = root["settings"].value("skyboxTexture", kAssetInvalid);
+        // Re-resolve the durable skybox id to the live texture already loaded at
+        // boot; an empty Manual scene has no settings and simply stays black.
+        if (gApp.durableSkyboxTexture != kAssetInvalid && gApp.whiteTex != kAssetInvalid)
+            gApp.scene->settings().skyboxTexture = gApp.durableSkyboxTexture;
+    }
+
+    gApp.scene->readConnections(root);
+    for (const json& c : root.value("children", json::array()))
+        loadNode(c, *gApp.scene);
+
+    gApp.scene->update(0.0f);
+    return true;
+}
+
+// D9 (Track 1-C): viewport picking. No physics/Jolt in the web build, so we ray-
+// cast against each MeshNode's local AABB (Mesh::bounds()) transformed by its
+// world matrix, and keep the nearest hit. Enough for click-to-select; precise
+// per-triangle picking can come later.
+bool rayAabbLocal(const glm::vec3& o, const glm::vec3& d, const Aabb& b, float& tNear) {
+    float t0 = 0.0f;
+    float t1 = 1e30f;
+    for (int i = 0; i < 3; ++i) {
+        if (std::fabs(d[i]) < 1e-8f) {
+            if (o[i] < b.min[i] || o[i] > b.max[i]) return false;  // parallel, outside
+        } else {
+            const float inv = 1.0f / d[i];
+            float ta = (b.min[i] - o[i]) * inv;
+            float tb = (b.max[i] - o[i]) * inv;
+            if (ta > tb) std::swap(ta, tb);
+            t0 = std::max(t0, ta);
+            t1 = std::min(t1, tb);
+            if (t0 > t1) return false;
+        }
+    }
+    tNear = t0;
+    return true;
+}
+
+// ndcX/ndcY in [-1, 1] with Y up (the JS caller converts from canvas pixels).
+std::string pickNode(float ndcX, float ndcY) {
+    json r;
+    if (!gApp.scene) {
+        r["ok"] = false;
+        r["error"] = "runtime not ready";
+        return r.dump();
+    }
+
+    const float aspect = float(kWidth) / float(kHeight);
+    const float tanHalf = std::tan(glm::radians(gApp.camera.fovDegrees) * 0.5f);
+    const glm::vec3 camPos = gApp.camera.position;
+    // Build the world-space ray from the camera basis (avoids projection Y-flip
+    // pitfalls of unprojecting through the Vulkan-convention matrices).
+    const glm::vec3 dirWorld = glm::normalize(
+        gApp.camera.front() + gApp.camera.right() * (ndcX * tanHalf * aspect) +
+        gApp.camera.up() * (ndcY * tanHalf));
+
+    float bestDist = 1e30f;
+    Node* best = nullptr;
+    for (MeshNode* mn : gApp.scene->meshes()) {
+        const Mesh* mesh = mn->mesh();
+        if (!mesh) continue;
+        const glm::mat4 world = mn->worldTransform();
+        const glm::mat4 inv = glm::inverse(world);
+        const glm::vec3 lo = glm::vec3(inv * glm::vec4(camPos, 1.0f));
+        const glm::vec3 ld = glm::normalize(glm::vec3(inv * glm::vec4(dirWorld, 0.0f)));
+        float tN = 0.0f;
+        if (!rayAabbLocal(lo, ld, mesh->bounds(), tN)) continue;
+        const glm::vec3 worldHit = glm::vec3(world * glm::vec4(lo + ld * tN, 1.0f));
+        const float dist = glm::length(worldHit - camPos);
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = mn;
+        }
+    }
+
+    r["ok"] = true;
+    if (!best) {
+        r["hit"] = false;
+        return r.dump();
+    }
+    r["hit"] = true;
+    r["nodeId"] = best->name();  // ops resolve by name today (see SaidaOpApplier)
+    r["id"] = best->id();
+    r["distance"] = bestDist;
+    return r.dump();
+}
+
 } // namespace
 
 // --- Spike S0/S1: authoring-core bindings (PLAN_LIVE_EDIT_WEB.md §4) ----------
@@ -491,6 +600,45 @@ EMSCRIPTEN_KEEPALIVE
 const char* saida_scene_snapshot_compare() {
     static std::string out;
     out = compareSnapshotWithPreloadedScene();
+    return out.c_str();
+}
+
+// D2 (Track 1-B): load a scene document into the live runtime, replacing the
+// current scene. Input is the `doc` field of GET /v1/projects/:id/scene.
+EMSCRIPTEN_KEEPALIVE
+const char* saida_load_snapshot(const char* docJson) {
+    static std::string out;
+    if (!gApp.device || !gApp.resources) {
+        out = R"({"ok":false,"error":"runtime not ready"})";
+        return out.c_str();
+    }
+    try {
+        json doc = json::parse(docJson ? docJson : "");
+        if (!loadSceneDoc(doc)) {
+            out = R"J({"ok":false,"error":"invalid scene document: missing scene root"})J";
+            return out.c_str();
+        }
+        json r;
+        r["ok"] = true;
+        r["meshes"] = gApp.scene->meshes().size();
+        r["lights"] = gApp.scene->lights().size();
+        r["waters"] = gApp.scene->waterNodes().size();
+        out = r.dump();
+    } catch (const std::exception& e) {
+        json r;
+        r["ok"] = false;
+        r["error"] = e.what();
+        out = r.dump();
+    }
+    return out.c_str();
+}
+
+// D9 (Track 1-C): pick the nearest MeshNode under a viewport point. ndcX/ndcY are
+// normalized device coords in [-1, 1], Y up. Returns {ok, hit, nodeId?, id?}.
+EMSCRIPTEN_KEEPALIVE
+const char* saida_pick(float ndcX, float ndcY) {
+    static std::string out;
+    out = pickNode(ndcX, ndcY);
     return out.c_str();
 }
 
