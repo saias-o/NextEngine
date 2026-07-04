@@ -246,7 +246,7 @@ Détail : [PLAN_LIVE_EDIT_WEB.md](PLAN_LIVE_EDIT_WEB.md).
 | C6 | Présence/curseurs via Yjs awareness | C2 | 2 curseurs visibles |
 | C7 | Résolution de conflits (transform/property last-wins, delete/reparent gardés) | C3 | ✅ ordre total serveur ⇒ last-writer-wins (transform/property) ; guards delete/reparent délégués au **vrai applier** via `saida_tool apply-ops --skip-invalid` (les ops devenues invalides — ex. transform sur un nœud supprimé — sont **droppées**, pas abortées) : zéro logique dupliquée côté serveur. Matrice testée engine (CTest `skip_invalid`) + plateforme (`scene-fold.test.ts` : delete-guard, last-wins, rejet atomique) |
 
-### Phase D — Éditeur web (P + E) 🔵 (D1 ✅)
+### Phase D — Éditeur web (P + E) 🔵 (D1 ✅ ; backends D2/D8 faits, UI à venir)
 
 | # | Tâche | Dépend | Critère de fait |
 |---|---|---|---|
@@ -257,7 +257,7 @@ Détail : [PLAN_LIVE_EDIT_WEB.md](PLAN_LIVE_EDIT_WEB.md).
 | D5 | Recevoir et appliquer les ops distantes (multi-clients) | C3,S3 | 2 users, même scène |
 | D6 | **Optimistic-local** pour manipulations continues (invariant 0.4) | D4 | drag fluide, commit au relâchement |
 | D7 | Édition texte scripts/UI via Yjs + commit `write_script`/`write_ui` | C6 | script hot-reload |
-| D8 | Historique des opérations + rollback de revision | C4 | restaurer revision N |
+| D8 | Historique des opérations + rollback de revision | C4 | 🔵 lecture faite : `GET /v1/projects/:id/revisions` (timeline des checkpoints) + `GET /v1/projects/:id/scene?at=N` (reconstruction time-travel = snapshot ≤ N + fold des ops jusqu'à N), sans réécrire le journal append-only ; store `listRevisions`/`snapshotAtOrBefore`, testé. Reste : rollback qui mute le head (live) |
 
 ### Phase E — IA agentique / vibecoding (P + E) 🔵 (socle E2/E3 ✅)
 
