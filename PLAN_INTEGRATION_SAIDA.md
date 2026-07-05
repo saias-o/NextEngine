@@ -746,3 +746,103 @@ viewport `onClick(px,py)` → convertir en NDC (`x=px/w*2-1`, `y=1-py/h*2`) →
 - E2E avec MinIO reel : verifier que les range requests fonctionnent sur l'object store cible et que le prompt contient bien les extraits attendus.
 - Redaction/filtrage avance des secrets dans fichiers texte avant prompt LLM.
 - Ops `write_script`/`write_ui` : maintenant debloquables cote plateforme, mais le contrat moteur doit encore definir l'application durable fichier+scene sans casser le round-trip.
+
+---
+
+### Avancement Codex - Lot 5 (2026-07-05)
+
+**Livre cote plateforme :**
+
+- **Redaction secrets avant prompt LLM.** `agent-attachments.ts` masque les patterns usuels avant injection dans le contexte agent : assignments sensibles (`*_SECRET`, `*_TOKEN`, `*_API_KEY`, `PASSWORD`, `PRIVATE_KEY`, etc.), Bearer longs, cles OpenAI/Stripe/AWS/GitHub/Google/Slack/JWT.
+- **Tests redaction.** `agent-attachments.test.ts` verifie que les secrets sont masques dans les snippets et que le contexte garde les valeurs non sensibles.
+- **Verification V1 reproductible.** `package.json` expose `npm run verify:v1` : Prisma validate, Prisma generate, typecheck workspaces, tests workspaces, build workspaces.
+
+**Verification locale effectuee :**
+
+- `npm run typecheck -w @saida/api` : vert.
+- `npm run test -w @saida/api -- --test-name-pattern "Attachment|redact"` : vert.
+- `npm run verify:v1` : vert (`51` tests API passes, `5` skips attendus ; `7` tests shared passes ; build API/Web/Workers vert).
+
+**Suite logique :**
+
+- Collaboration humaine complete : acceptation invitation par token, revocation/changement de role, viewer read-only cote API/UI.
+- E2E avec infra locale complete pour prouver upload chat + agent + apply + multi-collab.
+
+---
+
+### Avancement Codex - Lot 6 (2026-07-05)
+
+**Livre cote plateforme :**
+
+- **Acceptation invitation par token.** `POST /v1/project-invitations/:token/accept` valide le token hash, l'expiration, le compte invite, puis cree/upsert le `ProjectCollaborator` et marque l'invitation `ACCEPTED`.
+- **Page invitation web.** Nouvelle route `apps/web/app/saidaengine/invitations/page.tsx`, cible des emails existants `/saidaengine/invitations?token=...`, qui accepte l'invitation puis redirige vers le workspace du projet.
+- **Gestion collaborateurs.** Ajout API `PATCH/DELETE /v1/projects/:projectId/collaborators/:userId` pour changer `EDITOR/VIEWER` ou retirer un collaborateur. Le owner est verrouille.
+- **Revocation invitation.** Ajout `DELETE /v1/projects/:projectId/invitations/:invitationId` pour passer une invitation `PENDING` en `REVOKED`.
+- **UI roles/revocation.** Le dialogue Share affiche les collaborateurs avec role, permet de choisir le role des nouvelles invitations, changer un role, retirer un collaborateur, et revoquer une invitation en attente.
+- **Viewer read-only.** Le gateway collaboration autorise maintenant `VIEWER` pour `GET /scene` et `GET /revisions`, mais garde `EDITOR` requis pour WebSocket live-edit et application d'ops. Le client live-edit refuse maintenant une op si le socket n'est pas ouvert/pret, au lieu de laisser une modification locale non durable.
+
+**Verification locale effectuee :**
+
+- `npm run typecheck -w @saida/api` : vert.
+- `npm run typecheck -w @saida/web` : vert.
+- `npm run test -w @saida/api -- --test-name-pattern "protected|invitation|collaboration|applyExternalOp"` : vert.
+- `npm run build -w @saida/web` : vert, route `/saidaengine/invitations` incluse.
+
+**Non encore prouve / suite logique :**
+
+- E2E multi-compte reel : invitation email/console -> acceptation -> ouverture projet -> viewer sans edition -> editor avec edition live.
+- Presence live minimale et affichage read-only explicite dans l'UI workspace.
+
+---
+
+### Avancement Codex - Lot 7 UI + E2E (2026-07-05)
+
+**Livre cote plateforme :**
+
+- **Role projet remonte a l'UI.** `GET/PATCH /v1/projects/:projectId/settings` renvoie maintenant le role effectif (`OWNER`, `EDITOR`, `VIEWER`) pour que le workspace puisse decider localement ce qui est editable.
+- **Workspace viewer read-only.** Le workspace part en `VIEWER` par defaut pendant le chargement d'un projet persistant, puis active l'edition uniquement si le role settings est `OWNER`/`EDITOR`.
+- **Live-edit sans modification fantome.** `useLiveEditSession` et `connectLiveEdit` acceptent un mode `readOnly` : la scene est chargee, le statut passe `ready`, mais `emitOp/commit` renvoient `LIVE_EDIT_READ_ONLY` et aucune op locale optimiste n'est appliquee.
+- **Inspector read-only.** `SceneInspectorPanel` affiche les champs de manifeste en lecture seule quand le role ne permet pas l'edition ; rename, transform et property edits ne sont plus rendus en inputs mutables.
+- **Chat agent read-only.** Le chat IA affiche l'historique mais desactive prompt, upload de fichiers et apply d'actions pour les viewers, afin de rester coherent avec les protections API `EDITOR`.
+- **Settings/share par role.** Les settings sont consultables mais non sauvegardables en viewer. Share affiche les collaborateurs ; invitation/revocation restent reservees aux roles autorises, changement/suppression de role reserve au owner.
+- **E2E API multi-compte.** Ajout `apps/api/src/project-collaboration.e2e.test.ts`, skippable par defaut et activable avec `RUN_E2E=1`, qui teste signup owner/viewer, creation projet, invitation viewer, acceptation token, lecture settings/scene, refus `PATCH settings` et refus `ops/dry-run`.
+- **Script E2E.** Ajout `npm run test:e2e` a la racine et dans `@saida/api`.
+
+**Verification locale effectuee :**
+
+- `npm run typecheck -w @saida/api` : vert.
+- `npm run typecheck -w @saida/web` : vert.
+- `npm run test -w @saida/api -- --test-name-pattern "project-collaboration|invited viewer|redactAttachmentSecrets"` : vert (`51` passes, `6` skips dont l'E2E DB-backed non active).
+- `docker compose up -d postgres` + `npm run db:migrate:deploy` : Postgres local healthy, migrations appliquees.
+- `RUN_E2E=1 npm run test:e2e -w @saida/api` : vert (`1` E2E pass, `0` skip). Scenario couvert : signup owner/viewer, creation projet, acceptation invitation viewer, lecture settings/scene, refus settings patch et ops dry-run.
+- `npm run build -w @saida/web` : vert, route `/saidaengine/invitations` incluse. Warnings restants : racine Turbopack inferee et convention Next `middleware` depreciee.
+
+**Suite logique :**
+
+- Ajouter un E2E navigateur a deux sessions pour prouver visuellement : invitation -> ouverture workspace -> viewer read-only -> editor apply agent -> scene visible chez l'autre collaborateur.
+
+---
+
+### Avancement Codex - Lot 8 E2E navigateur + nettoyage (2026-07-05)
+
+**Livre cote plateforme :**
+
+- **E2E navigateur deux sessions.** Ajout `apps/web/e2e/collaboration.spec.ts` et `apps/web/playwright.config.ts` pour demarrer API + Web, creer owner/viewer, accepter une invitation, verifier le workspace viewer en lecture seule, appliquer une action agent cote owner, puis verifier la propagation live dans la session viewer.
+- **Bootstrap E2E API/Web.** Ajout `scripts/start-api-e2e.mjs` avec fallback vers `NextEngine/build/bin/saida_tool.exe`, `AGENT_LLM_ENABLED=false`, `EMAIL_DELIVERY_MODE=console` et fallback dev compte desactive.
+- **Selectors UI stables.** Ajout de `data-testid` cibles sur auth, hierarchy, settings, chat agent et apply action pour eviter les tests fragiles bases sur du texte traduit.
+- **Live-edit read-only receive-only.** Les viewers ouvrent maintenant le socket collaboration pour recevoir les ops, mais le serveur refuse toute op inbound `VIEWER` avec `PROJECT_READ_ONLY`. Le client refuse aussi `emitOp/commit/previewLocal` en read-only.
+- **Fallback snapshot UI.** Le workspace garde une representation JS de la scene issue du snapshot serveur et applique les ops distantes dessus, ce qui evite une hierarchy vide quand le runtime WebAssembly/WebGPU refuse momentanement `loadSnapshot/applyOp`.
+- **Nettoyage bruit.** Les rapports Playwright et `test-results` sont ignores ; `next-env.d.ts` a ete remis sur le chemin dev apres le build.
+
+**Verification locale effectuee :**
+
+- `npm run typecheck -w @saida/api` : vert.
+- `npm run typecheck -w @saida/web` : vert.
+- `npm run test -w @saida/api -- --test-name-pattern "collaboration|redact|protected"` : vert (`51` passes, `6` skips attendus).
+- `npm run build -w @saida/web` : vert. Warnings restants : racine Turbopack inferee a cause de plusieurs lockfiles, convention Next `middleware` depreciee.
+- `npm run test:e2e:web` : harness execute et corrige jusqu'au scenario navigateur ; la derniere relance est bloquee par Docker Desktop/Postgres indisponible (`dockerDesktopLinuxEngine` pipe introuvable), pas par une assertion applicative. Quand Docker et Postgres sont relances, c'est le test a rejouer pour obtenir le vert final navigateur.
+
+**Suite logique :**
+
+- Relancer `docker compose up -d postgres`, `npm run db:migrate:deploy`, puis `npm run test:e2e:web` des que Docker Desktop est de nouveau disponible.
+- Apres vert navigateur, faire une passe UX rapide avec screenshots desktop/mobile sur workspace owner/viewer avant mise en production.
