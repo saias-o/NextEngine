@@ -63,6 +63,20 @@ public:
         }
     }
 
+    // Identité durable des ressources (Track 1-F) : le sous-ensemble sérialisé
+    // {mesh, texture, baseColor, metallic, roughness, ao, emissive, shader,
+    // lods} capturé tel quel par la désérialisation headless (qui ne peut pas
+    // résoudre de ressource) et ré-émis par la sérialisation headless — le fold
+    // de collaboration ne perd plus les données de rendu. Les runtimes avec
+    // ResourceManager (web) le résolvent en vrai mesh/matériau.
+    const std::string& durableResourceRefs() const { return durableResourceRefs_; }
+    void setDurableResourceRefs(std::string refsJson) {
+        durableResourceRefs_ = std::move(refsJson);
+    }
+    // Capture le sous-ensemble durable depuis un document de node sérialisé
+    // (appelé par les deux chemins de désérialisation, complet et headless).
+    void captureDurableResourceRefs(const nlohmann::json& j);
+
 private:
     Mesh* mesh_;
     Material* material_;
@@ -73,6 +87,7 @@ private:
     glm::vec4 outlineColor_{0.02f, 0.02f, 0.02f, 1.0f};
     float outlineWidth_ = 3.0f;  // screen pixels
     bool meshEnabled_ = true;
+    std::string durableResourceRefs_;
 };
 
 } // namespace saida

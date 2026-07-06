@@ -846,3 +846,125 @@ viewport `onClick(px,py)` → convertir en NDC (`x=px/w*2-1`, `y=1-py/h*2`) →
 
 - Relancer `docker compose up -d postgres`, `npm run db:migrate:deploy`, puis `npm run test:e2e:web` des que Docker Desktop est de nouveau disponible.
 - Apres vert navigateur, faire une passe UX rapide avec screenshots desktop/mobile sur workspace owner/viewer avant mise en production.
+
+---
+
+### Avancement Claude - Session « Correction & cohérence » (2026-07-06)
+
+Ferme quatre points de [AUDIT_WEB_PLATFORM_IMPROVMENTS.md](AUDIT_WEB_PLATFORM_IMPROVMENTS.md)
+(tout côté `GitHub/saida`, zéro changement moteur) :
+
+- **Audit 1.2 fermé — divergence de manifest.** Nouveau
+  `apps/api/src/web-runtime-contract.ts` : `validateOpForWebClients` (validation
+  WASM de forme **+** borne web : `add_behaviour`/`remove_behaviour`/
+  `set_behaviour_property` rejetées tant que le runtime web n'a aucun behaviour,
+  `create_node.nodeType` gaté sur la palette du manifest) branché sur **tous**
+  les chemins d'entrée du journal (hub WS, `/ops`, `/ops/dry-run`, pipeline
+  agent). `getWebEngineManifest()` (behaviours vides, ops bornées,
+  `webRuntimeBounded:true`) sert le prompt agent et `/v1/engine/manifest`
+  par défaut (`?full=1` pour le contrat desktop complet). Constat utile : la
+  palette de nœuds native == web (Node/MeshNode/LightNode/ParticleSystem/Water) ;
+  la seule divergence réelle était les 14 behaviours. Testé
+  (`web-runtime-contract.test.ts`).
+- **Audit 2.2 fermé — batchs atomiques.** `CollaborationStore.appendOps()`
+  (createMany, all-or-nothing) + `CollaborationHub.applyExternalBatch(projectId,
+  ops, author, {expectedRevision})` : sérialisé sur `room.tail`, validation
+  complète avant persistance, persistance en une transaction, broadcast en ordre
+  de révision, `onCommitted` par révision (le scheduler N-ops reste correct).
+  `expectedRevision` (= `baseRevision` du dry-run) ferme le TOCTOU : si la tête
+  a bougé depuis le dry-run → `409 REVISION_CONFLICT`, rien d'appliqué,
+  retryable. Branché sur `POST /ops` et l'apply d'action agent (l'action reste
+  `PROPOSED` sur conflit). 4 nouveaux tests hub.
+- **Audit 2.6/5.2 fermé — mirror JS structurel.** La logique du mirror est
+  extraite dans `packages/shared/src/scene-mirror.ts` (aligné 1-E « types dans
+  packages/shared ») et gère maintenant `create_node`/`delete_node`/
+  `reparent_node` (payloads/défauts alignés sur `SaidaOpApplier.cpp`, mêmes
+  guards anti-cycle). La hiérarchie React reste juste en multi-client même
+  quand le runtime WASM est indisponible. 7 tests (`scene-mirror.test.ts`) ;
+  `use-live-edit-session.ts` ré-exporte depuis `@saida/shared`.
+- **Audit 4.2 fermé — état d'init persisté.** `Project.creationMode`
+  (enum GUIDED/MANUAL), `designSkillId`, `initializedAt` (migration
+  `20260706120000_project_initialization`, SQL canonique `prisma migrate diff`).
+  Renseignés à la création (`POST /v1/projects`), exposés en lecture par
+  GET/PATCH settings. Le setup ne se rouvre plus jamais avec un `projectId`
+  (`?setup=1` ignoré) ; le mode/skill affichés par l'éditeur viennent des
+  settings persistés (fallback URL juste après création).
+- **Audit 4.7 (bonus) — backdoor dev isolée.** `?projectId=test` ne force plus
+  OWNER qu'en build development (`isDevSandboxProject`, `projects.ts`).
+
+**Vérification :** `npm run verify:v1` exit 0 (API 66 tests dont 60 pass /
+6 skips attendus sans binaire natif ni DB ; shared 14/14 ; typecheck + build
+API/Web/Workers verts). **Non prouvé :** migration non appliquée (Docker/Postgres
+down pendant la session → `npm run db:migrate:deploy` au prochain démarrage) ;
+E2E navigateur multi-onglets toujours à rejouer avec l'infra locale.
+
+---
+
+### Avancement Claude - Session « Track 1-F : refs d'assets » (2026-07-06)
+
+**Le bloquant produit n°1 de l'audit (1.1) est levé côté moteur + runtime web :
+le snapshot headless transporte maintenant les refs mesh/matériau, le fold
+serveur les préserve, et le runtime web les résout en vraies ressources.**
+
+Côté moteur (`NextEngine`) :
+
+- **`MeshNode.durableResourceRefs`** — nouveau membre data-only (string JSON) :
+  le sous-ensemble sérialisé `{mesh, texture, baseColor, metallic, roughness,
+  ao, emissive, shader, lods}` est capturé tel quel par les deux chemins de
+  désérialisation (`captureDurableResourceRefs`, appelé par le chemin complet
+  et le chemin headless) et ré-émis par la sérialisation headless. Aucune
+  ressource GPU n'est chargée en headless.
+- **`SceneSnapshot.cpp`** — la sérialisation headless émet aussi les flags de
+  rendu MeshNode (`castShadows`, `meshEnabled`, `outline*`) depuis le node, et
+  la désérialisation les restaure. Round-trip byte-stable testé
+  (`testMeshResourceRefsRoundTrip` dans `saida_authoring_op_tests`), y compris
+  refs survivant à une op puis re-sérialisation. Fold réel vérifié avec le
+  binaire : `saida_tool apply-ops` sur une scène à refs → refs intactes, ops
+  appliquées. CTests 10/10.
+- **Runtime web (`web/runtime/main.cpp`)** — `AssetRegistry` monté sur
+  `/project` (lit `asset_registry.json` si présent) + `chdir("/project")` ;
+  `resolveMeshRef`/`resolveAssetRef` résolvent les refs (AssetID numérique ou
+  chemin relatif, "cube" builtin) via ResourceManager ; **garde d'existence de
+  fichier avant `Mesh::fromObjFile`** (qui throw → abort wasm sinon) ; texture
+  manquante → placeholder magenta (comportement rhi existant) ; mesh manquant →
+  cube placeholder + entrée `missingAssets` dans le résultat de
+  `saida_load_snapshot` (jamais silencieux). `shader:"unlit"` respecté.
+  L'export runtime ajoute `FS` (`EXPORTED_RUNTIME_METHODS`) pour que la
+  plateforme écrive les fichiers projet dans MEMFS avant `loadSnapshot`.
+
+**Vérifié E2E navigateur sur cette machine (première fois)** : boot BeachDemo
+(47 meshes, rendu correct), parité S4 `saida_scene_snapshot_compare` **verte**
+(17/17, zéro diff), `saida_load_snapshot` avec un vrai `.obj` écrit en MEMFS →
+mesh réel rendu, ref manquante → `missingAssets:["mesh:models/absent.obj"]`,
+op `set_transform` appliquée post-load. Artefacts resynchronisés dans
+`saida/apps/web/public/engine/dev/` (`npm run engine:sync` avec
+`SAIDA_ENGINE_BUILD_DIR`).
+
+Corrections d'environnement/toolchain au passage (cette machine) :
+
+- emsdk installé (`~/emsdk`, latest) + rustup/naga-cli (`~/.cargo/bin`) pour la
+  chaîne WGSL ; `build-web` reproductible ici.
+- `web/runtime/CMakeLists.txt` : options de link **quotées** (checkout sous un
+  chemin avec espace : « Projets Dev ») ; **`-sALLOW_MEMORY_GROWTH` remplacé
+  par `-sINITIAL_MEMORY=512MB`** — les Chrome récents rejettent les vues sur un
+  ArrayBuffer resizable dans `writeTexture` (« must not be resizable ») et le
+  port emdawnwebgpu bundlé ne fait pas la copie → l'init GPU mourait en
+  unhandledrejection silencieuse. À réévaluer quand le port sera corrigé.
+- `web/runtime/shell.html` : hook `error`/`unhandledrejection` → statut visible
+  (fini le canvas noir sans diagnostic) ; commentaire contenant un tag script
+  littéral corrigé (il cassait le parseur HTML du shell généré).
+
+**Limites connues / handoff Codex (plateforme)** :
+
+- Livraison des assets au navigateur : écrire les `ProjectFile` (et
+  `asset_registry.json` si ids numériques) dans MEMFS via `Module.FS` sous
+  `/project/…` avant `runtime.loadSnapshot()` ; surfacer `missingAssets` dans
+  l'UI (badge/console) ; invalider/re-loader quand un asset arrive.
+- Formats : `.obj` + textures stb (png/jpg…) seulement — pas de GLTF dans le
+  wasm (hors périmètre, taille) ; un `.obj` corrompu (présent mais invalide)
+  fait encore aborter le wasm (exceptions off) — à durcir si besoin.
+- `saida_scene_snapshot` (mirror UI) écrit des AssetID de session pour les
+  meshes chargés par chemin : ne jamais persister ce snapshot côté serveur (la
+  vérité durable reste le journal d'ops + fold `saida_tool`).
+- `create_node` MeshNode n'a pas encore d'op pour assigner un mesh (`set_mesh`
+  / `set_material` restent à cadrer dans le contrat d'ops).

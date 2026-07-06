@@ -14,6 +14,7 @@
 #include "graphics/Material.hpp"
 #include "graphics/Mesh.hpp"
 #include "graphics/ResourceManager.hpp"
+#include "project/AssetRegistry.hpp"
 #include "render/Renderer.hpp"
 #include "render/RenderFeatureRegistry.hpp"
 #include "core/Camera.hpp"
@@ -29,6 +30,8 @@
 
 #include <GLFW/glfw3.h>
 #include <emscripten.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -51,6 +54,9 @@ constexpr uint32_t kWidth = 1280, kHeight = 720;
 struct App {
     std::unique_ptr<rhi::Device> device;
     std::unique_ptr<rhi::Surface> surface;
+    // Maps AssetID <-> project-relative path (asset_registry.json when the
+    // platform preloads one under /project); path refs register on the fly.
+    std::unique_ptr<AssetRegistry> registry;
     std::unique_ptr<ResourceManager> resources;
     std::unique_ptr<Renderer> renderer;
     std::unique_ptr<Scene> scene;
@@ -58,6 +64,10 @@ struct App {
     Mesh* cubeMesh = nullptr;
     AssetID whiteTex = kAssetInvalid;
     AssetID durableSkyboxTexture = kAssetInvalid;
+    // Track 1-F: refs the last scene load could not resolve (missing files in
+    // MEMFS, ids unknown to the registry). Reported by saida_load_snapshot so
+    // the editor can surface them instead of silently rendering placeholders.
+    std::vector<std::string> missingAssets;
     double time = 0.0;
 };
 
@@ -108,15 +118,70 @@ void applyCommonNodeFields(Node& n, const json& node) {
     applyTransform(n, node);
 }
 
+// Track 1-F: resolve an asset ref as serialized by the engine — an AssetID
+// number, or a project-relative path string (registered on the fly). Returns
+// kAssetInvalid when there is no usable ref.
+AssetID resolveAssetRef(const json& ref, AssetType type) {
+    if (ref.is_number_unsigned() || ref.is_number_integer())
+        return ref.get<AssetID>();
+    if (ref.is_string()) {
+        const std::string s = ref.get<std::string>();
+        if (s.empty()) return kAssetInvalid;
+        if (s == "cube") return kAssetBuiltinCube;
+        return gApp.resources->getOrRegister(s, type);
+    }
+    return kAssetInvalid;
+}
+
+std::string describeAssetRef(const json& ref) {
+    return ref.is_string() ? ref.get<std::string>() : ref.dump();
+}
+
+bool fileExists(const std::string& path) {
+    struct stat st {};
+    return !path.empty() && ::stat(path.c_str(), &st) == 0;
+}
+
+// Resolve a MeshNode's "mesh" ref to a live Mesh. Missing/unresolvable refs are
+// recorded in gApp.missingAssets (the caller falls back to the placeholder cube
+// so the scene stays visible, but the miss is explicit — never silent).
+Mesh* resolveMeshRef(const json& node) {
+    if (!node.contains("mesh")) return nullptr;  // authored without a mesh ref
+    const AssetID id = resolveAssetRef(node["mesh"], AssetType::Mesh);
+    if (id != kAssetInvalid) {
+        if (id == kAssetBuiltinCube) return gApp.resources->getMesh(id);
+        // Path-backed mesh: only ask the loader when the file is actually in
+        // MEMFS — Mesh::fromObjFile throws on a missing file, and a C++ throw
+        // aborts the wasm runtime (exceptions are disabled on web).
+        const std::string path = gApp.registry ? gApp.registry->getPath(id) : std::string();
+        if (fileExists(path)) {
+            if (Mesh* mesh = gApp.resources->getMesh(id)) return mesh;
+        }
+    }
+    const std::string label = "mesh:" + describeAssetRef(node["mesh"]);
+    gApp.missingAssets.push_back(label);
+    std::printf("saida-web: unresolved %s (node '%s') — placeholder cube\n",
+                label.c_str(), node.value("name", std::string("?")).c_str());
+    return nullptr;
+}
+
 // Build a Lit material from a MeshNode's inline PBR fields.
 Material* materialFromNode(const json& node) {
     MaterialDesc d;
-    d.albedoId = node.value("texture", kAssetInvalid); // texture:0 = durable "none", resolved to default white
+    // texture:0 = durable "none", resolved to default white.
+    if (node.contains("texture")) {
+        d.albedoId = resolveAssetRef(node["texture"], AssetType::Texture);
+        // Keep the durable id in the desc even when unresolved (the Material
+        // falls back to white and the id re-serializes unchanged); just report.
+        if (d.albedoId != kAssetInvalid && !gApp.resources->getTexture(d.albedoId))
+            gApp.missingAssets.push_back("texture:" + describeAssetRef(node["texture"]));
+    }
     d.baseColor = readVec4(node.value("baseColor", json::array()), glm::vec4(1.0f));
     d.emissiveColor = readVec4(node.value("emissive", json::array()), glm::vec4(0.0f));
     d.metallic = readF(node, "metallic", 0.0f);
     d.roughness = readF(node, "roughness", 0.5f);
     d.ao = readF(node, "ao", 1.0f);
+    if (node.value("shader", std::string("lit")) == "unlit") d.type = MaterialType::Unlit;
     return gApp.resources->getMaterial(d);
 }
 
@@ -213,8 +278,16 @@ void loadNode(const json& node, Node& parent) {
     const std::string type = node.value("type", "");
 
     if (type == "MeshNode") {
+        // Track 1-F: resolve the durable mesh ref (AssetID or path) to a real
+        // mesh; unresolved refs fall back to the placeholder cube and are
+        // reported in missingAssets — visible, never silent.
+        Mesh* mesh = resolveMeshRef(node);
         auto m = std::make_unique<MeshNode>(node.value("name", std::string("Mesh")),
-                                            gApp.cubeMesh, materialFromNode(node));
+                                            mesh ? mesh : gApp.cubeMesh,
+                                            materialFromNode(node));
+        // Keep the serialized identity on the node so authoring paths that
+        // re-serialize headless never lose the refs.
+        m->captureDurableResourceRefs(node);
         applyCommonNodeFields(*m, node);
         m->castShadows() = node.value("castShadows", true);
         if (node.contains("meshEnabled")) m->setMeshEnabled(node["meshEnabled"].get<bool>());
@@ -410,7 +483,18 @@ void initRuntime() {
     rhi::Device& device = *gApp.device;
     registerBuiltinRenderFeatures();  // water + skybox + particles on web
 
-    gApp.resources = std::make_unique<ResourceManager>(device);
+    // Track 1-F: asset identity for the project mounted at /project. The
+    // registry maps AssetID <-> relative path (asset_registry.json when the
+    // platform ships one); chdir makes registry-relative paths (meshes,
+    // textures) resolve under /project. Engine-internal paths stay absolute
+    // (/shaders, /assets), so the cwd change is safe.
+    gApp.registry = std::make_unique<AssetRegistry>();
+    gApp.registry->load("/project");
+    chdir("/project");
+    std::printf("saida-web: asset registry ready (root /project)\n");
+
+    gApp.resources = std::make_unique<ResourceManager>(device, gApp.registry.get());
+    std::printf("saida-web: resources ready\n");
     gApp.cubeMesh = gApp.resources->getMesh(kAssetBuiltinCube);
 
     const uint8_t white[4] = {255, 255, 255, 255};
@@ -459,13 +543,15 @@ void frame() {
 // unique_ptr is safe: the Renderer is scene-agnostic (scene passed per drawFrame),
 // and this runs synchronously from JS between frames (single-threaded main loop).
 //
-// MVP scope is the empty/Manual scene (root + settings, no meshes) — headless
-// snapshots omit mesh/material refs (SceneSnapshot.cpp), so content-rich scenes
-// need the asset-ref round-trip of Track 1-F before they render here.
+// Track 1-F: headless snapshots now carry mesh/material refs (SceneSnapshot.cpp)
+// and this loader resolves them — .obj meshes + textures load from the project
+// files mounted at /project; unresolved refs render as placeholder cubes and are
+// reported in the saida_load_snapshot result (missingAssets).
 bool loadSceneDoc(const json& doc) {
     if (!doc.is_object() || !doc.contains("scene") || !doc["scene"].is_object())
         return false;
 
+    gApp.missingAssets.clear();
     gApp.scene = std::make_unique<Scene>();
     const json& root = doc["scene"];
     applyCommonNodeFields(*gApp.scene, root);
@@ -623,6 +709,8 @@ const char* saida_load_snapshot(const char* docJson) {
         r["meshes"] = gApp.scene->meshes().size();
         r["lights"] = gApp.scene->lights().size();
         r["waters"] = gApp.scene->waterNodes().size();
+        // Track 1-F: refs the loader could not resolve (placeholder rendered).
+        r["missingAssets"] = gApp.missingAssets;
         out = r.dump();
     } catch (const std::exception& e) {
         json r;

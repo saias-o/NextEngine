@@ -32,6 +32,20 @@
   <script>
     var statusEl = document.getElementById('status');
 
+    // Capture les erreurs avalées par les callbacks async (ex. requête device
+    // WebGPU) : sans ça, un throw dans l'init s'évapore en unhandledrejection
+    // et le canvas reste noir sans diagnostic.
+    window.__saidaErrors = [];
+    window.addEventListener('error', function(e) {
+      window.__saidaErrors.push('error: ' + e.message);
+      statusEl.textContent = 'JS error: ' + e.message;
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var reason = e.reason && (e.reason.stack || e.reason.message) || String(e.reason);
+      window.__saidaErrors.push('rejection: ' + reason);
+      statusEl.textContent = 'JS rejection: ' + reason;
+    });
+
     // --- Spike live-edit web, palier S1 (PLAN_LIVE_EDIT_WEB.md) --------------
     // Petite surface d'édition exposée au JS. Le C++ ne connaît que des SaidaOp
     // JSON ; ici on se contente de les fabriquer et de les envoyer via ccall.
@@ -199,8 +213,10 @@
     if (!navigator.gpu) {
       statusEl.textContent = 'WebGPU indisponible — utilisez Chrome/Edge récents.';
     }
-    // Garde-fou : ouvert brut (template non buildé), aucun <script src> n'a été
-    // substitué à {{{ SCRIPT }}} — expliquer au lieu de « loading… » pour toujours.
+    // Garde-fou : ouvert brut (template non buildé), aucun script externe n'a
+    // été substitué au placeholder — expliquer au lieu de « loading… » pour
+    // toujours. (Ne pas écrire de tag script littéral dans ce commentaire : le
+    // parseur HTML fermerait l'élément courant et afficherait le reste en texte.)
     document.addEventListener('DOMContentLoaded', function() {
       if (!document.querySelector('script[src]'))
         statusEl.textContent = 'Ceci est le template shell.html — buildez puis servez : ' +

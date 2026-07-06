@@ -71,6 +71,28 @@ json serializeNodeWithoutResources(const Node& node) {
     if (const reflect::TypeDesc* desc = reflectedNodeDesc(node))
         desc->saveTo(&node, out);
 
+    // MeshNode (Track 1-F) : les champs d'identité de rendu du format complet.
+    // Les flags viennent du node ; les refs de ressources (mesh, texture,
+    // params PBR, lods) viennent du blob durable capturé à la désérialisation —
+    // une scène headless ne peut pas interroger un ResourceManager, mais elle
+    // ne doit plus perdre ces données à travers le fold.
+    if (std::string(node.typeName() ? node.typeName() : "") == "MeshNode") {
+        const auto& mesh = static_cast<const MeshNode&>(node);
+        out["castShadows"] = mesh.castShadows();
+        out["meshEnabled"] = mesh.meshEnabled();
+        out["outlineEnabled"] = mesh.outlineEnabled();
+        const glm::vec4& oc = mesh.outlineColor();
+        out["outlineColor"] = json::array({oc.r, oc.g, oc.b, oc.a});
+        out["outlineWidth"] = mesh.outlineWidth();
+        if (!mesh.durableResourceRefs().empty()) {
+            json refs = json::parse(mesh.durableResourceRefs(), nullptr,
+                                    /*allow_exceptions=*/false);
+            if (refs.is_object())
+                for (auto it = refs.begin(); it != refs.end(); ++it)
+                    out[it.key()] = it.value();
+        }
+    }
+
     json children = json::array();
     for (const auto& child : node.children())
         children.push_back(serializeNodeWithoutResources(*child));
@@ -163,6 +185,25 @@ void loadNodeFields(Node& node, const json& j) {
 
     if (const reflect::TypeDesc* desc = reflectedNodeDesc(node))
         desc->loadFrom(&node, j);
+
+    // MeshNode (Track 1-F) : restaure les flags de rendu et capture les refs
+    // de ressources telles quelles (résolues plus tard par un runtime qui a un
+    // ResourceManager ; re-sérialisées à l'identique par le chemin headless).
+    if (std::string(node.typeName() ? node.typeName() : "") == "MeshNode") {
+        auto& mesh = static_cast<MeshNode&>(node);
+        if (auto c = j.find("castShadows"); c != j.end() && c->is_boolean())
+            mesh.castShadows() = c->get<bool>();
+        if (auto c = j.find("meshEnabled"); c != j.end() && c->is_boolean())
+            mesh.setMeshEnabled(c->get<bool>());
+        if (auto c = j.find("outlineEnabled"); c != j.end() && c->is_boolean())
+            mesh.setOutlineEnabled(c->get<bool>());
+        if (auto c = j.find("outlineColor"); c != j.end() && c->is_array() && c->size() == 4)
+            mesh.outlineColor() = glm::vec4((*c)[0].get<float>(), (*c)[1].get<float>(),
+                                            (*c)[2].get<float>(), (*c)[3].get<float>());
+        if (auto c = j.find("outlineWidth"); c != j.end() && c->is_number())
+            mesh.outlineWidth() = c->get<float>();
+        mesh.captureDurableResourceRefs(j);
+    }
 
     // Behaviours: rebuild by type from the registry, then load reflected props.
     if (auto it = j.find("behaviours"); it != j.end() && it->is_array()) {

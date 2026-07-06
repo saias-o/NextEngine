@@ -97,18 +97,25 @@ target_compile_options(saida_web PRIVATE $<$<CONFIG:Release>:-Oz>)
 target_link_options(saida_web PRIVATE
     --use-port=emdawnwebgpu
     -sUSE_GLFW=3
-    -sALLOW_MEMORY_GROWTH
+    # Mémoire FIXE (pas d'ALLOW_MEMORY_GROWTH) : les Chrome récents refusent les
+    # vues sur un ArrayBuffer resizable dans writeTexture/writeBuffer ("must not
+    # be resizable") et le port emdawnwebgpu bundlé ne fait pas encore la copie.
+    # 512 Mo couvrent largement les scènes d'édition web actuelles.
+    -sINITIAL_MEMORY=512MB
     -sEXIT_RUNTIME=0
     # Spike S0: exposer ccall/cwrap pour piloter saida_apply_op depuis le JS.
-    -sEXPORTED_RUNTIME_METHODS=ccall,cwrap
+    # FS (Track 1-F): la plateforme écrit les fichiers projet (obj/textures/
+    # asset_registry.json) dans MEMFS sous /project avant saida_load_snapshot.
+    -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,FS
     -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_saida_apply_op,_saida_engine_manifest,_saida_scene_snapshot,_saida_scene_snapshot_compare,_saida_load_snapshot,_saida_pick
     $<$<CONFIG:Release>:-Oz>
     # WGSL shaders packaged into MEMFS at /shaders (16.1 web FS: preload).
-    "SHELL:--preload-file ${SAIDA_ROOT}/build/shaders/wgsl@/shaders"
+    # Paths are quoted so a checkout under a directory with spaces still links.
+    "SHELL:--preload-file \"${SAIDA_ROOT}/build/shaders/wgsl@/shaders\""
     # BeachDemo scene + sky texture, mapped to /project (parity-test scene).
-    "SHELL:--preload-file ${SAIDA_ROOT}/BeachDemo/scenes/beach.scene@/project/beach.scene"
-    "SHELL:--preload-file ${SAIDA_ROOT}/BeachDemo/assets/skies/sunset.png@/project/sunset.png"
-    "SHELL:--shell-file ${CMAKE_CURRENT_SOURCE_DIR}/shell.html"
+    "SHELL:--preload-file \"${SAIDA_ROOT}/BeachDemo/scenes/beach.scene@/project/beach.scene\""
+    "SHELL:--preload-file \"${SAIDA_ROOT}/BeachDemo/assets/skies/sunset.png@/project/sunset.png\""
+    "SHELL:--shell-file \"${CMAKE_CURRENT_SOURCE_DIR}/shell.html\""
 )
 target_compile_options(saida_web PRIVATE --use-port=emdawnwebgpu)
 

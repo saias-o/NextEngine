@@ -49,6 +49,16 @@ int MeshNode::selectLodIndex(float screenCoverage) const {
     return picked;
 }
 
+void MeshNode::captureDurableResourceRefs(const nlohmann::json& j) {
+    static const char* kRefKeys[] = {"mesh",      "texture", "baseColor",
+                                     "metallic",  "roughness", "ao",
+                                     "emissive",  "shader",  "lods"};
+    nlohmann::json refs = nlohmann::json::object();
+    for (const char* key : kRefKeys)
+        if (auto it = j.find(key); it != j.end()) refs[key] = *it;
+    durableResourceRefs_ = refs.empty() ? std::string() : refs.dump();
+}
+
 void MeshNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
     Node::serialize(j, resources);
     j["mesh"] = resources.meshId(mesh_);
@@ -83,6 +93,7 @@ void MeshNode::serialize(nlohmann::json& j, ResourceManager& resources) const {
 
 void MeshNode::deserialize(const nlohmann::json& j, ResourceManager& resources) {
     Node::deserialize(j, resources);
+    captureDurableResourceRefs(j);
     if (j.contains("mesh")) {
         AssetID meshId = kAssetInvalid;
         if (j["mesh"].is_number_integer()) {

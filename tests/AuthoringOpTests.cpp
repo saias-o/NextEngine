@@ -4,6 +4,7 @@
 #include "authoring/SaidaOpApplier.hpp"
 #include "core/FormatVersions.hpp"
 #include "scene/LightNode.hpp"
+#include "scene/MeshNode.hpp"
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/Scene.hpp"
 #include "scene/WaterNode.hpp"
@@ -529,6 +530,93 @@ void testHeadlessSnapshotRoundTrip() {
     require(!saida::authoring::deserializeSceneSnapshot(std::string("not json"), bad, &error));
 }
 
+// Track 1-F : le snapshot headless transporte les refs mesh/matériau d'un
+// MeshNode (mesh, texture, params PBR, lods) sans les résoudre — plus de perte
+// de rendu à travers le fold deserialize -> apply -> serialize.
+void testMeshResourceRefsRoundTrip() {
+    // Document source : un MeshNode « riche » comme en produirait le format
+    // complet (refs numériques AssetID + chemin string + params matériau).
+    json doc = {
+        {"version", saida::format::kSceneVersion},
+        {"snapshotMode", "authoring-headless"},
+        {"scene", {
+            {"type", "Scene"}, {"id", 1}, {"name", "Root"}, {"enabled", true},
+            {"transform", {{"position", {0.0f, 0.0f, 0.0f}},
+                           {"rotation", {0.0f, 0.0f, 0.0f, 1.0f}},
+                           {"scale", {1.0f, 1.0f, 1.0f}}}},
+            {"behaviours", json::array()},
+            {"children", json::array({json{
+                {"type", "MeshNode"}, {"id", 2}, {"name", "Palm_A"}, {"enabled", true},
+                {"transform", {{"position", {1.0f, 2.0f, 3.0f}},
+                               {"rotation", {0.0f, 0.0f, 0.0f, 1.0f}},
+                               {"scale", {1.0f, 1.0f, 1.0f}}}},
+                {"behaviours", json::array()},
+                {"children", json::array()},
+                {"mesh", "models/palm_a.obj"},
+                {"texture", 42},
+                {"baseColor", {1.0f, 0.9f, 0.8f, 1.0f}},
+                {"metallic", 0.1f},
+                {"roughness", 0.7f},
+                {"ao", 1.0f},
+                {"emissive", {0.0f, 0.0f, 0.0f, 0.0f}},
+                {"shader", "lit"},
+                {"castShadows", true},
+                {"meshEnabled", true},
+                {"outlineEnabled", false},
+                {"outlineColor", {0.02f, 0.02f, 0.02f, 1.0f}},
+                {"outlineWidth", 3.0f},
+            }})},
+        }},
+    };
+
+    saida::Scene scene;
+    std::string error;
+    require(saida::authoring::deserializeSceneSnapshot(doc, scene, &error));
+    require(error.empty());
+
+    // Les refs sont capturées sur le node (data only, aucune ressource GPU).
+    auto* palm = dynamic_cast<saida::MeshNode*>(findChildByName(scene, "Palm_A"));
+    require(palm != nullptr);
+    require(palm->mesh() == nullptr);
+    require(!palm->durableResourceRefs().empty());
+
+    // Elles ressortent identiques à la sérialisation headless.
+    json out = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
+    const json& child = out["scene"]["children"][0];
+    require(child["mesh"] == "models/palm_a.obj");
+    require(child["texture"] == 42);
+    require(child["shader"] == "lit");
+    require(close(child["roughness"].get<float>(), 0.7f));
+    require(child["baseColor"].is_array() && child["baseColor"].size() == 4);
+    require(child["castShadows"] == true);
+
+    // Elles survivent à une op (le chemin du fold apply-ops).
+    json res = applyOp(scene, json{{"type", "set_transform"},
+                                   {"payload", {{"nodeId", "Palm_A"},
+                                                {"position", {9.0f, 0.0f, 0.0f}}}}});
+    require(res["ok"].get<bool>());
+    json afterOp = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
+    require(afterOp["scene"]["children"][0]["mesh"] == "models/palm_a.obj");
+    require(close(afterOp["scene"]["children"][0]["transform"]["position"][0].get<float>(), 9.0f));
+
+    // Round-trip stable au bit près (serialize -> deserialize -> serialize).
+    const std::string s1 = saida::authoring::serializeSceneSnapshot(scene, nullptr);
+    saida::Scene reloaded;
+    require(saida::authoring::deserializeSceneSnapshot(s1, reloaded, &error));
+    const std::string s2 = saida::authoring::serializeSceneSnapshot(reloaded, nullptr);
+    require(s1 == s2);
+
+    // Un MeshNode sans refs (ex. créé par create_node) reste sans refs : les
+    // flags sont émis, aucune clé mesh/texture inventée.
+    saida::Scene fresh;
+    fresh.createChild<saida::MeshNode>()->setName("Bare");
+    json bare = json::parse(saida::authoring::serializeSceneSnapshot(fresh, nullptr));
+    const json& bareChild = bare["scene"]["children"][0];
+    require(bareChild.contains("castShadows"));
+    require(!bareChild.contains("mesh"));
+    require(!bareChild.contains("texture"));
+}
+
 // set_scene_setting : édite SceneSettings par nom (float/bool/vec3), inversible.
 void testSceneSettingOp() {
     saida::Scene scene;
@@ -700,6 +788,7 @@ int main() {
     testManifestContainsBehavioursSignalsAndScenario();
     testSnapshotReflectsAppliedOps();
     testHeadlessSnapshotRoundTrip();
+    testMeshResourceRefsRoundTrip();
     testSceneSettingOp();
     testBehaviourOps();
     testSignalConnectionOps();
