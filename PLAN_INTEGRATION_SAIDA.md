@@ -968,3 +968,149 @@ Corrections d'environnement/toolchain au passage (cette machine) :
   vérité durable reste le journal d'ops + fold `saida_tool`).
 - `create_node` MeshNode n'a pas encore d'op pour assigner un mesh (`set_mesh`
   / `set_material` restent à cadrer dans le contrat d'ops).
+
+---
+
+### Avancement Claude - Session « Hygiène audit : 3.5 + 2.5 » (2026-07-06)
+
+Suite du nettoyage [AUDIT_WEB_PLATFORM_IMPROVMENTS.md](AUDIT_WEB_PLATFORM_IMPROVMENTS.md)
+(tout côté `GitHub/saida`, zéro moteur). D'abord un re-constat du code réel : les
+points **1.1, 1.2, 2.2, 2.6/5.2, 4.2** sont déjà fermés par les sessions
+précédentes, et **3.3** (fuite de contexte inter-conversations) et **5.3**
+(statut `"error"` émis) le sont aussi désormais dans le code — l'audit du 07-05
+est sur ces points périmé. Deux smells restants du périmètre Claude fermés :
+
+- **Audit 3.5 fermé — troncature du contexte de scène.** L'agent injectait
+  `JSON.stringify(sceneContext).slice(0, 24_000)` : une coupe au caractère qui
+  peut produire du JSON invalide dans le prompt. Remplacé par
+  `boundCompactScene(root, maxNodes)` (`agent-ops.ts`) : élagage en profondeur
+  sur un **budget de nœuds** (`config.agent.sceneMaxNodes`, défaut 400,
+  `AGENT_LLM_SCENE_MAX_NODES`), racine toujours conservée, drapeau `truncated`
+  passé au modèle (« only the first N nodes are shown »). Le contexte est
+  désormais **toujours du JSON valide** et borné. 3 tests
+  (`agent-ops.test.ts`).
+- **Audit 2.5 fermé — `lastRevisionAck` n'est plus un champ mort.** La connexion
+  WS (`makeConnection`, `collaboration-ws.ts`) suit la **révision maximale
+  réellement délivrée** (welcome/op/ack) ; à la fermeture du socket, la
+  `CollaborationSession` est mise à jour avec `lastRevisionAck =
+  connection.deliveredRevision` + `lastSeenAt`, au lieu de figer la valeur
+  `since` du join. Zéro changement de schéma ni de protocole client, aucune
+  écriture DB par op (une seule à la fermeture). Le serveur connaît exactement
+  jusqu'où chaque session a été informée — pas besoin d'un ack client.
+
+**Vérification :** `npm run typecheck` + `npm run test` + `npm run build` verts
+(API 69 tests : 63 pass / 6 skips attendus sans binaire natif ; shared 14/14).
+
+**Restants de l'audit — hors périmètre Claude (lane Codex cloud/prod/billing) :**
+`3.2` (run agent en worker Temporal), `2.1` (multi-gateway : tête de révision en
+RAM → Redis/pub-sub), `2.4` (GC du journal d'ops). Laissés en handoff Codex.
+
+---
+
+### Avancement Claude - Session « Audit 3.1 : crédits IA branchés » (2026-07-06)
+
+**Le risque business n°1 de l'audit (3.1 🔴, « coût IA non borné ») est fermé :
+chaque tour d'agent réserve des crédits avant tout appel LLM, les capture dès
+que l'appel aboutit, les libère sinon.** Même cycle de vie
+reserve/capture/release que ToolRun, sous le même verrou advisory
+par organisation (`pg_advisory_xact_lock`) — zéro double-comptabilité.
+
+- **Schéma** (migration `20260706150000_agent_credit_reservations`, SQL
+  canonique `prisma migrate diff`) : `CreditReservation.toolRunId` devient
+  optionnel + `agentRunId String? @unique` (une réservation débite exactement
+  un sujet facturable : ToolRun **ou** AiAgentRun) ;
+  `CreditLedger.agentRunId` + index (piste d'audit symétrique) ;
+  `AiAgentRun.creditsCharged Int?` (compteur métier, exposé automatiquement
+  par le payload conversation).
+- **`apps/api/src/agent-credits.ts`** : `reserveAgentCredits` (disponible =
+  ledger − réservations ACTIVE, calculé sous verrou org →
+  `INSUFFICIENT_CREDITS` sinon), `captureAgentCredits` (CAPTURED + entrée
+  ledger `DEBIT` négative avec `agentRunId`/model/tokens en métadonnées +
+  `creditsCharged` tamponné sur le run ; **no-op si la réservation n'est plus
+  ACTIVE** → jamais de double débit), `releaseAgentCredits` (updateMany
+  conditionnel atomique). Surface DB structurelle injectable (patron DI de
+  `llm.ts`) → la logique monétaire est **testée unitairement sans Postgres**
+  (6 tests, `agent-credits.test.ts`). `db-locks.ts` généralisé en type
+  structurel au passage (aucun changement d'appelants).
+- **Câblage `runAgentTurn`** (`project-agent.ts`) : réservation **avant tout
+  travail** (insuffisant → `failRun AGENT_INSUFFICIENT_CREDITS`, message clair
+  en conversation, **aucun appel LLM** — le kill-switch demandé) ; capture
+  juste après `completeAgentChat` (le fournisseur a facturé même si la sortie
+  échoue ensuite extraction/validation) ; release en `finally` si le tour
+  meurt avant/pendant l'appel (une release qui échoue laisse la réservation
+  ACTIVE → balayée EXPIRED par le sweep admin existant après 24 h, vérifié
+  sujet-agnostique). Coût par tour : `config.agent.turnCreditCost`
+  (`AGENT_TURN_CREDIT_COST`, défaut 1 ; 0 = désactivé pour le dev local).
+  `.env.example` documenté.
+
+**Vérification (infra locale démarrée cette session)** : `prisma validate` +
+typecheck + build verts ; **migrations appliquées sur Postgres réel**
+(`db:migrate:deploy` : `project_initialization` en attente de la session
+précédente **+** `agent_credit_reservations`) ; tests API 75 : 74 pass avec
+`SAIDA_TOOL_PATH` (le seul skip restant est l'e2e DB gaté `RUN_E2E=1`,
+**relancé avec `RUN_E2E=1` : vert lui aussi**) ; shared 14/14.
+
+Correction de dette au passage : en mode `RUN_E2E=1`, le runner de tests ne
+terminait jamais (aucun résumé imprimé) — le client Prisma partagé gardait son
+pool de connexions ouvert. `after(() => prisma.$disconnect())` ajouté dans
+`project-collaboration.e2e.test.ts` ; jamais vu en CI car ce chemin n'y est
+jamais exercé (constat déjà pointé par l'audit 1.3).
+
+**Hors périmètre volontaire (suite logique, lane Codex)** : UI « solde de
+crédits / recharger » dans l'éditeur ; coût par tour fonction des tokens réels
+(aujourd'hui forfait fixe par tour — le forfait rend le risque borné, le
+raffinement tarifaire est une décision produit) ; 3.2 (worker Temporal).
+
+---
+
+### Avancement Claude - Session « Audit 2.1 + 3.4 + 5.1 + trouvailles » (2026-07-06)
+
+Suite et fin du passage d'audit côté Claude. Trois points fermés + deux bugs
+trouvés en chemin :
+
+- **Audit 2.1 durci — collision de révision ≠ op perdue.** La contrainte
+  unique `(projectId, revision)` du journal devient l'arbitre réel : quand un
+  `appendOp`/`appendOps` échoue, le hub **re-synchronise sa tête depuis le
+  store** et rejoue une fois à la révision fraîche au lieu de dropper l'op
+  (écrivain concurrent : 2ᵉ instance, worker, insert externe). Pour les batchs
+  sous `expectedRevision`, la collision rend le même `REVISION_CONFLICT`
+  retryable que le gate d'entrée — jamais d'apply sur un état non prouvé.
+  Un échec de persistance réel (store injoignable, tête inchangée) rejette
+  comme avant. 3 tests hub. **Le plafond multi-gateway reste documenté** (pas
+  de broadcast cross-instance — Redis pub/sub = lane Codex cloud/prod).
+- **Audit 3.4 fermé — le choix de modèle IA n'est plus cosmétique.**
+  `AGENT_LLM_MODEL_MAP` (« Label=model-id,… ») mappe les labels persistés
+  `Project.aiModel` vers de vrais identifiants ; `runAgentTurn` résout le
+  modèle du projet et le passe à `completeAgentChat({model})` (override
+  par appel, défaut `AGENT_LLM_MODEL` sinon). Le run et les métadonnées du
+  débit de crédits enregistrent le modèle réellement appelé. Labels non
+  mappés → défaut (dégradation douce). 3 tests (`config.test.ts` + llm).
+  La liste UI codée en dur reste à brancher côté Codex.
+- **Audit 5.1 fermé — sémantique d'inverse du geste continu.** Le client
+  live-edit tient une **fenêtre de manipulation** : le premier `previewLocal`
+  depuis le dernier commit capture l'inverse qui restaure l'état
+  *d'avant-manipulation* ; `commit`/`emitOp` la consomment → un rejet serveur
+  annule tout le drag, pas la dernière frame prévisualisée. Nouveau
+  `cancelPreview()` (Échap pendant un drag : restaure localement sans rien
+  envoyer) — l'API continue begin implicite/commit/cancel est prête pour les
+  gizmos Codex (D6/D9).
+- **Trouvaille 1 — le runner de tests ne terminait jamais avec l'infra up.**
+  `redis.ts` ouvre un socket brut jamais `unref()` : tout process ayant touché
+  le rate-limiter (signup → e2e) restait vivant pour toujours. `unref()` posé
+  (en prod, c'est le listener Fastify qui possède la boucle). Avec le
+  `prisma.$disconnect()` en `after()` de l'e2e : `RUN_E2E=1` termine
+  proprement, exit 0.
+- **Trouvaille 2 (session précédente, confirmée utile)** : `db-locks.ts`
+  généralisé en type structurel — les verrous advisory sont maintenant
+  testables sans Postgres.
+
+**Vérification — première suite 100 % verte de l'histoire du repo :**
+`RUN_E2E=1` + `SAIDA_TOOL_PATH` + infra Docker up → **API 81/81, 0 skip** ;
+shared 14/14 ; typecheck + build verts. (Avant cette session : 6 skips
+structurels jamais exercés en CI.)
+
+**Reste ouvert de l'audit (lane Codex, infra/UI)** : 3.2 (worker Temporal),
+2.1-complet (pub/sub multi-gateway), 2.3 (présence Yjs C6), 2.4 (GC du journal
+— conflit assumé avec l'historique de révisions D8, décision produit), 4.x
+(façades UI : Save, gizmos, Drive, premier prompt guidé, réglages graphiques),
+5.4 (runtime singleton — limite structurelle documentée).
