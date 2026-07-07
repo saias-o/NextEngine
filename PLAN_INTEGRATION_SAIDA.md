@@ -66,7 +66,7 @@ Fastify API (auth / billing / projects / assets / jobs)
         ├─► Postgres  (vérité : ops, revisions, credits, audit)
         ├─► Redis     (rate limit ; à venir : présence, pub/sub multi-gateway)
         ├─► R2/S3     (blobs : assets, snapshots, builds)
-        └─► Temporal  (jobs longs : img-to-3d ; à venir : agent IA, exports)
+        └─► Temporal  (jobs longs : img-to-3d, tours d'agent IA ; à venir : exports)
         │
         ▼
 Collaboration Gateway (WebSocket, in-process API)
@@ -78,7 +78,7 @@ Saida Headless Tools (saida_tool)
   describe-engine · validate-* · apply-ops · (à venir : export-web)
 ```
 
-## 4. Ce qui est FAIT et prouvé (état 2026-07-06)
+## 4. Ce qui est FAIT et prouvé (état 2026-07-07)
 
 ### Moteur (`NextEngine`)
 
@@ -169,25 +169,137 @@ Saida Headless Tools (saida_tool)
 
 - **Suite 100 % verte** possible localement : `npm run infra:up` +
   `RUN_E2E=1 SAIDA_TOOL_PATH=<NextEngine/build/bin/saida_tool.exe> npm run test`
-  → **API 81/81, 0 skip ; shared 14/14**. Typecheck + build verts.
+  → **API 84/84, 0 skip ; shared 14/14**. Typecheck + build verts.
+- Smoke test du chemin Temporal agent : `npx tsx
+  apps/api/scripts/smoke-agent-temporal.ts` (202 → QUEUED → worker →
+  FAILED/AGENT_LLM_NOT_CONFIGURED vérifié le 07-07).
 - E2E navigateur Playwright 2 sessions écrit (`apps/web/e2e`), harness prêt.
 - CI GitHub sur les deux repos (mais elle n'exerce **ni** le binaire natif
-  **ni** l'e2e DB — gap listé en P0).
+  **ni** l'e2e DB — gap listé en P0.2).
 
 ---
 
-## 5. RESTE À FAIRE — backlog priorisé
+## 5. RESTE À FAIRE — checklist de mise en production
 
-### P0 — bloquants avant production publique
+> **P0 = tout ce qui sépare l'état actuel d'une prod publique.** Chaque case
+> est vérifiable. P1/P2/P3 (§5bis) sont du produit — rien n'y bloque la prod.
 
-| Quoi | Lane | Détail |
-|---|---|---|
-| **`saida_tool` déployable Linux + hors chemin chaud** | Codex (cloud) + Claude (build moteur si besoin) | Dépendance runtime dure de l'API **et du worker agent** (dry-run/folds), buildée Windows/MSYS2 uniquement. Un déploiement Linux exige un build Linux. Perf : un `execFile` + fichiers temp par `GET /scene` (chemin d'ouverture) → cache de scène reconstruite ; `/scene` doit dégrader en dernier snapshot au lieu d'un 500 si le binaire meurt. |
-| **CI qui exerce binaire + DB + e2e** | Codex | La CI actuelle laisse 6 tests structurellement non exercés (`SAIDA_TOOL_PATH`, `RUN_E2E=1`). La recette 100 % verte existe — la mettre en CI. |
-| **E2E navigateur 2 sessions : vert final + passe UX** | Codex | Infra Docker up désormais ; rejouer `npm run test:e2e:web`, puis screenshots desktop/mobile owner/viewer avant prod. |
-| **Phase G minimale** | Codex (cloud) | G1 quotas/rate-limits étendus, G2 backups Postgres+R2 avec **restore testé une fois**, G3 logs structurés/métriques (jobs, crédits, coût IA), G4 alertes (échecs builds, queue bloquée, coût IA anormal, ledger déséquilibré). |
+### P0.1 — Binaire `saida_tool` déployable (API **et** worker agent)
 
-### P1 — la boucle d'édition complète (produit)
+Dépendance runtime dure : `GET /scene` (reconstruction), snapshots périodiques,
+dry-run agent, `POST /scene/snapshot`. Aujourd'hui buildé **Windows/MSYS2
+uniquement**.
+
+- [ ] **Build Linux de `saida_tool`** (cible CMake `saida_tool` seule ; deps
+      vendorées, pas de Vulkan requis pour l'outil headless). Vérifier :
+      `ctest` vert sur Linux + un `apply-ops` byte-identique à un snapshot de
+      référence généré sous Windows.
+- [ ] **Packaging** : images Docker `apps/api` et `apps/workers` embarquant le
+      binaire + `apps/api/vendor/saida-authoring/` (wasm + manifest), avec
+      `SAIDA_TOOL_PATH` pointé dedans. Le wasm runtime web
+      (`public/engine/dev/`) est **gitignoré** : `npm run engine:sync` doit
+      faire partie du build de l'image web (artefact moteur en entrée).
+- [ ] **Cache de scène reconstruite** : `GET /scene` fait aujourd'hui un
+      `execFile` + fichiers temp à chaque ouverture. Cacher le doc reconstruit
+      par (projectId, sceneId, révision) et l'invalider à chaque op commitée.
+- [ ] **Dégradation gracieuse** : si le fold échoue (binaire absent/mort),
+      `GET /scene` doit servir le **dernier snapshot persisté** (avec sa
+      révision) au lieu d'un 500 — l'éditeur s'ouvre, les ops continuent.
+
+### P0.2 — CI qui prouve la recette verte (2 repos)
+
+- [ ] **NextEngine** : job Linux qui build `saida_tool` + lance `ctest`, et
+      publie en artefacts versionnés : le binaire Linux, le wasm runtime web,
+      le wasm authoring + `engine-manifest.json`.
+- [ ] **saida** : job avec services (postgres, redis, minio, temporal) qui
+      récupère l'artefact `saida_tool` Linux, puis exécute
+      `db:migrate:deploy` → `RUN_E2E=1 SAIDA_TOOL_PATH=… npm run test`
+      (attendu : **API 84/84, 0 skip ; shared 14/14**) → `npm run verify:v1`.
+- [ ] **saida** : job Playwright `npm run test:e2e:web` (2 sessions, navigateur
+      réel) dans la même CI.
+- [ ] Le smoke Temporal (`apps/api/scripts/smoke-agent-temporal.ts`) tourne en
+      CI avec le worker démarré (prouve queue → worker → pipeline → DB).
+
+### P0.3 — Passe de test manuelle pré-prod (avec vraie clé LLM)
+
+À dérouler une fois sur un environnement de staging identique à la prod :
+
+- [ ] `npm run test:e2e:web` vert en local, puis captures desktop **et**
+      mobile, parcours owner **et** viewer.
+- [ ] **Éditeur** : création Manuel + Guidé (le premier prompt du skill part
+      seul et l'agent répond), chat → proposition → apply visible dans le
+      viewport des 2 clients, inspecteur/hiérarchie/picking, Save (point de
+      contrôle + « déjà à jour »), settings FPS/ombres agissent sur le rendu,
+      changement de modèle IA pris en compte (`AGENT_LLM_MODEL_MAP`).
+- [ ] **Agent via Temporal** : `AGENT_RUNNER=temporal` en staging, message →
+      202 → polling UI → proposition ; kill du worker en plein run → run
+      `AGENT_TURN_INTERRUPTED`, crédits rendus, l'UI ne reste pas bloquée.
+- [ ] **Crédits** : org à 0 crédit → réponse synchrone
+      `AGENT_INSUFFICIENT_CREDITS` ; ledger équilibré après capture/release.
+- [ ] **Comptes** : signup → email de vérification reçu (SMTP réel), reset de
+      mot de passe, invitation collaborateur par email, rôles
+      owner/editor/viewer respectés (WS compris).
+- [ ] **Billing Stripe (mode test)** : checkout abonnement → webhook →
+      crédits ; portal ; downgrade en fin d'abonnement.
+- [ ] **Jobs** : un run 2Dto3D complet → download de l'output ; download d'un
+      fichier projet depuis le panneau assets.
+- [ ] **Marketplace** : publier un jeu (draft → publish), page publique.
+
+### P0.4 — Environnement & déploiement (à mettre en place)
+
+Décisions à confirmer d'abord (cf. §6) : hébergeur (Coolify/Kamal +
+Hetzner/OVH proposés), stockage S3 (R2 proposé), domaines. Ensuite :
+
+- [ ] **Topologie** : 1 conteneur web (Next), **1 seule instance API**
+      (contrainte assumée : gateway WS in-process, pas de pub/sub multi-gateway
+      — ne pas mettre l'API derrière un autoscaler), 1+ worker Temporal,
+      Postgres managé ou backupé, Redis, S3, Temporal (self-host
+      docker-compose ou Temporal Cloud — à décider).
+- [ ] **DNS + TLS** : domaine web, domaine API (CORS `WEB_ORIGIN` exact),
+      WebSocket `wss://` de bout en bout (proxy avec upgrade + timeouts longs).
+- [ ] **Env API** (checklist `.env` prod) : `NODE_ENV=production`,
+      `API_HOST/API_PORT`, `WEB_ORIGIN`, `DATABASE_URL`, `REDIS_URL`,
+      `S3_ENDPOINT/REGION/KEYS/BUCKETS` (buckets prod créés, pas les noms
+      `-local`), `TEMPORAL_ADDRESS`, `SAIDA_TOOL_PATH`,
+      `EMAIL_DELIVERY_MODE=smtp` + `SMTP_*` + `EMAIL_FROM`, `ADMIN_EMAILS`,
+      `STRIPE_SECRET_KEY` (clé **restreinte** live) + `STRIPE_WEBHOOK_SECRET` +
+      `STRIPE_PRICE_*` + labels, `AGENT_LLM_ENABLED=true` +
+      `AGENT_RUNNER=temporal` + `AGENT_LLM_BASE_URL/API_KEY/MODEL/MODEL_MAP` +
+      `AGENT_TURN_CREDIT_COST>0`, **pas** de `ALLOW_DEV_ACCOUNT_FALLBACK`.
+- [ ] **Env worker** : `DATABASE_URL`, `TEMPORAL_ADDRESS`, S3, `SAIDA_TOOL_PATH`,
+      mêmes `AGENT_LLM_*` que l'API (le LLM est appelé **depuis le worker**).
+- [ ] **Env web** : `NEXT_PUBLIC_API_URL` (build-time), `engine:sync` dans le
+      build.
+- [ ] **Base** : `npm run db:migrate:deploy` au déploiement + seed des plans ;
+      stratégie de migration documentée (rollback = restore).
+- [ ] **Stripe live** : endpoint webhook enregistré sur le domaine API, secret
+      en env, prix live créés, un checkout de bout en bout vérifié.
+- [ ] **`NODE_ENV=production` vérifié** : `assertProductionEnv` passe, sandbox
+      dev (`?projectId=test`) inerte, admin debug 404.
+
+### P0.5 — Phase G minimale : observabilité & résilience
+
+- [ ] **G1 quotas/rate-limits** : au-delà de l'existant (agent 20/min/user),
+      borner par IP/user : auth (login/signup/reset), uploads (presign + PUT),
+      `POST /ops` et WS ops/s, invitations. Vérifier que tout passe par Redis
+      (multi-process worker/API).
+- [ ] **G2 backups** : Postgres quotidien + rétention, versioning/replication
+      S3 ; **un restore complet testé une fois** (DB + un asset) sur un env
+      vierge, procédure écrite.
+- [ ] **G3 logs/métriques** : logs structurés déjà là (pino) → agrégation
+      centralisée ; métriques minimales : runs agent par statut, durée de tour,
+      coût crédits/jour, jobs 2Dto3D par statut, profondeur des queues
+      Temporal, erreurs 5xx, latence `GET /scene`.
+- [ ] **G4 alertes** : échec de workflow répété, queue Temporal qui monte,
+      coût IA journalier anormal, somme du ledger ≠ attendu (réservations
+      ACTIVE > 24 h), disque/DB pleins, certificat TLS expirant.
+- [ ] **Sweep des réservations** : vérifier que le job d'expiration des
+      réservations ACTIVE > 24 h tourne bien en prod (il est la garantie de
+      non-fuite des crédits en cas de crash).
+
+## 5bis. Backlog produit (ne bloque pas la prod)
+
+### P1 — la boucle d'édition complète
 
 | Quoi | Lane | Détail |
 |---|---|---|
@@ -223,7 +335,8 @@ Saida Headless Tools (saida_tool)
   `findByName` côté applier). Migrer vers `NodeId` (id/génération) = changement
   de contrat à planifier.
 - **Hébergement** : Coolify/Kamal + Hetzner/OVH + Cloudflare R2 (proposé) — à
-  confirmer avant la Phase F.
+  confirmer **avant P0.4** (c'est le premier prérequis de la mise en prod).
+- **Temporal en prod** : self-host (docker-compose durci) vs Temporal Cloud.
 - **Périmètre `write_script`** : jusqu'où l'IA génère du JS QuickJS en Phase E.
 - **Format durable d'un design skill** communautaire (métadonnées, prompt,
   étapes, permissions, versioning, publication).
@@ -238,9 +351,11 @@ Saida Headless Tools (saida_tool)
 npm run infra:up                      # Docker : postgres, redis, minio, temporal
 npm run db:migrate:deploy
 RUN_E2E=1 SAIDA_TOOL_PATH="C:\\Users\\evand\\Documents\\NextEngine\\build\\bin\\saida_tool.exe" \
-  npm run test                        # attendu : API 81/81 0 skip, shared 14/14
+  npm run test                        # attendu : API 84/84 0 skip, shared 14/14
 npm run verify:v1                     # validate + typecheck + test + build
 npm run test:e2e:web                  # Playwright 2 sessions (navigateur)
+# Chemin Temporal de l'agent (worker démarré : npm run dev -w @saida/workers) :
+npx tsx apps/api/scripts/smoke-agent-temporal.ts
 ```
 
 **Moteur desktop (`NextEngine`, MSYS2 ucrt64)** :
