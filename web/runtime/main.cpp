@@ -69,6 +69,10 @@ struct App {
     // the editor can surface them instead of silently rendering placeholders.
     std::vector<std::string> missingAssets;
     double time = 0.0;
+    // Editor graphics settings (saida_set_render_settings): a frame-skip cap on
+    // top of the rAF loop. 0 = uncapped (every rAF tick renders).
+    double minFrameIntervalMs = 0.0;
+    double lastFrameMs = 0.0;
 };
 
 App gApp;
@@ -527,11 +531,21 @@ void initRuntime() {
 }
 
 void frame() {
-    constexpr float kDt = 1.0f / 60.0f;
-    gApp.time += kDt;
-    Time::advance(kDt);  // the water/skybox read Time::elapsed() for animation
+    float dt = 1.0f / 60.0f;
+    if (gApp.minFrameIntervalMs > 0.0) {
+        // FPS cap = frame skipping over rAF (smoother than setTimeout timing).
+        // Rendered frames advance time by the real elapsed interval so capped
+        // animation keeps wall-clock speed (clamped against tab-suspend jumps).
+        const double now = emscripten_get_now();
+        if (now - gApp.lastFrameMs < gApp.minFrameIntervalMs) return;
+        if (gApp.lastFrameMs > 0.0)
+            dt = float(std::min(now - gApp.lastFrameMs, 250.0) / 1000.0);
+        gApp.lastFrameMs = now;
+    }
+    gApp.time += dt;
+    Time::advance(dt);  // the water/skybox read Time::elapsed() for animation
     if (gApp.scene && gApp.renderer) {
-        gApp.scene->update(kDt);
+        gApp.scene->update(dt);
         gApp.renderer->drawFrame(*gApp.scene, gApp.camera, nullptr);
     }
 }
@@ -727,6 +741,52 @@ EMSCRIPTEN_KEEPALIVE
 const char* saida_pick(float ndcX, float ndcY) {
     static std::string out;
     out = pickNode(ndcX, ndcY);
+    return out.c_str();
+}
+
+// Editor graphics settings (P1 "façades UI"): {maxFps?, shadowsEnabled?}.
+// maxFps caps the rAF loop by frame skipping (0 or out of [1,240] = uncapped);
+// shadowsEnabled is the Renderer viewer-level switch. Viewer preferences only —
+// nothing here mutates the scene document.
+EMSCRIPTEN_KEEPALIVE
+const char* saida_set_render_settings(const char* settingsJson) {
+    static std::string out;
+    try {
+        const json s = json::parse(settingsJson ? settingsJson : "");
+        if (s.contains("maxFps") && s["maxFps"].is_number()) {
+            const double fps = s["maxFps"].get<double>();
+            gApp.minFrameIntervalMs = (fps >= 1.0 && fps <= 240.0) ? 1000.0 / fps : 0.0;
+            gApp.lastFrameMs = 0.0;
+        }
+        if (s.contains("shadowsEnabled") && s["shadowsEnabled"].is_boolean() && gApp.renderer)
+            gApp.renderer->setShadowsEnabled(s["shadowsEnabled"].get<bool>());
+        json r;
+        r["ok"] = true;
+        out = r.dump();
+    } catch (const std::exception& e) {
+        json r;
+        r["ok"] = false;
+        r["error"] = e.what();
+        out = r.dump();
+    }
+    return out.c_str();
+}
+
+// Camera state for viewport tools (gizmos): world-space basis + projection
+// parameters, enough to turn a screen-space drag into a world-space delta.
+EMSCRIPTEN_KEEPALIVE
+const char* saida_camera_state() {
+    static std::string out;
+    json r;
+    r["ok"] = true;
+    const auto vec = [](const glm::vec3& v) { return json::array({v.x, v.y, v.z}); };
+    r["position"] = vec(gApp.camera.position);
+    r["front"] = vec(gApp.camera.front());
+    r["right"] = vec(gApp.camera.right());
+    r["up"] = vec(gApp.camera.up());
+    r["fovDegrees"] = gApp.camera.fovDegrees;
+    r["aspect"] = float(kWidth) / float(kHeight);
+    out = r.dump();
     return out.c_str();
 }
 

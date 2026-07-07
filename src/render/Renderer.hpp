@@ -117,6 +117,12 @@ public:
     void setViewportRect(glm::vec2 position, glm::vec2 size);
     void clearViewportRect();
 
+    // Viewer-level shadow switch (web editor graphics settings): when disabled
+    // no shadow caster is collected, so the shadow passes record nothing and
+    // the shaders see a shadow count of 0. Scene data (castShadows) untouched.
+    void setShadowsEnabled(bool enabled) { shadowsEnabled_ = enabled; }
+    bool shadowsEnabled() const { return shadowsEnabled_; }
+
 #ifdef SAIDA_ENABLE_XR
     void drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eyes,
                 Scene& scene, Project* project);
@@ -270,6 +276,7 @@ private:
     // their count, consumed by the shadow passes recorded before the main pass.
     std::array<glm::mat4, kMaxShadowCasters> shadowMatrices_{};
     int shadowCount_ = 0;
+    bool shadowsEnabled_ = true;
 
     // DDGI update control. Full realtime updates every frame; amortized realtime
     // warms up then updates on a cadence. Baked mode converges then freezes.

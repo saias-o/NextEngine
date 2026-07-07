@@ -1,7 +1,7 @@
 # Saida — Plan d'intégration & backlog production
 
 > **Document unique de pilotage** (fusion de l'ancien plan et de l'audit
-> plateforme du 2026-07-05, points fermés retirés). Mis à jour : **2026-07-06**.
+> plateforme du 2026-07-05, points fermés retirés). Mis à jour : **2026-07-07**.
 >
 > Deux repos : **`NextEngine`** (moteur C++/Vulkan+WebGPU, nom final *Saida
 > Engine*) et **`GitHub/saida`** (plateforme web : `apps/web` Next.js,
@@ -137,6 +137,21 @@ Saida Headless Tools (saida_tool)
   `?since=rev`, optimiste + rollback correct (fenêtre de manipulation continue :
   le rollback restaure l'état d'avant-drag ; `cancelPreview()` pour Échap),
   reconnexion backoff, statuts fiables.
+- **Façades UI fermées (07-07)** : réglages graphiques réellement appliqués au
+  runtime (`saida_set_render_settings` : cap FPS par frame-skip rAF, toggle
+  ombres Renderer ; `renderScale` masqué — pas de chemin de resize web, cf.
+  P3) ; labels de modèles IA servis par l'API (`availableAiModels` dans
+  GET/PATCH settings, validation dynamique depuis `AGENT_LLM_MODEL_MAP`) ;
+  Save câblé (POST `/scene/snapshot`, reason `MANUAL`, feedback + hint
+  auto-save) ; onglet Drive mock supprimé ; lignes d'assets = download signé
+  (`/files/:id/download`) ; download d'output de job réel
+  (`/v1/tool-runs/:id/download`) ; « download soon » retiré, « play coming
+  soon » dégradé en note. **Premier prompt Guidé (D0)** : à la création d'un
+  projet GUIDED, le ChatPanel envoie le prompt pipeline du skill (une seule
+  tentative, garde skill inconnu) — l'agent ouvre la conversation.
+- **Bindings runtime web ajoutés (07-07)** : `saida_set_render_settings`,
+  `saida_camera_state` (base caméra pour les gizmos). WASM rebuildé + syncé
+  (contrat d'ops inchangé → pas de rebuild du wasm de validation gateway).
 
 ### Qualité / vérification
 
@@ -165,9 +180,7 @@ Saida Headless Tools (saida_tool)
 
 | Quoi | Lane | Détail |
 |---|---|---|
-| **Gizmos move/rotate (D6/D9)** | Codex (UI) | Les outils Move/Rotate de la toolbar ne font rien. L'API client est prête et correcte : `previewLocal` (drag) → `commit` (relâchement, rollback = état d'avant-drag) → `cancelPreview` (Échap). Convertir le drag viewport en `ops.setTransform`. |
-| **Façades UI : câbler ou masquer** | Codex (UI) | Save sans handler (l'auto-snapshot existe mais l'utilisateur ne le sait pas) ; onglet Drive = données mock ; réglages graphiques persistés mais **inertes** (`maxFps`/`renderScale`/`shadowsEnabled` jamais transmis au runtime) ; liste de modèles IA codée en dur (le backend `AGENT_LLM_MODEL_MAP` est prêt — servir les labels disponibles) ; lignes d'assets non cliquables ; « download soon »/« play coming soon » marketing. Chaque bouton doit faire quelque chose ou disparaître. |
-| **Premier prompt Guidé (D0)** | Codex (UI→API) | En mode Guidé, le skill n'affiche qu'un texte statique : rien n'appelle l'agent au démarrage. Envoyer le premier message de pipeline serveur à l'initialisation. |
+| **Gizmos move/rotate (D6/D9)** | Claude (UI) | Les outils Move/Rotate de la toolbar ne font rien. Débloqué le 07-07 : le runtime web expose `saida_camera_state` (position/base caméra, fov, aspect — typé côté client `EngineRuntime.cameraState()`). Reste : convertir le drag viewport en `ops.setTransform` via `previewLocal` (drag) → `commit` (relâchement) → `cancelPreview` (Échap). |
 | **Rollback de revision qui mute le head (D8)** | Claude (backend) | La lecture time-travel existe (`?at=N`) ; reste l'op de rollback live (ré-appliquer un état passé comme nouvelles révisions, sans réécrire le journal). |
 | **Broadcast live des settings (D10)** | Codex | Les changements de settings ne sont pas poussés aux clients connectés. |
 | **Pub/sub multi-gateway (2.1 complet)** | Codex (cloud) | Une instance API unique est l'hypothèse actuelle (documentée, collision de révision durcie). Pour scaler : fan-out Redis pub/sub entre instances. |
@@ -190,7 +203,7 @@ Saida Headless Tools (saida_tool)
 | **Phase F — export serveur** | Workflow Temporal `web-export` depuis snapshot immuable, template WASM pinné par `engineVersion`, workers isolés bornés, artefacts R2/S3 + checksum, crédits sur build, migration inter-versions par snapshot (F6, invariant 0.6, jamais prouvée). |
 | **GC du journal d'ops (2.4)** | Le journal accumule les no-ops droppées au fold (design C7). Conflit assumé avec l'historique/time-travel D8 : décision produit de rétention avant toute purge. |
 | **Runtime web multi-instance (5.4)** | Un seul runtime/canvas par page (`-sMODULARIZE` absent) ; échec d'init = reload complet. Limite structurelle documentée. |
-| **Durcissements runtime web** | `.obj` corrompu (présent mais invalide) aborte encore le wasm (exceptions off) ; MSAA web ; fetch/IDBFS streaming d'assets ; réévaluer `-sINITIAL_MEMORY=512MB` quand le port emdawnwebgpu acceptera les ArrayBuffers resizables. |
+| **Durcissements runtime web** | `.obj` corrompu (présent mais invalide) aborte encore le wasm (exceptions off) ; MSAA web ; fetch/IDBFS streaming d'assets ; réévaluer `-sINITIAL_MEMORY=512MB` quand le port emdawnwebgpu acceptera les ArrayBuffers resizables ; `renderScale` (resize des render targets web — la surface est figée 1280×720, le slider est masqué dans l'UI en attendant). |
 | **Réflexion complète au web** | Le manifest web n'expose aucun behaviour (l'API borne le contrat agent en conséquence — divergence fermée). La parité de réflexion (behaviours au web) reviendra avec son coût taille quand le produit en aura besoin. |
 
 ## 6. Décisions ouvertes

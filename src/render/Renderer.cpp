@@ -775,7 +775,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
 
         // Directional and spot lights cast 2D shadow maps (point would need a
         // cube map). Shadows stay live in both realtime and baked GI modes.
-        bool wantsShadow = light->castShadows &&
+        bool wantsShadow = shadowsEnabled_ && light->castShadows &&
             (light->type == LightType::Directional || light->type == LightType::Spot);
         if (wantsShadow && shadowCount_ < kMaxShadowCasters) {
             glm::mat4 lightVP = light->type == LightType::Directional

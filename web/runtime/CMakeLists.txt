@@ -107,7 +107,7 @@ target_link_options(saida_web PRIVATE
     # FS (Track 1-F): la plateforme écrit les fichiers projet (obj/textures/
     # asset_registry.json) dans MEMFS sous /project avant saida_load_snapshot.
     -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,FS
-    -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_saida_apply_op,_saida_engine_manifest,_saida_scene_snapshot,_saida_scene_snapshot_compare,_saida_load_snapshot,_saida_pick
+    -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_saida_apply_op,_saida_engine_manifest,_saida_scene_snapshot,_saida_scene_snapshot_compare,_saida_load_snapshot,_saida_pick,_saida_set_render_settings,_saida_camera_state
     $<$<CONFIG:Release>:-Oz>
     # WGSL shaders packaged into MEMFS at /shaders (16.1 web FS: preload).
     # Paths are quoted so a checkout under a directory with spaces still links.
