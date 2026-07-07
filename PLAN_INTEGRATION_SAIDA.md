@@ -152,6 +152,18 @@ Saida Headless Tools (saida_tool)
 - **Bindings runtime web ajoutés (07-07)** : `saida_set_render_settings`,
   `saida_camera_state` (base caméra pour les gizmos). WASM rebuildé + syncé
   (contrat d'ops inchangé → pas de rebuild du wasm de validation gateway).
+- **Agent en worker Temporal (P0, fermé 07-07)** : `runAgentTurn` découpé en
+  `prepareAgentTurn` (requête API : message user + attachments + run `QUEUED` +
+  réservation de crédits — le 402 kill-switch reste synchrone) et
+  `executeAgentTurn` (LLM → extraction → validation WASM → dry-run natif →
+  `PROPOSED/FAILED`, capture/release des crédits). Claim atomique
+  `QUEUED→RUNNING` = LLM at-most-once (un retry sur run `RUNNING` échoue en
+  `AGENT_TURN_INTERRUPTED` au lieu de re-payer). `AGENT_RUNNER=temporal` →
+  `AgentTurnWorkflow` sur la queue dédiée `agent-turn` (réponse 202, UI en
+  polling du run) ; défaut `inline` = dev sans worker. Le worker partage le
+  pipeline exact via l'export workspace `@saida/api/agent-runtime` (init WASM +
+  folders saida_tool — `SAIDA_TOOL_PATH` requis sur l'hôte worker). Smoke test
+  reproductible : `npx tsx apps/api/scripts/smoke-agent-temporal.ts`.
 
 ### Qualité / vérification
 
@@ -170,8 +182,7 @@ Saida Headless Tools (saida_tool)
 
 | Quoi | Lane | Détail |
 |---|---|---|
-| **Agent en worker Temporal** | Codex (infra) | Le run d'agent tourne dans la requête HTTP (LLM 45 s + subprocess) : pas de file, pas de retry, pas d'isolation. Patron 2Dto3D à répliquer ; l'UI passe en polling du run (statuts `RUNNING/PROPOSED/FAILED` déjà persistés). Le pipeline est déjà LLM-agnostique et découplé de Fastify. |
-| **`saida_tool` déployable Linux + hors chemin chaud** | Codex (cloud) + Claude (build moteur si besoin) | Dépendance runtime dure de l'API, buildée Windows/MSYS2 uniquement. Un déploiement Linux exige un build Linux. Perf : un `execFile` + fichiers temp par `GET /scene` (chemin d'ouverture) → cache de scène reconstruite ; `/scene` doit dégrader en dernier snapshot au lieu d'un 500 si le binaire meurt. |
+| **`saida_tool` déployable Linux + hors chemin chaud** | Codex (cloud) + Claude (build moteur si besoin) | Dépendance runtime dure de l'API **et du worker agent** (dry-run/folds), buildée Windows/MSYS2 uniquement. Un déploiement Linux exige un build Linux. Perf : un `execFile` + fichiers temp par `GET /scene` (chemin d'ouverture) → cache de scène reconstruite ; `/scene` doit dégrader en dernier snapshot au lieu d'un 500 si le binaire meurt. |
 | **CI qui exerce binaire + DB + e2e** | Codex | La CI actuelle laisse 6 tests structurellement non exercés (`SAIDA_TOOL_PATH`, `RUN_E2E=1`). La recette 100 % verte existe — la mettre en CI. |
 | **E2E navigateur 2 sessions : vert final + passe UX** | Codex | Infra Docker up désormais ; rejouer `npm run test:e2e:web`, puis screenshots desktop/mobile owner/viewer avant prod. |
 | **Phase G minimale** | Codex (cloud) | G1 quotas/rate-limits étendus, G2 backups Postgres+R2 avec **restore testé une fois**, G3 logs structurés/métriques (jobs, crédits, coût IA), G4 alertes (échecs builds, queue bloquée, coût IA anormal, ledger déséquilibré). |
