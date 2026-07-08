@@ -283,14 +283,22 @@ uniquement**.
 
 ### P0.4 — Environnement & déploiement (à mettre en place)
 
-Décisions à confirmer d'abord (cf. §6) : hébergeur (Coolify/Kamal +
-Hetzner/OVH proposés), stockage S3 (R2 proposé), domaines. Ensuite :
+**Décisions prises (07-08)** : **Render** (calcul web/api/workers + Postgres +
+Redis managés, autoscale web/workers, API épinglée 1 instance), **Cloudflare R2**
+(stockage objet, coût linéaire au Go, zéro egress), **Temporal Cloud** (workflows
+managés). Artefacts livrés dans le repo saida : `render.yaml` (blueprint),
+`.env.production.example`, `docs/deployment.md` (runbook non-technique pas-à-pas).
+Support **mTLS Temporal ajouté au code** (api `temporal.ts` + workers `worker.ts`,
+via `TEMPORAL_TLS_CERT_PATH/KEY_PATH` + `TEMPORAL_NAMESPACE`) — requis par Temporal
+Cloud, non-breaking en local. Image `saida-tool` publiée sur **GHCR** par la CI
+moteur (job `publish-tool-image`), consommée au build des images api/workers
+(build-arg `SAIDA_TOOL_IMAGE` par défaut `ghcr.io/saias-o/saida-tool:latest`).
+Reste à faire **par le propriétaire** (comptes + secrets, cf. runbook) puis
+dérouler :
 
-- [ ] **Topologie** : 1 conteneur web (Next), **1 seule instance API**
-      (contrainte assumée : gateway WS in-process, pas de pub/sub multi-gateway
-      — ne pas mettre l'API derrière un autoscaler), 1+ worker Temporal,
-      Postgres managé ou backupé, Redis, S3, Temporal (self-host
-      docker-compose ou Temporal Cloud — à décider).
+- [x] **Topologie** définie dans `render.yaml` : web (autoscale) + **API 1
+      instance** (WS in-process, pas d'autoscale horizontal — verticale seulement)
+      + workers (autoscale) + Postgres managé + Redis managé + R2 + Temporal Cloud.
 - [ ] **DNS + TLS** : domaine web, domaine API (CORS `WEB_ORIGIN` exact),
       WebSocket `wss://` de bout en bout (proxy avec upgrade + timeouts longs).
 - [ ] **Env API** (checklist `.env` prod) : `NODE_ENV=production`,
@@ -370,9 +378,12 @@ Hetzner/OVH proposés), stockage S3 (R2 proposé), domaines. Ensuite :
 - **NodeId vs nom** : toutes les ops référencent les nœuds par nom (résolution
   `findByName` côté applier). Migrer vers `NodeId` (id/génération) = changement
   de contrat à planifier.
-- **Hébergement** : Coolify/Kamal + Hetzner/OVH + Cloudflare R2 (proposé) — à
-  confirmer **avant P0.4** (c'est le premier prérequis de la mise en prod).
-- **Temporal en prod** : self-host (docker-compose durci) vs Temporal Cloud.
+- ~~**Hébergement**~~ **TRANCHÉ (07-08)** : Render (calcul + Postgres + Redis
+  managés, autoscale) + Cloudflare R2 (stockage) — critères : managé, coût
+  proportionnel à l'usage, zéro machine à gérer. Voir `render.yaml` +
+  `docs/deployment.md`.
+- ~~**Temporal en prod**~~ **TRANCHÉ (07-08)** : Temporal Cloud (managé) ;
+  support mTLS ajouté au code.
 - **Périmètre `write_script`** : jusqu'où l'IA génère du JS QuickJS en Phase E.
 - **Format durable d'un design skill** communautaire (métadonnées, prompt,
   étapes, permissions, versioning, publication).
