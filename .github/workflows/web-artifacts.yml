@@ -1,0 +1,84 @@
+name: Saida Web Artifacts
+
+# Artefacts WASM (P0.2) : runtime web d'édition (Emscripten/WebGPU) + WASM de
+# validation du gateway. Workflow SÉPARÉ de ci.yml exprès : c'est le maillon le
+# plus fragile (emsdk + naga + port emdawnwebgpu) et il ne doit pas bloquer la
+# publication du binaire `saida_tool` (dépendance dure de la plateforme).
+#
+# La CI plateforme (web-e2e) télécharge `engine-web-runtime` depuis un run vert
+# de CE workflow.
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "web/**"
+      - "shaders/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/web-artifacts.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "web/**"
+      - "shaders/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/web-artifacts.yml"
+
+concurrency:
+  group: engine-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wasm-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install toolchain (glslc + naga pour les shaders WGSL)
+        run: |
+          sudo apt-get update
+          # Le CMake principal fait find_package(Vulkan/glfw3/glm REQUIRED) au
+          # configure — même pour ne builder que la cible WebShaders. Sans ces
+          # -dev, `cmake -S . -B build` échoue avant WebShaders.
+          sudo apt-get install -y --no-install-recommends \
+            glslc cmake ninja-build libvulkan-dev libglfw3-dev libglm-dev
+          cargo install naga-cli --locked || cargo install naga-cli
+
+      # Version épinglée sur celle du poste qui produit un build web prouvé :
+      # emdawnwebgpu (port Dawn/WebGPU utilisé par web/runtime) n'existe que sur
+      # les emsdk récents — la 3.x ne l'a pas.
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.1
+          actions-cache-folder: emsdk-cache
+
+      - name: WGSL shaders
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSAIDA_ENABLE_XR=OFF -DSAIDA_ENABLE_MCP=OFF
+          cmake --build build --target WebShaders
+
+      - name: Web runtime (Emscripten)
+        run: ./web/build_web.sh Release
+
+      - name: Authoring WASM (validation gateway)
+        run: ./web/build_authoring_wasm.sh Release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-web-runtime
+          path: |
+            build-web/index.js
+            build-web/index.wasm
+            build-web/index.data
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: saida-authoring-wasm
+          path: |
+            build-authoring-wasm/saida_authoring.mjs
+            build-authoring-wasm/saida_authoring.wasm
+          if-no-files-found: error

@@ -93,55 +93,7 @@ jobs:
           path: /tmp/engine-manifest.json
           if-no-files-found: error
 
-  # Artefacts WASM (P0.2) : runtime web d'édition (Emscripten) + WASM de
-  # validation du gateway. Publiés versionnés pour la CI plateforme (engine:sync
-  # + authoring:sync) et les builds d'images web.
-  wasm-artifacts:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install toolchain (glslc + naga pour les shaders WGSL)
-        run: |
-          sudo apt-get update
-          # Le CMake principal fait find_package(Vulkan/glfw3/glm REQUIRED) au
-          # configure — même pour ne builder que la cible WebShaders. Sans ces
-          # -dev, `cmake -S . -B build` échoue avant WebShaders.
-          sudo apt-get install -y --no-install-recommends \
-            glslc cmake ninja-build libvulkan-dev libglfw3-dev libglm-dev
-          cargo install naga-cli --locked || cargo install naga-cli
-
-      - uses: mymindstorm/setup-emsdk@v14
-        with:
-          version: 3.1.61
-          actions-cache-folder: emsdk-cache
-
-      - name: WGSL shaders
-        run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSAIDA_ENABLE_XR=OFF -DSAIDA_ENABLE_MCP=OFF
-          cmake --build build --target WebShaders
-
-      - name: Web runtime (Emscripten)
-        run: ./web/build_web.sh Release
-
-      - name: Authoring WASM (validation gateway)
-        run: ./web/build_authoring_wasm.sh Release
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: engine-web-runtime
-          path: |
-            build-web/index.js
-            build-web/index.wasm
-            build-web/index.data
-          if-no-files-found: error
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: saida-authoring-wasm
-          path: |
-            build-authoring-wasm/saida_authoring.mjs
-            build-authoring-wasm/saida_authoring.wasm
-          if-no-files-found: error
+# Le build web-wasm (runtime Emscripten + authoring wasm) vit dans un workflow
+# séparé (web-artifacts.yml) : c'est le maillon le plus fragile (emsdk + naga +
+# port WebGPU) et il ne doit PAS gater la conclusion de ce workflow, dont
+# l'artefact `saida-tool-linux` est la dépendance dure de la plateforme.
