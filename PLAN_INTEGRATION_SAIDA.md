@@ -246,14 +246,15 @@ uniquement**.
 - [x] Le smoke Temporal tourne dans `verify` avec le worker démarré en
       arrière-plan (`npx tsx apps/workers/src/worker.ts &`) — vert (prouve
       queue → worker → pipeline → DB).
-- [ ] **saida** job `web-e2e` — Playwright chromium. Le navigateur + runtime
-      moteur se chargent (pas un souci WebGPU). **Rouge sur une assertion
-      fonctionnelle** (`collaboration.spec.ts:225`) : le renommage de scène
-      côté éditeur n'apparaît pas dans la hiérarchie du 2e client (viewer) —
-      « SceneScene » au lieu du nouveau nom. À investiguer : vrai bug de
-      propagation live du rename vers le mirror hiérarchie viewer, ou flake de
-      timing (test jamais exécuté vert jusqu'ici). Ne bloque pas la recette de
-      prod (`verify`), rejoint le périmètre P0.3.
+- [x] **saida** job `web-e2e` — Playwright chromium, **vert 07-08 en local**
+      (WebGPU headless OK en CI). L'assertion rouge (`collaboration.spec.ts:225`,
+      rename non propagé au viewer) était un **vrai bug backend** : le handler WS
+      `/collab` autorisait avec le rôle minimum par défaut (EDITOR), donc les
+      collaborateurs **VIEWER étaient rejetés en 4403** et ne recevaient jamais
+      les broadcasts. Fix : autoriser au minimum VIEWER (les writes restent gatés
+      par-message → `PROJECT_READ_ONLY`). Diagnostic par instrumentation pas-à-pas
+      (mirror OK, op reçue par l'owner mais WS viewer fermée 4403). Test vert,
+      API 93/93 inchangée.
 
 ### P0.3 — Passe de test manuelle pré-prod (avec vraie clé LLM)
 
