@@ -86,8 +86,10 @@ public:
     // Reach an autoload's behaviour (the sanctioned global-state accessor).
     template <typename T>
     T* autoload() const {
+        // `template` requis : GCC 12 traite les structured bindings comme
+        // type-dépendants dans un template (corrigé en GCC 13).
         for (const auto& [name, node] : autoloadNodes_)
-            if (T* b = node->getBehaviour<T>()) return b;
+            if (T* b = node->template getBehaviour<T>()) return b;
         return nullptr;
     }
     Node* autoloadNode(const std::string& name) const;

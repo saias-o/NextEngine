@@ -21,6 +21,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 

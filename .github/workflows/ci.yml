@@ -43,3 +43,101 @@ jobs:
 
       - name: Test authoring targets
         run: ctest --test-dir build --output-on-failure -R "saida_authoring_op_tests|saida_tool_"
+
+  # Build Linux complet + ctest + preuve de déterminisme du fold (P0.2).
+  # Conteneur Debian bookworm exprès : même glibc (2.36) que les images
+  # node:24-slim de la plateforme — le binaire publié en artefact est celui
+  # que les images Docker apps/api et apps/workers embarquent.
+  linux-tool:
+    runs-on: ubuntu-latest
+    container: debian:bookworm-slim
+    steps:
+      - name: Install toolchain
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build git ca-certificates \
+            libvulkan-dev libglfw3-dev libglm-dev glslc
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSAIDA_ENABLE_XR=OFF -DSAIDA_ENABLE_MCP=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test (ctest complet)
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Fold determinism (byte-identique à la référence Windows)
+        run: |
+          ./build/bin/saida_tool apply-ops tests/fixtures/fold-determinism/base.json \
+            tests/fixtures/fold-determinism/ops.json --out /tmp/fold-out.json
+          cmp /tmp/fold-out.json tests/fixtures/fold-determinism/expected.json
+          echo "fold byte-identique ✓"
+
+      - name: Engine manifest (artefact)
+        run: ./build/bin/saida_tool describe-engine > /tmp/engine-manifest.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: saida-tool-linux
+          path: build/bin/saida_tool
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-manifest
+          path: /tmp/engine-manifest.json
+          if-no-files-found: error
+
+  # Artefacts WASM (P0.2) : runtime web d'édition (Emscripten) + WASM de
+  # validation du gateway. Publiés versionnés pour la CI plateforme (engine:sync
+  # + authoring:sync) et les builds d'images web.
+  wasm-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install toolchain (glslc + naga pour les shaders WGSL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends glslc cmake ninja-build
+          cargo install naga-cli --locked || cargo install naga-cli
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.61
+          actions-cache-folder: emsdk-cache
+
+      - name: WGSL shaders
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSAIDA_ENABLE_XR=OFF -DSAIDA_ENABLE_MCP=OFF
+          cmake --build build --target WebShaders
+
+      - name: Web runtime (Emscripten)
+        run: ./web/build_web.sh Release
+
+      - name: Authoring WASM (validation gateway)
+        run: ./web/build_authoring_wasm.sh Release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-web-runtime
+          path: |
+            build-web/index.js
+            build-web/index.wasm
+            build-web/index.data
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: saida-authoring-wasm
+          path: |
+            build-authoring-wasm/saida_authoring.mjs
+            build-authoring-wasm/saida_authoring.wasm
+          if-no-files-found: error

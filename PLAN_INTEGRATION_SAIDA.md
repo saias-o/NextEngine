@@ -190,15 +190,24 @@ Dépendance runtime dure : `GET /scene` (reconstruction), snapshots périodiques
 dry-run agent, `POST /scene/snapshot`. Aujourd'hui buildé **Windows/MSYS2
 uniquement**.
 
-- [ ] **Build Linux de `saida_tool`** (cible CMake `saida_tool` seule ; deps
-      vendorées, pas de Vulkan requis pour l'outil headless). Vérifier :
-      `ctest` vert sur Linux + un `apply-ops` byte-identique à un snapshot de
-      référence généré sous Windows.
-- [ ] **Packaging** : images Docker `apps/api` et `apps/workers` embarquant le
-      binaire + `apps/api/vendor/saida-authoring/` (wasm + manifest), avec
-      `SAIDA_TOOL_PATH` pointé dedans. Le wasm runtime web
-      (`public/engine/dev/`) est **gitignoré** : `npm run engine:sync` doit
-      faire partie du build de l'image web (artefact moteur en entrée).
+- [x] **Build Linux de `saida_tool`** (fermé 07-08) : `docker/saida-tool.Dockerfile`
+      — base **Debian bookworm exprès** (même glibc 2.36 que `node:24-slim` ;
+      un build sur distro plus récente exige GLIBC_2.38+ et casse au
+      `COPY --from`, vérifié). Deps apt : libvulkan-dev/libglfw3-dev/libglm-dev/
+      glslc (Vulkan requis au link seulement — headless au run, aucun GPU).
+      XR/MCP OFF (winsock). 2 fixes de portabilité seulement : `<cstring>`
+      manquant (ResourceManager.cpp), disambiguïsateur `template` pour GCC 12
+      (SceneTree.hpp). Prouvé : **ctest 24/24 sur Linux** (GCC 12 bookworm et
+      GCC 13 ubuntu) + **apply-ops byte-identique Windows↔Linux** sur le fixture
+      versionné `tests/fixtures/fold-determinism/` (sha256 d2205858…).
+- [x] **Packaging** (fermé 07-08) : `apps/api/Dockerfile` et
+      `apps/workers/Dockerfile` (monorepo via tsx + `COPY --from` du binaire →
+      `SAIDA_TOOL_PATH=/usr/local/bin/saida_tool` fixé + vendor WASM commité +
+      prisma generate) ; `apps/web/Dockerfile` : `npm run engine:sync` **dans**
+      le build (artefacts moteur en entrée obligatoire via `engine-web/`,
+      fail-fast sinon ; `next start 0.0.0.0`). Smokes passés : API `/health`
+      200 avec checks db/temporal/s3 verts contre l'infra compose, web sert la
+      page et `/engine/dev/index.wasm` en 200.
 - [x] **Cache de scène reconstruite** (fermé 07-07) : `apps/api/src/scene-cache.ts`
       — LRU borné keyé par (projectId, sceneId, révision résolue). Le head se
       résout via un `headRevision` (aggregate cheap) au lieu d'un `execFile` +
@@ -216,17 +225,31 @@ uniquement**.
 
 ### P0.2 — CI qui prouve la recette verte (2 repos)
 
-- [ ] **NextEngine** : job Linux qui build `saida_tool` + lance `ctest`, et
-      publie en artefacts versionnés : le binaire Linux, le wasm runtime web,
-      le wasm authoring + `engine-manifest.json`.
-- [ ] **saida** : job avec services (postgres, redis, minio, temporal) qui
-      récupère l'artefact `saida_tool` Linux, puis exécute
-      `db:migrate:deploy` → `RUN_E2E=1 SAIDA_TOOL_PATH=… npm run test`
-      (attendu : **API 93/93, 0 skip ; shared 14/14**) → `npm run verify:v1`.
-- [ ] **saida** : job Playwright `npm run test:e2e:web` (2 sessions, navigateur
-      réel) dans la même CI.
-- [ ] Le smoke Temporal (`apps/api/scripts/smoke-agent-temporal.ts`) tourne en
-      CI avec le worker démarré (prouve queue → worker → pipeline → DB).
+> Workflows **écrits le 07-08** (YAML validés) — reste à prouver un run vert
+> sur GitHub, et à créer le secret `ENGINE_REPO_TOKEN` (PAT lecture
+> contents+actions sur NextEngine) dans les settings du repo saida pour les
+> artefacts cross-repo. Sans lui, la CI saida dégrade en unit-tests + warning.
+
+- [~] **NextEngine** (`.github/workflows/ci.yml`) : job `linux-tool` (conteneur
+      bookworm, même glibc que les images plateforme) — build complet + `ctest`
+      complet + **fold byte-identique** au fixture Windows versionné
+      (`tests/fixtures/fold-determinism/`) + artefacts `saida-tool-linux` et
+      `engine-manifest`. Job `wasm-artifacts` (emsdk + naga + glslc) — artefacts
+      `engine-web-runtime` (index.js/wasm/data) et `saida-authoring-wasm`.
+- [~] **saida** (`.github/workflows/ci.yml`, job `verify`) : infra par le
+      docker-compose du repo (postgres, redis, minio, temporal), artefact
+      `saida-tool-linux` téléchargé depuis la CI moteur, `db:migrate:deploy` →
+      `RUN_E2E=1 npm run test` (attendu : **API 93/93, 0 skip ; shared 14/14**)
+      → typecheck + build (l'équivalent de `verify:v1` sans double run des
+      tests).
+- [~] **saida** : job `web-e2e` — Playwright chromium (`--enable-unsafe-webgpu`),
+      artefact `engine-web-runtime` → `engine:sync`, infra compose, serveurs
+      auto-démarrés par la config Playwright. À valider : WebGPU headless sur
+      runner GitHub sans GPU (SwiftShader) — si ça coince, passer le job en
+      runner avec GPU ou marquer le viewport en soft-fail.
+- [~] Le smoke Temporal tourne dans le job `verify` avec le worker démarré en
+      arrière-plan (`npx tsx apps/workers/src/worker.ts &`) — prouve
+      queue → worker → pipeline → DB.
 
 ### P0.3 — Passe de test manuelle pré-prod (avec vraie clé LLM)
 
