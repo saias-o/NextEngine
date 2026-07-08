@@ -230,26 +230,30 @@ uniquement**.
 > contents+actions sur NextEngine) dans les settings du repo saida pour les
 > artefacts cross-repo. Sans lui, la CI saida dégrade en unit-tests + warning.
 
-- [~] **NextEngine** (`.github/workflows/ci.yml`) : job `linux-tool` (conteneur
-      bookworm, même glibc que les images plateforme) — build complet + `ctest`
-      complet + **fold byte-identique** au fixture Windows versionné
+- [x] **NextEngine** — **run vert 07-08**. Workflow `ci.yml` : job `linux-tool`
+      (conteneur bookworm, même glibc que les images plateforme) — build complet
+      + `ctest` complet + **fold byte-identique** au fixture Windows versionné
       (`tests/fixtures/fold-determinism/`) + artefacts `saida-tool-linux` et
-      `engine-manifest`. Job `wasm-artifacts` (emsdk + naga + glslc) — artefacts
-      `engine-web-runtime` (index.js/wasm/data) et `saida-authoring-wasm`.
-- [~] **saida** (`.github/workflows/ci.yml`, job `verify`) : infra par le
-      docker-compose du repo (postgres, redis, minio, temporal), artefact
-      `saida-tool-linux` téléchargé depuis la CI moteur, `db:migrate:deploy` →
-      `RUN_E2E=1 npm run test` (attendu : **API 93/93, 0 skip ; shared 14/14**)
-      → typecheck + build (l'équivalent de `verify:v1` sans double run des
-      tests).
-- [~] **saida** : job `web-e2e` — Playwright chromium (`--enable-unsafe-webgpu`),
-      artefact `engine-web-runtime` → `engine:sync`, infra compose, serveurs
-      auto-démarrés par la config Playwright. À valider : WebGPU headless sur
-      runner GitHub sans GPU (SwiftShader) — si ça coince, passer le job en
-      runner avec GPU ou marquer le viewport en soft-fail.
-- [~] Le smoke Temporal tourne dans le job `verify` avec le worker démarré en
-      arrière-plan (`npx tsx apps/workers/src/worker.ts &`) — prouve
-      queue → worker → pipeline → DB.
+      `engine-manifest`. Workflow **séparé** `web-artifacts.yml` (isolé pour ne
+      pas gater le binaire) : emsdk 6.0.1 + naga + glslc, `lfs: true` (asset
+      BeachDemo préembarqué), scripts `web/*.sh` en +x — artefacts
+      `engine-web-runtime` et `saida-authoring-wasm`. **Vert.**
+- [x] **saida** job `verify` — **VERT 07-08**. Infra par le docker-compose du
+      repo (postgres, redis, minio, temporal), artefact `saida-tool-linux`
+      téléchargé depuis la CI moteur (+ `libvulkan1/libglfw3` runtime installés
+      sur le runner), `db:migrate:deploy` → `RUN_E2E=1 npm run test` vert →
+      typecheck + build. Secret `ENGINE_REPO_TOKEN` configuré côté saida.
+- [x] Le smoke Temporal tourne dans `verify` avec le worker démarré en
+      arrière-plan (`npx tsx apps/workers/src/worker.ts &`) — vert (prouve
+      queue → worker → pipeline → DB).
+- [ ] **saida** job `web-e2e` — Playwright chromium. Le navigateur + runtime
+      moteur se chargent (pas un souci WebGPU). **Rouge sur une assertion
+      fonctionnelle** (`collaboration.spec.ts:225`) : le renommage de scène
+      côté éditeur n'apparaît pas dans la hiérarchie du 2e client (viewer) —
+      « SceneScene » au lieu du nouveau nom. À investiguer : vrai bug de
+      propagation live du rename vers le mirror hiérarchie viewer, ou flake de
+      timing (test jamais exécuté vert jusqu'ici). Ne bloque pas la recette de
+      prod (`verify`), rejoint le périmètre P0.3.
 
 ### P0.3 — Passe de test manuelle pré-prod (avec vraie clé LLM)
 
