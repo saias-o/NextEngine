@@ -7,9 +7,9 @@
 > Engine*) et **`GitHub/saida`** (plateforme web : `apps/web` Next.js,
 > `apps/api` Fastify, `apps/workers` Temporal, `packages/db` Prisma).
 >
-> Répartition de travail : **Claude** = code complexe cross-brique (moteur
-> C++/WASM ↔ backend collaboration ↔ client live-edit + contrat d'ops).
-> **Codex** = UI React, infra web, CLI, cloud/prod, billing UI.
+> Périmètre : un seul intervenant sur tout — moteur C++/WASM, backend
+> collaboration, client live-edit + contrat d'ops, UI React, infra web, CLI,
+> cloud/prod, billing. Aucune répartition du travail.
 >
 > Historique détaillé des sessions (2026-07-03 → 07-06) : historique git de ce
 > fichier. Audit distinct du système UI moteur (RmlUi, Étape 12) :
@@ -169,7 +169,7 @@ Saida Headless Tools (saida_tool)
 
 - **Suite 100 % verte** possible localement : `npm run infra:up` +
   `RUN_E2E=1 SAIDA_TOOL_PATH=<NextEngine/build/bin/saida_tool.exe> npm run test`
-  → **API 84/84, 0 skip ; shared 14/14**. Typecheck + build verts.
+  → **API 93/93, 0 skip ; shared 14/14**. Typecheck + build verts.
 - Smoke test du chemin Temporal agent : `npx tsx
   apps/api/scripts/smoke-agent-temporal.ts` (202 → QUEUED → worker →
   FAILED/AGENT_LLM_NOT_CONFIGURED vérifié le 07-07).
@@ -199,12 +199,20 @@ uniquement**.
       `SAIDA_TOOL_PATH` pointé dedans. Le wasm runtime web
       (`public/engine/dev/`) est **gitignoré** : `npm run engine:sync` doit
       faire partie du build de l'image web (artefact moteur en entrée).
-- [ ] **Cache de scène reconstruite** : `GET /scene` fait aujourd'hui un
-      `execFile` + fichiers temp à chaque ouverture. Cacher le doc reconstruit
-      par (projectId, sceneId, révision) et l'invalider à chaque op commitée.
-- [ ] **Dégradation gracieuse** : si le fold échoue (binaire absent/mort),
-      `GET /scene` doit servir le **dernier snapshot persisté** (avec sa
-      révision) au lieu d'un 500 — l'éditeur s'ouvre, les ops continuent.
+- [x] **Cache de scène reconstruite** (fermé 07-07) : `apps/api/src/scene-cache.ts`
+      — LRU borné keyé par (projectId, sceneId, révision résolue). Le head se
+      résout via un `headRevision` (aggregate cheap) au lieu d'un `execFile` +
+      fichiers temp ; les entrées sont immuables par construction (journal
+      append-only) donc jamais périmées, et le hook `onCommitted` du hub évince
+      les entrées head du projet à chaque commit pour borner la mémoire. Le
+      time-travel `?at=N` est caché quand `N ≤ head` (immuable). Câblé dans
+      `reconstructSceneResilient` (route `GET /scene`).
+- [x] **Dégradation gracieuse** (fermé 07-07) : `reconstructSceneResilient`
+      (`scene-cache.ts`) — si le fold échoue (binaire absent/mort), sert le
+      **dernier snapshot persisté** (`latestSnapshot`/`snapshotAtOrBefore`) avec
+      sa révision + `degraded: true` au lieu d'un 500 ; le client reconnecte le
+      WS `?since=révision` et rejoue les ops manquantes (self-heal). 500 seulement
+      s'il n'existe aucun snapshot de repli.
 
 ### P0.2 — CI qui prouve la recette verte (2 repos)
 
@@ -214,7 +222,7 @@ uniquement**.
 - [ ] **saida** : job avec services (postgres, redis, minio, temporal) qui
       récupère l'artefact `saida_tool` Linux, puis exécute
       `db:migrate:deploy` → `RUN_E2E=1 SAIDA_TOOL_PATH=… npm run test`
-      (attendu : **API 84/84, 0 skip ; shared 14/14**) → `npm run verify:v1`.
+      (attendu : **API 93/93, 0 skip ; shared 14/14**) → `npm run verify:v1`.
 - [ ] **saida** : job Playwright `npm run test:e2e:web` (2 sessions, navigateur
       réel) dans la même CI.
 - [ ] Le smoke Temporal (`apps/api/scripts/smoke-agent-temporal.ts`) tourne en
@@ -301,23 +309,23 @@ Hetzner/OVH proposés), stockage S3 (R2 proposé), domaines. Ensuite :
 
 ### P1 — la boucle d'édition complète
 
-| Quoi | Lane | Détail |
-|---|---|---|
-| **Gizmos move/rotate (D6/D9)** | Claude (UI) | Les outils Move/Rotate de la toolbar ne font rien. Débloqué le 07-07 : le runtime web expose `saida_camera_state` (position/base caméra, fov, aspect — typé côté client `EngineRuntime.cameraState()`). Reste : convertir le drag viewport en `ops.setTransform` via `previewLocal` (drag) → `commit` (relâchement) → `cancelPreview` (Échap). |
-| **Rollback de revision qui mute le head (D8)** | Claude (backend) | La lecture time-travel existe (`?at=N`) ; reste l'op de rollback live (ré-appliquer un état passé comme nouvelles révisions, sans réécrire le journal). |
-| **Broadcast live des settings (D10)** | Codex | Les changements de settings ne sont pas poussés aux clients connectés. |
-| **Pub/sub multi-gateway (2.1 complet)** | Codex (cloud) | Une instance API unique est l'hypothèse actuelle (documentée, collision de révision durcie). Pour scaler : fan-out Redis pub/sub entre instances. |
-| **Présence/curseurs Yjs (C6) + texte collaboratif (D7)** | à cadrer | Zéro Yjs dans le repo. Gros morceau : décision produit sur la portée (curseurs seulement ? édition scripts/UI ?) avant d'attaquer. |
+| Quoi | Détail |
+|---|---|
+| **Gizmos move/rotate (D6/D9)** | Les outils Move/Rotate de la toolbar ne font rien. Débloqué le 07-07 : le runtime web expose `saida_camera_state` (position/base caméra, fov, aspect — typé côté client `EngineRuntime.cameraState()`). Reste : convertir le drag viewport en `ops.setTransform` via `previewLocal` (drag) → `commit` (relâchement) → `cancelPreview` (Échap). |
+| **Rollback de revision qui mute le head (D8)** | La lecture time-travel existe (`?at=N`) ; reste l'op de rollback live (ré-appliquer un état passé comme nouvelles révisions, sans réécrire le journal). |
+| **Broadcast live des settings (D10)** | Les changements de settings ne sont pas poussés aux clients connectés. |
+| **Pub/sub multi-gateway (2.1 complet)** | Une instance API unique est l'hypothèse actuelle (documentée, collision de révision durcie). Pour scaler : fan-out Redis pub/sub entre instances. |
+| **Présence/curseurs Yjs (C6) + texte collaboratif (D7)** | Zéro Yjs dans le repo. Gros morceau : décision produit sur la portée (curseurs seulement ? édition scripts/UI ?) avant d'attaquer. |
 
 ### P2 — vibecoding avancé
 
-| Quoi | Lane | Détail |
-|---|---|---|
-| **`write_script` / `write_ui`** | Claude (contrat) + Codex (stockage) | Bloqués par le stockage durable des fichiers projet dans le fold (`saida_tool apply-ops` n'a pas de filesystem projet). Design retenu : ops `{path, code}` via `resolveSandboxedProjectPath` (B5), fichiers matérialisés depuis `ProjectFile`/R2-S3 au fold. Débloque aussi la fin de l'extraction A3 (scripts). |
-| **`set_mesh` / `set_material`** | Claude (contrat) | `create_node` MeshNode n'a pas d'op pour assigner un mesh/matériau. À cadrer avec l'import d'assets web. |
-| **Registre DesignSkill (E0)** | Codex | 4 skills codés en dur dans l'UI. Modèle DB/API (`DesignSkill` : version, auteur, visibilité, prompt pipeline), skill officiel par défaut, marketplace communautaire. |
-| **Gate post-apply bloquante (E4)** | Claude | Brancher `validate-scene`/`validate-ops` en vérification bloquante après l'apply d'une action agent (les briques headless existent). |
-| **Coût par tour fonction des tokens réels** | décision produit | Aujourd'hui forfait fixe (`AGENT_TURN_CREDIT_COST`) — le risque est borné ; le raffinement tarifaire est un choix business, pas une dette. |
+| Quoi | Détail |
+|---|---|
+| **`write_script` / `write_ui`** | Bloqués par le stockage durable des fichiers projet dans le fold (`saida_tool apply-ops` n'a pas de filesystem projet). Design retenu : ops `{path, code}` via `resolveSandboxedProjectPath` (B5), fichiers matérialisés depuis `ProjectFile`/R2-S3 au fold. Débloque aussi la fin de l'extraction A3 (scripts). |
+| **`set_mesh` / `set_material`** | `create_node` MeshNode n'a pas d'op pour assigner un mesh/matériau. À cadrer avec l'import d'assets web. |
+| **Registre DesignSkill (E0)** | 4 skills codés en dur dans l'UI. Modèle DB/API (`DesignSkill` : version, auteur, visibilité, prompt pipeline), skill officiel par défaut, marketplace communautaire. |
+| **Gate post-apply bloquante (E4)** | Brancher `validate-scene`/`validate-ops` en vérification bloquante après l'apply d'une action agent (les briques headless existent). |
+| **Coût par tour fonction des tokens réels** | décision produit — aujourd'hui forfait fixe (`AGENT_TURN_CREDIT_COST`) — le risque est borné ; le raffinement tarifaire est un choix business, pas une dette. |
 
 ### P3 — long terme
 
@@ -351,7 +359,7 @@ Hetzner/OVH proposés), stockage S3 (R2 proposé), domaines. Ensuite :
 npm run infra:up                      # Docker : postgres, redis, minio, temporal
 npm run db:migrate:deploy
 RUN_E2E=1 SAIDA_TOOL_PATH="C:\\Users\\evand\\Documents\\NextEngine\\build\\bin\\saida_tool.exe" \
-  npm run test                        # attendu : API 84/84 0 skip, shared 14/14
+  npm run test                        # attendu : API 93/93 0 skip, shared 14/14
 npm run verify:v1                     # validate + typecheck + test + build
 npm run test:e2e:web                  # Playwright 2 sessions (navigateur)
 # Chemin Temporal de l'agent (worker démarré : npm run dev -w @saida/workers) :
