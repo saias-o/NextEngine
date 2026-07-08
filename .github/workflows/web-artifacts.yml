@@ -33,9 +33,13 @@ jobs:
   wasm-artifacts:
     runs-on: ubuntu-latest
     steps:
+      # lfs: true — le build web préembarque BeachDemo/assets/skies/sunset.png
+      # (.png = LFS) via --preload-file ; sans LFS, checkout ne fournirait qu'un
+      # pointeur et le .data serait corrompu.
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          lfs: true
 
       - name: Install toolchain (glslc + naga pour les shaders WGSL)
         run: |
