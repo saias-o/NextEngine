@@ -106,7 +106,11 @@ jobs:
       - name: Install toolchain (glslc + naga pour les shaders WGSL)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends glslc cmake ninja-build
+          # Le CMake principal fait find_package(Vulkan/glfw3/glm REQUIRED) au
+          # configure — même pour ne builder que la cible WebShaders. Sans ces
+          # -dev, `cmake -S . -B build` échoue avant WebShaders.
+          sudo apt-get install -y --no-install-recommends \
+            glslc cmake ninja-build libvulkan-dev libglfw3-dev libglm-dev
           cargo install naga-cli --locked || cargo install naga-cli
 
       - uses: mymindstorm/setup-emsdk@v14
