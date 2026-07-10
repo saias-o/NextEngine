@@ -24,9 +24,13 @@ void ViewportPanel::draw(EditorUI* editor, Camera* camera, float dt) {
 
     if (ImGui::Begin("##ViewportOverlay", nullptr, overlayFlags)) {
         if (editor->app_ && editor->app_->isPlayMode())
-            ImGui::TextColored(ImVec4(0.3f, 0.85f, 0.4f, 1.0f), "PLAY MODE");
+            ImGui::TextColored(editor->useLightTheme_
+                ? ImVec4(0.106f, 0.310f, 0.125f, 1.0f)
+                : ImVec4(0.310f, 0.706f, 0.290f, 1.0f), "PLAY MODE");
         else
-            ImGui::TextColored(ImVec4(0.5f, 0.7f, 1.0f, 1.0f), "SCENE MODE");
+            ImGui::TextColored(editor->useLightTheme_
+                ? ImVec4(0.106f, 0.310f, 0.125f, 1.0f)
+                : ImVec4(0.725f, 0.922f, 0.063f, 1.0f), "SCENE MODE");
 
         const float fps = dt > 0.0f ? 1.0f / dt : 0.0f;
         ImGui::Text("%.1f FPS", fps);
@@ -46,9 +50,15 @@ void ViewportPanel::draw(EditorUI* editor, Camera* camera, float dt) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f, 4.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 4.0f));
     if (ImGui::Begin("##Toolbar", nullptr, overlayFlags)) {
-        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.290f, 0.565f, 0.851f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.350f, 0.620f, 0.900f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.250f, 0.500f, 0.800f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Header, editor->useLightTheme_
+            ? ImVec4(0.710f, 0.690f, 0.643f, 1.0f)
+            : ImVec4(0.412f, 0.714f, 0.184f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, editor->useLightTheme_
+            ? ImVec4(0.784f, 0.765f, 0.718f, 1.0f)
+            : ImVec4(0.310f, 0.706f, 0.290f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, editor->useLightTheme_
+            ? ImVec4(0.710f, 0.690f, 0.643f, 1.0f)
+            : ImVec4(0.725f, 0.922f, 0.063f, 1.0f));
         
         if (ImGui::Selectable(" T ", editor->gizmoMode_ == GizmoMode::Translate, 0, ImVec2(24, 24))) editor->gizmoMode_ = GizmoMode::Translate;
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Translate (T)");

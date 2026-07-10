@@ -174,7 +174,7 @@ void drawAnalysis(const ProfileFrame& frame) {
     }
 
     for (const Alert& alert : alerts) {
-        ImVec4 color = ImVec4(0.55f, 0.70f, 1.0f, 1.0f);
+        ImVec4 color = ImVec4(0.49f, 0.80f, 0.39f, 1.0f);
         if (std::string(alert.level) == "Spike") color = ImVec4(0.95f, 0.25f, 0.25f, 1.0f);
         else if (std::string(alert.level) == "Warn") color = ImVec4(0.95f, 0.62f, 0.18f, 1.0f);
         else if (std::string(alert.level) == "OK") color = ImVec4(0.35f, 0.85f, 0.45f, 1.0f);

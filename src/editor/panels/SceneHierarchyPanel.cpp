@@ -493,7 +493,8 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
 
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow
                              | ImGuiTreeNodeFlags_OpenOnDoubleClick
-                             | ImGuiTreeNodeFlags_SpanAvailWidth;
+                             | ImGuiTreeNodeFlags_SpanAvailWidth
+                             | ImGuiTreeNodeFlags_FramePadding;
 
     bool isNestedScene = (dynamic_cast<Scene*>(node) != nullptr && node != editor->ctxScene_ && static_cast<Scene*>(node)->prefabAssetId() != kAssetInvalid);
     bool isLeaf = node->children().empty() || isNestedScene;
@@ -513,21 +514,28 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
     bool active = node->isActiveInHierarchy();
     bool hasCustomColor = false;
     ImVec4 customColor;
+    const bool lightTheme = editor->useLightTheme_;
     
     if (active) {
         if (isNestedScene) {
             hasCustomColor = true;
-            customColor = ImVec4(0.6f, 0.8f, 1.0f, 1.0f); // Slightly blue
+            customColor = lightTheme ? ImVec4(0.039f, 0.278f, 0.490f, 1.0f)
+                                     : ImVec4(0.722f, 0.769f, 0.733f, 1.0f);
         } else if (dynamic_cast<MeshNode*>(node)) {
             hasCustomColor = true;
-            customColor = ImVec4(0.6f, 0.9f, 0.6f, 1.0f); // Slightly green
+            customColor = lightTheme ? ImVec4(0.235f, 0.596f, 0.329f, 1.0f)
+                                     : ImVec4(0.494f, 0.796f, 0.388f, 1.0f);
         } else if (dynamic_cast<LightNode*>(node)) {
             hasCustomColor = true;
-            customColor = ImVec4(0.9f, 0.9f, 0.5f, 1.0f); // Slightly yellow
+            customColor = lightTheme ? ImVec4(0.776f, 0.518f, 0.129f, 1.0f)
+                                     : ImVec4(0.886f, 0.690f, 0.298f, 1.0f);
         } else if (dynamic_cast<ParticleSystemNode*>(node)) {
             hasCustomColor = true;
-            customColor = ImVec4(1.0f, 0.55f, 0.25f, 1.0f); // Slightly ember-like
+            customColor = lightTheme ? ImVec4(0.784f, 0.294f, 0.227f, 1.0f)
+                                     : ImVec4(0.898f, 0.420f, 0.353f, 1.0f);
         }
+        if (lightTheme && hasCustomColor)
+            customColor = ImVec4(0.106f, 0.310f, 0.125f, 1.0f);
     }
 
     if (!active) {

@@ -147,6 +147,7 @@ private:
     bool showAboutWindow_       = false;
     bool showBuildWindow_       = false;
     bool showSettingsWindow_    = false;
+    bool useLightTheme_         = false;
     char newProjectName_[128]   = "MyGame";
     char newProjectPath_[512]   = "";
     char saveScenePathBuf_[512] = "main.scene";
@@ -239,6 +240,7 @@ private:
     ResourceManager* ctxResources_ = nullptr;
     Project* ctxProject_ = nullptr;
     ThumbnailCache thumbnails_;
+    ThumbnailCache brandingImages_;
 
     bool isPreviewMode_ = false;
     std::string previewModelPath_;

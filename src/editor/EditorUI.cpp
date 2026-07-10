@@ -29,7 +29,6 @@
 #include "scene/GLTFLoader.hpp"
 #ifdef SAIDA_ENABLE_MCP
 #include "mcp/McpBridge.hpp"
-#include <cstdlib>
 #endif
 
 #include <memory>
@@ -46,8 +45,10 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace saida {
@@ -64,9 +65,32 @@ bool intersectRayPlane(const glm::vec3& rayOrigin, const glm::vec3& rayDir, cons
     }
     return false;
 }
+
+std::filesystem::path editorThemePreferencePath() {
+    if (const char* appData = std::getenv("APPDATA")) {
+        if (*appData != '\0')
+            return std::filesystem::path(appData) / "SaidaEngine" / "editor_theme.txt";
+    }
+    return std::filesystem::path(SAIDA_PROJECT_ROOT) / "build" / "editor_theme.txt";
+}
+
+bool loadLightThemePreference() {
+    std::ifstream input(editorThemePreferencePath());
+    std::string value;
+    return input && std::getline(input, value) && value == "light";
+}
+
+void saveLightThemePreference(bool useLightTheme) {
+    const std::filesystem::path path = editorThemePreferencePath();
+    std::error_code error;
+    std::filesystem::create_directories(path.parent_path(), error);
+    std::ofstream output(path);
+    if (output) output << (useLightTheme ? "light" : "dark");
+}
 } // namespace
 
 EditorUI::EditorUI() : history_(document_) {
+    useLightTheme_ = loadLightThemePreference();
     applyEditorStyle();
     // Default open path for the "Open Project" dialog.
     std::strncpy(newProjectPath_, SAIDA_PROJECT_ROOT, sizeof(newProjectPath_) - 1);
@@ -96,39 +120,54 @@ EditorUI::~EditorUI() = default;  // Scene/McpBridge complete here (unique_ptr m
 void EditorUI::applyEditorStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
 
-    // Rounding
-    style.WindowRounding    = 6.0f;
-    style.ChildRounding     = 5.0f;
-    style.FrameRounding     = 4.0f;
-    style.PopupRounding     = 6.0f;
-    style.ScrollbarRounding = 9.0f;
-    style.GrabRounding      = 4.0f;
-    style.TabRounding       = 5.0f;
+    // The web platform uses soft 8 px cards and a deliberately relaxed rhythm.
+    style.WindowRounding    = 8.0f;
+    style.ChildRounding     = 8.0f;
+    style.FrameRounding     = 6.0f;
+    style.PopupRounding     = 8.0f;
+    style.ScrollbarRounding = 8.0f;
+    style.GrabRounding      = 6.0f;
+    style.TabRounding       = 6.0f;
 
-    // Spacing
-    style.WindowPadding    = ImVec2(10, 10);
-    style.FramePadding     = ImVec2(8, 5);
-    style.ItemSpacing      = ImVec2(10, 6);
-    style.ItemInnerSpacing = ImVec2(8, 5);
-    style.IndentSpacing    = 20.0f;
+    // This spacing also makes context menus and the top menu less cramped.
+    style.WindowPadding    = ImVec2(13, 13);
+    style.FramePadding     = ImVec2(10, 7);
+    style.CellPadding      = ImVec2(10, 7);
+    style.ItemSpacing      = ImVec2(10, 8);
+    style.ItemInnerSpacing = ImVec2(8, 6);
+    style.IndentSpacing    = 22.0f;
+    style.ScrollbarSize    = 13.0f;
+    style.GrabMinSize      = 11.0f;
 
     style.WindowBorderSize = 1.0f;
+    style.ChildBorderSize  = 1.0f;
+    style.PopupBorderSize  = 1.0f;
     style.FrameBorderSize  = 1.0f;
     style.TabBorderSize    = 0.0f;
 
-    // Colors — Deep charcoal/obsidian modern theme
+    // Two Saida themes: ink-dark by default, paper-light as an option.
     ImVec4* c = style.Colors;
-    ImVec4 bg       = ImVec4(0.078f, 0.078f, 0.086f, 1.0f);   // Deep obsidian dark (#141416)
-    ImVec4 bgChild  = ImVec4(0.106f, 0.106f, 0.118f, 1.0f);   // Very dark charcoal (#1B1B1E)
-    ImVec4 bgPopup  = ImVec4(0.118f, 0.118f, 0.133f, 1.0f);   // Slate black (#1E1E22)
-    ImVec4 accent   = ImVec4(0.231f, 0.510f, 0.965f, 1.0f);   // Electric Blue accent (#3B82F6)
-    ImVec4 accentH  = ImVec4(0.329f, 0.608f, 0.980f, 1.0f);   // Hover accent blue (#549BFE)
-    ImVec4 accentA  = ImVec4(0.149f, 0.396f, 0.816f, 1.0f);   // Active accent blue (#2665D0)
-    ImVec4 text     = ImVec4(0.890f, 0.890f, 0.902f, 1.0f);   // Crisp off-white (#E3E3E6)
-    ImVec4 textDim  = ImVec4(0.470f, 0.470f, 0.500f, 1.0f);   // Muted gray-blue (#787880)
-    ImVec4 border   = ImVec4(0.137f, 0.137f, 0.153f, 1.0f);   // Subtle dark border (#232327)
-    ImVec4 header   = ImVec4(0.141f, 0.141f, 0.157f, 1.0f);   // Clean obsidian panels (#242428)
-    ImVec4 headerH  = ImVec4(0.176f, 0.176f, 0.196f, 1.0f);   // Hovered panels (#2D2D32)
+    const bool light = useLightTheme_;
+
+    // Shared Saida brand colors from the web platform.
+    const ImVec4 brand     = ImVec4(0.725f, 0.922f, 0.063f, 1.0f); // #b9eb10
+    const ImVec4 brandDeep = ImVec4(0.412f, 0.714f, 0.184f, 1.0f); // #69b62f
+    const ImVec4 paper     = ImVec4(0.984f, 0.973f, 0.929f, 1.0f); // #fbf8ed
+    const ImVec4 darkGreen = ImVec4(0.106f, 0.310f, 0.125f, 1.0f);
+
+    // Dark remains the default: neutral charcoal with a very subtle green
+    // cast, so the Saida lime is the only strong hue in the editor chrome.
+    const ImVec4 bg       = light ? ImVec4(0.886f, 0.871f, 0.827f, 1.0f) : ImVec4(0.063f, 0.075f, 0.067f, 1.0f);
+    const ImVec4 bgChild  = light ? ImVec4(0.839f, 0.816f, 0.761f, 1.0f) : ImVec4(0.090f, 0.110f, 0.094f, 1.0f);
+    const ImVec4 bgPopup  = light ? ImVec4(0.933f, 0.918f, 0.882f, 1.0f) : ImVec4(0.106f, 0.129f, 0.110f, 1.0f);
+    const ImVec4 accent   = light ? darkGreen : brand;
+    const ImVec4 accentH  = light ? ImVec4(0.153f, 0.396f, 0.173f, 1.0f) : ImVec4(0.816f, 0.965f, 0.357f, 1.0f);
+    const ImVec4 accentA  = light ? ImVec4(0.710f, 0.690f, 0.643f, 1.0f) : brandDeep;
+    const ImVec4 text     = light ? darkGreen : paper;
+    const ImVec4 textDim  = light ? ImVec4(0.251f, 0.373f, 0.263f, 1.0f) : ImVec4(0.635f, 0.702f, 0.651f, 1.0f);
+    const ImVec4 border   = light ? ImVec4(0.224f, 0.243f, 0.216f, 0.78f) : ImVec4(0.208f, 0.255f, 0.224f, 0.88f);
+    const ImVec4 header   = light ? ImVec4(0.855f, 0.831f, 0.776f, 1.0f) : ImVec4(0.133f, 0.165f, 0.141f, 1.0f);
+    const ImVec4 headerH  = light ? ImVec4(0.784f, 0.765f, 0.718f, 1.0f) : ImVec4(0.173f, 0.220f, 0.180f, 1.0f);
 
     c[ImGuiCol_Text]                  = text;
     c[ImGuiCol_TextDisabled]          = textDim;
@@ -137,16 +176,16 @@ void EditorUI::applyEditorStyle() {
     c[ImGuiCol_PopupBg]               = bgPopup;
     c[ImGuiCol_Border]                = border;
     c[ImGuiCol_BorderShadow]          = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_FrameBg]               = ImVec4(0.051f, 0.051f, 0.059f, 1.0f);   // Ultra dark input fields (#0D0D0F)
-    c[ImGuiCol_FrameBgHovered]        = ImVec4(0.086f, 0.086f, 0.098f, 1.0f);   // Slightly lighter on hover (#161619)
-    c[ImGuiCol_FrameBgActive]         = ImVec4(0.118f, 0.118f, 0.133f, 1.0f);
-    c[ImGuiCol_TitleBg]               = ImVec4(0.140f, 0.140f, 0.150f, 1.0f);
-    c[ImGuiCol_TitleBgActive]         = ImVec4(0.170f, 0.170f, 0.180f, 1.0f);
-    c[ImGuiCol_TitleBgCollapsed]      = ImVec4(0.120f, 0.120f, 0.130f, 1.0f);
-    c[ImGuiCol_MenuBarBg]             = ImVec4(0.160f, 0.160f, 0.170f, 1.0f);
-    c[ImGuiCol_ScrollbarBg]           = ImVec4(0.130f, 0.130f, 0.140f, 1.0f);
-    c[ImGuiCol_ScrollbarGrab]         = ImVec4(0.300f, 0.300f, 0.320f, 1.0f);
-    c[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.400f, 0.400f, 0.420f, 1.0f);
+    c[ImGuiCol_FrameBg]               = light ? ImVec4(0.941f, 0.925f, 0.890f, 1.0f) : ImVec4(0.047f, 0.063f, 0.051f, 1.0f);
+    c[ImGuiCol_FrameBgHovered]        = light ? headerH : ImVec4(0.122f, 0.165f, 0.133f, 1.0f);
+    c[ImGuiCol_FrameBgActive]         = light ? bg : ImVec4(0.153f, 0.200f, 0.161f, 1.0f);
+    c[ImGuiCol_TitleBg]               = bgChild;
+    c[ImGuiCol_TitleBgActive]         = light ? headerH : ImVec4(0.110f, 0.149f, 0.118f, 1.0f);
+    c[ImGuiCol_TitleBgCollapsed]      = bgChild;
+    c[ImGuiCol_MenuBarBg]             = light ? bg : ImVec4(0.082f, 0.102f, 0.086f, 1.0f);
+    c[ImGuiCol_ScrollbarBg]           = bgChild;
+    c[ImGuiCol_ScrollbarGrab]         = light ? ImVec4(0.596f, 0.576f, 0.529f, 1.0f) : ImVec4(0.208f, 0.255f, 0.224f, 1.0f);
+    c[ImGuiCol_ScrollbarGrabHovered]  = light ? ImVec4(0.431f, 0.424f, 0.392f, 1.0f) : ImVec4(0.306f, 0.373f, 0.322f, 1.0f);
     c[ImGuiCol_ScrollbarGrabActive]   = accent;
     c[ImGuiCol_CheckMark]             = accent;
     c[ImGuiCol_SliderGrab]            = accent;
@@ -160,23 +199,32 @@ void EditorUI::applyEditorStyle() {
     c[ImGuiCol_Separator]             = border;
     c[ImGuiCol_SeparatorHovered]      = accent;
     c[ImGuiCol_SeparatorActive]       = accentH;
-    c[ImGuiCol_ResizeGrip]            = ImVec4(0.26f, 0.26f, 0.28f, 1.0f);
+    c[ImGuiCol_ResizeGrip]            = light ? ImVec4(0.596f, 0.576f, 0.529f, 1.0f) : border;
     c[ImGuiCol_ResizeGripHovered]     = accent;
     c[ImGuiCol_ResizeGripActive]      = accentH;
     c[ImGuiCol_Tab]                   = header;
-    c[ImGuiCol_TabHovered]            = accentH;
-    c[ImGuiCol_TabSelected]           = accent;
+    c[ImGuiCol_TabHovered]            = headerH;
+    c[ImGuiCol_TabSelected]           = light ? accentA : header;
     c[ImGuiCol_TabSelectedOverline]   = accent;
-    c[ImGuiCol_TabDimmed]             = ImVec4(0.180f, 0.180f, 0.190f, 1.0f);
-    c[ImGuiCol_TabDimmedSelected]     = ImVec4(0.220f, 0.220f, 0.235f, 1.0f);
+    c[ImGuiCol_TabDimmed]             = bgChild;
+    c[ImGuiCol_TabDimmedSelected]     = header;
     c[ImGuiCol_DockingPreview]        = ImVec4(accent.x, accent.y, accent.z, 0.7f);
-    c[ImGuiCol_DockingEmptyBg]        = ImVec4(0.12f, 0.12f, 0.13f, 1.0f);
+    c[ImGuiCol_DockingEmptyBg]        = bgChild;
+    c[ImGuiCol_PlotLines]             = textDim;
+    c[ImGuiCol_PlotLinesHovered]      = accentH;
+    c[ImGuiCol_PlotHistogram]         = accent;
+    c[ImGuiCol_PlotHistogramHovered]  = accentH;
+    c[ImGuiCol_TableHeaderBg]         = header;
+    c[ImGuiCol_TableBorderStrong]     = border;
+    c[ImGuiCol_TableBorderLight]      = ImVec4(border.x, border.y, border.z, 0.55f);
+    c[ImGuiCol_TableRowBg]            = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_TableRowBgAlt]         = light ? ImVec4(0.710f, 0.690f, 0.643f, 0.28f) : ImVec4(0.412f, 0.714f, 0.184f, 0.07f);
     c[ImGuiCol_TextSelectedBg]        = ImVec4(accent.x, accent.y, accent.z, 0.35f);
     c[ImGuiCol_DragDropTarget]        = accent;
     c[ImGuiCol_NavHighlight]          = accent;
-    c[ImGuiCol_NavWindowingHighlight] = ImVec4(1.0f, 1.0f, 1.0f, 0.70f);
-    c[ImGuiCol_NavWindowingDimBg]     = ImVec4(0.0f, 0.0f, 0.0f, 0.50f);
-    c[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.0f, 0.0f, 0.0f, 0.50f);
+    c[ImGuiCol_NavWindowingHighlight] = ImVec4(accent.x, accent.y, accent.z, 0.70f);
+    c[ImGuiCol_NavWindowingDimBg]     = light ? ImVec4(0, 0, 0, 0.18f) : ImVec4(0, 0, 0, 0.48f);
+    c[ImGuiCol_ModalWindowDimBg]      = light ? ImVec4(0, 0, 0, 0.24f) : ImVec4(0, 0, 0, 0.58f);
 }
 
 // Main draw entry point
@@ -740,15 +788,19 @@ void EditorUI::drawAboutWindow() {
 
     if (ImGui::BeginPopupModal("About SaidaEngine", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Spacing();
-        
-        // Brand logo/accent banner using C++11 raw string literal
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.290f, 0.565f, 0.851f, 1.0f)); // Brand Accent Blue
-        ImGui::Text(R"(  _  _           _   ___            _            )");
-        ImGui::Text(R"( | \| |___ __ _| |_| __|_ _  __ _ (_)_ _  ___    )");
-        ImGui::Text(R"( | .` / -_) \ /|  _| _|| ' \/ _` || | ' \/ -_)   )");
-        ImGui::Text(R"( |_|\_\___/_\_\ \__|___|_||_\__, | |_|_|_\___|   )");
-        ImGui::Text(R"(                            |___/                )");
-        ImGui::PopStyleColor();
+
+        brandingImages_.beginFrame();
+        ImTextureID logo = 0;
+        if (ctxResources_)
+            logo = brandingImages_.get(ctxResources_->device(), assetPath("assets/editor/saida_logo.png"));
+
+        if (logo) {
+            constexpr float logoWidth = 96.0f;
+            constexpr float logoHeight = logoWidth * 306.0f / 256.0f;
+            const float availableWidth = ImGui::GetContentRegionAvail().x;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availableWidth - logoWidth) * 0.5f);
+            ImGui::Image(logo, ImVec2(logoWidth, logoHeight));
+        }
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -933,7 +985,7 @@ void EditorUI::drawBuildWindow(Project* project) {
                 // Meta Quest (XR) Settings
                 ImGui::SeparatorText("Meta Quest (XR) Settings");
                 
-                ImGui::TextColored(ImVec4(0.290f, 0.565f, 0.851f, 1.0f), "[Meta OpenXR Core SDK v62.0]");
+                ImGui::TextColored(ImVec4(0.412f, 0.714f, 0.184f, 1.0f), "[Meta OpenXR Core SDK v62.0]");
                 ImGui::Spacing();
 
                 ImGui::Text("Graphics API: Vulkan 1.3 (Stereo Foveated Rendering)");
@@ -1412,6 +1464,18 @@ void EditorUI::drawSettingsWindow(Project* project) {
 
     ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Settings", &showSettingsWindow_)) {
+        ImGui::SeparatorText("Appearance");
+        int themeIndex = useLightTheme_ ? 1 : 0;
+        const char* themeNames[] = { "Saida Dark", "Saida Light" };
+        ImGui::SetNextItemWidth(220.0f);
+        if (ImGui::Combo("Editor Theme", &themeIndex, themeNames, 2)) {
+            useLightTheme_ = themeIndex == 1;
+            applyEditorStyle();
+            saveLightThemePreference(useLightTheme_);
+        }
+        ImGui::TextDisabled("Saida Dark is the default. The 3D viewport stays dark in both themes.");
+        ImGui::Spacing();
+
         if (!project || !project->isLoaded()) {
             ImGui::TextDisabled("No project loaded.");
             ImGui::End();

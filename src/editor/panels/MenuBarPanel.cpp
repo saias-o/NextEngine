@@ -143,8 +143,7 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
         }
 
         if (ImGui::BeginMenu("Settings")) {
-            bool hasProject = project && project->isLoaded();
-            if (ImGui::MenuItem("Settings", nullptr, false, hasProject)) {
+            if (ImGui::MenuItem("Settings")) {
                 editor->showSettingsWindow_ = true;
             }
             ImGui::EndMenu();
@@ -178,25 +177,39 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
 
             bool sceneActive = !editor->app_->isPlayMode();
             if (sceneActive) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.29f, 0.56f, 0.85f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.62f, 0.90f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Button, editor->useLightTheme_
+                    ? ImVec4(0.710f, 0.690f, 0.643f, 1.0f)
+                    : ImVec4(0.725f, 0.922f, 0.063f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, editor->useLightTheme_
+                    ? ImVec4(0.784f, 0.765f, 0.718f, 1.0f)
+                    : ImVec4(0.816f, 0.965f, 0.357f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, editor->useLightTheme_
+                    ? ImVec4(0.106f, 0.310f, 0.125f, 1.0f)
+                    : ImVec4(0.067f, 0.075f, 0.059f, 1.0f));
             }
-            if (ImGui::SmallButton("Scene##mode")) { 
+            if (ImGui::Button("Scene##mode")) {
                 editor->app_->setPlayMode(false);
             }
-            if (sceneActive) ImGui::PopStyleColor(2);
+            if (sceneActive) ImGui::PopStyleColor(3);
 
             ImGui::SameLine();
 
             bool playActive = editor->app_->isPlayMode();
             if (playActive) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.70f, 0.35f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.78f, 0.40f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Button, editor->useLightTheme_
+                    ? ImVec4(0.710f, 0.690f, 0.643f, 1.0f)
+                    : ImVec4(0.310f, 0.706f, 0.290f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, editor->useLightTheme_
+                    ? ImVec4(0.784f, 0.765f, 0.718f, 1.0f)
+                    : ImVec4(0.412f, 0.714f, 0.184f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, editor->useLightTheme_
+                    ? ImVec4(0.106f, 0.310f, 0.125f, 1.0f)
+                    : ImVec4(0.067f, 0.075f, 0.059f, 1.0f));
             }
-            if (ImGui::SmallButton("Play##mode")) { 
+            if (ImGui::Button("Play##mode")) {
                 editor->app_->setPlayMode(true);
             }
-            if (playActive) ImGui::PopStyleColor(2);
+            if (playActive) ImGui::PopStyleColor(3);
         }
 
         ImGui::EndMainMenuBar();
