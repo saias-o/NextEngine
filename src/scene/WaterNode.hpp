@@ -15,9 +15,11 @@ public:
 
     SAIDA_REFLECT_NODE(WaterNode, "Water")
 
+    enum class Style { Realistic = 0, Cartoon = 1 };
     // Analytic shore shape used by the water shaders.
     enum class ShoreMode { None = 0, Beach = 1, Lake = 2 };
 
+    Style style = Style::Realistic;
     float size = 300.0f;          // half-extent of the plane (m)
 
     glm::vec3 deepColor{0.01f, 0.07f, 0.11f};   // refracted body tint
@@ -72,6 +74,26 @@ public:
     float swashSpeed = 1.2f;       // how fast the wash runs up and back
     float swashAmount = 0.4f;      // extra run-up reach added by each wash (depth metres)
     float waveFlatten = 1.5f;      // waves flatten below this depth (m) so they don't clip the sand
+
+    float cartoonWaveScale = 0.22f;
+    float cartoonWaveSpeed = 1.0f;
+    float cartoonWaveAngle = 20.0f;
+    float cartoonWaveSharpness = 0.65f;
+
+    float cartoonDetailScale = 0.55f;
+    float cartoonDetailSpeed = 0.45f;
+    float cartoonDetailAngle = 115.0f;
+    float cartoonDetailStrength = 0.35f;
+
+    float cartoonColorSteps = 4.0f;
+    float cartoonColorContrast = 0.28f;
+    float cartoonCrestWidth = 0.10f;
+    float cartoonCrestIntensity = 0.65f;
+
+    float cartoonShoreFrequency = 0.16f;
+    float cartoonShoreIrregularity = 0.25f;
+    float cartoonShoreSharpness = 0.10f;
+    float cartoonShoreBands = 2.0f;
 };
 
 } // namespace saida

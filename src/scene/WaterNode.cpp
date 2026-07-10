@@ -3,8 +3,9 @@
 namespace saida {
 
 void WaterNode::describe(reflect::TypeBuilder<WaterNode>& t) {
-    t.doc("Animated water plane (default SaidaEngine water). Position = centre/height, "
-          "size = half-extent. Procedural waves + Fresnel sky reflection, no textures.");
+    t.doc("Parametric water plane with realistic and flat cartoon styles.");
+    t.property("style", &WaterNode::style)
+        .enumValues({"Realistic", "Cartoon"});
     t.property("size", &WaterNode::size).range(1.0, 5000.0).tooltip("half-extent of the plane (m)");
     t.property("deepColor", &WaterNode::deepColor).tooltip("refracted body tint");
     t.property("foamColor", &WaterNode::foamColor).tooltip("wave-crest foam colour");
@@ -71,6 +72,23 @@ void WaterNode::describe(reflect::TypeBuilder<WaterNode>& t) {
         .tooltip("extra run-up reach per wash (depth m)");
     t.property("waveFlatten", &WaterNode::waveFlatten).range(0.05, 10.0)
         .tooltip("waves flatten below this depth so they don't clip the sand");
+
+    t.property("cartoonWaveScale", &WaterNode::cartoonWaveScale).range(0.01, 4.0);
+    t.property("cartoonWaveSpeed", &WaterNode::cartoonWaveSpeed).range(-10.0, 10.0);
+    t.property("cartoonWaveAngle", &WaterNode::cartoonWaveAngle).range(0.0, 360.0);
+    t.property("cartoonWaveSharpness", &WaterNode::cartoonWaveSharpness).range(0.0, 0.98);
+    t.property("cartoonDetailScale", &WaterNode::cartoonDetailScale).range(0.01, 8.0);
+    t.property("cartoonDetailSpeed", &WaterNode::cartoonDetailSpeed).range(-10.0, 10.0);
+    t.property("cartoonDetailAngle", &WaterNode::cartoonDetailAngle).range(0.0, 360.0);
+    t.property("cartoonDetailStrength", &WaterNode::cartoonDetailStrength).range(0.0, 1.0);
+    t.property("cartoonColorSteps", &WaterNode::cartoonColorSteps).range(1.0, 12.0);
+    t.property("cartoonColorContrast", &WaterNode::cartoonColorContrast).range(0.0, 1.0);
+    t.property("cartoonCrestWidth", &WaterNode::cartoonCrestWidth).range(0.0, 0.5);
+    t.property("cartoonCrestIntensity", &WaterNode::cartoonCrestIntensity).range(0.0, 1.0);
+    t.property("cartoonShoreFrequency", &WaterNode::cartoonShoreFrequency).range(0.0, 4.0);
+    t.property("cartoonShoreIrregularity", &WaterNode::cartoonShoreIrregularity).range(0.0, 2.0);
+    t.property("cartoonShoreSharpness", &WaterNode::cartoonShoreSharpness).range(0.005, 1.0);
+    t.property("cartoonShoreBands", &WaterNode::cartoonShoreBands).range(1.0, 4.0);
 }
 
 } // namespace saida

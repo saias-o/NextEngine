@@ -702,9 +702,16 @@ les golden tests ; web : à exécuter sur le runtime WASM.)
 
 Livrables :
 
-- [~] schémas : `ClipView` fait (`.sclip` schema 1 : source, name, range, loop,
-      speed, events — `scene/animation/ClipView.{hpp,cpp}`) ; restent
-      `RigAsset`, `RetargetProfile`, `AnimationGraph`, `AnimationSequence` ;
+- [~] schémas : `ClipView` (`.sclip` schema 1 : source, name, range, loop,
+      speed, events), `AnimationGraph` (`.sgraph` schema 1 : paramètres typés
+      float/int/bool — trigger réservé —, clips alias→clé, états play/loop,
+      initial, transitions conditionnelles + crossfade ; validation §12.3 :
+      doublons, références inconnues, états inaccessibles ; `build()` compile
+      vers `AnimStateMachine`, le DSL `AnimGraphParser` devient legacy) et
+      `RetargetProfile` (`.sretarget` schema 1 : map os cible→piste source
+      au-dessus du `RetargetMap`, couverture avec warnings §8.1,
+      `fromAutoMap` = suggestion éditable) ; restent `RigAsset` et
+      `AnimationSequence` ;
 - [x] identifiants stables des sous-assets glTF/BVH : clé `fichier#clip`
       (l'`AssetRegistry` redonne le même `AssetID` à clé identique après
       reimport) ; `ClipView.source` référence cette clé ;
@@ -716,9 +723,11 @@ Livrables :
       `ClipView::instantiate` — aucune duplication de clés) ; validation contre
       la source (plages, événements) ; reste l'UI éditeur de création ;
 - [~] premiers outils : `saida_tool inspect-anim` (rigs/clips/durées JSON,
-      headless) et `saida_tool validate-clipview` (résolution de la clé source
-      + diagnostics, exit 0/1) ; restent les outils MCP éditeur
-      (`list/inspect/create_clip_view/validate` côté McpBridge).
+      headless), `saida_tool validate-clipview` et `saida_tool
+      validate-animgraph` (résolution des clés sources + diagnostics,
+      exit 0/1) ; restent les outils MCP éditeur
+      (`list/inspect/create_clip_view/validate` côté McpBridge — reportés
+      volontairement après le cœur).
 
 Critère de sortie : plusieurs vues éditables utilisent une seule animation
 source et survivent à un reimport sans changement d'identité. (Testé :

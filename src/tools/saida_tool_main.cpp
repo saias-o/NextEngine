@@ -7,6 +7,7 @@
 #include "scene/BVHLoader.hpp"
 #include "scene/GLTFLoader.hpp"
 #include "scene/Scene.hpp"
+#include "scene/animation/AnimGraphAsset.hpp"
 #include "scene/animation/AnimationClip.hpp"
 #include "scene/animation/ClipView.hpp"
 #include "scene/animation/Rig.hpp"
@@ -49,6 +50,7 @@ int usage(std::ostream& out) {
            "  saida_tool apply-ops <scene.json> <ops.json> [--out <file>] [--skip-invalid]\n"
            "  saida_tool inspect-anim <file.gltf|.glb|.bvh> [--pretty]\n"
            "  saida_tool validate-clipview <view.sclip> [--root <dir>] [--pretty]\n"
+           "  saida_tool validate-animgraph <graph.sgraph> [--root <dir>] [--pretty]\n"
            "  saida_tool help\n"
            "\n"
            "Commands:\n"
@@ -83,6 +85,10 @@ int usage(std::ostream& out) {
            "                    'source' sub-asset key against --root (default: the\n"
            "                    .sclip's directory) and validate ranges/events against\n"
            "                    the source clip. Prints {ok, diagnostics}; exit 0/1.\n"
+           "  validate-animgraph Parse a .sgraph animation graph, check internal\n"
+           "                    consistency (states, clip aliases, parameters,\n"
+           "                    reachability) and resolve every referenced clip against\n"
+           "                    --root. Prints {ok, diagnostics}; exit 0/1.\n"
            "\n"
            "Files may be '-' for stdin. Exit codes: 0 ok, 1 invalid input, 2 usage/IO.\n";
     return kExitUsage;
@@ -649,6 +655,86 @@ int cmdValidateClipView(const std::vector<std::string>& args) {
     return saida::hasErrors(diags) ? kExitInvalid : kExitOk;
 }
 
+int cmdValidateAnimGraph(const std::vector<std::string>& args) {
+    std::string path;
+    std::string root;
+    bool pretty = false;
+    for (size_t i = 0; i < args.size(); ++i) {
+        const std::string& a = args[i];
+        if (a == "--pretty") {
+            pretty = true;
+        } else if (a == "--root") {
+            if (i + 1 >= args.size()) {
+                std::cerr << "validate-animgraph: --root needs a directory\n";
+                return kExitUsage;
+            }
+            root = args[++i];
+        } else if (!a.empty() && a[0] == '-' && a != "-") {
+            std::cerr << "validate-animgraph: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (path.empty()) {
+            path = a;
+        } else {
+            std::cerr << "validate-animgraph: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (path.empty()) {
+        std::cerr << "validate-animgraph: missing <graph.sgraph>\n";
+        return kExitUsage;
+    }
+    if (root.empty()) root = std::filesystem::path(path).parent_path().string();
+
+    auto parsed = saida::AnimGraphAsset::loadFile(path);
+    std::vector<saida::AssetDiagnostic> diags = std::move(parsed.diagnostics);
+
+    if (parsed.ok) {
+        auto more = parsed.graph.validate();
+        diags.insert(diags.end(), more.begin(), more.end());
+
+        // Résolution des clips référencés : chaque fichier source n'est chargé
+        // qu'une fois, la clé "fichier#clip" doit pointer un clip existant.
+        std::unordered_map<std::string, saida::GltfAnimationData> cache;
+        for (const auto& ref : parsed.graph.clips) {
+            const size_t hash = ref.key.rfind('#');
+            const std::string relFile =
+                hash == std::string::npos ? ref.key : ref.key.substr(0, hash);
+            const std::string clipName = hash == std::string::npos ? "" : ref.key.substr(hash + 1);
+            const std::string sourcePath = (std::filesystem::path(root) / relFile).string();
+
+            auto it = cache.find(sourcePath);
+            if (it == cache.end()) {
+                saida::GltfAnimationData data;
+                std::string error;
+                if (!loadAnimationFile(sourcePath, data, error)) {
+                    diags.push_back({"animgraph.clip.unresolved",
+                                     saida::AssetDiagnostic::Severity::Error,
+                                     "/clips/" + ref.alias, error});
+                    continue;
+                }
+                it = cache.emplace(sourcePath, std::move(data)).first;
+            }
+
+            bool found = false;
+            for (const auto& name : it->second.clipNames) {
+                if (clipName.empty() || name == clipName) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                diags.push_back({"animgraph.clip.clip_missing",
+                                 saida::AssetDiagnostic::Severity::Error, "/clips/" + ref.alias,
+                                 "'" + relFile + "' has no clip named '" + clipName + "'"});
+        }
+    }
+
+    json report = {{"ok", !saida::hasErrors(diags)}, {"diagnostics", json::array()}};
+    for (const auto& d : diags) report["diagnostics"].push_back(d.toJson());
+    std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
+    return saida::hasErrors(diags) ? kExitInvalid : kExitOk;
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return usage(std::cerr);
@@ -683,6 +769,9 @@ int main(int argc, char** argv) {
     }
     if (command == "validate-clipview") {
         return cmdValidateClipView(rest);
+    }
+    if (command == "validate-animgraph") {
+        return cmdValidateAnimGraph(rest);
     }
 
     std::cerr << "saida_tool: unknown command '" << command << "'\n\n";

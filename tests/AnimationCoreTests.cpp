@@ -1,10 +1,14 @@
 #include "scene/BVHLoader.hpp"
 #include "scene/GLTFLoader.hpp"
+#include "scene/animation/AnimBlackboard.hpp"
+#include "scene/animation/AnimGraphAsset.hpp"
+#include "scene/animation/AnimStateMachine.hpp"
 #include "scene/animation/AnimationClip.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/ClipNode.hpp"
 #include "scene/animation/ClipView.hpp"
 #include "scene/animation/Pose.hpp"
+#include "scene/animation/RetargetProfile.hpp"
 #include "scene/animation/Rig.hpp"
 
 #include <cassert>
@@ -310,6 +314,113 @@ void testClipViewsShareSource() {
     }
 }
 
+// L'asset .sgraph : roundtrip, diagnostics de cohérence, et compilation vers
+// une machine d'états jouable qui transitionne sur paramètre.
+void testAnimGraphAsset() {
+    const std::string path = std::string(SAIDA_FIXTURE_DIR) + "/animation/locomotion.sgraph";
+    auto parsed = saida::AnimGraphAsset::loadFile(path);
+    assert(parsed.ok);
+    assert(parsed.graph.states.size() == 2);
+    assert(parsed.graph.validate().empty());
+
+    // Roundtrip : toJson → parse reproduit le graphe.
+    auto reparsed = saida::AnimGraphAsset::parse(parsed.graph.toJson());
+    assert(reparsed.ok);
+    assert(reparsed.graph.initial == "Idle");
+    assert(reparsed.graph.transitions.size() == 2);
+    assert(reparsed.graph.transitions[0].when.size() == 1);
+
+    // Diagnostics : la fixture cassée accumule les erreurs attendues.
+    auto bad = saida::AnimGraphAsset::loadFile(std::string(SAIDA_FIXTURE_DIR) +
+                                               "/animation/bad_graph.sgraph");
+    assert(bad.ok);  // parse passe, c'est validate() qui rejette
+    auto badDiags = bad.graph.validate();
+    assert(hasDiagnostic(badDiags, "animgraph.state.unknown_clip"));
+    assert(hasDiagnostic(badDiags, "animgraph.initial.unknown"));
+    assert(hasDiagnostic(badDiags, "animgraph.transition.unknown_to"));
+    assert(hasDiagnostic(badDiags, "animgraph.condition.unknown_param"));
+
+    // Build : le graphe compilé transitionne quand le paramètre change.
+    saida::GltfAnimationData data;
+    std::string error;
+    assert(saida::GLTFLoader::loadAnimationData(
+        std::string(SAIDA_FIXTURE_DIR) + "/animation/two_bone.gltf", data, &error));
+    const saida::AnimationClip* clip = data.clips[0].get();
+
+    std::vector<saida::AssetDiagnostic> buildDiags;
+    auto sm = parsed.graph.build(
+        [&](const std::string& key) {
+            return key == "two_bone.gltf#Mix" ? clip : nullptr;
+        },
+        *data.rigs[0], &buildDiags);
+    assert(sm);
+    assert(buildDiags.empty());
+
+    saida::AnimBlackboard bb;
+    sm->setBlackboard(&bb);
+    sm->update(0.016f);
+    assert(sm->currentState() && sm->currentState()->name() == "Idle");
+
+    bb.setFloat("speed", 1.0f);
+    sm->update(0.016f);
+    assert(sm->currentState() && sm->currentState()->name() == "Run");
+
+    // Les transitions ne sont pas réévaluées pendant un crossfade : on laisse
+    // les 0.2 s se terminer avant de redescendre.
+    sm->update(0.3f);
+    bb.setFloat("speed", 0.0f);
+    sm->update(0.016f);
+    assert(sm->currentState() && sm->currentState()->name() == "Idle");
+
+    // Un clip non résolu produit un diagnostic, pas un crash.
+    std::vector<saida::AssetDiagnostic> missing;
+    auto none = parsed.graph.build([](const std::string&) { return nullptr; },
+                                   *data.rigs[0], &missing);
+    assert(!none);
+    assert(hasDiagnostic(missing, "animgraph.build.clip_unresolved"));
+}
+
+// Le profil .sretarget : roundtrip, couverture, auto-map comme suggestion.
+void testRetargetProfile() {
+    saida::Rig rig;
+    rig.addBone("Hips", -1, glm::mat4(1.0f));
+    rig.addBone("Spine", 0, glm::mat4(1.0f));
+    std::string rigError;
+    assert(rig.finalize(&rigError));
+
+    // Clip source aux noms Mixamo : une piste pour Hips seulement.
+    saida::AnimationClip clip("mocap", 1.0f);
+    auto track = std::make_unique<saida::TypedAnimTrack<glm::vec3>>();
+    track->target = saida::TrackTarget::Translation;
+    track->timestamps = {0.0f, 1.0f};
+    track->values = {{0, 0, 0}, {0, 1, 0}};
+    clip.addTrack("mixamorig:Hips", std::move(track));
+
+    // L'auto-map devient un profil éditable (plan §8.1).
+    auto profile = saida::RetargetProfile::fromAutoMap(rig, clip);
+    assert(profile.entries.size() == 1);
+    assert(profile.entries[0].first == "Hips");
+    assert(profile.entries[0].second == "mixamorig:Hips");
+
+    // Roundtrip.
+    auto reparsed = saida::RetargetProfile::parse(profile.toJson());
+    assert(reparsed.ok);
+    assert(reparsed.profile.toRetargetMap().resolve("Hips") == "mixamorig:Hips");
+    assert(reparsed.profile.toRetargetMap().resolve("Spine") == "Spine");  // identité
+
+    // Couverture : Spine n'a pas de piste source → warning, pas erreur.
+    auto diags = reparsed.profile.validate(&rig, &clip);
+    assert(!saida::hasErrors(diags));
+    assert(hasDiagnostic(diags, "retarget.coverage.unmapped_bone"));
+
+    // Erreurs : os inconnu du rig, piste inconnue du clip.
+    saida::RetargetProfile broken;
+    broken.entries.emplace_back("Tail", "mixamorig:Tail");
+    auto brokenDiags = broken.validate(&rig, &clip);
+    assert(hasDiagnostic(brokenDiags, "retarget.map.unknown_bone"));
+    assert(hasDiagnostic(brokenDiags, "retarget.map.unknown_track"));
+}
+
 } // namespace
 
 int main() {
@@ -323,5 +434,7 @@ int main() {
     testClipViewRoundtrip();
     testClipViewValidation();
     testClipViewsShareSource();
+    testAnimGraphAsset();
+    testRetargetProfile();
     return 0;
 }

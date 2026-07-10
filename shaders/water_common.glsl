@@ -16,7 +16,11 @@ struct GpuWater {
     vec4 shoreColor; // rgb shallow-water colour, w=edgeFadeDepth
     vec4 shoreGeom;  // beach: (dirX,dirZ,waterlineDist,slope) | lake: (centreX,centreZ,radius,slope)
     vec4 shoreTune;  // x=foamWidth, y=swashSpeed, z=swashAmount, w=waveFlattenDepth
-    vec4 shoreMode;  // x=mode (0 none/1 beach/2 lake), y=shoreFoamIntensity, z/w reserved
+    vec4 shoreMode;  // x=mode, y=shoreFoamIntensity, z=style
+    vec4 cartoonWave;
+    vec4 cartoonDetail;
+    vec4 cartoonLook;
+    vec4 cartoonShore;
 };
 
 layout(set = 1, binding = 0) uniform WaterBlock {

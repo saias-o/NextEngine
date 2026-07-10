@@ -71,7 +71,13 @@ void WaterFeature::createPipelines(const RenderContext& ctx) {
     desc.blendMode = rhi::BlendMode::Alpha;
     desc.pushConstantSize = sizeof(Push);
     desc.viewMask = ctx.viewMask;
-    pipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
+    realisticPipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
+
+    desc.vertPath = shaderPath(ctx.stereo()
+        ? "multiview.cartoon_water.vert.spv"
+        : "cartoon_water.vert.spv");
+    desc.fragPath = shaderPath("cartoon_water.frag.spv");
+    cartoonPipeline_ = std::make_unique<Pipeline>(ctx.device, desc);
 }
 
 void WaterFeature::record(FrameContext& fc) {
@@ -103,7 +109,18 @@ void WaterFeature::record(FrameContext& fc) {
             g.shoreGeom = glm::vec4(c.x, c.z, w->lakeRadius, w->shoreSlope);
         }
         g.shoreTune = glm::vec4(w->foamWidth, w->swashSpeed, w->swashAmount, w->waveFlatten);
-        g.shoreMode = glm::vec4(static_cast<float>(mode), w->shoreFoam, 0.0f, 0.0f);
+        g.shoreMode = glm::vec4(static_cast<float>(mode), w->shoreFoam,
+                               static_cast<float>(w->style), 0.0f);
+        g.cartoonWave = glm::vec4(w->cartoonWaveScale, w->cartoonWaveSpeed,
+                                  w->cartoonWaveAngle, w->cartoonWaveSharpness);
+        g.cartoonDetail = glm::vec4(w->cartoonDetailScale, w->cartoonDetailSpeed,
+                                    w->cartoonDetailAngle, w->cartoonDetailStrength);
+        g.cartoonLook = glm::vec4(w->cartoonColorSteps, w->cartoonColorContrast,
+                                  w->cartoonCrestWidth, w->cartoonCrestIntensity);
+        g.cartoonShore = glm::vec4(w->cartoonShoreFrequency,
+                                   w->cartoonShoreIrregularity,
+                                   w->cartoonShoreSharpness,
+                                   w->cartoonShoreBands);
     }
     if (waterCount == 0) return;
 
@@ -111,15 +128,24 @@ void WaterFeature::record(FrameContext& fc) {
                                               static_cast<uint32_t>(ubos_.size()) - 1);
     ubos_[frame]->write(packed.data(), sizeof(GpuWater) * waterCount);
 
-    fc.pass.setPipeline(*pipeline_);
-    fc.pass.setBindGroup(0, *fc.globalSet);
-    fc.pass.setBindGroup(1, *sets_[frame]);
+    auto drawStyle = [&](WaterNode::Style style, Pipeline& pipeline, uint32_t vertexCount) {
+        bool bound = false;
+        for (uint32_t i = 0; i < waterCount; ++i) {
+            if (static_cast<int>(packed[i].shoreMode.z + 0.5f) != static_cast<int>(style)) continue;
+            if (!bound) {
+                fc.pass.setPipeline(pipeline);
+                fc.pass.setBindGroup(0, *fc.globalSet);
+                fc.pass.setBindGroup(1, *sets_[frame]);
+                bound = true;
+            }
+            Push pc{i, fc.time};
+            fc.pass.setPushConstants(&pc, sizeof(Push));
+            fc.pass.draw(vertexCount);
+        }
+    };
 
-    for (uint32_t i = 0; i < waterCount; ++i) {
-        Push pc{i, fc.time};
-        fc.pass.setPushConstants(&pc, sizeof(Push));
-        fc.pass.draw(kGridRes * kGridRes * 6);
-    }
+    drawStyle(WaterNode::Style::Realistic, *realisticPipeline_, kGridRes * kGridRes * 6);
+    drawStyle(WaterNode::Style::Cartoon, *cartoonPipeline_, kCartoonVertexCount);
 }
 
 } // namespace saida

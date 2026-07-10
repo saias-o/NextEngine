@@ -55,6 +55,8 @@ set(SHADERS
     ${SHADER_DIR}/skybox.frag
     ${SHADER_DIR}/water.vert
     ${SHADER_DIR}/water.frag
+    ${SHADER_DIR}/cartoon_water.vert
+    ${SHADER_DIR}/cartoon_water.frag
     ${SHADER_DIR}/particle_render.vert
     ${SHADER_DIR}/particle_render.frag
     ${SHADER_DIR}/particle_init.comp
@@ -97,7 +99,7 @@ set(WEB_READY_SHADERS
     voxelize.vert voxelize.frag
     debug_line.vert debug_line.frag
     ui.vert ui.frag
-    water.vert water.frag
+    water.vert water.frag cartoon_water.vert cartoon_water.frag
     web_canvas_world.vert web_canvas_world.frag
     particle_render.vert particle_render.frag
     culling.comp
@@ -143,7 +145,8 @@ foreach(SHADER ${SHADERS})
     # gl_ViewIndex get a -DMULTIVIEW variant. The scene vertex picks per-eye
     # camera matrices; the skybox fragment picks per-eye inverse view-proj.
     if(SHADER_NAME STREQUAL "shader.vert" OR SHADER_NAME STREQUAL "skybox.frag"
-       OR SHADER_NAME STREQUAL "water.vert" OR SHADER_NAME STREQUAL "outline.vert"
+       OR SHADER_NAME STREQUAL "water.vert" OR SHADER_NAME STREQUAL "cartoon_water.vert"
+       OR SHADER_NAME STREQUAL "outline.vert"
        OR SHADER_NAME STREQUAL "particle_render.vert")
         set(MULTIVIEW_OUTPUT ${SHADER_OUT_DIR}/multiview.${SHADER_NAME}.spv)
         add_custom_command(
@@ -348,6 +351,8 @@ add_library(saida_engine STATIC
     src/scene/animation/AnimationClip.cpp
     src/scene/animation/Rig.cpp
     src/scene/animation/ClipView.cpp
+    src/scene/animation/AnimGraphAsset.cpp
+    src/scene/animation/RetargetProfile.cpp
     src/scene/animation/ClipNode.cpp
     src/scene/animation/BlendNode.cpp
     src/scene/animation/AnimStateMachine.cpp
@@ -576,6 +581,14 @@ if (BUILD_TESTING)
     target_compile_definitions(saida_animation_core_tests PRIVATE
         SAIDA_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures")
     add_test(NAME saida_animation_core_tests COMMAND $<TARGET_FILE:saida_animation_core_tests>)
+
+    add_executable(saida_cartoon_water_tests tests/CartoonWaterTests.cpp)
+    saida_test_target(saida_cartoon_water_tests)
+    target_link_libraries(saida_cartoon_water_tests PRIVATE saida_engine)
+    target_compile_definitions(saida_cartoon_water_tests PRIVATE
+        SAIDA_PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
+    target_compile_options(saida_cartoon_water_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_cartoon_water_tests COMMAND $<TARGET_FILE:saida_cartoon_water_tests>)
 
     # Headless animation benchmark (PLAN_ANIMATION.md §14.4). The ctest entry runs
     # a tiny workload as a smoke test; run it manually with real sizes to measure.
@@ -816,6 +829,18 @@ if (BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/animation/bad_range.sclip
     )
     set_tests_properties(saida_tool_validate_clipview_invalid PROPERTIES WILL_FAIL TRUE)
+
+    add_test(
+        NAME saida_tool_validate_animgraph_valid
+        COMMAND $<TARGET_FILE:saida_tool> validate-animgraph
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/animation/locomotion.sgraph
+    )
+    add_test(
+        NAME saida_tool_validate_animgraph_invalid
+        COMMAND $<TARGET_FILE:saida_tool> validate-animgraph
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/animation/bad_graph.sgraph
+    )
+    set_tests_properties(saida_tool_validate_animgraph_invalid PROPERTIES WILL_FAIL TRUE)
 endif()
 
 if (WIN32)

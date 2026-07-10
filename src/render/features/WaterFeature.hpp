@@ -33,7 +33,11 @@ private:
         glm::vec4 shoreColor;  // rgb shallow colour, w edgeFadeDepth
         glm::vec4 shoreGeom;   // beach(dirX,dirZ,waterlineDist,slope) | lake(cx,cz,radius,slope)
         glm::vec4 shoreTune;   // foamWidth, swashSpeed, swashAmount, waveFlattenDepth
-        glm::vec4 shoreMode;   // mode, shoreFoamIntensity, reserved, reserved
+        glm::vec4 shoreMode;   // mode, shoreFoamIntensity, style, reserved
+        glm::vec4 cartoonWave;
+        glm::vec4 cartoonDetail;
+        glm::vec4 cartoonLook;
+        glm::vec4 cartoonShore;
     };
 
     // Tiny per-draw push: which water entry + the animation clock.
@@ -43,10 +47,12 @@ private:
     };
 
     static constexpr uint32_t kGridRes = 128;  // must match RES in water.vert
+    static constexpr uint32_t kCartoonVertexCount = 6;
     static constexpr uint32_t kMaxWaters = 8;  // must match WATER_MAX in water_common.glsl
 
     rhi::Device* device_ = nullptr;
-    std::unique_ptr<Pipeline> pipeline_;
+    std::unique_ptr<Pipeline> realisticPipeline_;
+    std::unique_ptr<Pipeline> cartoonPipeline_;
 
     // set 1: a UBO array of GpuWater, double-buffered per frame-in-flight.
     std::unique_ptr<rhi::BindGroupLayout> setLayout_;
