@@ -45,7 +45,7 @@
 
 ## Étape 16 — Export Web (WASM + WebGPU)
 
-- [x] **Terminé (16.0 → 16.6).** RHI compile-time Vulkan/WebGPU, 33 shaders transpilés en WGSL (naga, desktop identique au bit près), backend `rhi/webgpu/*` complet, le vrai `Renderer` tourne dans le navigateur (shadows, DDGI, eau, skybox, particules GPU, AO, bloom, tonemap), validé sur la scène de référence BeachDemo (rendu identique au desktop), packaging brotli (~213 Ko). Design : [PLAN_WEB_EXPORT.md](PLAN_WEB_EXPORT.md), [PLAN_RHI.md](PLAN_RHI.md).
+- [x] **Terminé (16.0 → 16.6).** RHI compile-time Vulkan/WebGPU, 33 shaders transpilés en WGSL (naga, desktop identique au bit près), backend `rhi/webgpu/*` complet, le vrai `Renderer` tourne dans le navigateur (shadows, DDGI, eau, skybox, particules GPU, AO, bloom, tonemap), validé sur la scène de référence BeachDemo (rendu identique au desktop), packaging brotli (~213 Ko).
 - [ ] Brancher l'export GLB meshopt sur l'UI d'import de l'éditeur (le packager web est déjà branché)
 - [ ] Textures KTX2 / Basis Universal (transcodage GPU)
 - [ ] Fetch + IDBFS streaming (remplacement du MEMFS preload pour les gros jeux)
