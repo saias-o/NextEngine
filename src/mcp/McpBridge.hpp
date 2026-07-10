@@ -1,12 +1,6 @@
 #pragma once
 
-// MCP protocol + tool surface for SaidaEngine. Speaks JSON-RPC MCP
-// (initialize / tools/list / tools/call) over the McpServer transport and turns
-// tool calls into reflection-validated, undoable scene edits routed through the
-// editor's command history. This is "the hands of the LLM".
-//
-// Editor/dev only (saida_editor, SAIDA_ENABLE_MCP). Friend of EditorUI so tools reach
-// the document + command chokepoint without widening EditorUI's public API.
+// MCP edits use the editor command history so validation and undo share one path.
 
 #include "nlohmann/json_fwd.hpp"
 
