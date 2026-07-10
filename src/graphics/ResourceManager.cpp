@@ -37,9 +37,10 @@ struct MaterialData {
     uint32_t normalTexIdx;
     uint32_t mrTexIdx;
     uint32_t emissiveTexIdx;
-    uint32_t pad;
+    uint32_t materialType;
     glm::vec4 emissive;
 };
+static_assert(sizeof(MaterialData) == 64, "MaterialData must match shader.frag std430 layout");
 }
 
 ResourceManager::ResourceManager(rhi::Device& device, AssetRegistry* registry)
@@ -229,7 +230,8 @@ uint32_t ResourceManager::ensureBindlessTextureIndex(Texture* texture) {
 
 uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const glm::vec4& emissive,
                                                float metallic, float roughness, float ao,
-                                               uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx, uint32_t emissiveIdx) {
+                                               uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx,
+                                               uint32_t emissiveIdx, MaterialType type) {
 #ifdef SAIDA_RHI_WEBGPU
     (void)baseColor;
     (void)emissive;
@@ -240,6 +242,7 @@ uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const
     (void)normalIdx;
     (void)mrIdx;
     (void)emissiveIdx;
+    (void)type;
     return 0;
 #else
     if (!globalMaterialBuffer_) return 0;
@@ -260,11 +263,15 @@ uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const
     data.normalTexIdx = normalIdx;
     data.mrTexIdx = mrIdx;
     data.emissiveTexIdx = emissiveIdx;
-    data.pad = 0;
+    data.materialType = static_cast<uint32_t>(type);
 
     void* mapped = globalMaterialBuffer_->mapped();
     if (mapped) {
-        memcpy(static_cast<char*>(mapped) + (index * sizeof(MaterialData)), &data, sizeof(MaterialData));
+        const uint64_t offset = uint64_t(index) * sizeof(MaterialData);
+        memcpy(static_cast<char*>(mapped) + offset, &data, sizeof(MaterialData));
+        // VMA allocations may be non-coherent; publishing material data without
+        // this flush made newly-created bindless materials platform-dependent.
+        globalMaterialBuffer_->flush(sizeof(MaterialData), offset);
     }
 
     return index;

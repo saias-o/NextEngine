@@ -107,7 +107,8 @@ Material::Material(rhi::Device& device, ResourceManager& manager, const Material
             manager.ensureBindlessTextureIndex(albedo_),
             manager.ensureBindlessTextureIndex(normalMap_),
             manager.ensureBindlessTextureIndex(metallicRoughnessMap_),
-            manager.ensureBindlessTextureIndex(emissiveMap_)
+            manager.ensureBindlessTextureIndex(emissiveMap_),
+            desc.type
         );
     }
 }

@@ -48,6 +48,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <unordered_map>
 #include "graphics/ComputePipeline.hpp"
 #include "graphics/Texture.hpp"
 #include <stdexcept>
@@ -57,8 +58,6 @@ namespace saida {
 namespace {
 constexpr int kMaxFramesInFlight = 2;
 
-// Directional shadows cover a fixed-size world box centered on the origin; large
-// enough for the demo scene, easy to grow later (or fit to the camera/scene AABB).
 constexpr float kShadowOrthoHalfSize = 25.0f;
 constexpr float kShadowOrthoDepth = 100.0f;
 constexpr uint32_t kAllTextureLayers = ~0u;
@@ -68,7 +67,6 @@ glm::vec3 safeUp(const glm::vec3& dir) {
     return std::abs(dir.y) > 0.99f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
 }
 
-// Light-space view-proj for a directional light (orthographic), flipped for Vulkan.
 glm::mat4 directionalMatrix(const glm::vec3& dir, float distance) {
     float halfSize = distance;
     float depth = distance * 4.0f;
@@ -80,18 +78,6 @@ glm::mat4 directionalMatrix(const glm::vec3& dir, float distance) {
     proj[1][1] *= -1.0f;
     return proj * view;
 }
-
-// Indirect draw args layout (shared by the GPU-driven path and, on web, the
-// still-compiled-but-dormant draw-list gather). Backend-neutral.
-struct DrawIndexedIndirectCommand {
-    uint32_t indexCount = 0;
-    uint32_t instanceCount = 0;
-    uint32_t firstIndex = 0;
-    int32_t vertexOffset = 0;
-    uint32_t firstInstance = 0;
-};
-static_assert(sizeof(DrawIndexedIndirectCommand) == 20,
-              "DrawIndexedIndirectCommand must match Vulkan/WebGPU indirect args");
 
 #ifndef SAIDA_RHI_WEBGPU
 struct WebCanvasWorldDraw {
@@ -117,9 +103,7 @@ std::vector<WebCanvasWorldDraw> collectWorldWebCanvasDraws(Scene& scene, glm::ve
 }
 #endif
 
-// DDGI volume configuration scaled by the GPU's quality tier. Denser probes +
-// more rays = finer, cleaner GI; lower tiers (mobile/Quest) stay cheap. Same
-// world coverage, centered on the origin.
+// Quality tiers trade GI fidelity for a fixed world coverage.
 GIVolumeDesc giDescForTier(QualityTier tier) {
     GIVolumeDesc d;
     switch (tier) {
@@ -138,7 +122,6 @@ GIVolumeDesc giDescForTier(QualityTier tier) {
             d.raysPerProbe = 48; d.voxelResolution = 64;
             break;
     }
-    // Center the lattice on the world origin.
     d.origin = -0.5f * glm::vec3(d.counts - 1) * d.spacing;
     return d;
 }
@@ -197,6 +180,15 @@ Renderer::Renderer(rhi::Device& device, rhi::Surface& swapchain, Window& window,
 #ifdef SAIDA_RHI_WEBGPU
     (void)imgui;
 #else
+    gpuDrivenAvailable_ = device_.capabilities().descriptorIndexing &&
+                          device_.capabilities().multiDrawIndirect &&
+                          resources_.globalMaterialSetLayout() != VK_NULL_HANDLE &&
+                          resources_.globalMaterialSet() != VK_NULL_HANDLE;
+    if (gpuDrivenAvailable_) {
+        createGpuDrivenBuffers();
+        createCullingPipeline();
+        Log::info("Renderer: GPU-driven scene submission enabled.");
+    }
     uiRenderer_ = std::make_unique<UIRenderer>(device_, resources_, rhi::vulkan::fromVk(swapchain_->colorFormat()));
 #endif
     createHdrResources();
@@ -214,13 +206,6 @@ Renderer::Renderer(rhi::Device& device, rhi::Surface& swapchain, Window& window,
                                      resources_.materialSetLayout(), *globalSetLayout_);
     createGlobalDescriptorSets();
     gpuProfiler_ = std::make_unique<GpuProfiler>(device_, kMaxFramesInFlight);
-
-    if (device_.capabilities().descriptorIndexing && device_.capabilities().multiDrawIndirect) {
-#ifndef SAIDA_RHI_WEBGPU
-        createGpuDrivenBuffers();
-        createCullingPipeline();
-#endif
-    }
 }
 
 #ifdef SAIDA_RHI_WEBGPU
@@ -247,14 +232,12 @@ Renderer::Renderer(VulkanDevice& device, Window& window, ResourceManager& resour
     : device_(device), window_(&window), resources_(resources),
       xrMode_(true), xrExtent_(xrEyeExtent), xrColorFormat_(xrColorFormat),
       xrViewCount_(xrViewCount) {
-    // Shared rendering machinery (identical to desktop) ...
     createGlobalSetLayout();
     createUniformBuffers();
     shadowMap_ = std::make_unique<ShadowMap>(device_);
     gi_ = std::make_unique<GIVolume>(device_, giDescForTier(device_.capabilities().tier),
                                      resources_.materialSetLayout(), *globalSetLayout_);
     createGlobalDescriptorSets();
-    // ... plus the XR-specific stereo targets + multiview pipelines.
     createXrTargets();
     createXrPipelines();
     gpuProfiler_ = std::make_unique<GpuProfiler>(device_, kMaxFramesInFlight);
@@ -272,7 +255,6 @@ Renderer::~Renderer() {
 #endif
     cleanupHdrResources();
 
-    // pipeline_, culling groups and the buffers are torn down by their destructors.
 }
 
 void Renderer::setViewportRect(glm::vec2 position, glm::vec2 size) {
@@ -305,12 +287,9 @@ rhi::Rect2D Renderer::activeRenderRect() const {
 }
 
 void Renderer::createGlobalSetLayout() {
-    // Set 0: camera + lighting + shadow array + bone SSBO + DDGI atlases + env map.
 #ifdef SAIDA_RHI_WEBGPU
     using WE = rhi::webgpu::BindGroupLayoutEntry;
     using Dim = rhi::webgpu::TextureDim;
-    // Fragment|Compute mirrors the desktop layout: the DDGI trace compute pass
-    // reads the voxel grid, shadows and environment through this same set 0.
     const auto FC = rhi::ShaderStages::Fragment | rhi::ShaderStages::Compute;
     const auto V = rhi::ShaderStages::Vertex;
     std::vector<WE> entries;
@@ -358,49 +337,36 @@ void Renderer::createGlobalSetLayout() {
 }
 
 void Renderer::createPipeline(rhi::BindGroupLayout& materialSetLayout) {
-    bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
-
-    std::string vertShader = useGpuDriven ? "bindless.shader.vert.spv" : "shader.vert.spv";
-    std::string fragShader = useGpuDriven ? "bindless.shader.frag.spv" : "shader.frag.spv";
-
-    // Classic path: set 0 = global, set 1 = material.
-    // Dormant GPU-driven path: set 0 = global, set 1 = bindless material data
-    // (raw layout, out of RHI scope until 16.4's caps.bindless fallback), set 2
-    // = culling/instance data.
-    rhi::Pipeline::Desc desc;
-    desc.vertPath = shaderPath(vertShader);
-    desc.fragPath = shaderPath(fragShader);
-    desc.colorFormats = {rhi::Format::RGBA16Float};
-    // Same value as the Vulkan backend's legacy default range; the web backend
-    // has no default (0 = no push block) and needs it to emit @group(3).
-    desc.pushConstantSize = sizeof(PushConstants);
+    rhi::Pipeline::Desc classic;
+    classic.vertPath = shaderPath("shader.vert.spv");
+    classic.fragPath = shaderPath("shader.frag.spv");
+    classic.colorFormats = {rhi::Format::RGBA16Float};
+    // WebGPU needs an explicit size to emit its group-3 push-constant emulation.
+    classic.pushConstantSize = sizeof(PushConstants);
 #ifdef SAIDA_RHI_WEBGPU
-    desc.depthFormat = swapchain_->depthFormat();
-    desc.samples = swapchain_->samples();
+    classic.depthFormat = swapchain_->depthFormat();
+    classic.samples = swapchain_->samples();
 #else
-    desc.depthFormat = rhi::vulkan::fromVk(swapchain_->depthFormat());
-    desc.samples = sampleCountValue(swapchain_->samples());
+    classic.depthFormat = rhi::vulkan::fromVk(swapchain_->depthFormat());
+    classic.samples = sampleCountValue(swapchain_->samples());
 #endif
+    classic.bindGroupLayouts = {globalSetLayout_.get(), &materialSetLayout};
+    pipeline_ = std::make_unique<rhi::Pipeline>(device_, classic);
+
+    rhi::Pipeline::Desc unlit = classic;
+    unlit.fragPath = shaderPath("unlit.frag.spv");
+    unlitPipeline_ = std::make_unique<rhi::Pipeline>(device_, unlit);
+
 #ifndef SAIDA_RHI_WEBGPU
-    if (useGpuDriven) {
-        desc.bindGroupLayouts = {globalSetLayout_.get(), resources_.globalMaterialSetLayout(),
-                                 cullingSetLayout_.get()};
-    } else {
-#endif
-        desc.bindGroupLayouts = {globalSetLayout_.get(), &materialSetLayout};
-#ifndef SAIDA_RHI_WEBGPU
+    if (gpuDrivenAvailable_) {
+        rhi::Pipeline::Desc gpuDriven = classic;
+        gpuDriven.vertPath = shaderPath("bindless.shader.vert.spv");
+        gpuDriven.fragPath = shaderPath("bindless.shader.frag.spv");
+        gpuDriven.bindGroupLayouts = {globalSetLayout_.get(), resources_.globalMaterialSetLayout(),
+                                      cullingSetLayout_.get()};
+        gpuDrivenPipeline_ = std::make_unique<rhi::Pipeline>(device_, gpuDriven);
     }
 #endif
-    pipeline_ = std::make_unique<rhi::Pipeline>(device_, desc);
-
-    // Unlit variant: same vertex shader + identical set layout and push-constant
-    // range as Lit, only the fragment differs, so the draw loop swaps pipelines
-    // per material with no other change. Always built against the classic
-    // (non-bindless) 2-set layout used by the per-object draw path.
-    desc.vertPath = shaderPath("shader.vert.spv");
-    desc.fragPath = shaderPath("unlit.frag.spv");
-    desc.bindGroupLayouts = {globalSetLayout_.get(), &materialSetLayout};
-    unlitPipeline_ = std::make_unique<rhi::Pipeline>(device_, desc);
 }
 
 void Renderer::createWebCanvasWorldPipeline() {
@@ -434,8 +400,7 @@ void Renderer::createUniformBuffers() {
     uniformBuffers_.reserve(kMaxFramesInFlight);
     lightingBuffers_.reserve(kMaxFramesInFlight);
     boneMatricesBuffers_.reserve(kMaxFramesInFlight);
-    // Allocate a 4MB buffer for global bone matrices (enough for 65536 bones)
-    const uint64_t kBoneBufferSize = 4 * 1024 * 1024;
+    const uint64_t kBoneBufferSize = uint64_t(kMaxBoneMatrices) * sizeof(glm::mat4);
     for (int i = 0; i < kMaxFramesInFlight; i++) {
         uniformBuffers_.push_back(std::make_unique<rhi::Buffer>(device_, sizeof(UniformBufferObject),
             rhi::BufferUsage::Uniform, MemoryUsage::HostVisible));
@@ -452,8 +417,8 @@ void Renderer::createGpuDrivenBuffers() {
     drawCommandBuffers_.reserve(kMaxFramesInFlight);
     countBuffers_.reserve(kMaxFramesInFlight);
 
-    uint64_t instanceBufferSize = kMaxInstances * sizeof(InstanceData);
-    uint64_t drawCommandBufferSize = kMaxInstances * sizeof(DrawIndexedIndirectCommand);
+    uint64_t instanceBufferSize = kMaxInstances * sizeof(gpu_driven::InstanceData);
+    uint64_t drawCommandBufferSize = kMaxInstances * sizeof(gpu_driven::DrawIndexedIndirectCommand);
 
     for (int i = 0; i < kMaxFramesInFlight; i++) {
         instanceBuffers_.push_back(std::make_unique<rhi::Buffer>(device_, instanceBufferSize,
@@ -476,35 +441,37 @@ void Renderer::createCullingPipeline() {
 #ifdef SAIDA_RHI_WEBGPU
     return;
 #else
-    // Set 0 for the cull dispatch: 0=instances (read, also vertex-fetched by the
-    // bindless draw), 1=original draw commands (read), 2=count (write),
-    // 3=culled draw commands (write).
     cullingSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
         std::vector<rhi::BindGroupLayoutEntry>{
-            {0, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute | rhi::ShaderStages::Vertex},
-            {1, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute},
-            {2, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute},
-            {3, rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute},
+            {gpu_driven::binding(gpu_driven::CullingBinding::Instances),
+             rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute | rhi::ShaderStages::Vertex},
+            {gpu_driven::binding(gpu_driven::CullingBinding::OriginalDrawCommands),
+             rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute},
+            {gpu_driven::binding(gpu_driven::CullingBinding::DrawCount),
+             rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute},
+            {gpu_driven::binding(gpu_driven::CullingBinding::CulledDrawCommands),
+             rhi::BindingType::StorageBuffer, rhi::ShaderStages::Compute},
         });
 
     cullingGroups_.resize(kMaxFramesInFlight);
     for (int i = 0; i < kMaxFramesInFlight; i++) {
-        rhi::BindGroupEntry instances{0, instanceBuffers_[i].get()};
-        rhi::BindGroupEntry originalDraws{1, originalDrawCommandBuffers_[i].get()};
-        rhi::BindGroupEntry count{2, countBuffers_[i].get()};
-        rhi::BindGroupEntry culledDraws{3, drawCommandBuffers_[i].get()};
+        rhi::BindGroupEntry instances{gpu_driven::binding(gpu_driven::CullingBinding::Instances),
+                                       instanceBuffers_[i].get()};
+        rhi::BindGroupEntry originalDraws{
+            gpu_driven::binding(gpu_driven::CullingBinding::OriginalDrawCommands),
+            originalDrawCommandBuffers_[i].get()};
+        rhi::BindGroupEntry count{gpu_driven::binding(gpu_driven::CullingBinding::DrawCount),
+                                   countBuffers_[i].get()};
+        rhi::BindGroupEntry culledDraws{
+            gpu_driven::binding(gpu_driven::CullingBinding::CulledDrawCommands),
+            drawCommandBuffers_[i].get()};
         cullingGroups_[i] = std::make_unique<rhi::BindGroup>(*cullingSetLayout_,
             std::vector<rhi::BindGroupEntry>{instances, originalDraws, count, culledDraws});
     }
 
-    struct CullingPushConstants {
-        glm::vec4 frustumPlanes[6];
-        uint32_t instanceCount;
-    };
-
     std::vector<rhi::vulkan::BindGroupLayoutRef> plLayouts = {*cullingSetLayout_};
     cullingPipeline_ = std::make_unique<ComputePipeline>(device_, shaderPath("culling.comp.spv"),
-        plLayouts, sizeof(CullingPushConstants));
+        plLayouts, sizeof(gpu_driven::CullingPushConstants));
 #endif
 }
 
@@ -530,9 +497,8 @@ void Renderer::rebuildGlobalSet(int frame) {
     rhi::BindGroupEntry boneEntry;
     boneEntry.binding = 3;
     boneEntry.buffer = boneMatricesBuffers_[frame].get();
-    boneEntry.range = 4 * 1024 * 1024; // 4MB
+    boneEntry.range = uint64_t(kMaxBoneMatrices) * sizeof(glm::mat4);
 
-    // Atlases live in GENERAL (compute-written, fragment-sampled).
     rhi::BindGroupEntry giIrradianceEntry;
     giIrradianceEntry.binding = 4;
     giIrradianceEntry.view = gi_->irradianceView();
@@ -773,9 +739,7 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
             gl.spotShadow.y = std::cos(glm::radians(light->spotOuterAngle));
         }
 
-        // Directional and spot lights cast 2D shadow maps (point would need a
-        // cube map). Shadows stay live in both realtime and baked GI modes.
-        bool wantsShadow = shadowsEnabled_ && light->castShadows &&
+    bool wantsShadow = shadowsEnabled_ && light->castShadows &&
             (light->type == LightType::Directional || light->type == LightType::Spot);
         if (wantsShadow && shadowCount_ < kMaxShadowCasters) {
             glm::mat4 lightVP = light->type == LightType::Directional
@@ -793,7 +757,6 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
     int mode = settings.lightingMode == LightingMode::Baked ? 1 : 0;
     ubo.counts = glm::ivec4(lightCount, mode, 0, 0);
 
-    // DDGI volume params — sampled identically in realtime and baked modes.
     const GIVolumeDesc& gd = gi_->desc();
     ubo.giOrigin  = glm::vec4(gd.origin, settings.giEnabled ? 1.0f : 0.0f);
     ubo.giSpacing = glm::vec4(gd.spacing, settings.giIntensity);  // w = indirect multiplier
@@ -809,20 +772,40 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
         settings.skyboxRotation);
 
     auto getAnimatorInParent = [](Node* n) -> Animator* {
-#ifdef SAIDA_RHI_WEBGPU
-        (void)n;
-        return nullptr;
-#else
         while (n) {
             if (auto* a = n->getBehaviour<Animator>()) return a;
             n = n->parent();
         }
         return nullptr;
-#endif
     };
 
     uint32_t currentBoneCount = 0;
     glm::mat4* boneData = static_cast<glm::mat4*>(boneMatricesBuffers_[currentFrame_]->mapped());
+    std::unordered_map<Animator*, int32_t> animatorBoneOffsets;
+
+    // Share one SSBO slice per Animator and reject overflow.
+    auto boneOffsetFor = [&](MeshNode* node) -> int32_t {
+        Animator* animator = getAnimatorInParent(node);
+        if (!animator || animator->globalPose().skinningMatrices.empty()) return -1;
+
+        auto found = animatorBoneOffsets.find(animator);
+        if (found != animatorBoneOffsets.end()) return found->second;
+
+        const auto& matrices = animator->globalPose().skinningMatrices;
+        const uint32_t matrixCount = static_cast<uint32_t>(matrices.size());
+        if (matrixCount > kMaxBoneMatrices || currentBoneCount > kMaxBoneMatrices - matrixCount) {
+            Log::warn("Renderer: bone matrix buffer exhausted; rendering one skeleton unskinned this frame.");
+            animatorBoneOffsets.emplace(animator, -1);
+            return -1;
+        }
+
+        const int32_t offset = static_cast<int32_t>(currentBoneCount);
+        std::memcpy(&boneData[currentBoneCount], matrices.data(),
+                    size_t(matrixCount) * sizeof(glm::mat4));
+        currentBoneCount += matrixCount;
+        animatorBoneOffsets.emplace(animator, offset);
+        return offset;
+    };
 
     shadowDraws_.clear();
     if (shadowCount_ > 0) {
@@ -839,77 +822,13 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
         }
     }
 
-    bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
-    if (useGpuDriven) {
-        InstanceData* instanceData = static_cast<InstanceData*>(instanceBuffers_[currentFrame_]->mapped());
-        auto* drawData = static_cast<DrawIndexedIndirectCommand*>(originalDrawCommandBuffers_[currentFrame_]->mapped());
-        
-        uint32_t instanceCount = 0;
-        for (MeshNode* node : scene.meshes()) {
-            if (Mesh* m = node->mesh()) {
-                if (Material* mat = node->material()) {
-                    if (instanceCount >= kMaxInstances) break;
-                    
-                    const glm::mat4& world = node->worldTransform();
-                    float maxScale = std::max({
-                        glm::length(glm::vec3(world[0])),
-                        glm::length(glm::vec3(world[1])),
-                        glm::length(glm::vec3(world[2]))
-                    });
-                    const float localRadius = glm::length(m->bounds().extent()) * 0.5f;
-                    float radius = (localRadius > 0.001f ? localRadius : 0.866f) * maxScale;
-                    
-                    int32_t boneOffset = -1;
-                    if (Animator* anim = getAnimatorInParent(node)) {
-                        if (!anim->globalPose().skinningMatrices.empty()) {
-                            const auto& mats = anim->globalPose().skinningMatrices;
-                            boneOffset = currentBoneCount;
-                            std::memcpy(&boneData[boneOffset], mats.data(), mats.size() * sizeof(glm::mat4));
-                            currentBoneCount += static_cast<uint32_t>(mats.size());
-                        }
-                    }
+    frameDraws_.gpuCandidates.clear();
+    frameDraws_.visibleDraws.clear();
+    gpuFrameActive_ = gpuDrivenAvailable_;
+    currentInstanceCount_ = 0;
 
-                    InstanceData& inst = instanceData[instanceCount];
-                    inst.model = world;
-                    inst.boundingSphere = glm::vec4(0.0f, 0.0f, 0.0f, radius);
-                    inst.materialIndex = mat->bindlessIndex();
-                    inst.boneOffset = boneOffset;
-                    
-                    DrawIndexedIndirectCommand& draw = drawData[instanceCount];
-                    auto alloc = m->geometryAllocation();
-                    draw.indexCount = alloc.indexCount;
-                    draw.instanceCount = 1;
-                    draw.firstIndex = alloc.firstIndex;
-                    draw.vertexOffset = alloc.vertexOffset;
-                    draw.firstInstance = instanceCount;
-                    
-                    static int frameCounter = 0;
-                    if (frameCounter % 600 == 0) {
-                        Log::info("GPU Draw: instance=", instanceCount, ", indices=", draw.indexCount, 
-                                  ", vOffset=", draw.vertexOffset, ", fIndex=", draw.firstIndex, 
-                                  ", matIdx=", inst.materialIndex, ", boneOffset=", boneOffset);
-                    }
-                    if (instanceCount == 0) { frameCounter++; }
-                    
-                    instanceCount++;
-                }
-            }
-        }
-        
-        currentInstanceCount_ = instanceCount;
-        
-        if (instanceCount > 0) {
-            instanceBuffers_[currentFrame_]->flush(instanceCount * sizeof(InstanceData));
-            originalDrawCommandBuffers_[currentFrame_]->flush(instanceCount * sizeof(DrawIndexedIndirectCommand));
-        }
-        if (currentBoneCount > 0) {
-            boneMatricesBuffers_[currentFrame_]->flush(currentBoneCount * sizeof(glm::mat4));
-        }
-        
-        // Clear countBuffer to 0 using CPU map (since it's HostVisible? Wait, countBuffers_ is MemoryUsage::GpuOnly!  
-        // We must use vkCmdFillBuffer or similar in the command buffer!)
-    } else {
-        currentDraws_.clear();
+    {
+        SAIDA_PROFILE_SCOPE("Renderer/PrepareDrawLists");
 
         for (MeshNode* node : scene.meshes()) {
             if (Mesh* m = node->mesh()) {
@@ -935,9 +854,9 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
                             glm::length(glm::vec3(world[1])),
                             glm::length(glm::vec3(world[2]))
                         });
-                        const float localRadius = glm::length(m->bounds().extent()) * 0.5f;
+                        const float localRadius = glm::length(drawMesh->bounds().extent()) * 0.5f;
                         float radius = (localRadius > 0.001f ? localRadius : 0.866f) * maxScale;
-                        glm::vec3 center = glm::vec3(world * glm::vec4(m->bounds().center(), 1.0f));
+                        glm::vec3 center = glm::vec3(world * glm::vec4(drawMesh->bounds().center(), 1.0f));
                         for (int i = 0; i < 6; ++i) {
                             if (glm::dot(glm::vec3(cullFrustum->planes[i]), center) +
                                     cullFrustum->planes[i].w < -radius) {
@@ -947,40 +866,93 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
                         }
                     }
 
-                    if (inside) {
-                        int32_t boneOffset = -1;
-                        if (Animator* anim = getAnimatorInParent(node)) {
-                            if (!anim->globalPose().skinningMatrices.empty()) {
-                                const auto& mats = anim->globalPose().skinningMatrices;
-                                boneOffset = currentBoneCount;
-                                std::memcpy(&boneData[boneOffset], mats.data(), mats.size() * sizeof(glm::mat4));
-                                currentBoneCount += static_cast<uint32_t>(mats.size());
-                            }
-                        }
+    const int32_t boneOffset = (gpuFrameActive_ || inside) ? boneOffsetFor(node) : -1;
+                    SceneDraw draw{drawMesh, drawMat, node, world, node->castShadows(),
+                                   boneOffset, drawMat->desc().type};
 
-                        currentDraws_.push_back(SceneDraw{drawMesh, drawMat, node, world, node->castShadows(),
-                                                          boneOffset, drawMat->desc().type});
+                    if (gpuFrameActive_) {
+                        if (frameDraws_.gpuCandidates.size() == kMaxInstances) {
+                            gpuFrameActive_ = false;
+                            frameDraws_.gpuCandidates.clear();
+                            Log::warn("Renderer: GPU-driven instance capacity exceeded; using CPU submission for this frame.");
+                        } else {
+                            frameDraws_.gpuCandidates.push_back(draw);
+                        }
                     }
+                    if (inside) frameDraws_.visibleDraws.push_back(draw);
                 }
             }
         }
 
         if (currentBoneCount > 0) {
-            boneMatricesBuffers_[currentFrame_]->flush(currentBoneCount * sizeof(glm::mat4));
+            boneMatricesBuffers_[currentFrame_]->flush(uint64_t(currentBoneCount) * sizeof(glm::mat4));
         }
 
-        // Sort draws by material to minimize Vulkan pipeline descriptor set binds
-        std::sort(currentDraws_.begin(), currentDraws_.end(),
-                  [](const SceneDraw& a, const SceneDraw& b) {
-                      if (a.materialType != b.materialType) return a.materialType < b.materialType;
-                      return a.material < b.material;
-                  });
+        if (gpuFrameActive_) {
+            uploadGpuDrivenDraws();
+        } else {
+            std::sort(frameDraws_.visibleDraws.begin(), frameDraws_.visibleDraws.end(),
+                      [](const SceneDraw& a, const SceneDraw& b) {
+                          if (a.materialType != b.materialType) return a.materialType < b.materialType;
+                          return a.material < b.material;
+                      });
+        }
     }
 
-    SAIDA_PROFILE_COUNTER("Renderer/VisibleDraws", currentDraws_.size());
+    SAIDA_PROFILE_COUNTER("Renderer/VisibleDraws", frameDraws_.visibleDraws.size());
+    SAIDA_PROFILE_COUNTER("Renderer/SubmissionCandidates", frameDraws_.gpuCandidates.size());
+    SAIDA_PROFILE_COUNTER("Renderer/GpuDrivenActive", gpuFrameActive_ ? 1 : 0);
     SAIDA_PROFILE_COUNTER("Renderer/ShadowCasters", shadowDraws_.size());
     SAIDA_PROFILE_COUNTER("Renderer/ShadowLights", shadowCount_);
     SAIDA_PROFILE_COUNTER("Animation/BoneMatrices", currentBoneCount);
+}
+
+const std::vector<SceneDraw>& Renderer::featureDraws() const {
+    return frameDraws_.visibleDraws;
+}
+
+void Renderer::uploadGpuDrivenDraws() {
+#ifdef SAIDA_RHI_WEBGPU
+    // WebGPU currently uses the descriptor-per-material path. This function is
+    // unreachable there, but keeping the no-op makes the frame representation
+    // backend-neutral.
+    gpuFrameActive_ = false;
+#else
+    const auto& candidates = frameDraws_.gpuCandidates;
+    currentInstanceCount_ = static_cast<uint32_t>(candidates.size());
+    if (currentInstanceCount_ == 0) return;
+
+    auto* instances = static_cast<gpu_driven::InstanceData*>(
+        instanceBuffers_[currentFrame_]->mapped());
+    auto* commands = static_cast<gpu_driven::DrawIndexedIndirectCommand*>(
+        originalDrawCommandBuffers_[currentFrame_]->mapped());
+
+    for (uint32_t index = 0; index < currentInstanceCount_; ++index) {
+        const SceneDraw& draw = candidates[index];
+        const Aabb& bounds = draw.mesh->bounds();
+
+        gpu_driven::InstanceData& instance = instances[index];
+        instance.model = draw.world;
+        instance.boundingSphere = glm::vec4(
+            bounds.center(),
+            std::max(glm::length(bounds.extent()) * 0.5f, 0.001f));
+        instance.materialIndex = draw.material->bindlessIndex();
+        instance.boneOffset = draw.boneOffset;
+
+        const GeometryAllocation allocation = draw.mesh->geometryAllocation();
+        gpu_driven::DrawIndexedIndirectCommand& command = commands[index];
+        command.indexCount = allocation.indexCount;
+        command.instanceCount = 1;
+        command.firstIndex = allocation.firstIndex;
+        command.vertexOffset = allocation.vertexOffset;
+        command.firstInstance = index;
+    }
+
+    instanceBuffers_[currentFrame_]->flush(
+        uint64_t(currentInstanceCount_) * sizeof(gpu_driven::InstanceData));
+    originalDrawCommandBuffers_[currentFrame_]->flush(
+        uint64_t(currentInstanceCount_) * sizeof(gpu_driven::DrawIndexedIndirectCommand));
+#endif
 }
 
 void Renderer::createHdrResources() {
@@ -1250,7 +1222,7 @@ void Renderer::recordMeshDraws(rhi::RenderPassEncoder& rp, rhi::Pipeline* firstP
     rp.setPipeline(*activePipeline);
     rp.setBindGroup(0, globalSet);
 
-    for (const auto& draw : currentDraws_) {
+    for (const auto& draw : frameDraws_.visibleDraws) {
         rhi::Pipeline* want = scenePipelineFor(draw.materialType);
 #ifdef SAIDA_ENABLE_XR
         if (xrMultiview)
@@ -1333,11 +1305,9 @@ void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera,
     camera.setPerspective(glm::radians(camera.fovDegrees), aspect,
                           camera.nearZ, camera.farZ);
     
-    // Store camera frustum for culling compute shader
     cameraFrustum_ = camera.getFrustum();
 
     UniformBufferObject ubo{};
-    // Mono: both eye slots hold the same matrix (the desktop shader uses index 0).
     ubo.view[0] = ubo.view[1] = camera.view();
     ubo.proj[0] = ubo.proj[1] = camera.projection();
     uniformBuffers_[frame]->write(&ubo, sizeof(ubo));
@@ -1350,7 +1320,6 @@ void Renderer::updateUniformBuffer(uint32_t frame, Scene& scene, Camera& camera,
 
 void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageIndex,
                                    Scene& scene, const Camera& camera) {
-    // GPU profiling is a desktop-only escape hatch on the raw command buffer.
 #ifdef SAIDA_RHI_WEBGPU
     auto cmd = encoder.handle();
 #else
@@ -1367,9 +1336,6 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
 #endif
     }
 
-    // GI update (skipped when the volume is frozen in baked mode): re-voxelize the
-    // scene albedo, then trace/blend/border the DDGI probes. The lighting pass
-    // samples the result. When frozen, the previously-baked atlas is kept.
     if (giUpdateThisFrame_) {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/DDGI");
         gi_->voxelize(encoder, scene, gpuProfiler);
@@ -1380,35 +1346,24 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
 #endif
     }
 
-    bool useGpuDriven = false; // TEMPORARILY DISABLED FOR DEBUGGING
-
-    if (useGpuDriven && currentInstanceCount_ > 0) {
-        // 1. Clear the count buffer, visible to the cull dispatch.
+    if (gpuFrameActive_ && currentInstanceCount_ > 0) {
         encoder.fillBuffer(*countBuffers_[currentFrame_], 0, sizeof(uint32_t), 0);
         encoder.transferToComputeBarrier();
 
-        // 2. Cull dispatch: writes the culled draw commands + count.
         rhi::ComputePassEncoder cp = encoder.beginComputePass();
         cp.setPipeline(*cullingPipeline_);
         cp.setBindGroup(0, *cullingGroups_[currentFrame_]);
 
-        struct CullingPushConstants {
-            glm::vec4 frustumPlanes[6];
-            uint32_t instanceCount;
-        } pc;
+        gpu_driven::CullingPushConstants pc{};
         for (int i = 0; i < 6; ++i) pc.frustumPlanes[i] = cameraFrustum_.planes[i];
         pc.instanceCount = currentInstanceCount_;
         cp.setPushConstants(&pc, sizeof(pc));
         cp.dispatch((currentInstanceCount_ + 63) / 64);
         cp.end();
 
-        // Culled commands/count -> indirect draw reads.
         encoder.computeToIndirectBarrier();
     }
 
-    // Shadow passes: render scene depth from each caster's POV before the main
-    // pass. The caster list is not camera-culled, so off-camera casters still
-    // cast into view; each shadow layer just reuses it.
     {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "GPU/Shadows");
         recordShadowPasses(encoder);
@@ -1419,9 +1374,7 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
     rhi::Rect2D renderRect = activeRenderRect();
     rhi::Extent2D extent = renderRect.extent;
 
-    // Feature pre-pass: compute that must run OUTSIDE the scene render pass (GPU
-    // particle sim). Recorded here between the shadow passes and the HDR pass;
-    // the resulting particles are drawn inside the pass by the same feature.
+    // Compute features must run outside the scene render pass.
     {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Scene/FeaturesPrePass");
         PrePassContext ppc{encoder, currentFrame_, scene, Time::elapsed(), false,
@@ -1434,14 +1387,10 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
 #else
     const bool msaa = swapchain_->samples() != VK_SAMPLE_COUNT_1_BIT;
 #endif
-    // Color is rendered into the MSAA target and resolved to the HDR image; with
-    // no MSAA we render straight to the HDR image.
     auto colorImage = msaa ? hdrMsaaTexture_->image() : hdrTexture_->image();
     auto colorView = msaa ? hdrMsaaTexture_->view() : hdrTexture_->view();
 
-    // Dynamic rendering does no implicit layout transitions: do them by hand.
-    // Same-state transitions with discardContents keep the previous frame's sync
-    // scope but drop the stale contents (the pass clears everything).
+    // Discard preserves synchronization while dropping contents overwritten by the pass.
     encoder.transition(colorImage, rhi::ResourceState::ColorAttachment,
                        rhi::ResourceState::ColorAttachment, 0, kAllTextureLayers,
                        /*discardContents=*/true);
@@ -1478,13 +1427,10 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
     rhi::RenderPassEncoder rp = encoder.beginRenderPass(scenePass);
 
 #ifndef SAIDA_RHI_WEBGPU
-    if (useGpuDriven) {
-        rp.setPipeline(*pipeline_);
-        // Set 0: per-frame global data (camera + lighting), shared by every object.
+    if (gpuFrameActive_) {
+        rp.setPipeline(*gpuDrivenPipeline_);
         rp.setBindGroup(0, *globalGroups_[currentFrame_]);
-        // Set 1: bindless textures + MaterialData SSBO (raw, out of RHI scope until 16.4).
         rp.setBindGroup(1, resources_.globalMaterialSet());
-        // Set 2: instance buffer (shared with the cull dispatch).
         rp.setBindGroup(2, *cullingGroups_[currentFrame_]);
 
         PushConstants gfxPc{};
@@ -1501,13 +1447,12 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
                 rp.drawIndexedIndirectCount(*drawCommandBuffers_[currentFrame_], 0,
                                             *countBuffers_[currentFrame_], 0,
                                             currentInstanceCount_,
-                                            sizeof(DrawIndexedIndirectCommand));
+                                            sizeof(gpu_driven::DrawIndexedIndirectCommand));
             } else {
-                // 16.4 fallback: the cull shader writes instanceCount=0 for culled
-                // draws, so a plain indirect loop stays correct without the count.
+                // Culled commands use instanceCount = 0 when indirect-count is unavailable.
                 rp.drawIndexedIndirect(*drawCommandBuffers_[currentFrame_], 0,
                                        currentInstanceCount_,
-                                       sizeof(DrawIndexedIndirectCommand));
+                                       sizeof(gpu_driven::DrawIndexedIndirectCommand));
             }
         }
     } else
@@ -1517,11 +1462,11 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
         recordMeshDraws(rp, pipeline_.get(), false);
     }
 
-    // Scene-pass features are recorded after opaque meshes.
+    const auto& featureDrawList = featureDraws();
     FrameContext fc{encoder, rp,
                     currentFrame_, globalGroups_[currentFrame_].get(), scene,
                     Time::elapsed(), false, &camera, nullptr, false, extent,
-                    currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
+                    featureDrawList.data(), static_cast<uint32_t>(featureDrawList.size())};
     {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Scene/Features");
         recordFeatures(fc);
@@ -1533,7 +1478,6 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
 
     recordTonemapPass(encoder, imageIndex, scene, camera);
 
-    // Transition the swap-chain image from color attachment to present.
     encoder.transition(swapchain_->image(imageIndex), rhi::ResourceState::ColorAttachment,
                        rhi::ResourceState::Present);
 
@@ -1564,8 +1508,6 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
 
     uint32_t imageIndex;
     if (!swapchain_->acquire(currentFrame_, imageIndex)) {
-        // Out of date: the surface recreated itself; rebuild the HDR chain and
-        // skip this frame.
         cleanupHdrResources();
         createHdrResources();
         return;
@@ -1609,8 +1551,6 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
         }
         giUpdateThisFrame_ = giBakeFramesRemaining_ > 0;
         if (giUpdateThisFrame_ && --giBakeFramesRemaining_ == 0) {
-            // DDGI volume converged → freeze it. All surfaces sample the frozen
-            // volume for indirect; direct lighting + shadows stay live.
             settings.baked = true;
         }
     }
@@ -1621,8 +1561,7 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     }
     ++giFrameCounter_;
 
-    // Swap the DDGI ping-pong (only when updating, so the frozen atlas is kept)
-    // and re-point this frame's set 0 at the current atlas (safe: fence waited).
+    // Frozen GI retains its sampled atlas; updating GI swaps the ping-pong pair.
     if (giUpdateThisFrame_) gi_->beginFrame();
     {
         SAIDA_PROFILE_SCOPE("Renderer/UpdateDescriptors");
@@ -1649,8 +1588,6 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
         recordCommandBuffer(encoder, imageIndex, scene, camera);
     }
     if (swapchain_->submitAndPresent(encoder, currentFrame_, imageIndex)) {
-        // Out of date / suboptimal / resized: the surface recreated itself;
-        // rebuild the HDR chain sized to the new extent.
         cleanupHdrResources();
         createHdrResources();
     }
@@ -1664,14 +1601,10 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
 namespace saida {
 
 namespace {
-// All eyes render in one pass into a 2-layer image; the view mask has one bit
-// per eye (0b11 for stereo). gl_ViewIndex selects the per-eye matrices.
 uint32_t xrViewMask(uint32_t viewCount) { return (1u << viewCount) - 1u; }
 }
 
 void Renderer::createXrTargets() {
-    // 2-layer HDR color: the array view is the multiview render target, the
-    // per-layer views feed each eye's tonemap. Same layout for depth.
     rhi::RenderTextureDesc hdrDesc;
     hdrDesc.format = rhi::Format::RGBA16Float;
     hdrDesc.width = xrExtent_.width;
@@ -1718,8 +1651,6 @@ void Renderer::createXrPipelines() {
     sceneDesc.fragPath = shaderPath("shader.frag.spv");
     xrScenePipeline_ = std::make_unique<rhi::Pipeline>(device_, sceneDesc);
 
-    // Unlit multiview variant — same vertex shader + layout as the lit scene
-    // pipeline, only the fragment differs (no per-eye data, so no MULTIVIEW frag).
     sceneDesc.fragPath = shaderPath("unlit.frag.spv");
     xrUnlitPipeline_ = std::make_unique<rhi::Pipeline>(device_, sceneDesc);
 
@@ -1741,8 +1672,6 @@ void Renderer::createXrPipelines() {
         xrWebCanvasWorldPipeline_ = std::make_unique<rhi::Pipeline>(device_, webDesc);
     }
 
-    // Same registry as desktop; each feature builds its stereo pipeline from the
-    // viewMask. The Renderer stays ignorant of which effects exist.
     buildFeatures(viewMask, rhi::vulkan::fromVk(depthFormat), VK_SAMPLE_COUNT_1_BIT);
 
     {
@@ -1867,10 +1796,11 @@ void Renderer::recordXrScenePass(rhi::CommandEncoder& encoder, Scene& scene,
     recordMeshDraws(rp, xrScenePipeline_.get(), true);
 
     // passthrough is forwarded so the skybox skips itself.
+    const auto& featureDrawList = featureDraws();
     FrameContext fc{encoder, rp,
                     currentFrame_, globalGroups_[currentFrame_].get(), scene,
                     Time::elapsed(), true, nullptr, &eyes, passthrough, xrExtent_,
-                    currentDraws_.data(), static_cast<uint32_t>(currentDraws_.size())};
+                    featureDrawList.data(), static_cast<uint32_t>(featureDrawList.size())};
     recordFeatures(fc);
     recordXrWorldWebCanvases(rp, scene, eyes);
 
@@ -1976,7 +1906,6 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
         giWasEnabled_ = settings.giEnabled;
     }
 
-    // GI update cadence (mirrors drawFrame; no editor bake UI in XR yet).
     if (settings.lightingMode == LightingMode::Realtime) {
         giUpdateThisFrame_ = settings.giEnabled &&
             shouldUpdateRealtimeGI(giDirty);
@@ -2004,10 +1933,8 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
     updateGIDescriptors();
     updateEnvironmentDescriptor(scene);
 
-    // CPU prep (per-eye matrices, lighting, draw list, bones).
     updateUniformBufferXr(currentFrame_, eyes, scene, project);
 
-    // View-independent passes recorded once, then the stereo scene + tonemap.
     rhi::CommandEncoder encoder(cmd);
     if (giUpdateThisFrame_) {
         GpuProfiler* gpuProfiler = Profiler::instance().enabled() ? gpuProfiler_.get() : nullptr;
@@ -2025,4 +1952,3 @@ void Renderer::drawXr(VkCommandBuffer cmd, const std::vector<EyeRenderInfo>& eye
 
 } // namespace saida
 #endif // SAIDA_ENABLE_XR
-

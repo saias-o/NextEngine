@@ -14,11 +14,10 @@ struct MaterialData {
     uint normalTexIdx;
     uint metallicRoughnessTexIdx;
     uint emissiveTexIdx;
-    uint pad;
+    uint materialType;  // mirrors MaterialType (0 = Lit, 1 = Unlit)
     vec4 emissive;
 };
 
-// Requires descriptor indexing features
 #extension GL_EXT_nonuniform_qualifier : require
 
 layout(set = 1, binding = 0) uniform sampler2D globalTextures[8192];
@@ -29,7 +28,6 @@ layout(std430, set = 1, binding = 1) readonly buffer MaterialBuffer {
 
 #else
 
-// Set 1: per-material data.
 DECL_TEX2D(1, 0, 5, texAlbedo);
 DECL_TEX2D(1, 1, 6, texNormal);
 DECL_TEX2D(1, 2, 7, texMetallicRoughness);
@@ -83,6 +81,16 @@ void main() {
 
     vec3 albedo = albedoSample.rgb * fragColor * baseColor.rgb;
 
+#ifdef BINDLESS
+    // Preserve the non-PBR path in the shared bindless pipeline.
+    if (mat.materialType == 1u) {
+        vec3 emissive = texture(globalTextures[nonuniformEXT(mat.emissiveTexIdx)], fragTexCoord).rgb
+                      * matEmissive.rgb;
+        outColor = vec4(albedo + emissive, albedoSample.a * baseColor.a);
+        return;
+    }
+#endif
+
     // GI debug: snap to voxel centers so the grid is visible as blocks.
     if (lights.giAtlas.z == 1) {
         float res = float(lights.giAtlas.w);
@@ -117,7 +125,6 @@ void main() {
 
     vec3 V = normalize(lights.cameraPos.xyz - fragWorldPos);
 
-    // Realtime and baked modes both sample the DDGI volume.
     LightTerms t = accumulate(N, V, fragWorldPos, albedo, metallic, roughness);
     vec3 lit = t.diffuse + t.specular;
 

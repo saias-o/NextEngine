@@ -96,7 +96,8 @@ public:
     // Register material data in the global SSBO, returns its index.
     uint32_t registerMaterialData(const glm::vec4& baseColor, const glm::vec4& emissive,
                                   float metallic, float roughness, float ao,
-                                  uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx, uint32_t emissiveIdx);
+                                  uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx, uint32_t emissiveIdx,
+                                  MaterialType type);
 
 private:
     Mesh* createMesh(AssetID id, const std::vector<Vertex>& vertices,

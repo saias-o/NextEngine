@@ -204,7 +204,7 @@ std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::s
 
     Log::info("loaded '", path, "': ", vertices.size(), " vertices, ",
               indices.size() / 3, " triangles");
-    Log::warn(".obj is deprecated (Étape 16.1): heavy, uncompressed, web-hostile. "
+    Log::warn(".obj is deprecated: heavy, uncompressed, web-hostile. "
               "Re-export as meshopt GLB (Build Settings / exportMeshoptGlb) — "
               "same loader, ~10-20x smaller.");
 
