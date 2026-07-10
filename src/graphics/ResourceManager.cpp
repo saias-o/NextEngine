@@ -460,6 +460,12 @@ AssetID ResourceManager::registerMemoryAnimation(const std::string& subPath, std
     return id;
 }
 
+AssetID ResourceManager::animationId(const AnimationClip* clip) const {
+    for (const auto& [id, owned] : animations_)
+        if (owned.get() == clip) return id;
+    return kAssetInvalid;
+}
+
 AssetID ResourceManager::meshId(const Mesh* mesh) const {
     auto it = reverseMeshMap_.find(mesh);
     return it != reverseMeshMap_.end() ? it->second : kAssetInvalid;

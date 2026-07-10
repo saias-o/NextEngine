@@ -25,6 +25,7 @@
 #include "editor/panels/ViewportPanel.hpp"
 #include "editor/panels/ModelImporterPanel.hpp"
 #include "editor/panels/ProfilerPanel.hpp"
+#include "editor/panels/AnimationPanel.hpp"
 #include "scene/GLTFLoader.hpp"
 #ifdef SAIDA_ENABLE_MCP
 #include "mcp/McpBridge.hpp"
@@ -326,6 +327,11 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     if (showProfiler_) {
         ProfilerPanel profilerPanel;
         profilerPanel.draw(this);
+    }
+
+    if (showAnimation_) {
+        AnimationPanel animationPanel;
+        animationPanel.draw(this, scene, resources, project);
     }
 
     ViewportPanel viewportPanel;

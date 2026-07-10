@@ -535,6 +535,7 @@ add_library(saida_editor STATIC
     src/editor/panels/ViewportPanel.cpp
     src/editor/panels/ModelImporterPanel.cpp
     src/editor/panels/ProfilerPanel.cpp
+    src/editor/panels/AnimationPanel.cpp
 )
 target_link_libraries(saida_editor PUBLIC saida_engine)
 target_compile_options(saida_editor PRIVATE -Wall -Wextra)

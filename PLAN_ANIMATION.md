@@ -732,10 +732,16 @@ Livrables :
 - [x] sérialisation/migration versionnée : `schema` obligatoire, refus des
       schémas plus récents, hook `migrate()` pour les anciens ; diagnostics
       structurés `AssetDiagnostic {code, severity, jsonPath, message}` (§12.3) ;
-- [~] création et validation de `ClipView` : lecture non destructive en place
+- [x] création et validation de `ClipView` : lecture non destructive
       (`ClipNode::setRange` boucle/clampe dans la sous-plage du clip partagé,
       `ClipView::instantiate` — aucune duplication de clés) ; validation contre
-      la source (plages, événements) ; reste l'UI éditeur de création ;
+      la source (plages, événements) ; **panneau éditeur « Animation »**
+      (View > Animation) : lecture/scrub des clips de l'Animator sélectionné,
+      éditeur de vue (nom, source, plage, boucle, vitesse) avec diagnostics
+      affichés en direct et enregistrement bloqué en erreur, sauvegarde en
+      `assets/animation/<nom>.sclip`, liste des `.sclip`/`.sgraph` du projet
+      (jouer / éditer / appliquer), et pilotage live du graphe actif (état
+      courant + widgets des paramètres typés) ;
 - [~] premiers outils : `saida_tool inspect-anim` (rigs/clips/durées JSON,
       headless), `saida_tool validate-clipview` et `saida_tool
       validate-animgraph` (résolution des clés sources + diagnostics,

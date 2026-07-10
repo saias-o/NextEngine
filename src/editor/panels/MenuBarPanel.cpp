@@ -94,6 +94,7 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
             ImGui::Separator();
             ImGui::MenuItem("Viewport Overlay", nullptr, &editor->showViewportOverlay_);
             ImGui::MenuItem("Profiler", "F3", &editor->showProfiler_);
+            ImGui::MenuItem("Animation", nullptr, &editor->showAnimation_);
             ImGui::EndMenu();
         }
 

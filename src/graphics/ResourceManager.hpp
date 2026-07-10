@@ -57,6 +57,12 @@ public:
     // The id a mesh was loaded with (for serialization).
     AssetID meshId(const Mesh* mesh) const;
 
+    // The id a clip was registered with — its sub-asset key ("model.glb#Run")
+    // via the registry. kAssetInvalid for clips not registered here.
+    AssetID animationId(const AnimationClip* clip) const;
+
+    AssetRegistry* registry() const { return registry_; }
+
     // Direct .obj load (e.g. heavy models). getMesh() delegates here for paths.
     Mesh* loadMesh(AssetID id);
 

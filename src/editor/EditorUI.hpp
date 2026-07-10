@@ -28,6 +28,7 @@ class FileBrowserPanel;
 class ViewportPanel;
 class ModelImporterPanel;
 class ProfilerPanel;
+class AnimationPanel;
 class McpBridge;
 
 class EditorApp;
@@ -40,6 +41,7 @@ class EditorUI {
     friend class ViewportPanel;
     friend class ModelImporterPanel;
     friend class ProfilerPanel;
+    friend class AnimationPanel;
     friend class PropertyEditor;
     friend class McpBridge;
 public:
@@ -107,6 +109,19 @@ private:
     bool showViewportOverlay_ = true;
     bool showModelImporter_ = false;
     bool showProfiler_ = false;
+    bool showAnimation_ = false;
+
+    // Animation panel — l'état survit aux frames (les panneaux sont recréés).
+    char animViewName_[128] = "NewView";
+    int animViewSourceIndex_ = 0;
+    float animViewStart_ = 0.0f;
+    float animViewEnd_ = 0.0f;
+    bool animViewLoop_ = true;
+    float animViewSpeed_ = 1.0f;
+    std::string animStatus_;
+    std::vector<std::string> animAssetFiles_;  // .sclip/.sgraph du projet (relatifs)
+    double animAssetScanTime_ = -1.0;
+    uint64_t animAppliedGraphId_ = 0;  // AssetID du .sgraph appliqué (0 = aucun)
 
     Node* selectedNode_ = nullptr;
 
