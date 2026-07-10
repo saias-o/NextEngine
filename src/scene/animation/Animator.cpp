@@ -1,11 +1,23 @@
 #include "scene/animation/Animator.hpp"
-#include "scene/animation/ClipNode.hpp"
+#include "scene/animation/AnimGraphAsset.hpp"
 #include "scene/animation/AnimationClip.hpp"
+#include "scene/animation/ClipNode.hpp"
+#include "scene/animation/ClipView.hpp"
 #include "scene/Node.hpp"
 #include "core/Log.hpp"
 #include "core/Profiler.hpp"
 
 namespace saida {
+
+namespace {
+
+// Nom de clip d'une clé de sous-asset : "modèle.glb#Run" → "Run".
+std::string clipNameFromKey(const std::string& key) {
+    const size_t hash = key.rfind('#');
+    return hash == std::string::npos ? key : key.substr(hash + 1);
+}
+
+} // namespace
 
 void Animator::setRig(Rig* rig) {
     rig_ = rig;
@@ -73,6 +85,63 @@ void Animator::play(const std::string& name, bool loop, float crossfade) {
     }
     playbackFsm_->transitionTo(name, crossfade);
     currentClip_ = name;
+}
+
+void Animator::playView(const ClipView& view, float crossfade) {
+    if (!rig_) return;
+    if (view.name.empty()) {
+        Log::warn("Animator::playView: view has no name");
+        return;
+    }
+    if (view.name == currentClip_) return;
+
+    const std::string clipName = clipNameFromKey(view.source);
+    auto it = clips_.find(clipName);
+    if (it == clips_.end() || !it->second) {
+        Log::warn("Animator::playView: unknown source clip '", clipName, "' for view '",
+                  view.name, "'");
+        return;
+    }
+
+    // Même FSM interne que play() : les vues et les clips directs partagent
+    // l'espace de noms des états.
+    if (!playbackFsm_) {
+        auto sm = std::make_unique<AnimStateMachine>();
+        sm->setBlackboard(&blackboard_);
+        playbackFsm_ = sm.get();
+        rootNode_ = std::move(sm);
+        playStates_.clear();
+    }
+
+    if (playStates_.insert(view.name).second) {
+        playbackFsm_->addState(
+            std::make_unique<AnimState>(view.name, view.instantiate(*it->second, *rig_)));
+    }
+    playbackFsm_->transitionTo(view.name, crossfade);
+    currentClip_ = view.name;
+}
+
+bool Animator::setGraph(const AnimGraphAsset& graph,
+                        std::vector<AssetDiagnostic>* diagnostics) {
+    if (!rig_) {
+        if (diagnostics)
+            diagnostics->push_back({"animgraph.build.no_rig",
+                                    AssetDiagnostic::Severity::Error, "",
+                                    "animator has no rig"});
+        return false;
+    }
+
+    auto sm = graph.build(
+        [this](const std::string& key) -> const AnimationClip* {
+            auto it = clips_.find(clipNameFromKey(key));
+            return it != clips_.end() ? it->second : nullptr;
+        },
+        *rig_, diagnostics);
+    if (!sm) return false;
+
+    for (const auto& p : graph.parameters) blackboard_.setFloat(p.name, p.defaultValue);
+    setStateMachine(std::move(sm));
+    return true;
 }
 
 ClipNode* Animator::activeClipNode() const {

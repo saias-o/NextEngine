@@ -11,11 +11,15 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace saida {
 
 class AnimationClip;
+class AnimGraphAsset;
 class ClipNode;
+class ClipView;
+struct AssetDiagnostic;
 
 // The Animator drives an animation graph (FSM / blend tree) for a skinned mesh
 // and produces the GlobalPose (skinning matrices) the renderer uploads to the GPU.
@@ -45,6 +49,17 @@ public:
 
     void play(const std::string& name, bool loop = true, float crossfade = 0.2f);
     const std::string& currentClip() const { return currentClip_; }
+
+    // Joue une vue non destructive : le clip source est résolu dans la
+    // bibliothèque (nom après '#' de view.source), la sous-plage/vitesse/boucle
+    // s'appliquent sans dupliquer les clés. Même FSM interne que play().
+    void playView(const ClipView& view, float crossfade = 0.2f);
+
+    // Remplace le graphe par un .sgraph compilé : clips résolus dans la
+    // bibliothèque, défauts des paramètres appliqués au blackboard. Retourne
+    // false (avec diagnostics) si aucun état n'est constructible.
+    bool setGraph(const AnimGraphAsset& graph,
+                  std::vector<AssetDiagnostic>* diagnostics = nullptr);
 
     void setRootNode(std::unique_ptr<AnimNode> rootNode);
     void setStateMachine(std::unique_ptr<AnimStateMachine> sm);  // wires the blackboard

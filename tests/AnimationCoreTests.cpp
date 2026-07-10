@@ -1,3 +1,4 @@
+#include "project/AssetRegistry.hpp"
 #include "scene/BVHLoader.hpp"
 #include "scene/GLTFLoader.hpp"
 #include "scene/animation/AnimBlackboard.hpp"
@@ -421,6 +422,85 @@ void testRetargetProfile() {
     assert(hasDiagnostic(brokenDiags, "retarget.map.unknown_track"));
 }
 
+// Les clés d'assets sont canoniques : un chemin absolu sous la racine projet
+// et sa forme relative désignent le même asset, suffixe de sous-asset compris.
+void testAssetKeyNormalization() {
+    saida::AssetRegistry registry;
+    registry.load(SAIDA_FIXTURE_DIR);  // fixe la racine (pas de registre requis)
+
+    const std::string absolute = std::string(SAIDA_FIXTURE_DIR) + "/animation/two_bone.gltf#Mix";
+    const saida::AssetID fromAbsolute =
+        registry.registerAsset(absolute, saida::AssetType::Animation);
+    assert(fromAbsolute != saida::kAssetInvalid);
+
+    // Lookup et ré-enregistrement par la forme relative → même identité.
+    assert(registry.getID("animation/two_bone.gltf#Mix") == fromAbsolute);
+    assert(registry.registerAsset("animation/two_bone.gltf#Mix",
+                                  saida::AssetType::Animation) == fromAbsolute);
+    // La clé stockée est portable (relative, séparateurs '/').
+    assert(registry.getPath(fromAbsolute) == "animation/two_bone.gltf#Mix");
+
+    // Antislashs Windows normalisés eux aussi.
+    assert(registry.getID("animation\\two_bone.gltf#Mix") == fromAbsolute);
+
+    // Un chemin absolu HORS racine reste tel quel (pas de fausse relativité).
+    const saida::AssetID outside =
+        registry.registerAsset("C:/elsewhere/other.glb#Run", saida::AssetType::Animation);
+    assert(registry.getPath(outside) == "C:/elsewhere/other.glb#Run");
+}
+
+// Consommation moteur : l'Animator joue une ClipView et un AnimGraphAsset en
+// résolvant les clés de sous-assets dans sa bibliothèque de clips.
+void testAnimatorPlaysAssets() {
+    saida::GltfAnimationData data;
+    std::string error;
+    assert(saida::GLTFLoader::loadAnimationData(
+        std::string(SAIDA_FIXTURE_DIR) + "/animation/two_bone.gltf", data, &error));
+
+    saida::Animator animator;
+    animator.setRig(data.rigs[0].get());
+    animator.addClip("Mix", data.clips[0].get());
+
+    // playView : la vue devient un état de la FSM interne, plage appliquée.
+    saida::ClipView view;
+    view.source = "two_bone.gltf#Mix";
+    view.name = "SecondHalf";
+    view.hasRange = true;
+    view.rangeStart = 0.5f;
+    view.rangeEnd = 1.0f;
+
+    animator.playView(view, 0.0f);
+    assert(animator.currentClip() == "SecondHalf");
+    saida::ClipNode* node = animator.activeClipNode();
+    assert(node);
+    assert(near(node->rangeStart(), 0.5f));
+    animator.onUpdate(0.6f);  // 0.5 + 0.6 wrappe à 0.6 dans [0.5, 1.0]
+    assert(node->time() >= 0.5f && node->time() <= 1.0f);
+
+    // setGraph : graphe compilé, défauts appliqués, transitions par setFloat.
+    auto parsed = saida::AnimGraphAsset::loadFile(std::string(SAIDA_FIXTURE_DIR) +
+                                                  "/animation/locomotion.sgraph");
+    assert(parsed.ok);
+    std::vector<saida::AssetDiagnostic> diags;
+    assert(animator.setGraph(parsed.graph, &diags));
+    assert(diags.empty());
+    assert(near(animator.blackboard().getFloat("speed"), 0.0f));  // défaut appliqué
+
+    auto* sm = dynamic_cast<saida::AnimStateMachine*>(animator.rootNode());
+    assert(sm);
+    animator.onUpdate(0.016f);
+    assert(sm->currentState() && sm->currentState()->name() == "Idle");
+    animator.setFloat("speed", 1.0f);
+    animator.onUpdate(0.016f);
+    assert(sm->currentState() && sm->currentState()->name() == "Run");
+
+    // Sans rig, setGraph échoue avec un diagnostic — pas de crash.
+    saida::Animator bare;
+    std::vector<saida::AssetDiagnostic> bareDiags;
+    assert(!bare.setGraph(parsed.graph, &bareDiags));
+    assert(hasDiagnostic(bareDiags, "animgraph.build.no_rig"));
+}
+
 } // namespace
 
 int main() {
@@ -436,5 +516,7 @@ int main() {
     testClipViewsShareSource();
     testAnimGraphAsset();
     testRetargetProfile();
+    testAssetKeyNormalization();
+    testAnimatorPlaysAssets();
     return 0;
 }

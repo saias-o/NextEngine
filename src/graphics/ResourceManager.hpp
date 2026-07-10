@@ -31,6 +31,8 @@ class Texture;
 struct Vertex;
 class Rig;
 class AnimationClip;
+class ClipView;
+class AnimGraphAsset;
 
 // Loads and caches GPU resources. Owns material set 1 layout/pool.
 class ResourceManager {
@@ -72,6 +74,14 @@ public:
     // Register memory structures directly from loaders
     AssetID registerMemoryRig(const std::string& path, std::unique_ptr<Rig> rig);
     AssetID registerMemoryAnimation(const std::string& subPath, std::unique_ptr<AnimationClip> clip);
+
+    // Assets d'authoring animation (.sclip / .sgraph), chargés et cachés par
+    // AssetID. Un fichier invalide loggue ses diagnostics et retourne
+    // kAssetInvalid ; recharger un chemin déjà chargé rend le même id.
+    AssetID loadClipView(const std::string& path);
+    const ClipView* getClipView(AssetID id) const;
+    AssetID loadAnimGraph(const std::string& path);
+    const AnimGraphAsset* getAnimGraph(AssetID id) const;
 
     Texture* defaultWhiteTexture();
     Texture* defaultNormalTexture();
@@ -128,6 +138,8 @@ private:
     std::unordered_map<MaterialDesc, std::unique_ptr<Material>> materials_;
     std::unordered_map<AssetID, std::unique_ptr<Rig>> rigs_;
     std::unordered_map<AssetID, std::unique_ptr<AnimationClip>> animations_;
+    std::unordered_map<AssetID, std::unique_ptr<ClipView>> clipViews_;
+    std::unordered_map<AssetID, std::unique_ptr<AnimGraphAsset>> animGraphs_;
     std::unordered_map<const Mesh*, AssetID> reverseMeshMap_;  // mesh -> id
     
     std::unique_ptr<Texture> defaultWhiteTexture_;

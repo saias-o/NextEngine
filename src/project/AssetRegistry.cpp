@@ -251,7 +251,7 @@ void AssetRegistry::sync(const std::string& projectRoot) {
 }
 
 AssetID AssetRegistry::getID(const std::string& relativePath) const {
-    auto it = assetsByPath_.find(relativePath);
+    auto it = assetsByPath_.find(normalizeKey(relativePath));
     return it != assetsByPath_.end() ? it->second : kAssetInvalid;
 }
 
@@ -272,13 +272,16 @@ AssetType AssetRegistry::getType(AssetID id) const {
 }
 
 AssetID AssetRegistry::registerAsset(const std::string& relativePath, AssetType type) {
-    if (auto existing = getID(relativePath); existing != kAssetInvalid) {
+    // Identité stable et portable : les call-sites passent parfois des chemins
+    // absolus (drag-drop, MCP) — la clé stockée est toujours projet-relative.
+    const std::string key = normalizeKey(relativePath);
+    if (auto existing = getID(key); existing != kAssetInvalid) {
         return existing; // Already registered
     }
 
     AssetMetadata meta;
     meta.id = generateID();
-    meta.relativePath = relativePath;
+    meta.relativePath = key;
     meta.type = type;
     
     // In a real editor, projectRoot would be available, here we assume relativePath can be resolved later 
@@ -286,7 +289,7 @@ AssetID AssetRegistry::registerAsset(const std::string& relativePath, AssetType 
     meta.contentHash = 0; 
 
     assetsByID_[meta.id] = meta;
-    assetsByPath_[relativePath] = meta.id;
+    assetsByPath_[key] = meta.id;
 
     return meta.id;
 }
@@ -381,9 +384,30 @@ AssetType AssetRegistry::determineType(const std::filesystem::path& path) const 
     if (ext == ".scene") return AssetType::Scene;
     if (ext == ".ogg") return AssetType::Audio;
     if (ext == ".rig") return AssetType::Rig;
-    if (ext == ".anim") return AssetType::Animation;
+    if (ext == ".anim" || ext == ".bvh" || ext == ".sclip" || ext == ".sgraph" ||
+        ext == ".sretarget") return AssetType::Animation;
     if (ext == ".saidafx") return AssetType::Effect;
     return AssetType::Unknown;
+}
+
+std::string AssetRegistry::normalizeKey(const std::string& key) const {
+    // Une clé peut porter un suffixe de sous-asset ("modèle.glb#Run") : seule
+    // la partie chemin est normalisée, le suffixe est conservé tel quel.
+    const size_t hash = key.rfind('#');
+    std::string pathPart = hash == std::string::npos ? key : key.substr(0, hash);
+    const std::string suffix = hash == std::string::npos ? std::string() : key.substr(hash);
+
+    std::filesystem::path p = std::filesystem::path(pathPart).lexically_normal();
+    if (p.is_absolute() && !projectRoot_.empty()) {
+        const std::filesystem::path root =
+            std::filesystem::path(projectRoot_).lexically_normal();
+        const std::filesystem::path rel = p.lexically_relative(root);
+        // lexically_relative sort de la racine par "..": on ne relativise que
+        // les chemins réellement sous le projet.
+        if (!rel.empty() && rel.begin()->string() != "..") p = rel;
+    }
+
+    return p.generic_string() + suffix;
 }
 
 } // namespace saida

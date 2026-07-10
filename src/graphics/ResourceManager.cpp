@@ -11,6 +11,8 @@
 #include "scene/Node.hpp"
 #include "scene/animation/Rig.hpp"
 #include "scene/animation/AnimationClip.hpp"
+#include "scene/animation/AnimGraphAsset.hpp"
+#include "scene/animation/ClipView.hpp"
 
 #ifndef SAIDA_RHI_WEBGPU
 #include "graphics/Swapchain.hpp"
@@ -399,6 +401,51 @@ AssetID ResourceManager::registerMemoryMesh(const std::vector<Vertex>& vertices,
     AssetID id = s_dynamicId++;
     createMesh(id, vertices, indices);
     return id;
+}
+
+AssetID ResourceManager::loadClipView(const std::string& path) {
+    auto parsed = ClipView::loadFile(path);
+    if (!parsed.ok) {
+        for (const auto& d : parsed.diagnostics)
+            Log::error("ClipView '", path, "': [", d.code, "] ", d.message);
+        return kAssetInvalid;
+    }
+    auto view = std::make_unique<ClipView>(std::move(parsed.view));
+    AssetID id = registry_ ? registry_->registerAsset(path, AssetType::Animation)
+                           : reinterpret_cast<AssetID>(view.get());
+    clipViews_[id] = std::move(view);
+    return id;
+}
+
+const ClipView* ResourceManager::getClipView(AssetID id) const {
+    auto it = clipViews_.find(id);
+    return it != clipViews_.end() ? it->second.get() : nullptr;
+}
+
+AssetID ResourceManager::loadAnimGraph(const std::string& path) {
+    auto parsed = AnimGraphAsset::loadFile(path);
+    if (!parsed.ok) {
+        for (const auto& d : parsed.diagnostics)
+            Log::error("AnimGraph '", path, "': [", d.code, "] ", d.message);
+        return kAssetInvalid;
+    }
+    for (const auto& d : parsed.graph.validate()) {
+        if (d.severity == AssetDiagnostic::Severity::Error) {
+            Log::error("AnimGraph '", path, "': [", d.code, "] ", d.message);
+            return kAssetInvalid;
+        }
+        Log::warn("AnimGraph '", path, "': [", d.code, "] ", d.message);
+    }
+    auto graph = std::make_unique<AnimGraphAsset>(std::move(parsed.graph));
+    AssetID id = registry_ ? registry_->registerAsset(path, AssetType::Animation)
+                           : reinterpret_cast<AssetID>(graph.get());
+    animGraphs_[id] = std::move(graph);
+    return id;
+}
+
+const AnimGraphAsset* ResourceManager::getAnimGraph(AssetID id) const {
+    auto it = animGraphs_.find(id);
+    return it != animGraphs_.end() ? it->second.get() : nullptr;
 }
 
 AssetID ResourceManager::registerMemoryRig(const std::string& path, std::unique_ptr<Rig> rig) {

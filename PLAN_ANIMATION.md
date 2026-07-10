@@ -702,7 +702,7 @@ les golden tests ; web : à exécuter sur le runtime WASM.)
 
 Livrables :
 
-- [~] schémas : `ClipView` (`.sclip` schema 1 : source, name, range, loop,
+- [x] schémas : `ClipView` (`.sclip` schema 1 : source, name, range, loop,
       speed, events), `AnimationGraph` (`.sgraph` schema 1 : paramètres typés
       float/int/bool — trigger réservé —, clips alias→clé, états play/loop,
       initial, transitions conditionnelles + crossfade ; validation §12.3 :
@@ -710,11 +710,25 @@ Livrables :
       vers `AnimStateMachine`, le DSL `AnimGraphParser` devient legacy) et
       `RetargetProfile` (`.sretarget` schema 1 : map os cible→piste source
       au-dessus du `RetargetMap`, couverture avec warnings §8.1,
-      `fromAutoMap` = suggestion éditable) ; restent `RigAsset` et
-      `AnimationSequence` ;
-- [x] identifiants stables des sous-assets glTF/BVH : clé `fichier#clip`
-      (l'`AssetRegistry` redonne le même `AssetID` à clé identique après
-      reimport) ; `ClipView.source` référence cette clé ;
+      `fromAutoMap` = suggestion éditable).
+      `RigAsset` et `AnimationSequence` sont déplacés vers les Étapes 6 et 7 :
+      un schéma n'est introduit qu'avec son premier consommateur réel (le
+      cooker consomme des `Rig` en mémoire ; `.srig` n'a de contenu propre —
+      sémantiques, métriques — qu'au retargeting ; `.sseq` naît avec la
+      timeline) ;
+- [x] identifiants stables des sous-assets glTF/BVH : clé `fichier#clip`,
+      désormais **canonique** — `AssetRegistry::normalizeKey` rend la partie
+      chemin projet-relative (séparateurs `/`) à l'enregistrement et au lookup,
+      suffixe `#clip` préservé ; les chemins absolus passés par l'éditeur/MCP
+      et les clés relatives des `.sclip`/`.sgraph` désignent le même
+      `AssetID` ;
+- [x] consommation moteur (ajouté — sans elle le contrat n'est vivant que dans
+      saida_tool) : `Animator::playView(ClipView)` (la vue devient un état de
+      la FSM interne de `play()`, plage/vitesse/boucle appliquées) et
+      `Animator::setGraph(AnimGraphAsset)` (clips résolus dans la bibliothèque,
+      défauts de paramètres appliqués au blackboard) ;
+      `ResourceManager::loadClipView/loadAnimGraph` chargent et cachent les
+      `.sclip`/`.sgraph` par `AssetID` (graphe invalide refusé au chargement) ;
 - [x] sérialisation/migration versionnée : `schema` obligatoire, refus des
       schémas plus récents, hook `migrate()` pour les anciens ; diagnostics
       structurés `AssetDiagnostic {code, severity, jsonPath, message}` (§12.3) ;
@@ -797,10 +811,14 @@ réalisables sans code spécifique au personnage.
 
 Livrables :
 
+- schéma `RigAsset` (`.srig`) : sémantiques d'os, métriques, hash de
+  compatibilité — introduit ici car c'est le retargeting qui le consomme
+  (déplacé depuis l'Étape 1) ;
 - mapping sémantique ;
-- corrections de rest pose et d'échelle ;
+- corrections de rest pose et d'échelle (extension versionnée du schéma
+  `.sretarget` existant, avec migration) ;
 - éditeur de profil ;
-- auto-mapping avec diagnostics ;
+- auto-mapping avec diagnostics (`RetargetProfile::fromAutoMap` existe déjà) ;
 - two-bone IK, look-at et avatar VR tête/mains.
 
 Critère de sortie : un BVH de convention différente fonctionne sur deux rigs de
@@ -810,6 +828,8 @@ proportions différentes avec un profil réutilisable et sans modifier la source
 
 Livrables :
 
+- schéma `AnimationSequence` (`.sseq`) — introduit ici, avec la timeline qui
+  le joue (déplacé depuis l'Étape 1) ;
 - inspecteur d'assets ;
 - preview universelle ;
 - édition de `ClipView` ;
@@ -879,6 +899,8 @@ disposer d'une migration explicite et testée.
 - Pas d'IK full-body complexe avant un retargeting et un kernel solides.
 - Pas de seconde base d'assets parallèle à `AssetRegistry`.
 - Pas d'op-log distinct des `SaidaOp` pour l'animation.
+- Pas de schéma d'asset introduit sans son premier consommateur réel dans la
+  même étape.
 
 ## 18. Définition de terminé
 

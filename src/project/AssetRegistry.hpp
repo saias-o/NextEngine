@@ -56,6 +56,12 @@ public:
     std::string getAbsolutePath(AssetID id) const;
     AssetType getType(AssetID id) const;
 
+    // Forme canonique d'une clé d'asset : partie chemin projet-relative quand
+    // elle est absolue sous la racine, séparateurs '/', suffixe de sous-asset
+    // ("#clip") préservé. Appliquée par registerAsset et getID — les clés
+    // stockées sont portables entre machines.
+    std::string normalizeKey(const std::string& key) const;
+
     // Registers a new asset or returns existing ID
     AssetID registerAsset(const std::string& relativePath, AssetType type);
 
