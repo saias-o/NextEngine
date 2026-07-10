@@ -2,9 +2,7 @@
 
 #include <cstdint>
 
-// Backend-neutral GPU capabilities (Étape 16.3, RHI). The renderer reads these to
-// branch desktop/web behaviour without #ifdefs; the active backend's Device fills
-// them. No Vulkan types here on purpose — this is the RHI seam. See PLAN_RHI.md.
+// Capabilities are API-neutral so the renderer need not know the active backend.
 
 namespace saida {
 
@@ -28,9 +26,7 @@ inline const char* toString(QualityTier t) {
 
 namespace rhi {
 
-// Features supported and enabled on the selected device. Booleans are named by
-// capability, not by the Vulkan extension that provides them, so the WebGPU
-// backend can fill the same struct.
+// Names describe capabilities rather than API-specific extensions.
 struct Capabilities {
     uint32_t apiVersion = 0;         // backend-defined (Vulkan: negotiated device version)
 

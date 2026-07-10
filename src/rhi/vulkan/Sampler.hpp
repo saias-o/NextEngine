@@ -4,8 +4,6 @@
 
 #include <vulkan/vulkan.h>
 
-// Vulkan backend for rhi::Sampler (Étape 16.3.f).
-
 namespace saida {
 class VulkanDevice;
 }

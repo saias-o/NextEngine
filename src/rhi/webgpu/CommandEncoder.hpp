@@ -6,11 +6,8 @@
 #include <array>
 #include <cstdint>
 
-// WebGPU backend for rhi::CommandEncoder + pass encoders (Étape 16.4). Same
-// call shape as rhi/vulkan/CommandEncoder. Transitions and barriers are no-ops:
-// WebGPU tracks resource state itself (PLAN_RHI §7.3). setPushConstants
-// allocates a slot in the Device's push ring and binds group 3 with the slot's
-// dynamic offset.
+// WebGPU tracks resource state itself, so transitions and barriers are no-ops.
+// Push constants use a dynamic slot in the device ring.
 
 namespace saida::rhi::webgpu {
 

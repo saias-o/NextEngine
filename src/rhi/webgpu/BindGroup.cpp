@@ -64,8 +64,6 @@ BindGroupLayout::BindGroupLayout(Device& device, std::vector<BindGroupLayoutEntr
                 w.storageTexture.viewDimension = toWgpu(e.dim);
                 break;
             case rhi::BindingType::CombinedImageSampler:
-                // Impossible by construction: the web shaders split every
-                // combined sampler into texture+sampler bindings (16.2).
                 throw std::runtime_error("webgpu: combined image samplers do not exist on web");
         }
         wgpu.push_back(w);

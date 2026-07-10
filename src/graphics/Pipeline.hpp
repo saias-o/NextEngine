@@ -26,19 +26,15 @@ namespace saida {
 
 class VulkanDevice;
 
-// BlendMode moved to the neutral rhi layer (16.3.d); aliased back so existing
-// call sites keep writing saida::BlendMode.
 using BlendMode = rhi::BlendMode;
 
 // A graphics pipeline configured for the Vertex layout, built against dynamic
 // rendering attachment formats (no VkRenderPass) and descriptor set layouts.
 class Pipeline {
 public:
-    // Backend-neutral construction (Étape 16.3.d). The WebGPU backend's Pipeline
-    // (16.4) exposes the same Desc shape with its own BindGroupLayout type.
     struct Desc {
         std::string vertPath;
-        std::string fragPath;  // empty → depth-only pipeline (no fragment stage)
+        std::string fragPath;
         std::vector<rhi::Format> colorFormats;
         rhi::Format depthFormat = rhi::Format::Undefined;
         std::vector<rhi::vulkan::BindGroupLayoutRef> bindGroupLayouts;
@@ -50,11 +46,10 @@ public:
         rhi::CullMode cullMode = rhi::CullMode::Back;
         rhi::BlendMode blendMode = rhi::BlendMode::None;
         rhi::Topology topology = rhi::Topology::TriangleList;
-        // 0 keeps the legacy default range (mat4 model + vec4 params = 80 bytes).
         uint32_t pushConstantSize = 0;
         rhi::ShaderStages pushConstantStages = rhi::ShaderStages::VertexFragment;
-        uint32_t viewMask = 0;  // multiview (XR stereo); 0 = single view
-        bool depthBias = false; // shadow acne bias (depth-only passes)
+        uint32_t viewMask = 0;
+        bool depthBias = false;
         float depthBiasConstant = 0.0f;
         float depthBiasSlope = 0.0f;
     };
@@ -66,15 +61,12 @@ public:
 
     void bind(VkCommandBuffer cmd) const;
     VkPipelineLayout layout() const { return layout_; }
-    // Stages of the pipeline's push constant range; RenderPassEncoder uses them
-    // so setPushConstants needs no stage parameter.
     VkShaderStageFlags pushConstantStages() const { return pushStages_; }
 
 private:
-    // Internal Vk-typed build parameters; the Desc constructor maps neutral → Vk.
     struct BuildInfo {
         std::string vertPath;
-        std::string fragPath;  // empty → no fragment stage
+        std::string fragPath;
         std::vector<VkFormat> colorFormats;
         VkFormat depthFormat = VK_FORMAT_UNDEFINED;
         std::vector<VkDescriptorSetLayout> setLayouts;

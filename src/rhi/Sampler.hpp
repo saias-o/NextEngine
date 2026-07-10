@@ -4,11 +4,6 @@
 
 #include <cstdint>
 
-// Backend-neutral sampler description (Étape 16.3.f). Backends map it to their
-// own sampler object (Vulkan: rhi/vulkan/Sampler.hpp). Asset textures keep the
-// sampler embedded in Texture (16.3.c); this covers the render-target samplers
-// owned by the render logic (tonemap, bloom, GI atlases, shadow PCF).
-
 namespace saida::rhi {
 
 enum class FilterMode : uint32_t { Nearest, Linear };

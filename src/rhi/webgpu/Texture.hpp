@@ -6,10 +6,7 @@
 #include <cstdint>
 #include <string>
 
-// WebGPU backend for rhi::Texture (asset texture, Étape 16.4). Same surface as
-// the Vulkan Texture: RGBA8 pixels in, sampled texture + embedded sampler out.
-// Mip chain is generated on the CPU (box filter) — the web has no vkCmdBlitImage
-// and a compute mip pass is not worth its weight for asset uploads.
+// Mips are generated on the CPU: WebGPU has no image-blit equivalent for uploads.
 
 namespace saida::rhi::webgpu {
 

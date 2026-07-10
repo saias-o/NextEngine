@@ -2,9 +2,6 @@
 
 #include <cstdint>
 
-// Backend-neutral render-target usage mask (Étape 16.3.f). Backends map it to
-// their own image-usage flags (Vulkan: rhi/vulkan/RenderTexture.cpp).
-
 namespace saida::rhi {
 
 enum class TextureUsage : uint32_t {

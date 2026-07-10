@@ -6,9 +6,6 @@
 
 #include <stdexcept>
 
-// Vulkan backend: rhi::Format <-> VkFormat. Kept in the rhi/vulkan/ backend layer
-// so the neutral rhi/Format.hpp stays free of Vulkan types (Étape 16.3).
-
 namespace saida::rhi::vulkan {
 
 inline VkFormat toVk(Format f) {
@@ -32,9 +29,7 @@ inline VkFormat toVk(Format f) {
     return VK_FORMAT_UNDEFINED;
 }
 
-// Reverse mapping, used only at the temporary Swapchain/HDR/depth coutures where a
-// VkFormat is queried at runtime (device caps, swapchain surface format) and fed
-// into a neutral Pipeline::Desc. Disappears once 16.3.f neutralises those queries.
+// Runtime surface and device queries expose VkFormat rather than the neutral type.
 inline Format fromVk(VkFormat f) {
     switch (f) {
         case VK_FORMAT_UNDEFINED:            return Format::Undefined;

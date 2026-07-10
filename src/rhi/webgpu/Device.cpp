@@ -65,8 +65,7 @@ void Device::initialize(WGPUInstance instance, WGPUDevice device) {
     device_ = device;
     queue_ = wgpuDeviceGetQueue(device_);
 
-    // Web capability profile: the renderer branches on these instead of
-    // #ifdefs (PLAN_RHI §3). Everything Vulkan-specific reads false.
+    // Vulkan-only capabilities stay false on this backend.
     capabilities_.apiVersion = 0;
     capabilities_.dynamicRendering = true;    // WebGPU renders without pass objects
     capabilities_.synchronization2 = false;   // sync is driver-managed

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tiny WebSocket echo/broadcast server for PLAN_LIVE_EDIT_WEB S3.
+"""Tiny WebSocket echo/broadcast server for local live-edit testing.
 
 This is a local spike helper, not the production Collaboration Gateway. It only
 proves the browser path: WebSocket text frame -> SaidaOp JSON -> wasm applyOp.

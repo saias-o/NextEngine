@@ -9,13 +9,7 @@
 #include <string>
 #include <vector>
 
-// WebGPU backend for rhi::Pipeline / rhi::ComputePipeline (Étape 16.4). Same
-// Desc shape as the Vulkan backend, with two web-specific realities:
-//   - shader paths point at the transpiled .wgsl files (16.2), entry point
-//     `main` for every stage;
-//   - push constants are emulated: a pipeline with pushConstantSize > 0 gets
-//     group 3 = one dynamic-offset uniform slice of the Device's push ring
-//     (mirrors `PUSH_QUALIFIER` in shaders/web_compat.glsl).
+// Push constants use a dynamic-offset uniform slice at group 3 on WebGPU.
 
 namespace saida::rhi::webgpu {
 
@@ -25,13 +19,13 @@ class Device;
 class Pipeline {
 public:
     struct Desc {
-        std::string vertPath;              // .wgsl
-        std::string fragPath;              // empty → depth-only
+        std::string vertPath;
+        std::string fragPath;
         std::vector<rhi::Format> colorFormats;
         rhi::Format depthFormat = rhi::Format::Undefined;
-        std::vector<const BindGroupLayout*> bindGroupLayouts;  // groups 0..2
+        std::vector<const BindGroupLayout*> bindGroupLayouts;
         uint32_t samples = 1;
-        bool vertexInput = true;           // the engine Vertex layout (8 attributes)
+        bool vertexInput = true;
         bool depthTest = true;
         bool depthWrite = true;
         rhi::CompareOp depthCompare = rhi::CompareOp::Less;
@@ -40,7 +34,7 @@ public:
         rhi::Topology topology = rhi::Topology::TriangleList;
         uint32_t pushConstantSize = 0;
         rhi::ShaderStages pushConstantStages = rhi::ShaderStages::VertexFragment;
-        uint32_t viewMask = 0;             // ignored: no multiview on web
+        uint32_t viewMask = 0;
         // writeMask None on every color target: for passes whose fragment writes
         // nothing (voxelize's dummy attachment — WebGPU forbids attachment-less
         // passes, so a throwaway target keeps the rasterizer running).

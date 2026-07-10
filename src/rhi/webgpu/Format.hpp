@@ -3,8 +3,6 @@
 #include "rhi/Format.hpp"
 #include "rhi/webgpu/WebGpu.hpp"
 
-// WebGPU backend: rhi::Format -> WGPUTextureFormat (Étape 16.4). Mirror of
-// rhi/vulkan/Format.hpp.
 
 namespace saida::rhi::webgpu {
 

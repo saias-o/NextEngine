@@ -58,9 +58,8 @@ void registerReflectedTypes() {
     registerBehaviour<AudioSourceBehaviour>();
     registerBehaviour<CameraFollowBehaviour>();
     registerBehaviour<CharacterBehaviour>();
-    registerBehaviour<HealthBehaviour>();  // core gameplay component
+    registerBehaviour<HealthBehaviour>();
     registerBehaviour<SpawnerBehaviour>();
-    // High-level gameplay primitives (M5).
     registerBehaviour<Blackboard>();
     registerBehaviour<StateMachineBehaviour>();
     registerBehaviour<ScenarioAnchor>();

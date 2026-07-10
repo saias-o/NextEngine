@@ -1,8 +1,6 @@
 #pragma once
 
-// Compatibility shim: RenderCapabilities is now the backend-neutral
-// rhi::Capabilities (Étape 16.3). New code should include "rhi/Capabilities.hpp"
-// and use saida::rhi::Capabilities directly.
+// Compatibility alias for callers not yet including the neutral RHI header.
 #include "rhi/Capabilities.hpp"
 
 namespace saida {

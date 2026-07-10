@@ -46,10 +46,7 @@
       statusEl.textContent = 'JS rejection: ' + reason;
     });
 
-    // --- Spike live-edit web, palier S1 (PLAN_LIVE_EDIT_WEB.md) --------------
-    // Petite surface d'édition exposée au JS. Le C++ ne connaît que des SaidaOp
-    // JSON ; ici on se contente de les fabriquer et de les envoyer via ccall.
-    // Opt-in par ?edit dans l'URL : le runtime de jeu reste intact par défaut.
+    // Opt-in through ?edit so the game runtime stays unchanged by default.
     function makeSaidaApi() {
       var call = function(name, arg) {
         return arg === undefined

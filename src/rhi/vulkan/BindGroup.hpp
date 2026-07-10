@@ -7,11 +7,7 @@
 
 #include <vector>
 
-// Vulkan backend for rhi::BindGroup(Layout) (Étape 16.3.d). A BindGroupLayout
-// wraps a VkDescriptorSetLayout and owns a growable pool hidden from callers
-// (WebGPU has no descriptor pools). A BindGroup is an immutable descriptor set:
-// to change a binding, recreate the group — re-pointing is rare (GI atlas,
-// tonemap targets) and recreation keeps both backends on one model.
+// Descriptor pools stay backend-internal; immutable groups keep the RHI portable.
 
 namespace saida {
 class Buffer;
@@ -29,8 +25,6 @@ public:
     BindGroupLayout(const BindGroupLayout&) = delete;
     BindGroupLayout& operator=(const BindGroupLayout&) = delete;
 
-    // Migration escape hatch: legacy Pipeline constructors and raw
-    // vkCmdBindDescriptorSets calls; usage shrinks to zero as 16.3.d/e proceed.
     VkDescriptorSetLayout handle() const { return layout_; }
 
     const std::vector<rhi::BindGroupLayoutEntry>& entries() const { return entries_; }
@@ -51,26 +45,19 @@ private:
     std::vector<Pool> pools_;
 };
 
-// One resource bound at `binding`. Exactly one of buffer / view(+sampler) is
-// set, matching the layout entry's BindingType.
 struct BindGroupEntry {
     uint32_t binding = 0;
 
-    const saida::Buffer* buffer = nullptr;  // UniformBuffer / StorageBuffer
+    const saida::Buffer* buffer = nullptr;
     uint64_t offset = 0;
-    uint64_t range = 0;                     // 0 = whole buffer
+    uint64_t range = 0;
 
-    VkImageView view = VK_NULL_HANDLE;      // textures / storage images
-    VkSampler sampler = VK_NULL_HANDLE;     // Sampler / CombinedImageSampler
-    // Layout the texture is in when sampled (ShaderRead for color textures,
-    // DepthRead for sampled depth like shadow maps, StorageReadWrite for images).
+    VkImageView view = VK_NULL_HANDLE;
+    VkSampler sampler = VK_NULL_HANDLE;
     rhi::ResourceState textureState = rhi::ResourceState::ShaderRead;
 };
 
-// A pipeline-layout slot: either an rhi BindGroupLayout (the normal path) or a
-// raw VkDescriptorSetLayout. The raw form exists for ONE caller family — the
-// bindless UPDATE_AFTER_BIND set (out of RHI scope until 16.4's caps.bindless
-// fallback, see ResourceManager). Everything else passes BindGroupLayouts.
+// The raw form supports the bindless descriptor set outside the portable RHI.
 struct BindGroupLayoutRef {
     const BindGroupLayout* layout = nullptr;
     VkDescriptorSetLayout raw = VK_NULL_HANDLE;
@@ -89,13 +76,11 @@ public:
     BindGroup(const BindGroup&) = delete;
     BindGroup& operator=(const BindGroup&) = delete;
 
-    // Migration escape hatch (raw vkCmdBindDescriptorSets); RenderPassEncoder /
-    // ComputePassEncoder::setBindGroup is the target API.
     VkDescriptorSet handle() const { return set_; }
 
 private:
     BindGroupLayout& layout_;
-    VkDescriptorPool pool_ = VK_NULL_HANDLE;  // owning pool (needed to free)
+    VkDescriptorPool pool_ = VK_NULL_HANDLE;
     VkDescriptorSet set_ = VK_NULL_HANDLE;
 };
 

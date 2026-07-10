@@ -72,9 +72,7 @@ public:
 
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect) const;
 
-    // Records a one-shot command batch through an rhi::CommandEncoder and waits
-    // for completion — the RHI staging/init path (PLAN_RHI §7.2). Replaces
-    // begin/endSingleTimeCommands at callers.
+    // Waits for a one-shot batch so callers can safely use its result immediately.
     void withSingleTimeEncoder(const std::function<void(rhi::vulkan::CommandEncoder&)>& fn) const;
 
     VkCommandBuffer beginSingleTimeCommands() const;

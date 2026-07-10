@@ -77,7 +77,6 @@ EditorUI::EditorUI() : history_(document_) {
     startProjectScan(openBrowsePath_);
 
 #ifdef SAIDA_ENABLE_MCP
-    // Start the in-process MCP server (LLM-driven editing). Port overridable via
     // SAIDA_MCP_PORT; default 8765. Disabled entirely by SAIDA_MCP=0.
     const char* disabled = std::getenv("SAIDA_MCP");
     if (!disabled || std::string(disabled) != "0") {
@@ -972,7 +971,6 @@ void EditorUI::drawBuildWindow(Project* project) {
                 ImGui::Checkbox("Strip local debugging symbols to reduce binary size", &buildEnableLto_);
             }
             else if (selectedBuildPlatform_ == BuildPlatform::WebGL) {
-                // Web (WebGPU / WASM) — Étape 16.6
                 ImGui::SeparatorText("Web (WebGPU / WebAssembly) Settings");
 
                 ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.20f, 1.0f),

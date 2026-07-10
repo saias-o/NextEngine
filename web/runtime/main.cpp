@@ -662,9 +662,7 @@ std::string pickNode(float ndcX, float ndcY) {
 
 } // namespace
 
-// --- Spike S0/S1: authoring-core bindings (PLAN_LIVE_EDIT_WEB.md §4) ----------
-// String-in / string-out (JSON). Piloté depuis le JS via Module.ccall.
-// `gApp` a une linkage interne mais reste visible dans cette TU.
+// JSON string API exposed to JavaScript through Module.ccall.
 extern "C" {
 
 EMSCRIPTEN_KEEPALIVE

@@ -296,8 +296,6 @@ void ScenarioRunnerBehaviour::executeCommand(const ScenarioCommand& command) {
         return;
     }
 
-    // Objective, input, camera and audio are stable integration keys in V1. They
-    // intentionally no-op until a project installs richer systems behind them.
 }
 
 bool ScenarioRunnerBehaviour::evaluateCondition(const json& condition) const {

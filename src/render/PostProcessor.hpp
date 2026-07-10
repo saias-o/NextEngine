@@ -41,7 +41,7 @@ private:
     struct Target {
         std::unique_ptr<rhi::RenderTexture> texture;
         rhi::Extent2D extent{};
-        // Explicitly tracked by the owner (PLAN_RHI 7.3: no automatic tracking).
+        // The owner tracks this state; transitions are never inferred.
         rhi::ResourceState state = rhi::ResourceState::Undefined;
     };
 
@@ -67,9 +67,7 @@ private:
 
     std::vector<Target> bloom_;
     std::unique_ptr<rhi::Sampler> linearSampler_;
-    // Pilot conversion of 16.3.d: descriptor layout/pool/sets behind rhi::.
-    // Groups are immutable — re-pointing an input (setHdrInput, target resize)
-    // recreates them. The layout must outlive the groups (it owns their pool).
+    // Groups are immutable; recreating a target therefore recreates its inputs.
     std::unique_ptr<rhi::BindGroupLayout> inputLayout_;
     std::vector<std::unique_ptr<rhi::BindGroup>> downsampleGroups_;
     std::vector<std::unique_ptr<rhi::BindGroup>> upsampleGroups_;

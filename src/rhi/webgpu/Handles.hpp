@@ -4,8 +4,6 @@
 
 #include <cstdint>
 
-// WebGPU backend for the neutral handle/value aliases (Étape 16.5.a) — mirror
-// of rhi/vulkan/Handles.hpp.
 
 namespace saida::rhi::webgpu {
 
@@ -28,8 +26,6 @@ struct Rect2D {
     Extent2D extent{};
 };
 
-// Plain sample count (1/2/4…): numerically identical to the Vulkan backend's
-// VkSampleCountFlagBits values.
 using SampleCount = uint32_t;
 
 } // namespace saida::rhi::webgpu

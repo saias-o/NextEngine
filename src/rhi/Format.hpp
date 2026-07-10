@@ -2,10 +2,6 @@
 
 #include <cstdint>
 
-// Backend-neutral texture / attachment formats (Étape 16.3, RHI). Backends map
-// these to their own enum (Vulkan: rhi/vulkan/Format.hpp; WebGPU in 16.4). The
-// set grows as the extraction reaches render targets and pipelines.
-
 namespace saida::rhi {
 
 enum class Format : uint32_t {

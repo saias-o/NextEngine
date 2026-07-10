@@ -219,9 +219,7 @@ VkImageView Texture::createImageView(VkFormat format, VkImageAspectFlags aspect)
     return view;
 }
 
-// Mip generation stays raw Vulkan (vkCmdBlitImage): blits have no neutral RHI
-// abstraction by design — the WebGPU backend (16.4) generates mips its own way
-// (render/compute passes). This is backend-internal code.
+// Mip generation stays backend-local because the APIs expose different mechanisms.
 void Texture::generateMipmaps() {
     VkCommandBuffer cmd = device_.beginSingleTimeCommands();
 

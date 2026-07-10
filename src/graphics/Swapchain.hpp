@@ -11,10 +11,7 @@ namespace saida {
 class VulkanDevice;
 class Window;
 
-// Swapchain plus MSAA color target and depth buffer — the Vulkan backend of
-// rhi::Surface (16.3.f). Owns presentation AND its synchronisation: per-frame
-// fences + acquire semaphores, per-image render-finished semaphores. Dynamic
-// rendering means the Renderer owns layout transitions and render passes.
+// Vulkan surface owns presentation and per-frame synchronization.
 class Swapchain {
 public:
     static constexpr uint32_t kFramesInFlight = 2;
@@ -24,23 +21,12 @@ public:
     Swapchain(const Swapchain&) = delete;
     Swapchain& operator=(const Swapchain&) = delete;
 
-    // ---- rhi::Surface presentation API ----
-    // Blocks until the given frame slot's previous submission completed.
     void waitFrame(uint32_t frame) const;
-    // Acquires the next image. Returns false when the swap chain is out of
-    // date — the caller recreates its targets and skips the frame.
+    // An out-of-date swapchain makes the caller rebuild targets and skip the frame.
     bool acquire(uint32_t frame, uint32_t& imageIndex);
-    // Submits the recorded frame (waiting on the acquire, signalling the
-    // per-image present semaphore + the frame fence) and presents. Returns
-    // true when the swap chain must be recreated (out of date / suboptimal /
-    // window resized). WebGPU backend (16.4): both are trivial, sync is no-op.
     bool submitAndPresent(VkCommandBuffer cmd, uint32_t frame, uint32_t imageIndex);
 
-    // Per-frame command lifecycle (16.5.a): the Surface owns the frame command
-    // buffers, so the Renderer never touches vkAllocate/Begin/End/Reset. The
-    // WebGPU Surface creates a fresh WGPUCommandEncoder here instead.
     rhi::vulkan::CommandEncoder beginFrameCommands(uint32_t frame);
-    // Ends the encoder's command buffer, then submits + presents (see above).
     bool submitAndPresent(rhi::vulkan::CommandEncoder& encoder, uint32_t frame,
                           uint32_t imageIndex);
 

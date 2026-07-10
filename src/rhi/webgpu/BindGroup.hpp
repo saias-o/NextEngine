@@ -7,13 +7,7 @@
 
 #include <vector>
 
-// WebGPU backend for rhi::BindGroup(Layout) (Étape 16.4). WebGPU bind group
-// layouts need more static information than Vulkan descriptor layouts (texture
-// view dimension, sample type, comparison samplers, dynamic offsets), and the
-// web shaders split combined image samplers into texture+sampler pairs with
-// their own bindings (shaders/web_compat.glsl). So the web layouts are written
-// against the WGSL bindings directly, using this backend's richer entry — the
-// divergence anticipated in PLAN_RHI §7.4.
+// WebGPU layouts retain texture and sampler metadata required at pipeline creation.
 
 namespace saida::rhi::webgpu {
 
@@ -27,21 +21,16 @@ struct BindGroupLayoutEntry {
     rhi::BindingType type = rhi::BindingType::UniformBuffer;
     rhi::ShaderStages visibility = rhi::ShaderStages::VertexFragment;
 
-    // Texture hints (SampledTexture): dimension + whether the WGSL side reads
-    // it as a depth texture or an unfilterable float (e.g. the tonemap depth).
     TextureDim dim = TextureDim::Dim2D;
     bool depthTexture = false;
     bool unfilterable = false;
 
-    // Sampler hints: comparison sampler (shadow PCF) / non-filtering.
     bool comparisonSampler = false;
     bool nonFilteringSampler = false;
 
-    // Buffer hints.
     bool readOnlyStorage = false;
-    bool dynamicOffset = false;   // push-constant ring slices
+    bool dynamicOffset = false;
 
-    // StorageImage hint: the declared WGSL storage format.
     rhi::Format storageFormat = rhi::Format::RGBA16Float;
     WGPUStorageTextureAccess storageAccess = WGPUStorageTextureAccess_ReadWrite;
 };
@@ -63,7 +52,6 @@ private:
     WGPUBindGroupLayout layout_ = nullptr;
 };
 
-// One bound resource; exactly one of buffer / view / sampler is set.
 struct BindGroupEntry {
     uint32_t binding = 0;
     const Buffer* buffer = nullptr;

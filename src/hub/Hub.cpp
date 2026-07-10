@@ -328,8 +328,7 @@ void Hub::drawUI() {
 }
 
 void Hub::run() {
-    // 1-frame-in-flight loop: the frame sync lives in the Swapchain (rhi::Surface,
-    // 16.3.f) — the Hub just always uses frame slot 0.
+    // The Hub is single-frame-in-flight, so it always uses slot 0.
     VkCommandPool pool;
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;

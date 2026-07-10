@@ -1,13 +1,7 @@
 #pragma once
 
-// EngineManifest — description stable du moteur exposee au SaaS et aux agents IA.
-// Voir ARCHITECTURE_PRODUCTION_CLAUDE.md §2 (EngineManifest) et §3.3.
-//
-// Spike S0 (PLAN_LIVE_EDIT_WEB.md) : version minimale. Elle sert surtout, ici, a
-// faire referencer l'authoring-core par le binding web pour que le linker ne le
-// strippe pas — c'est ce qui rend la mesure de taille wasm honnete. La version
-// complete (proprietes reflechies, signaux, actions scenario) releve de la
-// Phase A du mandat.
+// Description stable du moteur pour les outils externes.
+// Garde l'authoring-core linke dans le build web afin que sa taille WASM soit reelle.
 
 #include <nlohmann/json.hpp>
 
@@ -17,7 +11,7 @@ namespace saida::authoring {
 //   scenario:{ actions:[...], conditions:[...] } }
 nlohmann::json buildEngineManifest();
 
-// Versions de contrat (invariant 0.6 : le pont inter-versions est le snapshot).
+// Les snapshots assurent la compatibilite entre versions de contrat.
 constexpr const char* kEngineVersion = "0.1.0";
 constexpr int kOpVersion = 1;
 

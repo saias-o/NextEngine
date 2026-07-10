@@ -1,26 +1,6 @@
 #pragma once
 
-// SaidaEngine reflection — the "API the LLM reads instead of the source".
-//
-// A behaviour/node declares its fields ONCE in a static `describe()`:
-//
-//     void RotatorBehaviour::describe(saida::reflect::TypeBuilder<RotatorBehaviour>& t) {
-//         t.doc("Spins its node around a local axis.");
-//         t.property("axis",  &RotatorBehaviour::axis);
-//         t.property("speed", &RotatorBehaviour::speed).range(0, 360).tooltip("deg/s");
-//         t.signal("fullRotation", &RotatorBehaviour::fullRotation);   // named Signal<>
-//         t.slot("reset", &RotatorBehaviour::reset);                   // invocable method
-//     }
-//
-// From that single declaration we get, for free:
-//   • automatic save()/load() (no hand-written JSON boilerplate),
-//   • a compact machine-readable manifest (`TypeRegistry::manifest()`),
-//   • named, data-wireable signals/slots (used by the M2 SignalWiring layer).
-//
-// Header-only descriptors via member pointers — no external codegen step (keeps
-// the MSYS2 toolchain happy). This header pulls in nlohmann/json, so it is meant
-// to be included by leaf gameplay .cpp files (and the few headers that use the
-// SAIDA_REFLECT_* macros), never by widely-shared engine headers.
+// Keep this JSON-heavy header out of widely shared engine headers.
 
 #include "core/ReflectionFwd.hpp"
 #include "core/Signal.hpp"
@@ -84,7 +64,6 @@ struct Traits<glm::vec4> {
 template <>
 struct Traits<glm::quat> {
     static const char* kind() { return "quat"; }
-    // stored x,y,z,w (matches the transform.rotation convention in the serializer)
     static void to(json& j, const glm::quat& v) { j = json::array({v.x, v.y, v.z, v.w}); }
     static void from(const json& j, glm::quat& v) {
         if (j.is_array() && j.size() == 4)
@@ -98,7 +77,7 @@ inline void pushArg(json& arr, const V& v) {
     else if constexpr (std::is_arithmetic_v<V>) arr.push_back(v);
     else if constexpr (std::is_enum_v<V>) arr.push_back(static_cast<long long>(v));
     else if constexpr (std::is_same_v<V, std::string>) arr.push_back(v);
-    else arr.push_back(nullptr);  // pointers / structs carry no JSON payload
+    else arr.push_back(nullptr);
 }
 
 template <typename A>
@@ -115,12 +94,12 @@ inline std::decay_t<A> getArg(const json& arr, std::size_t i) {
 
 struct PropertyDesc {
     std::string name;
-    std::string kind;       // "float" | "int" | "bool" | "string" | "vec3" | ... | "asset"
+    std::string kind;
     std::string tooltip;
     bool hasRange = false;
     double min = 0.0;
     double max = 0.0;
-    std::vector<std::string> enumLabels;  // for kind == "enum"
+    std::vector<std::string> enumLabels;
     std::function<void(const void*, json&)> get;
     std::function<void(void*, const json&)> set;
 };
@@ -128,22 +107,16 @@ struct PropertyDesc {
 struct SignalDesc {
     std::string name;
     int arity = 0;
-    // Subscribe `sink` (receives a JSON array of the emitted args) to this object's
-    // signal; returns a lifetime-managed Connection. Filled by TypeBuilder::signal.
     std::function<Connection(void*, std::function<void(const json&)>)> connect;
-    // Fire the signal with a JSON array of args (value-typed args only; pointer
-    // args receive defaults). Filled by TypeBuilder::signal.
     std::function<void(void*, const json&)> emit;
 };
 
 struct SlotDesc {
     std::string name;
     int arity = 0;
-    // Invoke the method with a JSON array of args. Filled by TypeBuilder::slot.
     std::function<void(void*, const json&)> invoke;
 };
 
-// Fluent handle returned by property() for optional metadata.
 struct PropertyRef {
     PropertyDesc* d = nullptr;
     PropertyRef& range(double lo, double hi) { d->hasRange = true; d->min = lo; d->max = hi; return *this; }
@@ -154,7 +127,7 @@ struct PropertyRef {
 
 struct TypeDesc {
     std::string name;
-    std::string category;  // "behaviour" | "node"
+    std::string category;
     std::string doc;
     std::vector<PropertyDesc> properties;
     std::vector<SignalDesc> signals;
@@ -173,11 +146,9 @@ struct TypeDesc {
         return nullptr;
     }
 
-    // Write every property into `j` (top-level keys, matching the legacy format).
     void saveTo(const void* obj, json& j) const {
         for (const auto& p : properties) { json v; p.get(obj, v); j[p.name] = std::move(v); }
     }
-    // Read every property that is present in `j` (missing keys keep defaults).
     void loadFrom(void* obj, const json& j) const {
         for (const auto& p : properties) {
             auto it = j.find(p.name);
@@ -185,7 +156,7 @@ struct TypeDesc {
         }
     }
 
-    json manifest() const;  // defined in Reflection.cpp
+    json manifest() const;
 };
 
 template <typename T>
@@ -256,11 +227,9 @@ class TypeRegistry {
 public:
     static TypeRegistry& instance();
 
-    // Insert or replace a type entry; returns a stable reference.
     TypeDesc& add(const std::string& name);
     const TypeDesc* find(const std::string& name) const;
 
-    // Compact manifest. Empty filter = everything; otherwise "behaviour"/"node".
     json manifest(const std::string& categoryFilter = "") const;
     json manifestFor(const std::string& typeName) const;
 
@@ -287,9 +256,6 @@ void loadObject(T& obj, const json& j) { localDesc<T>().loadFrom(&obj, j); }
 
 } // namespace saida::reflect
 
-// Macros placed in a class body. They wire typeName() + auto serialization to the
-// reflected descriptor. Put them in the class's *header* and define describe() in
-// the .cpp (which includes this header).
 #define SAIDA_REFLECT_BEHAVIOUR(Type, NameStr)                                        \
 public:                                                                             \
     static constexpr const char* reflectName() { return NameStr; }                  \

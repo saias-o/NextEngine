@@ -1,18 +1,4 @@
-// saida_tool — CLI headless d'outillage moteur (Phase B du plan d'integration,
-// PLAN_INTEGRATION_SAIDA.md). Pas de fenetre, pas de GPU : lie l'authoring-core
-// (EngineManifest / SaidaOp) et sert de socle aux workers Temporal (describe,
-// validate, apply-ops). Codes de sortie fiables : 0 = ok, non-zero = erreur.
-//
-// Sous-commandes :
-//   describe-engine [--pretty]   Ecrit l'EngineManifest JSON sur stdout (B4).
-//   validate-ops <file>          Valide statiquement des SaidaOps (B2).
-//   validate-scene <file>        Valide la structure d'un snapshot de scene (B2).
-//   validate-script <file>       Compile-check un script JS/MJS (QuickJS) (B2).
-//   validate-scenario <file>     Valide un asset scenario sans GPU (B2).
-//   apply-ops <scene> <ops>      Applique des ops -> snapshot deterministe (B3).
-//   help | --help | -h           Affiche l'aide.
-//
-// Convention : les diagnostics vont sur stderr, la sortie machine sur stdout.
+// Headless tool entry point. Keep machine output on stdout and diagnostics on stderr.
 
 #include "authoring/EngineManifest.hpp"
 #include "authoring/SaidaOp.hpp"
@@ -86,7 +72,6 @@ int usage(std::ostream& out) {
     return kExitUsage;
 }
 
-// Lit un fichier entier ; '-' = stdin. Renvoie false + message sur echec.
 bool readInput(const std::string& path, std::string& out, std::string& error) {
     if (path == "-") {
         std::ostringstream ss;
@@ -152,7 +137,6 @@ int cmdValidateOps(const std::vector<std::string>& args) {
         std::cerr << "validate-ops: input is not valid JSON\n";
         return kExitUsage;
     }
-    // Accepte un tableau d'ops, ou une op unique (enveloppee en tableau).
     json ops = parsed.is_array() ? parsed : json::array({parsed});
 
     json errors = json::array();
@@ -226,9 +210,6 @@ int cmdValidateScenario(const std::vector<std::string>& args) {
     return ok ? kExitOk : kExitInvalid;
 }
 
-// Walk a scene-snapshot node subtree, appending structural issues. Pure JSON
-// checks (no GPU) : every node needs a string type/name, ids must be unique
-// integers, transforms and children must be well-shaped.
 void walkSceneNode(const json& n, const std::string& path, json& issues,
                    std::unordered_set<long long>& ids, std::size_t& nodeCount) {
     auto issue = [&](const std::string& msg) {
@@ -322,9 +303,6 @@ int cmdValidateScene(const std::vector<std::string>& args) {
     return ok ? kExitOk : kExitInvalid;
 }
 
-// Compile-only JS syntax check (QuickJS, no execution, no engine bindings, no
-// GPU). Module vs global parse mode follows the .mjs extension unless overridden
-// by --module / --script.
 int cmdValidateScript(const std::vector<std::string>& args) {
     std::string path;
     bool pretty = false;
@@ -366,9 +344,7 @@ int cmdValidateScript(const std::vector<std::string>& args) {
     }
     const std::string filename = path == "-" ? (asModule ? "<stdin>.mjs" : "<stdin>.js") : path;
 
-    // QuickJS init/teardown log via Log::info, which writes to stdout. Route
-    // stdout to stderr for the runtime's lifetime so the report stays the only
-    // machine output on stdout.
+    // QuickJS logs to stdout; redirect it so the report remains machine-readable.
     std::string error;
     bool ok;
     std::streambuf* prevCout = std::cout.rdbuf(std::cerr.rdbuf());
@@ -447,9 +423,7 @@ int cmdApplyOps(const std::vector<std::string>& args) {
         return kExitUsage;
     }
 
-    // Snapshot the loaded ids up front: create_node mints fresh ids via
-    // generateNodeId(), which is seeded per-process — non-reproducible. We keep
-    // loaded ids and renumber only the new nodes below.
+    // New node IDs are process-seeded, so preserve loaded IDs and renumber new ones.
     std::unordered_set<saida::NodeId> loadedIds;
     saida::NodeId maxLoadedId = 0;
     scene.traverse([&](saida::Node& n, const glm::mat4&) {
@@ -457,14 +431,7 @@ int cmdApplyOps(const std::vector<std::string>& args) {
         maxLoadedId = std::max(maxLoadedId, n.id());
     });
 
-    // Apply in order. Default is atomic: the first rejected op aborts the whole
-    // batch (an interactive op-log must never leave a half-applied snapshot).
-    // With --skip-invalid, ops that fail to apply against the current state are
-    // dropped and recorded instead of aborting — this is how the Collaboration
-    // Gateway folds an op-log where later ops reference nodes an earlier op
-    // deleted (conflict resolution / invariant 0.6). The real applier stays the
-    // single authority for what is applicable (no logic duplicated server-side).
-    // No GPU resources, so ops needing one (create_node MeshNode) also fail.
+    // Default mode is atomic; --skip-invalid supports conflict-tolerant op logs.
     json skipped = json::array();
     for (std::size_t i = 0; i < ops.size(); ++i) {
         const json res = json::parse(
@@ -482,13 +449,10 @@ int cmdApplyOps(const std::vector<std::string>& args) {
         }
     }
     if (skipInvalid && !skipped.empty()) {
-        // Diagnostics on stderr so stdout stays a pure snapshot when no --out.
         std::cerr << json{{"skipped", skipped}}.dump() << "\n";
     }
 
-    // Deterministic ids: renumber every node created by the ops (id absent from
-    // the loaded set) to a sequential id above the loaded max, in depth-first
-    // order. Loaded ids are preserved; the snapshot is byte-reproducible.
+    // Renumber only created nodes so identical input yields identical snapshots.
     saida::NodeId nextId = maxLoadedId + 1;
     scene.traverse([&](saida::Node& n, const glm::mat4&) {
         if (loadedIds.find(n.id()) == loadedIds.end())

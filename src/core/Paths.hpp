@@ -41,9 +41,6 @@ SandboxedPathResult resolveSandboxedProjectPath(const std::string& projectRoot,
 
 inline std::string assetPath(const std::string& relative) {
 #ifdef __EMSCRIPTEN__
-    // Web mode (Étape 16.1): assets are packaged into MEMFS under /assets
-    // (--preload-file <dir>@/assets); a fetch/IDBFS streaming backend can
-    // replace this later without touching call sites.
     return "/assets/" + relative;
 #else
     const std::string& root = runtimeRoot();

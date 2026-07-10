@@ -8,16 +8,8 @@
 #include <memory>
 #include <vector>
 
-// WebGPU backend for rhi::Device (Étape 16.4). Mirror of VulkanDevice's
-// RHI-facing surface: capabilities(), withSingleTimeEncoder(), waitIdle().
-// Creation is asynchronous on the web (requestAdapter/requestDevice callbacks):
-// Device::requestAsync hands the ready Device to a continuation, after which
-// the app configures the Surface and starts the RAF loop.
-//
-// The device also owns the push-constant emulation ring: WGSL has no push
-// constants, so shaders declare `@group(3) @binding(0) var<uniform> push`
-// (see shaders/web_compat.glsl). Each setPushConstants() call allocates a
-// 256-byte-aligned slot in a per-frame ring, bound with a dynamic offset.
+// WebGPU device creation is asynchronous.
+// WGSL push constants use 256-byte-aligned dynamic uniform slices.
 
 namespace saida::rhi::webgpu {
 
@@ -27,9 +19,7 @@ class Device {
 public:
     using ReadyFn = std::function<void(std::unique_ptr<Device>)>;
 
-    // Kicks off instance -> adapter -> device; calls `onReady` with the built
-    // Device (or nullptr on failure). The caller keeps the runtime alive
-    // (emscripten_exit_with_live_runtime) until the callback fires.
+    // The runtime must stay alive until this callback runs.
     static void requestAsync(ReadyFn onReady);
 
     ~Device();
@@ -49,29 +39,19 @@ public:
 
     void waitIdle() const {}  // driver-managed on web
 
-    // --- Push-constant ring (backend-internal; used by the pass encoders) ---
-    // Resets the ring cursor; call once per frame before recording. (Safe
-    // because the browser serialises frames: by the next RAF callback the
-    // previous submit's reads of the ring are complete.)
+    // RAF serializes frames, so the previous submit has consumed the ring.
     void beginFrame() { pushCursor_ = 0; pushFlushed_ = 0; }
-    // Copies `size` bytes into the next aligned slot; returns its byte offset.
     uint32_t allocPushSlot(const void* data, uint32_t size);
-    // Uploads this frame's slots; called right before every queue submit.
     void flushPushRing();
     WGPUBuffer pushRingBuffer() const { return pushRing_; }
 
-    // Cached empty bind group layout + group, used to fill pipeline-layout gaps
-    // (e.g. [set0, set1, empty, set3-push]) — WebGPU wants contiguous groups.
+    // WebGPU pipeline layouts require contiguous bind-group indices.
     WGPUBindGroupLayout emptyBindGroupLayout();
     WGPUBindGroup emptyBindGroup();
 
-    // Cached all-zero buffer of at least `size` bytes (WebGPU zero-initialises
-    // buffers; this one is never written). Source for texture zero-clears —
     // WebGPU has no clear-texture command outside a render pass.
     WGPUBuffer zeroBuffer(uint64_t size);
 
-    // Backend-internal (used by the requestAsync callbacks); apps go through
-    // requestAsync, never construct a Device directly.
     Device() = default;
     void initialize(WGPUInstance instance, WGPUDevice device);
 

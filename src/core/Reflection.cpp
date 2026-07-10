@@ -52,8 +52,7 @@ json TypeDesc::manifest() const {
 }
 
 json TypeRegistry::manifest(const std::string& categoryFilter) const {
-    // Stable, sorted output so the manifest is diff-friendly (token-efficient
-    // caching on the LLM side).
+    // Stable output makes manifests diff-friendly and cacheable.
     std::vector<const TypeDesc*> behaviours, nodes;
     for (const auto& [name, d] : types_) {
         if (!categoryFilter.empty() && d->category != categoryFilter) continue;

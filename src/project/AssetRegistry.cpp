@@ -196,28 +196,23 @@ void AssetRegistry::sync(const std::string& projectRoot) {
 
     std::vector<AssetID> missingAssets;
     
-    // Step 1: Detect missing assets
     for (const auto& [id, meta] : assetsByID_) {
         if (currentFiles.find(meta.relativePath) == currentFiles.end()) {
             missingAssets.push_back(id);
         } else {
-            // Update hash if changed
             assetsByID_[id].contentHash = currentFiles[meta.relativePath];
         }
     }
 
-    // Step 2: Try to heal missing assets by looking for untracked files with the same hash
     for (auto it = currentFiles.begin(); it != currentFiles.end(); ) {
         const std::string& relPath = it->first;
         uint64_t hash = it->second;
 
-        // If file is already tracked, skip
         if (assetsByPath_.find(relPath) != assetsByPath_.end()) {
             ++it;
             continue;
         }
 
-        // Untracked file found! Can we heal a missing asset?
         bool healed = false;
         AssetType type = determineType(root / relPath);
 

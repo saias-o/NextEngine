@@ -25,10 +25,7 @@ namespace {
 
 using json = nlohmann::json;
 
-// --- helpers ----------------------------------------------------------------
-
-// Recherche par nom (le spike reference les nodes par nom ; le systeme final
-// utilisera NodeId). Volontairement local : pas de find-by-name global moteur.
+// Recherche locale : le moteur ne fournit pas de find-by-name global.
 Node* findByName(Node& n, const std::string& name) {
     if (n.name() == name) return &n;
     for (const auto& c : n.children())
@@ -52,8 +49,7 @@ std::string err(const std::string& msg) {
 std::string ok(const std::string& applied, json diff) {
     return json{{"ok", true}, {"applied", applied}, {"diff", std::move(diff)}}.dump();
 }
-// Phase A5 : les ops reussies portent leur inverse ("inverse" = une SaidaOp
-// prete a re-appliquer). C'est la brique undo/redo et dry-run (apply -> invert).
+// L'inverse porte undo/redo et le dry-run.
 std::string ok(const std::string& applied, json diff, json inverse) {
     return json{{"ok", true}, {"applied", applied}, {"diff", std::move(diff)},
                 {"inverse", std::move(inverse)}}.dump();
@@ -118,8 +114,6 @@ bool valueMatchesKind(const reflect::PropertyDesc& prop, const json& v, std::str
     return true;
 }
 
-// --- ops --------------------------------------------------------------------
-
 std::string opSetTransform(Scene& scene, const json& p) {
     const std::string target = p.value("nodeId", std::string());
     Node* n = findByName(scene, target);
@@ -154,15 +148,12 @@ std::string opCreateNode(Scene& scene, ResourceManager* resources, const json& p
     if (!parent) return err("unknown parent '" + parentName + "'");
 
     if (type == "MeshNode") {
-        // MeshNode references a mesh + material owned by the ResourceManager, so
-        // it can only be created where those exist (editor/runtime, not headless).
+        // MeshNode needs resources unavailable to headless callers.
         if (!resources) return err("create_node MeshNode needs ResourceManager");
         Mesh* mesh = resources->getMesh(kAssetBuiltinCube);
         Material* mat = resources->getMaterial(MaterialDesc{});
         parent->addChild(std::make_unique<MeshNode>(name, mesh, mat));
     } else {
-        // Every other reflected node type is built by name from the NodeRegistry
-        // (LightNode, Water, ParticleSystem, …) — no GPU resources needed.
         registerReflectedTypes();  // idempotent: ensure the registry is populated
         std::unique_ptr<Node> node = NodeRegistry::instance().create(type);
         if (!node) return err("unsupported nodeType '" + type + "'");
@@ -170,7 +161,6 @@ std::string opCreateNode(Scene& scene, ResourceManager* resources, const json& p
         parent->addChild(std::move(node));
     }
     Node::g_hierarchyVersion++;
-    // Inverse : supprimer le node cree (reference par nom au stade spike).
     json inv = inverseOp("delete_node", json{{"nodeId", name}});
     return ok("create_node", json{{"created", name}, {"nodeType", type}}, std::move(inv));
 }
@@ -184,9 +174,7 @@ std::string opDeleteNode(Scene& scene, const json& p) {
     if (!parent) return err("node '" + target + "' has no parent");
     parent->removeChild(n);
     Node::g_hierarchyVersion++;
-    // delete_node n'est PAS op-inversible (reconstruire le sous-arbre supprime
-    // exige sa serialisation ; le pont de restauration est le snapshot,
-    // invariant 0.6). L'op reussit mais ne propose pas d'inverse.
+    // Restoring a deleted subtree requires a snapshot.
     return ok("delete_node", json{{"deleted", target}, {"invertible", false}});
 }
 
@@ -197,7 +185,6 @@ std::string opRenameNode(Scene& scene, const json& p) {
     Node* n = findByName(scene, target);
     if (!n) return err("unknown node '" + target + "'");
     n->setName(newName);
-    // Inverse : renommer en sens inverse (nouveau nom -> ancien nom).
     json inv = inverseOp("rename_node", json{{"nodeId", newName}, {"name", target}});
     return ok("rename_node", json{{"from", target}, {"to", newName}}, std::move(inv));
 }
@@ -213,7 +200,6 @@ std::string opReparentNode(Scene& scene, const json& p) {
     Node* newParent = parentName.empty() ? &scene : findByName(scene, parentName);
     if (!newParent) return err("unknown parent '" + parentName + "'");
     if (newParent == n) return err("cannot reparent node under itself");
-    // Cycle : le nouveau parent ne doit pas etre un descendant du node deplace.
     for (Node* a = newParent->parent(); a; a = a->parent())
         if (a == n) return err("cannot reparent under a descendant (cycle)");
 
@@ -226,12 +212,8 @@ std::string opReparentNode(Scene& scene, const json& p) {
                   std::move(inv));
     }
 
-    // Inverse : renvoyer le node sous son ancien parent. Capture avant mutation
-    // (oldParent == scene racine -> newParent vide dans l'inverse).
     const std::string oldParentName = (oldParent == &scene) ? std::string() : oldParent->name();
 
-    // La transform locale est conservee (la position monde peut changer) —
-    // c'est le contrat le plus simple et deterministe pour l'op-log.
     std::unique_ptr<Node> owned = oldParent->detachChild(n);
     if (!owned) return err("failed to detach node '" + target + "'");
     newParent->addChild(std::move(owned));
@@ -251,8 +233,6 @@ std::string opSetProperty(Scene& scene, const json& p) {
     if (!p.contains("value")) return err("set_property needs a 'value'");
     const json& v = p["value"];
 
-    // Inverse d'un set_property : re-set la meme propriete a la valeur d'avant.
-    // Le nodeId de l'inverse doit referencer le node APRES l'op (cas 'name').
     auto setPropInverse = [&](const std::string& nodeIdAfter, const json& before) {
         return inverseOp("set_property", json{{"nodeId", nodeIdAfter},
                                               {"property", prop}, {"value", before}});
@@ -391,7 +371,6 @@ std::string opAddBehaviour(Scene& scene, const json& p) {
     if (btype.empty()) return err("add_behaviour needs 'behaviourType'");
 
     registerReflectedTypes();  // idempotent: ensure the factory registry is ready
-    // One behaviour of a given type per node keeps add/remove/inverse unambiguous.
     if (findBehaviourByType(*n, btype))
         return err("node '" + target + "' already has behaviour '" + btype + "'");
     std::unique_ptr<Behaviour> b = BehaviourRegistry::instance().create(btype);
@@ -412,8 +391,7 @@ std::string opRemoveBehaviour(Scene& scene, const json& p) {
     Behaviour* b = findBehaviourByType(*n, btype);
     if (!b) return err("node '" + target + "' has no behaviour '" + btype + "'");
     n->removeBehaviour(b);
-    // Not op-invertible: restoring the removed behaviour's properties needs the
-    // snapshot (same rule as delete_node, invariant 0.6).
+    // Restoring removed behaviour properties requires a snapshot.
     return ok("remove_behaviour",
               json{{"nodeId", target}, {"behaviourType", btype}, {"invertible", false}});
 }
@@ -458,10 +436,6 @@ std::string opSetBehaviourProperty(Scene& scene, const json& p) {
               std::move(inv));
 }
 
-// Signal connections are data-driven links stored in the scene's "connections"
-// block (SignalConnectionDef {from, signal, to, slot}), round-tripped by the
-// snapshot and wired by SignalWiring at Play. Here we only edit the data — node
-// refs come in as names (like every other op) and resolve to NodeId at rest.
 std::string opAddSignalConnection(Scene& scene, const json& p) {
     const std::string fromName = p.value("from", std::string());
     const std::string signal = p.value("signal", std::string());
@@ -514,8 +488,7 @@ std::string opRemoveSignalConnection(Scene& scene, const json& p) {
 
 std::string applyOpJson(Scene& scene, ResourceManager* resources,
                         const std::string& opJson) {
-    // Parse + validation de forme via le contrat SaidaOp (Phase A1) : version,
-    // type connu, payload objet. Aucune mutation tant que ce n'est pas valide.
+    // Validate before mutating the scene.
     const SaidaOpParseResult parsed = parseSaidaOp(opJson);
     if (!parsed.ok) return err(parsed.error);
 

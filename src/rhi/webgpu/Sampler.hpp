@@ -3,8 +3,6 @@
 #include "rhi/Sampler.hpp"
 #include "rhi/webgpu/WebGpu.hpp"
 
-// WebGPU backend for rhi::Sampler (Étape 16.4).
-
 namespace saida::rhi::webgpu {
 
 class Device;

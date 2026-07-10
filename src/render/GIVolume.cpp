@@ -36,12 +36,10 @@ constexpr rhi::Format kVisibilityFormat = rhi::Format::RGBA16Float;
 constexpr rhi::Format kVisibilityFormat = rhi::Format::RG16Float;
 #endif
 constexpr rhi::Format kVoxelFormat = rhi::Format::RGBA16Float;
-// Atlases are compute-written (P2), sampled in the lighting pass, and (P0)
-// cleared once — hence Storage | Sampled | CopyDst.
+// Atlas data is compute-written, sampled, and initialized through a copy.
 constexpr rhi::TextureUsage kAtlasUsage =
     rhi::TextureUsage::Storage | rhi::TextureUsage::Sampled | rhi::TextureUsage::CopyDst;
 
-// Mirror of VoxelUBO in voxelize.vert/frag (std140).
 struct VoxelUBOData {
     glm::vec4 origin;
     glm::vec4 extent;
@@ -49,19 +47,16 @@ struct VoxelUBOData {
     glm::mat4 axisVP[3];
 };
 
-// Push constant for the voxelize pipeline (vertex stage).
 struct VoxelPush {
     glm::mat4 model;
     uint32_t axis;
 };
 
-// Per-element of the rays buffer (mirror of Ray in ddgi_trace/blend).
 struct RayData {
     glm::vec4 dirDist;
     glm::vec4 radiance;
 };
 
-// Compute push constants (mirror the shaders).
 struct TracePush {
     glm::mat4 randomRot;
     int32_t raysPerProbe;
@@ -83,7 +78,6 @@ struct BorderPush {
 GIVolume::GIVolume(rhi::Device& device, const GIVolumeDesc& desc,
                    rhi::BindGroupLayout& materialSetLayout, rhi::BindGroupLayout& globalSetLayout)
     : device_(device), desc_(desc) {
-    // Lay probes out in a roughly square 2D atlas.
     probesPerRow_ = std::max(1, static_cast<int>(std::ceil(std::sqrt(
                         static_cast<double>(desc_.probeCount())))));
 
@@ -147,7 +141,6 @@ void GIVolume::fillConstant() {
 void GIVolume::createVoxelResources(rhi::BindGroupLayout& materialSetLayout) {
     const uint32_t res = static_cast<uint32_t>(desc_.voxelResolution);
 
-    // 3D albedo grid.
     rhi::RenderTextureDesc voxelDesc;
     voxelDesc.format = kVoxelFormat;
     voxelDesc.width = res;
@@ -159,7 +152,6 @@ void GIVolume::createVoxelResources(rhi::BindGroupLayout& materialSetLayout) {
     voxelUbo_ = std::make_unique<Buffer>(device_, sizeof(VoxelUBOData),
         rhi::BufferUsage::Uniform, MemoryUsage::HostVisible);
 
-    // Descriptor set: binding 0 = storage image, binding 1 = UBO.
 #ifdef SAIDA_RHI_WEBGPU
     rhi::webgpu::BindGroupLayoutEntry voxelImage{};
     voxelImage.binding = 0;
@@ -195,7 +187,6 @@ void GIVolume::createVoxelResources(rhi::BindGroupLayout& materialSetLayout) {
     voxelSet_ = std::make_unique<rhi::BindGroup>(*voxelSetLayout_,
         std::vector<rhi::BindGroupEntry>{voxelImageEntry, uboEntry});
 
-    // --- Voxelize pipeline (attachment-less raster; writes only via imageStore). ---
     rhi::Pipeline::Desc pipelineDesc;
 #ifdef SAIDA_RHI_WEBGPU
     pipelineDesc.vertPath = "/shaders/voxelize.vert.wgsl";
@@ -216,7 +207,6 @@ void GIVolume::createVoxelResources(rhi::BindGroupLayout& materialSetLayout) {
 #else
     pipelineDesc.vertPath = shaderPath("voxelize.vert.spv");
     pipelineDesc.fragPath = shaderPath("voxelize.frag.spv");
-    // No color/depth formats: attachment-less pass, rasterize every triangle.
 #endif
     pipelineDesc.bindGroupLayouts = {voxelSetLayout_.get(), &materialSetLayout};
     pipelineDesc.depthTest = false;
@@ -234,9 +224,6 @@ void GIVolume::voxelize(rhi::CommandEncoder& encoder, const DrawGeometryFn& draw
     glm::vec3 extent = worldExtent();
     glm::vec3 center = desc_.origin + extent * 0.5f;
 
-    // Three orthographic view-projections, one per dominant axis, each covering
-    // the whole volume box. Orientation does not matter (the frag derives the
-    // voxel from world position), only that triangles get rasterized.
     VoxelUBOData ubo{};
     ubo.origin = glm::vec4(desc_.origin, 0.0f);
     ubo.extent = glm::vec4(extent, 0.0f);
@@ -251,14 +238,12 @@ void GIVolume::voxelize(rhi::CommandEncoder& encoder, const DrawGeometryFn& draw
     ubo.axisVP[2] = axisVP({0, 1, 0}, {0, 0, 1}, extent.x, extent.z, extent.y); // along Y
     voxelUbo_->write(&ubo, sizeof(ubo));
 
-    // Clear the grid, then move it to storage-write for imageStore.
     encoder.transition(voxelTexture_->image(), rhi::ResourceState::Undefined,
                        rhi::ResourceState::CopyDst);
     encoder.clearColorTexture(voxelTexture_->image(), {0.0f, 0.0f, 0.0f, 0.0f});
     encoder.transition(voxelTexture_->image(), rhi::ResourceState::CopyDst,
                        rhi::ResourceState::StorageReadWrite);
 
-    // Attachment-less rendering at voxel resolution.
     rhi::RenderPassDesc passDesc;
     passDesc.width = res;
     passDesc.height = res;
@@ -279,7 +264,6 @@ void GIVolume::voxelize(rhi::CommandEncoder& encoder, const DrawGeometryFn& draw
 
     rp.end();
 
-    // Storage writes -> sampled for the main/debug pass AND the DDGI trace.
     encoder.transition(voxelTexture_->image(), rhi::ResourceState::StorageReadWrite,
                        rhi::ResourceState::ShaderRead);
 }
@@ -305,7 +289,6 @@ void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
         static_cast<uint64_t>(probeCount) * desc_.raysPerProbe * sizeof(RayData),
         rhi::BufferUsage::Storage, MemoryUsage::GpuOnly);
 
-    // Set layout: 0=rays SSBO, 1/2=write irr/vis (storage img), 3/4=prev irr/vis.
 #ifdef SAIDA_RHI_WEBGPU
     auto storage = [](uint32_t binding, rhi::Format format, WGPUStorageTextureAccess access) {
         rhi::webgpu::BindGroupLayoutEntry e{};
@@ -341,7 +324,6 @@ void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
         });
 #endif
 
-    // Parity p: write = atlas[p], prev = atlas[1-p].
     for (int p = 0; p < 2; ++p) {
         rhi::BindGroupEntry raysEntry;
         raysEntry.binding = 0;
@@ -365,7 +347,6 @@ void GIVolume::createComputeResources(rhi::BindGroupLayout& globalSetLayout) {
     std::vector<const rhi::BindGroupLayout*> setLayouts = {&globalSetLayout, giComputeSetLayout_.get()};
     tracePipeline_  = std::make_unique<ComputePipeline>(device_, "/shaders/ddgi_trace.comp.wgsl", setLayouts, sizeof(TracePush));
     blendPipeline_  = std::make_unique<ComputePipeline>(device_, "/shaders/ddgi_blend.comp.wgsl", setLayouts, sizeof(BlendPush));
-    // No border pipeline on web: ddgi_blend's -DWEB variant writes the gutter.
 #else
     std::vector<rhi::vulkan::BindGroupLayoutRef> setLayouts = {globalSetLayout, *giComputeSetLayout_};
     tracePipeline_  = std::make_unique<ComputePipeline>(device_, shaderPath("ddgi_trace.comp.spv"), setLayouts, sizeof(TracePush));
@@ -379,17 +360,14 @@ void GIVolume::update(rhi::CommandEncoder& encoder, const rhi::BindGroup& global
     const int probeCount = desc_.probeCount();
     const rhi::BindGroup& giSet = *giComputeSets_[curr_];
 
-    // Make the previous frame's atlas writes (read as "prev") visible to compute.
     encoder.storageBarrier();
 
-    // Random rotation of the Fibonacci ray set for temporal coverage.
     std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
     glm::quat q = glm::normalize(glm::quat(dist(rng_), dist(rng_), dist(rng_), dist(rng_)));
     glm::mat4 randomRot = glm::mat4_cast(q);
 
     rhi::ComputePassEncoder cp = encoder.beginComputePass();
 
-    // --- 1. Trace ---
     {
         SAIDA_GPU_PROFILE_SCOPE(profiler, encoder.handle(), "DDGI/Trace");
         cp.setPipeline(*tracePipeline_);
@@ -403,7 +381,6 @@ void GIVolume::update(rhi::CommandEncoder& encoder, const rhi::BindGroup& global
 
     encoder.storageBarrier();  // rays write -> blend read
 
-    // --- 2. Blend (irradiance then visibility) ---
     {
         SAIDA_GPU_PROFILE_SCOPE(profiler, encoder.handle(), "DDGI/Blend");
         cp.setPipeline(*blendPipeline_);
@@ -421,7 +398,6 @@ void GIVolume::update(rhi::CommandEncoder& encoder, const rhi::BindGroup& global
 #ifndef SAIDA_RHI_WEBGPU
     encoder.storageBarrier();  // blend write -> border read
 
-    // --- 3. Border copy (desktop; the web blend writes the gutter itself) ---
     {
         SAIDA_GPU_PROFILE_SCOPE(profiler, encoder.handle(), "DDGI/Borders");
         cp.setPipeline(*borderPipeline_);
@@ -438,7 +414,6 @@ void GIVolume::update(rhi::CommandEncoder& encoder, const rhi::BindGroup& global
 #endif
     cp.end();
 
-    // Border writes -> lighting fragment reads (current atlas, set 0 bindings 4/5).
     encoder.computeToGraphicsBarrier();
 }
 

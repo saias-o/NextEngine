@@ -1,11 +1,6 @@
 #pragma once
 
-// WebGPU backend anchor (Étape 16.4) — the web-side mirror of rhi/Rhi.hpp.
-// Web translation units include this header and write `rhi::Device`,
-// `rhi::CommandEncoder`, … exactly like desktop code does. When the full
-// engine compiles under Emscripten (16.5), rhi/Rhi.hpp selects this backend
-// under SAIDA_RHI_WEBGPU instead; until then the web runtime target includes
-// it directly.
+// WebGPU aliases for builds that cannot include the desktop RHI entry point.
 
 #include "rhi/BufferUsage.hpp"
 #include "rhi/Capabilities.hpp"
@@ -49,7 +44,6 @@ using RenderPassDesc = webgpu::RenderPassDesc;
 using ColorAttachment = webgpu::ColorAttachment;
 using DepthAttachment = webgpu::DepthAttachment;
 
-// 16.5.a — Neutral non-owning handles + small value types (mirror of Rhi.hpp).
 using TextureHandle = webgpu::TextureHandle;
 using TextureView = webgpu::TextureView;
 using SamplerHandle = webgpu::SamplerHandle;

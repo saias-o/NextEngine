@@ -94,28 +94,25 @@ private:
     rhi::Device& device_;
     GIVolumeDesc desc_;
     int probesPerRow_ = 1;
-    int curr_ = 0;  // current ping-pong atlas (written this frame, sampled by lighting)
+    int curr_ = 0;
 
-    std::array<std::unique_ptr<rhi::RenderTexture>, 2> irradiance_;  // rgba16f
-    std::array<std::unique_ptr<rhi::RenderTexture>, 2> visibility_;  // rg16f
+    std::array<std::unique_ptr<rhi::RenderTexture>, 2> irradiance_;
+    std::array<std::unique_ptr<rhi::RenderTexture>, 2> visibility_;
     std::unique_ptr<rhi::Sampler> sampler_;
 
-    // --- Voxelization (P1) ---
-    std::unique_ptr<rhi::RenderTexture> voxelTexture_;  // 3D rgba16f albedo grid
-    std::unique_ptr<Buffer> voxelUbo_;          // origin/extent/res + 3 axis VPs
+    std::unique_ptr<rhi::RenderTexture> voxelTexture_;
+    std::unique_ptr<Buffer> voxelUbo_;
     std::unique_ptr<rhi::BindGroupLayout> voxelSetLayout_;
     std::unique_ptr<rhi::BindGroup> voxelSet_;
-    std::unique_ptr<rhi::Pipeline> voxelPipeline_;  // attachment-less (imageStore only)
+    std::unique_ptr<rhi::Pipeline> voxelPipeline_;
 #ifdef SAIDA_RHI_WEBGPU
-    // WebGPU forbids attachment-less passes: throwaway res×res target
-    // (writeMask None on the pipeline) keeps the voxelize rasterization valid.
+    // WebGPU requires an attachment even though voxelization writes only an image.
     std::unique_ptr<rhi::RenderTexture> voxelDummyTarget_;
 #endif
 
-    // --- DDGI update (P2): trace -> blend -> borders ---
-    std::unique_ptr<Buffer> raysBuffer_;        // numProbes * raysPerProbe * 2 vec4
+    std::unique_ptr<Buffer> raysBuffer_;
     std::unique_ptr<rhi::BindGroupLayout> giComputeSetLayout_;
-    std::array<std::unique_ptr<rhi::BindGroup>, 2> giComputeSets_;  // one per ping-pong parity
+    std::array<std::unique_ptr<rhi::BindGroup>, 2> giComputeSets_;
     std::unique_ptr<ComputePipeline> tracePipeline_;
     std::unique_ptr<ComputePipeline> blendPipeline_;
     std::unique_ptr<ComputePipeline> borderPipeline_;

@@ -9,10 +9,6 @@
 #include <string>
 #include <vector>
 
-// Vulkan backend for rhi::RenderTexture (Étape 16.3.f): neutral render-target
-// creation. Owns the image, its whole-resource view (2D / 2D_ARRAY / 3D picked
-// from the desc) and per-layer attachment views when layers > 1 (shadow array,
-// XR stereo). Distinct from saida::Texture (sampled asset with mips + sampler).
 
 namespace saida {
 class VulkanDevice;
@@ -24,11 +20,10 @@ struct RenderTextureDesc {
     rhi::Format format = rhi::Format::Undefined;
     uint32_t width = 1;
     uint32_t height = 1;
-    uint32_t depth = 1;       // > 1 → 3D texture (GI voxel grid)
-    uint32_t layers = 1;      // > 1 → 2D array (shadow layers, XR eyes)
-    uint32_t samples = 1;     // MSAA scene target
+    uint32_t depth = 1;
+    uint32_t layers = 1;
+    uint32_t samples = 1;
     rhi::TextureUsage usage = rhi::TextureUsage::None;
-    // MemoryProfiler category; empty = untracked (matches pre-RHI behaviour).
     std::string memoryCategory;
 };
 
@@ -40,7 +35,7 @@ public:
     RenderTexture& operator=(const RenderTexture&) = delete;
 
     VkImage image() const { return image_; }
-    VkImageView view() const { return view_; }              // whole resource
+    VkImageView view() const { return view_; }
     VkImageView layerView(uint32_t layer) const { return layerViews_[layer]; }
 
     rhi::Format format() const { return desc_.format; }
@@ -53,7 +48,7 @@ private:
     VkImage image_ = VK_NULL_HANDLE;
     VmaAllocation allocation_ = VK_NULL_HANDLE;
     VkImageView view_ = VK_NULL_HANDLE;
-    std::vector<VkImageView> layerViews_;  // filled when desc.layers > 1
+    std::vector<VkImageView> layerViews_;
     uint64_t trackedBytes_ = 0;
 };
 

@@ -497,15 +497,8 @@ void Engine::runXr() {
         last = now;
         Time::update(realDt);
         Input::newFrame();
-        // Advance the XR input service (edges). The OpenXR action layer (Étape C)
-        // will submitHand() here; until then hands read inactive and the toolkit
-        // behaviours stay inert.
         XRInput::beginFrame();
-        // Poll OpenXR action sets → hand poses + buttons into XRInput (this is what
-        // makes grab/touch/teleport live). Before the scene update so edges are fresh.
         xrSession_->syncActions();
-        // Feed the head pose (world space, from last frame's locate) so toolkit
-        // behaviours — teleport placement, head-facing UI — can read it.
         {
             XRPose head;
             head.tracked = true;
@@ -524,8 +517,6 @@ void Engine::runXr() {
         }
         AudioManager::get().update();
 
-        // Push the player rig (if any) to the session: it recentres the reference
-        // space so head/hands/eyes come back world-space this frame (locomotion).
         {
             XROrigin* origin = nullptr;
             activeScene->traverse([&](Node& n, const glm::mat4&) {
@@ -537,8 +528,6 @@ void Engine::runXr() {
                                                glm::radians(origin->yawDegrees));
         }
 
-        // Head pose drives the engine camera (audio listener + the future scene
-        // render). Log it once a second so head tracking is observable from logs.
         camera_.position = xrSession_->headPosition();
         if (now - lastPoseLog > 1.0) {
             lastPoseLog = now;
@@ -546,12 +535,8 @@ void Engine::runXr() {
             Log::info("XR head pos: ", p.x, ", ", p.y, ", ", p.z);
         }
 
-        // Render the scene in stereo (one multiview pass for both eyes) into the
-        // acquired XR images. The whole engine pipeline (shadows, GI, HDR, tonemap)
-        // is reused — only presentation differs from the desktop path.
         xrSession_->renderFrame(
             [&](VkCommandBuffer cmd, const std::vector<xr::EyeView>& eyes) {
-                // Convert xr::EyeView → EyeRenderInfo to keep the Renderer decoupled from XR types.
                 std::vector<EyeRenderInfo> eyeInfos;
                 eyeInfos.reserve(eyes.size());
                 for (const auto& e : eyes)

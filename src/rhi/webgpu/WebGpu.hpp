@@ -1,10 +1,6 @@
 #pragma once
 
-// Common WebGPU includes/helpers for the rhi::webgpu backend (Étape 16.4).
-// Built ONLY by the Emscripten web target (web/runtime) — never part of the
-// desktop build, which stays on rhi/vulkan. Uses the emdawnwebgpu port
-// (`--use-port=emdawnwebgpu`), i.e. the current webgpu.h with WGPUStringView
-// and callback-info style async entry points (same API as web/spike).
+// Shared WebGPU helpers; this header is only built by the Emscripten target.
 
 #include <webgpu/webgpu.h>
 

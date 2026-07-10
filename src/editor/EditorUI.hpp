@@ -30,13 +30,8 @@ class ModelImporterPanel;
 class ProfilerPanel;
 class McpBridge;
 
-// The full editor interface (Godot/Unity-style). Draws a dockable layout:
-// main menu bar, scene tree (left), inspector (right), file browser (bottom),
-// and a viewport area with Scene / Play Mode tabs.
-//
 class EditorApp;
 
-// The main user interface of the editor, composed of several ImGui panels.
 class EditorUI {
     friend class MenuBarPanel;
     friend class SceneHierarchyPanel;
@@ -46,22 +41,18 @@ class EditorUI {
     friend class ModelImporterPanel;
     friend class ProfilerPanel;
     friend class PropertyEditor;
-    friend class McpBridge;  // reaches document_ + execute() for MCP-driven edits
+    friend class McpBridge;
 public:
     EditorUI();
-    ~EditorUI();  // defined in .cpp where Scene is complete (previewScene_ unique_ptr)
+    ~EditorUI();
 
-    // Draw the full editor UI. Call between ImGui::NewFrame() and
-    // ImGui::Render(), before endFrame().
     void draw(EditorApp* app, Scene* scene, Camera* camera, Project* project, ResourceManager* resources, float dt);
 
-    // The currently selected node (nullptr = none).
     Node* selectedNode() const { return selectedNode_; }
     Project* ctxProject() const { return ctxProject_; }
 
     void clearSelection() { selectedNode_ = nullptr; document_.clearSelection(); }
 
-    // Request to quit the application
     bool quitRequested() const { return quitRequested_; }
 
     bool isViewportHovered(float mx, float my) const {
@@ -81,24 +72,18 @@ public:
     // World sub-scene. Every command and inspector edit is gated on this.
     bool canEdit() const;
 
-    // Mark the document dirty for mutations that do not yet go through a command
-    // (resource/asset edits handled by later lots). No-op in Play.
     void markDirty();
 
 private:
-    // Single chokepoint for document mutations. Drops the command (no-op) when
-    // editing is disabled (Play mode), otherwise records it on the history so
-    // the change is undoable and marks the document dirty.
+    // Play mode rejects edits so the live scene cannot diverge from the document.
     void execute(std::unique_ptr<Command> command);
 
-    // Scene update: serialization, clipboard and undo/redo.
     void saveScene(Scene* scene, ResourceManager* resources, const std::string& path);
     void loadScene(Scene* scene, ResourceManager* resources, const std::string& path);
     void copySelected(ResourceManager* resources);
     void pasteClipboard(Scene* scene, ResourceManager* resources);
     void duplicateSelected(ResourceManager* resources);
     
-    // Gizmo internal methods
     void drawGizmo(Camera* camera, Scene* scene);
     void updateGizmoHover(const glm::vec3& rayOrigin, const glm::vec3& rayDir, const glm::vec2& mousePos, int& outHoveredAxis);
     void handleGizmoDrag(const glm::vec3& rayOrigin, const glm::vec3& rayDir, const glm::vec2& mousePos);
@@ -106,7 +91,6 @@ private:
     void renderGizmoRotationRings(ImDrawList* drawList, Camera* camera, const glm::mat4& viewProj, int hoveredAxis);
     void renderGizmoTranslateScale(ImDrawList* drawList, int hoveredAxis);
 
-    // Draws collision-shape wireframes (box/sphere/capsule) over the editor viewport.
     void drawColliderGizmos(Camera* camera, Scene* scene);
     
     void drawAboutWindow();
@@ -117,7 +101,6 @@ private:
     void drawSaveSceneAsDialog(Project* project, Scene* scene, ResourceManager* resources);
     void applyEditorStyle();
 
-    // Panel visibility toggles (View menu)
     bool showSceneTree_   = true;
     bool showInspector_   = true;
     bool showFileBrowser_ = true;
@@ -125,31 +108,24 @@ private:
     bool showModelImporter_ = false;
     bool showProfiler_ = false;
 
-    // Selection
     Node* selectedNode_ = nullptr;
 
-    // Editor layout and state
     bool quitRequested_ = false;
     bool dockLayoutBuilt_ = false;
 
-    // File browser state
     std::string currentBrowsePath_;
     float fileBrowserZoom_ = 1.0f;
 
-    // Cached directory listing so the browser does not hit the disk every frame.
-    // Rescanned when the path/query changes, after a local file mutation, or
-    // every kRefreshSeconds to pick up external changes. Paths are absolute;
-    // directories and files are pre-sorted by name.
+    // Cache listings to avoid disk access every frame.
     struct FileListing {
         std::string path;
         std::string query;
-        double time = -1.0;        // GetTime() of last scan; < 0 forces a rescan
+        double time = -1.0;
         std::vector<std::string> dirs;
         std::vector<std::string> files;
     };
     FileListing fileListing_;
 
-    // Project dialogs
     bool showNewProjectDialog_  = false;
     bool showOpenProjectDialog_ = false;
     bool showSaveSceneAsDialog_ = false;
@@ -163,21 +139,16 @@ private:
 
     std::string resolveScenePath(Project* project) const;
 
-    // Scans the project's scenes/ directory and loads the appropriate entry-point
-    // scene: explicit main_scene from .saidaproj → scenes/main.scene → first found.
     void loadProjectMainScene(Project* project, Scene* scene, ResourceManager* resources);
 
-    // Kick off a background recursive scan of `root` for .saidaproj files. The result
-    // is collected (into openProjCache_) on the main thread once ready, so opening
-    // the dialog never blocks on the disk walk.
+    // Scan asynchronously so opening the dialog never blocks on disk I/O.
     void startProjectScan(const std::string& root);
 
-    std::string openBrowsePath_;                          // root for the .saidaproj scan
-    std::vector<std::string> openProjCache_;              // last scan result (absolute, sorted)
-    std::future<std::vector<std::string>> openScanFuture_; // in-flight background scan
-    bool openScanDone_ = false;                           // ≥1 scan has completed
+    std::string openBrowsePath_;
+    std::vector<std::string> openProjCache_;
+    std::future<std::vector<std::string>> openScanFuture_;
+    bool openScanDone_ = false;
 
-    // Build settings state
     BuildPlatform selectedBuildPlatform_ = BuildPlatform::Windows;
     BuildConfig buildConfiguration_ = BuildConfig::Release;
     char buildOutputPath_[512] = "build/export";
@@ -186,9 +157,7 @@ private:
     bool buildSceneMainChecked_ = true;
     bool buildSceneDemoChecked_ = false;
 
-    // Main scene selection (populated from the project's scenes/ when the dialog
-    // opens) and the result of the last export, shown in the dialog.
-    std::vector<std::string> buildScenes_;       // project-relative, e.g. "scenes/main.scene"
+    std::vector<std::string> buildScenes_;
     int buildMainSceneIndex_ = 0;
     bool buildHasResult_ = false;
     bool buildLastSuccess_ = false;
@@ -198,7 +167,7 @@ private:
     std::string buildLastExe_;
     void refreshBuildScenes_(Project* project);
 
-    // Deferred operations for C++ memory safety & avoiding iterator invalidation
+    // Deferral avoids iterator invalidation during UI traversal.
     Node* nodeToDelete_ = nullptr;
     Node* nodeToCreateChildUnder_ = nullptr;
     Node* nodeToCreateParentFor_ = nullptr;
@@ -210,18 +179,15 @@ private:
     Node* newParent_ = nullptr;
     size_t newChildIndex_ = static_cast<size_t>(-1);
 
-    // Renaming state
     Node* nodeToRename_ = nullptr;
     char nodeRenameBuf_[128] = "";
 
     std::string fileToRename_;
     char fileRenameBuf_[256] = "";
 
-    // Search state
     char sceneTreeSearchBuf_[128] = "";
     char fileBrowserSearchBuf_[128] = "";
 
-    // Gizmo state for dragging & viewport deselect
     GizmoMode gizmoMode_ = GizmoMode::Translate;
     GizmoAxis grabbedAxis_ = GizmoAxis::None;
     glm::vec3 dragStartNodePos_{0.0f};
@@ -231,7 +197,6 @@ private:
     glm::vec2 dragStartMousePos_{0.0f};
     glm::vec3 dragStartHitPos3D_{0.0f};
 
-    // Transient Gizmo drawing state (populated each frame)
     glm::vec3 gizmoNodePos_{0.0f};
     float gizmoWorldLength_{0.0f};
     glm::vec2 gizmoCenter2D_{0.0f};
@@ -242,36 +207,29 @@ private:
     glm::vec2 viewportPos_{0.0f, 0.0f};
     glm::vec2 viewportSize_{0.0f, 0.0f};
 
-    // Scene update state.
     SceneDocument document_;
     CommandHistory history_;
 
-    // Transient state for transactional inspector edits (see PropertyEditor):
-    // the ImGui id and the pre-edit value of the property currently being
-    // dragged. A single widget is active at a time, so one slot suffices.
-    unsigned int propEditId_ = 0;       // ImGuiID of the active property widget
-    std::any propEditOld_;              // value captured when the edit began
+    // A single ImGui widget is active, so one transactional edit slot suffices.
+    unsigned int propEditId_ = 0;
+    std::any propEditOld_;
 
-    // Last seen Project::version(); a change means the project was created or
-    // (re)loaded, so the per-project editor state (history, clipboard, …) must be
-    // dropped — its commands reference nodes from the previous scene.
+    // A project change invalidates history and clipboard node references.
     uint64_t lastProjectVersion_ = 0;
-    std::string clipboard_;          // JSON of a copied node subtree
-    std::string currentScenePath_;   // last saved/opened .scene path
+    std::string clipboard_;
+    std::string currentScenePath_;
     EditorApp* app_ = nullptr;
     Scene* ctxScene_ = nullptr;
     Camera* ctxCamera_ = nullptr;
-    ResourceManager* ctxResources_ = nullptr;  // set each frame in draw()
-    Project* ctxProject_ = nullptr;            // set each frame in draw()
-    ThumbnailCache thumbnails_;      // bounded, downscaled asset-browser thumbnails
+    ResourceManager* ctxResources_ = nullptr;
+    Project* ctxProject_ = nullptr;
+    ThumbnailCache thumbnails_;
 
-    // Importer State
     bool isPreviewMode_ = false;
     std::string previewModelPath_;
     std::unique_ptr<Scene> previewScene_;
 
 #ifdef SAIDA_ENABLE_MCP
-    // In-process MCP server (dev only): polled once per frame in draw().
     std::unique_ptr<McpBridge> mcp_;
 #endif
 };

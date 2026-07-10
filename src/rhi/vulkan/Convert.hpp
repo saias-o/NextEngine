@@ -7,9 +7,6 @@
 
 #include <vulkan/vulkan.h>
 
-// Vulkan backend: neutral rhi enums -> Vk equivalents (Étape 16.3.d/e). Kept in
-// the backend layer, like rhi/vulkan/Format.hpp.
-
 namespace saida::rhi::vulkan {
 
 inline VkShaderStageFlags toVk(ShaderStages stages) {

@@ -2,9 +2,6 @@
 
 #include <cstdint>
 
-// Backend-neutral shader stage mask (Étape 16.3.d). Used for bind group
-// visibility and push constant ranges. Backends map it to their own flags.
-
 namespace saida::rhi {
 
 enum class ShaderStages : uint32_t {

@@ -26,8 +26,7 @@ set(GLM_INCLUDE_DIR ${SAIDA_ROOT}/third_party/glm CACHE PATH "Directory containi
 
 add_executable(saida_web
     main.cpp
-    # Spike S0 (PLAN_LIVE_EDIT_WEB.md): authoring-core linke dans le runtime
-    # d'edition web (invariant 0.2). Reference par le binding saida_apply_op.
+    # saida_apply_op needs the authoring core in the web editor runtime.
     ${SAIDA_ROOT}/src/authoring/EngineManifest.cpp
     ${SAIDA_ROOT}/src/authoring/SceneSnapshot.cpp
     ${SAIDA_ROOT}/src/authoring/SaidaOp.cpp

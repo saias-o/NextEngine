@@ -2,10 +2,6 @@
 
 #include <cstdint>
 
-// Backend-neutral buffer usage flags (Étape 16.3, RHI). The Vulkan backend maps
-// these to VkBufferUsageFlags; the WebGPU backend maps them to GPUBufferUsage.
-// Naming follows the shared concepts, not one API's spelling.
-
 namespace saida::rhi {
 
 enum class BufferUsage : uint32_t {

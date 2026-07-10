@@ -4,10 +4,6 @@
 
 #include <cstdint>
 
-// Backend-neutral bind group layout description (Étape 16.3.d). A bind group is
-// the RHI name for a Vulkan descriptor set / WebGPU bind group; set 0/1/2 map
-// 1:1. The backend classes live in rhi/<backend>/BindGroup.hpp.
-
 namespace saida::rhi {
 
 enum class BindingType : uint32_t {
