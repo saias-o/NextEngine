@@ -3,7 +3,7 @@
 #include <vector>
 #include <cstddef>
 #include <glm/glm.hpp>
-#include "scene/Node.hpp" // For Transform structure
+#include "scene/Transform.hpp"
 #include "scene/animation/Rig.hpp"
 
 namespace saida {

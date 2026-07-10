@@ -8,6 +8,10 @@
 
 #include <imgui.h>
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 namespace saida {
 
 void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::string& modelPath) {
@@ -36,13 +40,31 @@ void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::
         });
     }
 
-    if (foundAnim && foundAnim->rootNode()) {
-        ClipNode* clipNode = dynamic_cast<ClipNode*>(foundAnim->rootNode());
-        if (clipNode) {
-            ImGui::Text("Animation Controls");
-            ImGui::Spacing();
+    if (foundAnim && !foundAnim->clips().empty()) {
+        ImGui::Text("Animation Controls");
+        ImGui::Spacing();
 
-            static float speed = 1.0f;
+        static float speed = 1.0f;
+
+        // Clip selector — stable order for a deterministic combo.
+        std::vector<std::string> clipNames;
+        clipNames.reserve(foundAnim->clips().size());
+        for (const auto& [name, clip] : foundAnim->clips()) clipNames.push_back(name);
+        std::sort(clipNames.begin(), clipNames.end());
+
+        const std::string& current = foundAnim->currentClip();
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::BeginCombo("##Clip", current.empty() ? "(select a clip)" : current.c_str())) {
+            for (const auto& name : clipNames) {
+                if (ImGui::Selectable(name.c_str(), name == current)) {
+                    foundAnim->play(name);
+                    if (ClipNode* c = foundAnim->activeClipNode()) c->setPlaybackSpeed(speed);
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        if (ClipNode* clipNode = foundAnim->activeClipNode()) {
             bool isPlaying = (speed > 0.0f);
 
             if (isPlaying) {
@@ -61,16 +83,18 @@ void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::
             float currentTime = clipNode->time();
             float dur = clipNode->duration();
             if (dur == 0.0f) dur = 1.0f; // prevent division by zero in slider
-            
+
             ImGui::SetNextItemWidth(-1);
             if (ImGui::SliderFloat("##Time", &currentTime, 0.0f, dur, "Time: %.2fs")) {
                 clipNode->setTime(currentTime);
             }
-            
+
             ImGui::Spacing();
-        } else {
+        } else if (foundAnim->rootNode()) {
             ImGui::TextDisabled("Animation uses a complex graph (not a simple clip).");
         }
+    } else if (foundAnim && foundAnim->rootNode()) {
+        ImGui::TextDisabled("Animation uses a complex graph (not a simple clip).");
     } else {
         ImGui::TextDisabled("No animation detected in this model.");
     }

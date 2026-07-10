@@ -9,13 +9,27 @@ namespace saida {
 
 void Animator::setRig(Rig* rig) {
     rig_ = rig;
-    if (rig_) {
-        // Initialize bind pose with identity transforms if not already set.
-        if (bindPose_.localTransforms.empty())
-            bindPose_.localTransforms.resize(rig_->bones().size());
-        currentLocalPose_.localTransforms.resize(rig_->bones().size());
-        globalPose_.resize(rig_->bones().size());
+    if (!rig_) {
+        bindPose_.localTransforms.clear();
+        currentLocalPose_.localTransforms.clear();
+        globalPose_.globalMatrices.clear();
+        globalPose_.skinningMatrices.clear();
+        return;
     }
+
+    std::string error;
+    if (!rig_->finalized() && !rig_->finalize(&error)) {
+        Log::error("Animator: invalid rig: ", error);
+        rig_ = nullptr;
+        return;
+    }
+
+    const size_t boneCount = rig_->boneCount();
+    bindPose_.resize(boneCount);
+    for (size_t i = 0; i < boneCount; ++i)
+        bindPose_.localTransforms[i] = rig_->bones()[i].restLocal;
+    currentLocalPose_.resize(boneCount);
+    globalPose_.resize(boneCount);
 }
 
 void Animator::setRootNode(std::unique_ptr<AnimNode> rootNode) {
@@ -59,6 +73,13 @@ void Animator::play(const std::string& name, bool loop, float crossfade) {
     }
     playbackFsm_->transitionTo(name, crossfade);
     currentClip_ = name;
+}
+
+ClipNode* Animator::activeClipNode() const {
+    if (auto* clip = dynamic_cast<ClipNode*>(rootNode_.get())) return clip;
+    if (playbackFsm_ && playbackFsm_->currentState())
+        return dynamic_cast<ClipNode*>(playbackFsm_->currentState()->node());
+    return nullptr;
 }
 
 void Animator::onUpdate(float dt) {

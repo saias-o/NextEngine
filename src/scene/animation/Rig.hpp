@@ -1,5 +1,7 @@
 #pragma once
 
+#include "scene/Transform.hpp"
+
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -10,31 +12,28 @@ namespace saida {
 
 struct Bone {
     std::string name;
-    int32_t parentIndex = -1; // -1 if this is a root bone
-    glm::mat4 inverseBindMatrix{1.0f}; // Transforms from mesh space to local bone space
+    int32_t parentIndex = -1;
+    glm::mat4 inverseBindMatrix{1.0f};
+    Transform restLocal;
 };
 
-// Flat skeletal hierarchy. Parents must appear before their children.
 class Rig {
 public:
-    void addBone(const std::string& name, int32_t parentIndex, const glm::mat4& invBind) {
-        bones_.push_back({name, parentIndex, invBind});
-    }
+    void addBone(std::string name, int32_t parentIndex, const glm::mat4& invBind,
+                 const Transform& restLocal = {});
+    bool finalize(std::string* error = nullptr);
 
     const std::vector<Bone>& bones() const { return bones_; }
     size_t boneCount() const { return bones_.size(); }
-    
-    int32_t findBoneIndex(const std::string& name) const {
-        for (size_t i = 0; i < bones_.size(); ++i) {
-            if (bones_[i].name == name) {
-                return static_cast<int32_t>(i);
-            }
-        }
-        return -1;
-    }
+    const std::vector<uint32_t>& evaluationOrder() const { return evaluationOrder_; }
+    bool finalized() const { return finalized_; }
+
+    int32_t findBoneIndex(const std::string& name) const;
 
 private:
     std::vector<Bone> bones_;
+    std::vector<uint32_t> evaluationOrder_;
+    bool finalized_ = false;
 };
 
 } // namespace saida

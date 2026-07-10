@@ -35,12 +35,11 @@ Chan parseChannel(const std::string& s) {
 
 } // namespace
 
-AssetID BVHLoader::load(const std::string& path, ResourceManager& resources) {
-    SAIDA_PROFILE_SCOPE("Resource/LoadBVH");
+std::unique_ptr<AnimationClip> BVHLoader::parse(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
         Log::error("BVHLoader: cannot open ", path);
-        return kAssetInvalid;
+        return nullptr;
     }
 
     std::vector<BvhJoint> joints;
@@ -78,7 +77,7 @@ AssetID BVHLoader::load(const std::string& path, ResourceManager& resources) {
 
     if (joints.empty() || totalChannels == 0) {
         Log::error("BVHLoader: no joints/channels in ", path);
-        return kAssetInvalid;
+        return nullptr;
     }
 
     int frameCount = 0;
@@ -90,7 +89,7 @@ AssetID BVHLoader::load(const std::string& path, ResourceManager& resources) {
 
     if (frameCount <= 0) {
         Log::error("BVHLoader: no frames in ", path);
-        return kAssetInvalid;
+        return nullptr;
     }
 
     // Per-joint keyframe accumulators.
@@ -107,7 +106,7 @@ AssetID BVHLoader::load(const std::string& path, ResourceManager& resources) {
                 float v = 0.0f;
                 if (!(file >> v)) {
                     Log::error("BVHLoader: truncated motion data in ", path);
-                    return kAssetInvalid;
+                    return nullptr;
                 }
                 switch (ch) {
                     case Chan::Xpos: pos.x = v; break;
@@ -142,10 +141,16 @@ AssetID BVHLoader::load(const std::string& path, ResourceManager& resources) {
         clip->addTrack(joints[j].name, std::move(rtrack));
     }
 
-    AssetID id = resources.registerMemoryAnimation(path, std::move(clip));
-    Log::info("Loaded BVH '", path, "': ", joints.size(), " joints, ", frameCount,
-              " frames, duration=", duration, "s, id=", id);
-    return id;
+    Log::info("Parsed BVH '", path, "': ", joints.size(), " joints, ", frameCount,
+              " frames, duration=", duration, "s");
+    return clip;
+}
+
+AssetID BVHLoader::load(const std::string& path, ResourceManager& resources) {
+    SAIDA_PROFILE_SCOPE("Resource/LoadBVH");
+    auto clip = parse(path);
+    if (!clip) return kAssetInvalid;
+    return resources.registerMemoryAnimation(path, std::move(clip));
 }
 
 } // namespace saida

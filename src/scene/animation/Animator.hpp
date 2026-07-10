@@ -15,6 +15,7 @@
 namespace saida {
 
 class AnimationClip;
+class ClipNode;
 
 // The Animator drives an animation graph (FSM / blend tree) for a skinned mesh
 // and produces the GlobalPose (skinning matrices) the renderer uploads to the GPU.
@@ -54,6 +55,11 @@ public:
 
     const GlobalPose& globalPose() const { return globalPose_; }
     AnimNode* rootNode() const { return rootNode_.get(); }
+
+    // The ClipNode currently driving the pose: the root itself, or the active
+    // state of the play()-by-name FSM. Null when a custom graph is in control.
+    // Editor preview hook (play/pause/scrub of the selected clip).
+    ClipNode* activeClipNode() const;
 
     const char* typeName() const override { return "Animator"; }
 

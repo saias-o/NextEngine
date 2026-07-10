@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <cstdint>
 #include <cstddef>
-#include "scene/Node.hpp" // For Transform
+#include "scene/Transform.hpp"
 #include "scene/animation/Pose.hpp"
 
 namespace saida {
@@ -16,6 +16,12 @@ enum class TrackTarget {
     Translation,
     Rotation,
     Scale
+};
+
+enum class TrackInterpolation {
+    Step,
+    Linear,
+    CubicSpline
 };
 
 // Base interface for a bone animation track
@@ -32,14 +38,12 @@ template <typename T>
 class TypedAnimTrack : public AnimTrack {
 public:
     TrackTarget target;
+    TrackInterpolation interpolation = TrackInterpolation::Linear;
     std::vector<float> timestamps;
     std::vector<T> values;
 
-    // glTF CUBICSPLINE: Hermite interpolation using per-key tangents. When false
-    // (the default), values are interpolated linearly (lerp / slerp).
-    bool cubic = false;
-    std::vector<T> inTangents;   // one per key (cubic only)
-    std::vector<T> outTangents;  // one per key (cubic only)
+    std::vector<T> inTangents;
+    std::vector<T> outTangents;
 
     void evaluate(float time, Transform& outTransform) const override;
 };

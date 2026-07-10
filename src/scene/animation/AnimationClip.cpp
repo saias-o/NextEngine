@@ -65,7 +65,10 @@ void TypedAnimTrack<T>::evaluate(float time, Transform& outTransform) const {
     float factor = (t1 > t0) ? (time - t0) / (t1 - t0) : 0.0f;
 
     T val;
-    if (cubic && prevIdx < outTangents.size() && nextIdx < inTangents.size()) {
+    if (interpolation == TrackInterpolation::Step) {
+        val = values[prevIdx];
+    } else if (interpolation == TrackInterpolation::CubicSpline &&
+               prevIdx < outTangents.size() && nextIdx < inTangents.size()) {
         val = hermite(values[prevIdx], outTangents[prevIdx],
                       values[nextIdx], inTangents[nextIdx], t1 - t0, factor);
         if constexpr (std::is_same_v<T, glm::quat>) val = glm::normalize(val);

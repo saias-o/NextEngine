@@ -74,6 +74,7 @@ public:
     }
 
     const std::string& name() const { return name_; }
+    AnimNode* node() const { return node_.get(); }
 
     void addTransition(AnimTransition transition) {
         transitions_.push_back(std::move(transition));
@@ -96,6 +97,8 @@ public:
     void transitionTo(const std::string& stateName, float crossfadeDuration = 0.0f);
 
     void setBlackboard(const AnimBlackboard* blackboard) { blackboard_ = blackboard; }
+
+    AnimState* currentState() const { return currentState_; }
 
     void update(float deltaTime) override;
     void evaluate(const LocalPose& bindPose, LocalPose& outPose) const override;

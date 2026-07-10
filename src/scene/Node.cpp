@@ -11,8 +11,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include <glm/gtc/matrix_transform.hpp>  // GLM_FORCE_* set globally by CMake
-
 #include <algorithm>
 #include <utility>
 
@@ -20,13 +18,6 @@ namespace saida {
 
 uint32_t Node::g_hierarchyVersion = 1;
 uint32_t Node::g_transformVersion = 1;
-
-glm::mat4 Transform::matrix() const {
-    glm::mat4 m = glm::translate(glm::mat4(1.0f), position);
-    m *= glm::mat4_cast(rotation);
-    m = glm::scale(m, scale);
-    return m;
-}
 
 Node::Node(std::string name) : id_(generateNodeId()), name_(std::move(name)) {}
 

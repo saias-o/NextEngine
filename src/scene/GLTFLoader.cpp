@@ -37,6 +37,28 @@ namespace saida {
 static glm::vec4 toVec4(const float* f) { return {f[0], f[1], f[2], f[3]}; }
 static glm::vec3 toVec3(const float* f) { return {f[0], f[1], f[2]}; }
 
+static Transform nodeTransform(const cgltf_node* node) {
+    Transform result;
+    if (node->has_matrix) {
+        const glm::mat4 matrix = glm::make_mat4(node->matrix);
+        glm::vec3 skew;
+        glm::vec4 perspective;
+        if (glm::decompose(matrix, result.scale, result.rotation, result.position,
+                           skew, perspective)) {
+            result.rotation = glm::normalize(result.rotation);
+        }
+        return result;
+    }
+
+    if (node->has_translation) result.position = toVec3(node->translation);
+    if (node->has_rotation) {
+        result.rotation = glm::normalize(glm::quat(
+            node->rotation[3], node->rotation[0], node->rotation[1], node->rotation[2]));
+    }
+    if (node->has_scale) result.scale = toVec3(node->scale);
+    return result;
+}
+
 static AssetID loadGLTFTexture(cgltf_texture* tex, ResourceManager& resources, const std::filesystem::path& basePath, bool srgb = true) {
     if (!tex || !tex->image) return kAssetInvalid;
     
@@ -160,16 +182,7 @@ static void processNode(cgltf_node* node, Node* parent, ResourceManager& resourc
 
     Node* neNode = parent->createChild<Node>(node->name ? node->name : "Node");
 
-    if (node->has_translation) neNode->transform().position = toVec3(node->translation);
-    if (node->has_rotation) neNode->transform().rotation = glm::quat(node->rotation[3], node->rotation[0], node->rotation[1], node->rotation[2]);
-    if (node->has_scale) neNode->transform().scale = toVec3(node->scale);
-
-    if (node->has_matrix) {
-        glm::mat4 m = glm::make_mat4(node->matrix);
-        glm::vec3 skew;
-        glm::vec4 persp;
-        glm::decompose(m, neNode->transform().scale, neNode->transform().rotation, neNode->transform().position, skew, persp);
-    }
+    neNode->transform() = nodeTransform(node);
 
     if (node->mesh) {
         size_t meshIdx = node->mesh - data->meshes;
@@ -200,6 +213,168 @@ static void processNode(cgltf_node* node, Node* parent, ResourceManager& resourc
         processNode(node->children[i], neNode, resources, meshesPrimitives, materials, data,
                     lodProxyNodes, lodByNodeIndex, autoMeshLods, skinnedMeshes);
     }
+}
+
+// Rig construction shared by load() and loadAnimationData(): bone order follows
+// skin.joints (JOINTS_0-compatible), rest pose from the joint node TRS.
+static std::unique_ptr<Rig> buildRigFromSkin(const cgltf_skin& skin, std::string* error) {
+    auto rig = std::make_unique<Rig>();
+
+    for (size_t j = 0; j < skin.joints_count; ++j) {
+        cgltf_node* joint = skin.joints[j];
+        std::string name = joint->name ? joint->name : "Bone_" + std::to_string(j);
+
+        int32_t parentIndex = -1;
+        if (joint->parent) {
+            for (size_t p = 0; p < skin.joints_count; ++p) {
+                if (skin.joints[p] == joint->parent) {
+                    parentIndex = static_cast<int32_t>(p);
+                    break;
+                }
+            }
+        }
+
+        glm::mat4 invBind{1.0f};
+        if (skin.inverse_bind_matrices) {
+            cgltf_accessor_read_float(skin.inverse_bind_matrices, j, glm::value_ptr(invBind), 16);
+        }
+
+        rig->addBone(name, parentIndex, invBind, nodeTransform(joint));
+    }
+
+    if (!rig->finalize(error)) return nullptr;
+    return rig;
+}
+
+// Clip construction shared by load() and loadAnimationData().
+static std::unique_ptr<AnimationClip> buildClipFromAnimation(const cgltf_animation& anim,
+                                                             size_t index) {
+    std::string animName = anim.name ? anim.name : "Anim_" + std::to_string(index);
+
+    // Find max duration
+    float duration = 0.0f;
+    for (size_t s = 0; s < anim.samplers_count; ++s) {
+        cgltf_accessor* input = anim.samplers[s].input;
+        if (input && input->count > 0) {
+            float maxTime = 0.0f;
+            cgltf_accessor_read_float(input, input->count - 1, &maxTime, 1);
+            if (maxTime > duration) duration = maxTime;
+        }
+    }
+
+    auto clip = std::make_unique<AnimationClip>(animName, duration);
+
+    for (size_t c = 0; c < anim.channels_count; ++c) {
+        cgltf_animation_channel& channel = anim.channels[c];
+        if (!channel.target_node) continue;
+
+        std::string targetName = channel.target_node->name ? channel.target_node->name : "";
+        if (targetName.empty()) continue; // We need names for retargeting
+
+        cgltf_animation_sampler* sampler = channel.sampler;
+        cgltf_accessor* input = sampler->input;
+        cgltf_accessor* output = sampler->output;
+
+        const bool cubic = sampler->interpolation == cgltf_interpolation_type_cubic_spline;
+        const TrackInterpolation interpolation = cubic
+            ? TrackInterpolation::CubicSpline
+            : sampler->interpolation == cgltf_interpolation_type_step
+                ? TrackInterpolation::Step
+                : TrackInterpolation::Linear;
+        const size_t stride = cubic ? 3 : 1;
+        const size_t valueOffset = cubic ? 1 : 0;
+
+        size_t count = input->count;
+        std::vector<float> timestamps(count);
+        for (size_t v = 0; v < count; ++v) {
+            cgltf_accessor_read_float(input, v, &timestamps[v], 1);
+        }
+
+        if (channel.target_path == cgltf_animation_path_type_translation || channel.target_path == cgltf_animation_path_type_scale) {
+            auto track = std::make_unique<TypedAnimTrack<glm::vec3>>();
+            track->target = (channel.target_path == cgltf_animation_path_type_translation) ? TrackTarget::Translation : TrackTarget::Scale;
+            track->interpolation = interpolation;
+            track->timestamps = std::move(timestamps);
+            track->values.resize(count);
+            for (size_t v = 0; v < count; ++v) {
+                cgltf_accessor_read_float(output, v * stride + valueOffset, glm::value_ptr(track->values[v]), 3);
+            }
+            if (cubic) {
+                track->inTangents.resize(count);
+                track->outTangents.resize(count);
+                for (size_t v = 0; v < count; ++v) {
+                    cgltf_accessor_read_float(output, v * 3 + 0, glm::value_ptr(track->inTangents[v]), 3);
+                    cgltf_accessor_read_float(output, v * 3 + 2, glm::value_ptr(track->outTangents[v]), 3);
+                }
+            }
+            clip->addTrack(targetName, std::move(track));
+        } else if (channel.target_path == cgltf_animation_path_type_rotation) {
+            auto track = std::make_unique<TypedAnimTrack<glm::quat>>();
+            track->target = TrackTarget::Rotation;
+            track->interpolation = interpolation;
+            track->timestamps = std::move(timestamps);
+            track->values.resize(count);
+            for (size_t v = 0; v < count; ++v) {
+                float q[4];
+                cgltf_accessor_read_float(output, v * stride + valueOffset, q, 4);
+                track->values[v] = glm::quat(q[3], q[0], q[1], q[2]); // wxyz
+            }
+            if (cubic) {
+                track->inTangents.resize(count);
+                track->outTangents.resize(count);
+                for (size_t v = 0; v < count; ++v) {
+                    float qi[4], qo[4];
+                    cgltf_accessor_read_float(output, v * 3 + 0, qi, 4);
+                    cgltf_accessor_read_float(output, v * 3 + 2, qo, 4);
+                    track->inTangents[v]  = glm::quat(qi[3], qi[0], qi[1], qi[2]);
+                    track->outTangents[v] = glm::quat(qo[3], qo[0], qo[1], qo[2]);
+                }
+            }
+            clip->addTrack(targetName, std::move(track));
+        }
+    }
+
+    return clip;
+}
+
+bool GLTFLoader::loadAnimationData(const std::string& path, GltfAnimationData& out,
+                                   std::string* error) {
+    cgltf_options cgltfOptions = {};
+    cgltf_data* data = nullptr;
+    if (cgltf_parse_file(&cgltfOptions, path.c_str(), &data) != cgltf_result_success) {
+        if (error) *error = "failed to parse " + path;
+        return false;
+    }
+    if (cgltf_load_buffers(&cgltfOptions, data, path.c_str()) != cgltf_result_success) {
+        cgltf_free(data);
+        if (error) *error = "failed to load buffers for " + path;
+        return false;
+    }
+    if (!decodeMeshoptBuffers(data)) {
+        cgltf_free(data);
+        if (error) *error = "failed to decode meshopt buffers for " + path;
+        return false;
+    }
+
+    for (size_t i = 0; i < data->skins_count; ++i) {
+        std::string rigError;
+        auto rig = buildRigFromSkin(data->skins[i], &rigError);
+        if (!rig) {
+            cgltf_free(data);
+            if (error) *error = "invalid skin " + std::to_string(i) + ": " + rigError;
+            return false;
+        }
+        out.rigs.push_back(std::move(rig));
+    }
+
+    for (size_t i = 0; i < data->animations_count; ++i) {
+        auto clip = buildClipFromAnimation(data->animations[i], i);
+        out.clipNames.push_back(clip->name());
+        out.clips.push_back(std::move(clip));
+    }
+
+    cgltf_free(data);
+    return true;
 }
 
 bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& resources,
@@ -431,30 +606,13 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
     std::vector<AssetID> skinRigs(data->skins_count, kAssetInvalid);
     for (size_t i = 0; i < data->skins_count; ++i) {
         cgltf_skin& skin = data->skins[i];
-        auto rig = std::make_unique<Rig>();
-        
-        for (size_t j = 0; j < skin.joints_count; ++j) {
-            cgltf_node* joint = skin.joints[j];
-            std::string name = joint->name ? joint->name : "Bone_" + std::to_string(j);
-            
-            int32_t parentIndex = -1;
-            if (joint->parent) {
-                for (size_t p = 0; p < skin.joints_count; ++p) {
-                    if (skin.joints[p] == joint->parent) {
-                        parentIndex = static_cast<int32_t>(p);
-                        break;
-                    }
-                }
-            }
-            
-            glm::mat4 invBind{1.0f};
-            if (skin.inverse_bind_matrices) {
-                cgltf_accessor_read_float(skin.inverse_bind_matrices, j, glm::value_ptr(invBind), 16);
-            }
-            
-            rig->addBone(name, parentIndex, invBind);
+        std::string rigError;
+        auto rig = buildRigFromSkin(skin, &rigError);
+        if (!rig) {
+            Log::error("GLTFLoader: invalid skin ", i, ": ", rigError);
+            continue;
         }
-        
+
         std::string rigName = loadPath + "#rig" + std::to_string(i);
         skinRigs[i] = resources.registerMemoryRig(rigName, std::move(rig));
         Log::info("Loaded GLTF Skin: ", skin.joints_count, " joints, rigId=", skinRigs[i]);
@@ -475,89 +633,10 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
     std::vector<AssetID> loadedClips;
     std::vector<std::string> clipNames;
     for (size_t i = 0; i < data->animations_count; ++i) {
-        cgltf_animation& anim = data->animations[i];
-        std::string animName = anim.name ? anim.name : "Anim_" + std::to_string(i);
-        
-        // Find max duration
-        float duration = 0.0f;
-        for (size_t s = 0; s < anim.samplers_count; ++s) {
-            cgltf_accessor* input = anim.samplers[s].input;
-            if (input && input->count > 0) {
-                float maxTime = 0.0f;
-                cgltf_accessor_read_float(input, input->count - 1, &maxTime, 1);
-                if (maxTime > duration) duration = maxTime;
-            }
-        }
-        
-        auto clip = std::make_unique<AnimationClip>(animName, duration);
-        
-        for (size_t c = 0; c < anim.channels_count; ++c) {
-            cgltf_animation_channel& channel = anim.channels[c];
-            if (!channel.target_node) continue;
-            
-            std::string targetName = channel.target_node->name ? channel.target_node->name : "";
-            if (targetName.empty()) continue; // We need names for retargeting
-            
-            cgltf_animation_sampler* sampler = channel.sampler;
-            cgltf_accessor* input = sampler->input;
-            cgltf_accessor* output = sampler->output;
+        auto clip = buildClipFromAnimation(data->animations[i], i);
+        const std::string animName = clip->name();
+        const float duration = clip->duration();
 
-            // glTF CUBICSPLINE packs (in-tangent, value, out-tangent) per key; the
-            // tangents feed real Hermite interpolation (see TypedAnimTrack::cubic).
-            const bool cubic = sampler->interpolation == cgltf_interpolation_type_cubic_spline;
-            const size_t stride = cubic ? 3 : 1;
-            const size_t valueOffset = cubic ? 1 : 0;
-
-            size_t count = input->count;
-            std::vector<float> timestamps(count);
-            for (size_t v = 0; v < count; ++v) {
-                cgltf_accessor_read_float(input, v, &timestamps[v], 1);
-            }
-
-            if (channel.target_path == cgltf_animation_path_type_translation || channel.target_path == cgltf_animation_path_type_scale) {
-                auto track = std::make_unique<TypedAnimTrack<glm::vec3>>();
-                track->target = (channel.target_path == cgltf_animation_path_type_translation) ? TrackTarget::Translation : TrackTarget::Scale;
-                track->timestamps = std::move(timestamps);
-                track->values.resize(count);
-                for (size_t v = 0; v < count; ++v) {
-                    cgltf_accessor_read_float(output, v * stride + valueOffset, glm::value_ptr(track->values[v]), 3);
-                }
-                if (cubic) {
-                    track->cubic = true;
-                    track->inTangents.resize(count);
-                    track->outTangents.resize(count);
-                    for (size_t v = 0; v < count; ++v) {
-                        cgltf_accessor_read_float(output, v * 3 + 0, glm::value_ptr(track->inTangents[v]), 3);
-                        cgltf_accessor_read_float(output, v * 3 + 2, glm::value_ptr(track->outTangents[v]), 3);
-                    }
-                }
-                clip->addTrack(targetName, std::move(track));
-            } else if (channel.target_path == cgltf_animation_path_type_rotation) {
-                auto track = std::make_unique<TypedAnimTrack<glm::quat>>();
-                track->target = TrackTarget::Rotation;
-                track->timestamps = std::move(timestamps);
-                track->values.resize(count);
-                for (size_t v = 0; v < count; ++v) {
-                    float q[4];
-                    cgltf_accessor_read_float(output, v * stride + valueOffset, q, 4);
-                    track->values[v] = glm::quat(q[3], q[0], q[1], q[2]); // wxyz
-                }
-                if (cubic) {
-                    track->cubic = true;
-                    track->inTangents.resize(count);
-                    track->outTangents.resize(count);
-                    for (size_t v = 0; v < count; ++v) {
-                        float qi[4], qo[4];
-                        cgltf_accessor_read_float(output, v * 3 + 0, qi, 4);
-                        cgltf_accessor_read_float(output, v * 3 + 2, qo, 4);
-                        track->inTangents[v]  = glm::quat(qi[3], qi[0], qi[1], qi[2]);
-                        track->outTangents[v] = glm::quat(qo[3], qo[0], qo[1], qo[2]);
-                    }
-                }
-                clip->addTrack(targetName, std::move(track));
-            }
-        }
-        
         std::string clipPath = loadPath + "#" + animName;
         AssetID clipId = resources.registerMemoryAnimation(clipPath, std::move(clip));
         loadedClips.push_back(clipId);

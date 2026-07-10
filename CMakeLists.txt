@@ -26,6 +26,9 @@ function(saida_test_target target)
     set_target_properties(${target} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${SAIDA_TEST_OUTPUT_DIR}
     )
+    # The tests assert() their checks: strip the config-level -DNDEBUG
+    # (RelWithDebInfo/Release) or every assert-based test silently passes empty.
+    target_compile_options(${target} PRIVATE -UNDEBUG)
 endfunction()
 
 find_package(Vulkan REQUIRED)
@@ -82,7 +85,7 @@ set(SHADER_SPIRV "")
 # Web (WGSL) set: shaders converted to the web shading model (separate textures +
 # samplers + UBO, via web_compat.glsl). A -DWEB variant is compiled and then
 # transpiled to WGSL only for these. The list grows as the port proceeds
-# (Étape 16.2); web is mono — no bindless, no multiview. web.<name>.spv is built
+# Web is mono: no bindless or multiview. web.<name>.spv is built
 # on demand by the WebShaders target below.
 set(WEB_READY_SHADERS
     shader.vert shader.frag unlit.frag
@@ -155,7 +158,7 @@ endforeach()
 
 add_custom_target(Shaders DEPENDS ${SHADER_SPIRV})
 
-# ── Web shaders: SPIR-V → WGSL (Étape 16.2) ─────────────────────────────────
+# ── Web shaders: SPIR-V → WGSL ───────────────────────────────────────────────
 # Browsers' WebGPU only accepts WGSL, so the web build transpiles the very same
 # SPIR-V we already produce with glslc. Uses `naga` (cargo install naga-cli).
 # This is a separate on-demand target — desktop builds never trigger it — and is
@@ -202,14 +205,14 @@ set(CROSS_PLATFORM_DETERMINISTIC OFF)
 set(DOUBLE_PRECISION OFF)                        # 32-bit positions: smaller/faster, fine for our worlds
 add_subdirectory(third_party/jolt/Build ${CMAKE_BINARY_DIR}/jolt)
 
-# ── LLM-native MCP server (Étape 13) ────────────────────────────────────────
-# In-process MCP server for LLM-driven editing. Compiled into saida_editor only,
+# ── MCP server ───────────────────────────────────────────────────────────────
+# In-process MCP server. Compiled into saida_editor only,
 # so the shipped runtime never links it. Set OFF for a pure no-MCP editor.
-option(SAIDA_ENABLE_MCP "Enable the in-process MCP server (Étape 13)" ON)
+option(SAIDA_ENABLE_MCP "Enable the in-process MCP server" ON)
 
 # ── OpenXR (vendored, loader only) ──────────────────────────────────────────
 # Set SAIDA_ENABLE_XR=OFF to produce a pure-desktop build with no OpenXR dependency.
-option(SAIDA_ENABLE_XR "Enable OpenXR support (Étape 14)" ON)
+option(SAIDA_ENABLE_XR "Enable OpenXR support" ON)
 
 if(SAIDA_ENABLE_XR)
     # Build just the static openxr_loader from the pre-generated SDK repo (no Python
@@ -250,7 +253,7 @@ if (MINGW)
 endif()
 
 # ── meshoptimizer (vendored, static) ────────────────────────────────────────
-# Geometry compression/optimization (Étape 16 — Export Web). Runtime needs the
+# Geometry compression/optimization. Runtime needs the
 # decoders (EXT_meshopt_compression GLBs); the editor's import also uses the
 # encoders/optimizers. Header + .cpp only, no executables. v0.22.
 file(GLOB MESHOPT_SOURCES ${CMAKE_SOURCE_DIR}/third_party/meshoptimizer/src/*.cpp)
@@ -307,6 +310,7 @@ add_library(saida_engine STATIC
     src/fx/ParticleQuality.cpp
     src/scene/NodeId.cpp
     src/scene/Node.cpp
+    src/scene/Transform.cpp
     src/scene/ReflectedTypes.cpp
     src/scripting/JsContext.cpp
     src/scripting/JsEngineBindings.cpp
@@ -342,6 +346,7 @@ add_library(saida_engine STATIC
     src/scene/UIToggleNode.cpp
     src/scene/animation/Pose.cpp
     src/scene/animation/AnimationClip.cpp
+    src/scene/animation/Rig.cpp
     src/scene/animation/ClipNode.cpp
     src/scene/animation/BlendNode.cpp
     src/scene/animation/AnimStateMachine.cpp
@@ -420,9 +425,7 @@ add_library(saida_engine STATIC
     third_party/imgui/backends/imgui_impl_vulkan.cpp
 )
 
-# LLM-generated behaviours (written by the MCP write_cpp_behaviour tool). Globbed
-# with CONFIGURE_DEPENDS so Ninja re-globs on build when a new file appears — no
-# manual CMake edit needed. Registered centrally in scene/ReflectedTypes.cpp.
+# Keep generated behaviour sources automatic; new files need no CMake edit.
 file(GLOB SAIDA_GENERATED_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/generated/*.cpp)
 if(SAIDA_GENERATED_SOURCES)
     target_sources(saida_engine PRIVATE ${SAIDA_GENERATED_SOURCES})
@@ -552,6 +555,35 @@ if (BUILD_TESTING)
     )
     target_compile_options(saida_core_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_core_tests COMMAND $<TARGET_FILE:saida_core_tests>)
+
+    # The GPU culling buffers are all StorageBuffer descriptors, so a binding
+    # swap remains shader-valid and is not caught by normal compilation. Keep a
+    # lightweight contract test outside the Vulkan runtime path.
+    add_executable(saida_gpu_driven_contract_tests tests/GpuDrivenContractTests.cpp)
+    saida_test_target(saida_gpu_driven_contract_tests)
+    target_include_directories(saida_gpu_driven_contract_tests PRIVATE src)
+    target_link_libraries(saida_gpu_driven_contract_tests PRIVATE glm::glm)
+    target_compile_definitions(saida_gpu_driven_contract_tests PRIVATE
+        SAIDA_PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
+    target_compile_options(saida_gpu_driven_contract_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_gpu_driven_contract_tests COMMAND $<TARGET_FILE:saida_gpu_driven_contract_tests>)
+
+    add_executable(saida_animation_core_tests tests/AnimationCoreTests.cpp)
+    saida_test_target(saida_animation_core_tests)
+    target_link_libraries(saida_animation_core_tests PRIVATE saida_engine)
+    target_compile_options(saida_animation_core_tests PRIVATE -Wall -Wextra)
+    target_compile_definitions(saida_animation_core_tests PRIVATE
+        SAIDA_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME saida_animation_core_tests COMMAND $<TARGET_FILE:saida_animation_core_tests>)
+
+    # Headless animation benchmark (PLAN_ANIMATION.md §14.4). The ctest entry runs
+    # a tiny workload as a smoke test; run it manually with real sizes to measure.
+    add_executable(saida_animation_bench tests/AnimationBench.cpp)
+    saida_test_target(saida_animation_bench)
+    target_link_libraries(saida_animation_bench PRIVATE saida_engine)
+    target_compile_options(saida_animation_bench PRIVATE -Wall -Wextra)
+    add_test(NAME saida_animation_bench_smoke
+             COMMAND $<TARGET_FILE:saida_animation_bench> --chars 4 --bones 16 --keys 8 --frames 20)
 
     add_executable(saida_scene_lifecycle_tests tests/SceneLifecycleTests.cpp)
     saida_test_target(saida_scene_lifecycle_tests)
@@ -698,7 +730,7 @@ if (WIN32)
     )
 endif()
 
-# ── Headless tooling CLI (Phase B — PLAN_INTEGRATION_SAIDA.md) ───────────────
+# ── Headless tooling CLI ─────────────────────────────────────────────────────
 # No window, no GPU: links saida_engine only to reach the authoring-core
 # (EngineManifest / SaidaOp). Socle des workers Temporal (describe/validate/
 # apply-ops). Never opens a Vulkan context — safe to run in CI/headless.
@@ -722,8 +754,6 @@ if (BUILD_TESTING)
     )
     set_tests_properties(saida_tool_validate_scenario_invalid PROPERTIES WILL_FAIL TRUE)
 
-    # Phase B3 : apply-ops charge un snapshot sans GPU, applique des ops, emet un
-    # snapshot deterministe (exit 0). Un op invalide rejette le batch (exit 1).
     add_test(
         NAME saida_tool_apply_ops_valid
         COMMAND $<TARGET_FILE:saida_tool> apply-ops
@@ -738,8 +768,6 @@ if (BUILD_TESTING)
     )
     set_tests_properties(saida_tool_apply_ops_invalid PROPERTIES WILL_FAIL TRUE)
 
-    # C7: --skip-invalid folds an op-log where later ops target a deleted node;
-    # the stale ops are dropped (not aborted) and the fold succeeds (exit 0).
     add_test(
         NAME saida_tool_apply_ops_skip_invalid
         COMMAND $<TARGET_FILE:saida_tool> apply-ops --skip-invalid
@@ -747,7 +775,6 @@ if (BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ops-apply-conflict.json
     )
 
-    # Phase B2 : validate-scene — structure d'un snapshot (types, ids uniques).
     add_test(
         NAME saida_tool_validate_scene_valid
         COMMAND $<TARGET_FILE:saida_tool> validate-scene
@@ -760,7 +787,6 @@ if (BUILD_TESTING)
     )
     set_tests_properties(saida_tool_validate_scene_invalid PROPERTIES WILL_FAIL TRUE)
 
-    # Phase B2 : validate-script — compile-check JS via QuickJS (no exec).
     add_test(
         NAME saida_tool_validate_script_valid
         COMMAND $<TARGET_FILE:saida_tool> validate-script
