@@ -4,10 +4,17 @@
 #include "authoring/SaidaOp.hpp"
 #include "authoring/SaidaOpApplier.hpp"
 #include "authoring/SceneSnapshot.hpp"
+#include "scene/BVHLoader.hpp"
+#include "scene/GLTFLoader.hpp"
 #include "scene/Scene.hpp"
+#include "scene/animation/AnimationClip.hpp"
+#include "scene/animation/ClipView.hpp"
+#include "scene/animation/Rig.hpp"
 #include "scenario/ScenarioAsset.hpp"
 #include "scripting/JsContext.hpp"
 #include "scripting/JsRuntime.hpp"
+
+#include <filesystem>
 
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>
@@ -40,6 +47,8 @@ int usage(std::ostream& out) {
            "  saida_tool validate-script <script.js> [--module|--script] [--pretty]\n"
            "  saida_tool validate-scenario <scenario.json> [--pretty]\n"
            "  saida_tool apply-ops <scene.json> <ops.json> [--out <file>] [--skip-invalid]\n"
+           "  saida_tool inspect-anim <file.gltf|.glb|.bvh> [--pretty]\n"
+           "  saida_tool validate-clipview <view.sclip> [--root <dir>] [--pretty]\n"
            "  saida_tool help\n"
            "\n"
            "Commands:\n"
@@ -67,6 +76,13 @@ int usage(std::ostream& out) {
            "                    ops that fail against the current state (reported on\n"
            "                    stderr) — used to fold a collaboration op-log where a\n"
            "                    later op targets a node an earlier op deleted.\n"
+           "  inspect-anim      Load a glTF/GLB/BVH animation file headless and print\n"
+           "                    its rigs (bone names) and clips (name, sub-asset key,\n"
+           "                    duration, animated bone count) as JSON.\n"
+           "  validate-clipview Parse a .sclip non-destructive clip view, resolve its\n"
+           "                    'source' sub-asset key against --root (default: the\n"
+           "                    .sclip's directory) and validate ranges/events against\n"
+           "                    the source clip. Prints {ok, diagnostics}; exit 0/1.\n"
            "\n"
            "Files may be '-' for stdin. Exit codes: 0 ok, 1 invalid input, 2 usage/IO.\n";
     return kExitUsage;
@@ -480,6 +496,159 @@ int cmdApplyOps(const std::vector<std::string>& args) {
 
 } // namespace
 
+// --- Animation authoring (PLAN_ANIMATION.md Étape 1) ------------------------
+
+bool hasExtension(const std::string& path, const char* ext) {
+    std::string e = std::filesystem::path(path).extension().string();
+    std::transform(e.begin(), e.end(), e.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return e == ext;
+}
+
+// Charge rigs + clips d'un fichier d'animation sans GPU. Retourne false avec
+// un message si le format n'est pas supporté ou si l'import échoue.
+bool loadAnimationFile(const std::string& path, saida::GltfAnimationData& out,
+                       std::string& error) {
+    if (hasExtension(path, ".bvh")) {
+        auto clip = saida::BVHLoader::parse(path);
+        if (!clip) {
+            error = "failed to parse BVH '" + path + "'";
+            return false;
+        }
+        out.clipNames.push_back(clip->name());
+        out.clips.push_back(std::move(clip));
+        return true;
+    }
+    if (hasExtension(path, ".gltf") || hasExtension(path, ".glb")) {
+        return saida::GLTFLoader::loadAnimationData(path, out, &error);
+    }
+    error = "unsupported animation file '" + path + "' (expected .gltf, .glb or .bvh)";
+    return false;
+}
+
+int cmdInspectAnim(const std::vector<std::string>& args) {
+    std::string path;
+    bool pretty = false;
+    for (const std::string& a : args) {
+        if (a == "--pretty") {
+            pretty = true;
+        } else if (!a.empty() && a[0] == '-' && a != "-") {
+            std::cerr << "inspect-anim: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (path.empty()) {
+            path = a;
+        } else {
+            std::cerr << "inspect-anim: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (path.empty()) {
+        std::cerr << "inspect-anim: missing <file.gltf|.glb|.bvh>\n";
+        return kExitUsage;
+    }
+
+    saida::GltfAnimationData data;
+    std::string error;
+    if (!loadAnimationFile(path, data, error)) {
+        std::cerr << "inspect-anim: " << error << "\n";
+        return kExitInvalid;
+    }
+
+    json rigs = json::array();
+    for (size_t i = 0; i < data.rigs.size(); ++i) {
+        const saida::Rig& rig = *data.rigs[i];
+        json bones = json::array();
+        for (const auto& bone : rig.bones()) bones.push_back(bone.name);
+        rigs.push_back({{"index", i}, {"boneCount", rig.boneCount()}, {"bones", bones}});
+    }
+
+    json clips = json::array();
+    for (size_t i = 0; i < data.clips.size(); ++i) {
+        const saida::AnimationClip& clip = *data.clips[i];
+        const std::string name = data.clipNames[i];
+        clips.push_back({{"name", name},
+                         {"key", path + "#" + name},
+                         {"duration", clip.duration()},
+                         {"animatedBones", clip.boneNames().size()}});
+    }
+
+    const json report = {{"file", path}, {"rigs", rigs}, {"clips", clips}};
+    std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
+    return kExitOk;
+}
+
+int cmdValidateClipView(const std::vector<std::string>& args) {
+    std::string path;
+    std::string root;
+    bool pretty = false;
+    for (size_t i = 0; i < args.size(); ++i) {
+        const std::string& a = args[i];
+        if (a == "--pretty") {
+            pretty = true;
+        } else if (a == "--root") {
+            if (i + 1 >= args.size()) {
+                std::cerr << "validate-clipview: --root needs a directory\n";
+                return kExitUsage;
+            }
+            root = args[++i];
+        } else if (!a.empty() && a[0] == '-' && a != "-") {
+            std::cerr << "validate-clipview: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (path.empty()) {
+            path = a;
+        } else {
+            std::cerr << "validate-clipview: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (path.empty()) {
+        std::cerr << "validate-clipview: missing <view.sclip>\n";
+        return kExitUsage;
+    }
+    if (root.empty()) root = std::filesystem::path(path).parent_path().string();
+
+    auto parsed = saida::ClipView::loadFile(path);
+    std::vector<saida::AssetDiagnostic> diags = std::move(parsed.diagnostics);
+
+    if (parsed.ok) {
+        // Résout la clé de sous-asset "fichier#clip" relativement à --root
+        // (défaut : le dossier du .sclip) et valide contre la source.
+        const std::string& key = parsed.view.source;
+        const size_t hash = key.rfind('#');
+        const std::string relFile = hash == std::string::npos ? key : key.substr(0, hash);
+        const std::string clipName = hash == std::string::npos ? "" : key.substr(hash + 1);
+        const std::string sourcePath = (std::filesystem::path(root) / relFile).string();
+
+        saida::GltfAnimationData data;
+        std::string error;
+        if (!loadAnimationFile(sourcePath, data, error)) {
+            diags.push_back({"clipview.source.unresolved", saida::AssetDiagnostic::Severity::Error,
+                             "/source", error});
+        } else {
+            const saida::AnimationClip* sourceClip = nullptr;
+            for (size_t i = 0; i < data.clips.size(); ++i) {
+                if (clipName.empty() || data.clipNames[i] == clipName) {
+                    sourceClip = data.clips[i].get();
+                    break;
+                }
+            }
+            if (!sourceClip) {
+                diags.push_back({"clipview.source.clip_missing",
+                                 saida::AssetDiagnostic::Severity::Error, "/source",
+                                 "'" + relFile + "' has no clip named '" + clipName + "'"});
+            } else {
+                auto more = parsed.view.validate(sourceClip);
+                diags.insert(diags.end(), more.begin(), more.end());
+            }
+        }
+    }
+
+    json report = {{"ok", !saida::hasErrors(diags)}, {"diagnostics", json::array()}};
+    for (const auto& d : diags) report["diagnostics"].push_back(d.toJson());
+    std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
+    return saida::hasErrors(diags) ? kExitInvalid : kExitOk;
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return usage(std::cerr);
@@ -508,6 +677,12 @@ int main(int argc, char** argv) {
     }
     if (command == "apply-ops") {
         return cmdApplyOps(rest);
+    }
+    if (command == "inspect-anim") {
+        return cmdInspectAnim(rest);
+    }
+    if (command == "validate-clipview") {
+        return cmdValidateClipView(rest);
     }
 
     std::cerr << "saida_tool: unknown command '" << command << "'\n\n";

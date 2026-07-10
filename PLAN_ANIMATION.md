@@ -702,15 +702,29 @@ les golden tests ; web : à exécuter sur le runtime WASM.)
 
 Livrables :
 
-- schémas `RigAsset`, `ClipView`, `RetargetProfile`, `AnimationGraph` et
-  `AnimationSequence` ;
-- identifiants stables des sous-assets glTF/BVH ;
-- sérialisation/migration versionnée ;
-- création et validation de `ClipView` depuis l'éditeur et l'authoring-core ;
-- premiers outils LLM `list`, `inspect`, `create_clip_view`, `validate`.
+- [~] schémas : `ClipView` fait (`.sclip` schema 1 : source, name, range, loop,
+      speed, events — `scene/animation/ClipView.{hpp,cpp}`) ; restent
+      `RigAsset`, `RetargetProfile`, `AnimationGraph`, `AnimationSequence` ;
+- [x] identifiants stables des sous-assets glTF/BVH : clé `fichier#clip`
+      (l'`AssetRegistry` redonne le même `AssetID` à clé identique après
+      reimport) ; `ClipView.source` référence cette clé ;
+- [x] sérialisation/migration versionnée : `schema` obligatoire, refus des
+      schémas plus récents, hook `migrate()` pour les anciens ; diagnostics
+      structurés `AssetDiagnostic {code, severity, jsonPath, message}` (§12.3) ;
+- [~] création et validation de `ClipView` : lecture non destructive en place
+      (`ClipNode::setRange` boucle/clampe dans la sous-plage du clip partagé,
+      `ClipView::instantiate` — aucune duplication de clés) ; validation contre
+      la source (plages, événements) ; reste l'UI éditeur de création ;
+- [~] premiers outils : `saida_tool inspect-anim` (rigs/clips/durées JSON,
+      headless) et `saida_tool validate-clipview` (résolution de la clé source
+      + diagnostics, exit 0/1) ; restent les outils MCP éditeur
+      (`list/inspect/create_clip_view/validate` côté McpBridge).
 
 Critère de sortie : plusieurs vues éditables utilisent une seule animation
-source et survivent à un reimport sans changement d'identité.
+source et survivent à un reimport sans changement d'identité. (Testé :
+`testClipViewsShareSource` — deux vues sur un même clip, poses identiques à
+temps absolu égal ; roundtrip + refus de schéma futur ; fixtures `.sclip`
+valides/invalides passées à `saida_tool` en ctest.)
 
 ### Étape 2 — Cooker et compression
 

@@ -3,6 +3,7 @@
 #include "scene/animation/AnimationClip.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/ClipNode.hpp"
+#include "scene/animation/ClipView.hpp"
 #include "scene/animation/Pose.hpp"
 #include "scene/animation/Rig.hpp"
 
@@ -181,6 +182,134 @@ void testBvhFixtureClip() {
     assert(near(spineX.y, 1.0f));
 }
 
+bool hasDiagnostic(const std::vector<saida::AssetDiagnostic>& diags, const char* code) {
+    for (const auto& d : diags)
+        if (d.code == code) return true;
+    return false;
+}
+
+// Sérialisation versionnée : toJson → parse reproduit la vue à l'identique et
+// un schéma plus récent que le support courant est refusé proprement.
+void testClipViewRoundtrip() {
+    saida::ClipView view;
+    view.source = "mocap.glb#Take1";
+    view.name = "RunLoop";
+    view.hasRange = true;
+    view.rangeStart = 1.2f;
+    view.rangeEnd = 2.05f;
+    view.loop = true;
+    view.speed = 1.5f;
+    view.events.push_back({1.4f, "left_foot_down"});
+
+    auto parsed = saida::ClipView::parse(view.toJson());
+    assert(parsed.ok);
+    assert(parsed.view.source == view.source);
+    assert(parsed.view.name == view.name);
+    assert(parsed.view.hasRange);
+    assert(near(parsed.view.rangeStart, 1.2f));
+    assert(near(parsed.view.rangeEnd, 2.05f));
+    assert(near(parsed.view.speed, 1.5f));
+    assert(parsed.view.events.size() == 1);
+    assert(parsed.view.events[0].name == "left_foot_down");
+
+    nlohmann::json future = view.toJson();
+    future["schema"] = saida::kClipViewSchema + 1;
+    auto rejected = saida::ClipView::parse(future);
+    assert(!rejected.ok);
+    assert(hasDiagnostic(rejected.diagnostics, "clipview.schema.newer"));
+
+    auto empty = saida::ClipView::parse(nlohmann::json::object());
+    assert(!empty.ok);
+    assert(hasDiagnostic(empty.diagnostics, "clipview.schema.missing"));
+}
+
+// Diagnostics structurés contre une source résolue.
+void testClipViewValidation() {
+    saida::GltfAnimationData data;
+    std::string error;
+    const std::string path = std::string(SAIDA_FIXTURE_DIR) + "/animation/two_bone.gltf";
+    assert(saida::GLTFLoader::loadAnimationData(path, data, &error));
+    const saida::AnimationClip* source = data.clips[0].get();  // duration 1.0
+
+    saida::ClipView view;
+    view.source = "two_bone.gltf#Mix";
+    view.name = "Bad";
+    view.hasRange = true;
+    view.rangeStart = 0.5f;
+    view.rangeEnd = 0.25f;
+    assert(hasDiagnostic(view.validate(source), "clipview.range.reversed"));
+
+    view.rangeEnd = 3.0f;
+    assert(hasDiagnostic(view.validate(source), "clipview.range.past_end"));
+
+    view.rangeEnd = 0.75f;
+    view.events.push_back({0.9f, "outside"});
+    assert(hasDiagnostic(view.validate(source), "clipview.event.out_of_range"));
+
+    view.events.clear();
+    assert(view.validate(source).empty());
+}
+
+// Deux vues non destructives partagent la même source : aucune copie de clés,
+// et la vue joue exactement le segment de la source (mêmes poses aux mêmes
+// temps absolus).
+void testClipViewsShareSource() {
+    saida::GltfAnimationData data;
+    std::string error;
+    const std::string path = std::string(SAIDA_FIXTURE_DIR) + "/animation/two_bone.gltf";
+    assert(saida::GLTFLoader::loadAnimationData(path, data, &error));
+    saida::Rig& rig = *data.rigs[0];
+    const saida::AnimationClip& source = *data.clips[0];
+
+    saida::ClipView first;
+    first.source = "two_bone.gltf#Mix";
+    first.name = "FirstHalf";
+    first.hasRange = true;
+    first.rangeStart = 0.0f;
+    first.rangeEnd = 0.5f;
+
+    saida::ClipView second = first;
+    second.name = "SecondHalf";
+    second.rangeStart = 0.5f;
+    second.rangeEnd = 1.0f;
+
+    auto nodeA = first.instantiate(source, rig);
+    auto nodeB = second.instantiate(source, rig);
+    assert(near(nodeA->time(), 0.0f));
+    assert(near(nodeB->time(), 0.5f));
+
+    // La vue boucle dans sa plage : 0.4 + 0.2 s wrappe à 0.1 dans [0, 0.5].
+    nodeA->setTime(0.4f);
+    nodeA->update(0.2f);
+    assert(near(nodeA->time(), 0.1f));
+
+    // Sans boucle, la lecture clampe à la fin de la plage.
+    nodeB->setLooping(false);
+    nodeB->setTime(0.9f);
+    nodeB->update(0.5f);
+    assert(near(nodeB->time(), 1.0f));
+
+    // Même temps absolu → même pose que la source directe (clés partagées).
+    saida::LocalPose bind;
+    bind.resize(rig.boneCount());
+    for (size_t i = 0; i < rig.boneCount(); ++i)
+        bind.localTransforms[i] = rig.bones()[i].restLocal;
+
+    saida::ClipNode raw(&source, rig);
+    raw.setTime(0.75f);
+    nodeB->setTime(0.75f);
+
+    saida::LocalPose fromView, fromSource;
+    nodeB->evaluate(bind, fromView);
+    raw.evaluate(bind, fromSource);
+    for (size_t i = 0; i < rig.boneCount(); ++i) {
+        assert(near(fromView.localTransforms[i].position.y,
+                    fromSource.localTransforms[i].position.y));
+        assert(near(fromView.localTransforms[i].position.x,
+                    fromSource.localTransforms[i].position.x));
+    }
+}
+
 } // namespace
 
 int main() {
@@ -191,5 +320,8 @@ int main() {
     testLinearInterpolation();
     testGltfFixturePoses();
     testBvhFixtureClip();
+    testClipViewRoundtrip();
+    testClipViewValidation();
+    testClipViewsShareSource();
     return 0;
 }

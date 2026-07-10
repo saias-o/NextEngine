@@ -347,6 +347,7 @@ add_library(saida_engine STATIC
     src/scene/animation/Pose.cpp
     src/scene/animation/AnimationClip.cpp
     src/scene/animation/Rig.cpp
+    src/scene/animation/ClipView.cpp
     src/scene/animation/ClipNode.cpp
     src/scene/animation/BlendNode.cpp
     src/scene/animation/AnimStateMachine.cpp
@@ -798,6 +799,23 @@ if (BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/script-invalid.js
     )
     set_tests_properties(saida_tool_validate_script_invalid PROPERTIES WILL_FAIL TRUE)
+
+    add_test(
+        NAME saida_tool_inspect_anim
+        COMMAND $<TARGET_FILE:saida_tool> inspect-anim
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/animation/two_bone.gltf
+    )
+    add_test(
+        NAME saida_tool_validate_clipview_valid
+        COMMAND $<TARGET_FILE:saida_tool> validate-clipview
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/animation/run_loop.sclip
+    )
+    add_test(
+        NAME saida_tool_validate_clipview_invalid
+        COMMAND $<TARGET_FILE:saida_tool> validate-clipview
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/animation/bad_range.sclip
+    )
+    set_tests_properties(saida_tool_validate_clipview_invalid PROPERTIES WILL_FAIL TRUE)
 endif()
 
 if (WIN32)

@@ -17,26 +17,37 @@ ClipNode::ClipNode(const AnimationClip* clip, const Rig& rig, const RetargetMap*
     }
 }
 
+void ClipNode::setRange(float start, float end) {
+    rangeStart_ = start;
+    rangeEnd_ = end;
+}
+
+float ClipNode::rangeEnd() const {
+    return rangeEnd_ >= 0.0f ? rangeEnd_ : duration();
+}
+
 void ClipNode::update(float deltaTime) {
     if (!clip_) return;
 
     // Advance time
     time_ += deltaTime * speed_;
 
-    // Handle looping
-    float duration = clip_->duration();
-    if (duration > 0.0f) {
+    // Loop or clamp inside the playable window ([0, duration] or the view range).
+    const float start = rangeStart_;
+    const float end = rangeEnd();
+    const float span = end - start;
+    if (span > 0.0f) {
         if (looping_) {
-            time_ = std::fmod(time_, duration);
-            if (time_ < 0.0f) {
-                time_ += duration;
+            time_ = start + std::fmod(time_ - start, span);
+            if (time_ < start) {
+                time_ += span;
             }
         } else {
-            if (time_ > duration) time_ = duration;
-            if (time_ < 0.0f) time_ = 0.0f;
+            if (time_ > end) time_ = end;
+            if (time_ < start) time_ = start;
         }
     } else {
-        time_ = 0.0f;
+        time_ = start;
     }
 }
 
