@@ -67,6 +67,13 @@ jobs:
       - name: Web runtime (Emscripten)
         run: ./web/build_web.sh Release
 
+      # Player de JEU (PLAN_SAIDA_ENGINE_UPDATE §3 Phase A.1) : SceneTree +
+      # SceneSerializer + behaviours — distinct du runtime d'authoring.
+      - name: Web player (Emscripten)
+        run: |
+          emcmake cmake -S web/player -B build-web-player -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-web-player
+
       - name: Authoring WASM (validation gateway)
         run: ./web/build_authoring_wasm.sh Release
 
@@ -77,6 +84,16 @@ jobs:
             build-web/index.js
             build-web/index.wasm
             build-web/index.data
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-web-player
+          path: |
+            build-web-player/index.html
+            build-web-player/index.js
+            build-web-player/index.wasm
+            build-web-player/index.data
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4

@@ -69,7 +69,20 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/scene/ReflectedTypesWeb.cpp
     ${SAIDA_ROOT}/src/scene/ParticleSystemNode.cpp
     ${SAIDA_ROOT}/src/scene/Scene.cpp
+    ${SAIDA_ROOT}/src/scene/Transform.cpp
     ${SAIDA_ROOT}/src/scene/WaterNode.cpp
+    # ResourceManager charge les assets d'animation (.sclip/.sgraph) : leurs
+    # types et la chaîne de lecture qu'ils référencent doivent linker aussi.
+    ${SAIDA_ROOT}/src/scene/animation/AnimBlackboard.cpp
+    ${SAIDA_ROOT}/src/scene/animation/AnimGraphAsset.cpp
+    ${SAIDA_ROOT}/src/scene/animation/AnimStateMachine.cpp
+    ${SAIDA_ROOT}/src/scene/animation/AnimationClip.cpp
+    ${SAIDA_ROOT}/src/scene/animation/Animator.cpp
+    ${SAIDA_ROOT}/src/scene/animation/ClipNode.cpp
+    ${SAIDA_ROOT}/src/scene/animation/ClipView.cpp
+    ${SAIDA_ROOT}/src/scene/animation/Pose.cpp
+    ${SAIDA_ROOT}/src/scene/animation/Retarget.cpp
+    ${SAIDA_ROOT}/src/scene/animation/Rig.cpp
     ${SAIDA_ROOT}/src/rhi/webgpu/BindGroup.cpp
     ${SAIDA_ROOT}/src/rhi/webgpu/Buffer.cpp
     ${SAIDA_ROOT}/src/rhi/webgpu/CommandEncoder.cpp

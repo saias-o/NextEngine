@@ -311,6 +311,8 @@ add_library(saida_engine STATIC
     src/fx/ParticleEffect.cpp
     src/fx/ParticlePresetLibrary.cpp
     src/fx/ParticleQuality.cpp
+    src/core/PlatformCaps.cpp
+    src/runtime/BootManifest.cpp
     src/scene/NodeId.cpp
     src/scene/Node.cpp
     src/scene/Transform.cpp
@@ -574,6 +576,14 @@ if (BUILD_TESTING)
         SAIDA_PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
     target_compile_options(saida_gpu_driven_contract_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_gpu_driven_contract_tests COMMAND $<TARGET_FILE:saida_gpu_driven_contract_tests>)
+
+    # Boot des players (manifeste game.saida + contrat de capacités) — sans GPU.
+    add_executable(saida_runtime_boot_tests tests/RuntimeBootTests.cpp
+                   src/runtime/BootManifest.cpp src/core/PlatformCaps.cpp)
+    saida_test_target(saida_runtime_boot_tests)
+    target_include_directories(saida_runtime_boot_tests PRIVATE src)
+    target_compile_options(saida_runtime_boot_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_runtime_boot_tests COMMAND $<TARGET_FILE:saida_runtime_boot_tests>)
 
     add_executable(saida_animation_core_tests tests/AnimationCoreTests.cpp)
     saida_test_target(saida_animation_core_tests)

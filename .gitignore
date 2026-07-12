@@ -30,4 +30,5 @@ build_*.txt
 MyGame/build/
 **/build/export/
 build-web/
+build-web-player/
 build-authoring-wasm/

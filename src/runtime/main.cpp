@@ -11,11 +11,12 @@
 #include "Engine.hpp"
 #include "core/Log.hpp"
 #include "core/Paths.hpp"
+#include "core/PlatformCaps.hpp"
 #include "core/Time.hpp"
+#include "runtime/BootManifest.hpp"
 #include "scene/SceneSerializer.hpp"
 
 #include <filesystem>
-#include <fstream>
 #include <stdexcept>
 #include <string>
 
@@ -38,13 +39,6 @@ fs::path executableDir() {
     return fs::current_path();
 }
 
-std::string trim(const std::string& s) {
-    auto a = s.find_first_not_of(" \t\r\n");
-    if (a == std::string::npos) return "";
-    auto b = s.find_last_not_of(" \t\r\n");
-    return s.substr(a, b - a + 1);
-}
-
 } // namespace
 
 int main(int argc, char** argv) {
@@ -56,34 +50,19 @@ int main(int argc, char** argv) {
         // Every asset/shader lookup now resolves under the exe directory.
         saida::setRuntimeRoot(root.string());
 
+        // Desktop player: everything is available except touch.
+        saida::platform::setCapabilities(saida::platform::kAllCapabilities &
+                                         ~uint32_t(saida::platform::Capability::TouchInput));
+        saida::Log::info(saida::platform::report());
+
         // Boot manifest: key=value text written by the editor's Build step.
-        //   project=MyGame.saidaproj
-        //   main_scene=scenes/main.scene
-        const fs::path manifestPath = root / "game.saida";
-        std::ifstream manifest(manifestPath);
-        if (!manifest)
-            throw std::runtime_error("missing boot manifest: " + manifestPath.string());
+        const auto boot = saida::loadBootManifest((root / "game.saida").string());
+        if (!boot.ok) throw std::runtime_error(boot.error);
 
-        std::string projectFile;
-        std::string mainScene;
-        std::string line;
-        while (std::getline(manifest, line)) {
-            line = trim(line);
-            if (line.empty() || line[0] == '#') continue;
-            auto eq = line.find('=');
-            if (eq == std::string::npos) continue;
-            const std::string key = trim(line.substr(0, eq));
-            const std::string val = trim(line.substr(eq + 1));
-            if (key == "project") projectFile = val;
-            else if (key == "main_scene") mainScene = val;
-        }
-        if (projectFile.empty() || mainScene.empty())
-            throw std::runtime_error(
-                "invalid boot manifest (need project= and main_scene=): " +
-                manifestPath.string());
-
-        const std::string projectAbs = (root / projectFile).lexically_normal().string();
-        const std::string sceneAbs   = (root / mainScene).lexically_normal().string();
+        const std::string projectAbs =
+            (root / boot.manifest.project).lexically_normal().string();
+        const std::string sceneAbs =
+            (root / boot.manifest.mainScene).lexically_normal().string();
 
         // Same standalone path as the XR preview: load project + scene, mount the
         // persistent World (autoloads), run unscaled (Play).

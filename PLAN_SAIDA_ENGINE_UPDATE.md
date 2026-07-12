@@ -96,6 +96,19 @@ desktop ne peut pas etre exporte tel quel vers le navigateur.
 Ce chantier doit commencer avant les autres P0. Les API suivantes doivent etre
 concuees de maniere a etre compatibles avec le player Web des leur introduction.
 
+### Etat (juillet 2026)
+
+Premier increment livre : `web/player` (target `saida_player`, CI
+web-artifacts) — player wasm distinct du runtime d'authoring, qui boote un
+package `game.saida` comme l'exe desktop (BootManifest partage), charge projet
+et scene principale via le VRAI SceneSerializer, monte le World du SceneTree
+(autoloads, timers, operations differees) et rend via WebGPU. Verifie sur
+BeachDemo : 47 meshes charges sans loader specialise, boucle de jeu active.
+Contrat de capacites en place (`core/PlatformCaps`, principe 2.5) : le player
+v1 declare rendering seul ; physique, audio, scripts QuickJS, UI, input et
+storage rejoignent le meme executable par increments — les types de nodes
+absents sont diagnostiques au chargement, jamais silencieux.
+
 ## 4. P0 - Input multi-peripherique complet
 
 ### Probleme

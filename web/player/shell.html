@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Saida player</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0c0e14; color: #cfd6e4;
+                 font: 13px/1.5 system-ui, sans-serif; }
+    .wrap { display: flex; flex-direction: column; align-items: center; gap: 10px;
+            padding: 18px; }
+    canvas { background: #000; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+    #status { opacity: .7; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <canvas id="canvas" width="1280" height="720" oncontextmenu="event.preventDefault()"></canvas>
+    <div id="status">loading…</div>
+  </div>
+  <script>
+    var statusEl = document.getElementById('status');
+
+    // Les erreurs des callbacks async (requête device WebGPU) s'évaporeraient en
+    // unhandledrejection : les capturer garde un diagnostic visible sur la page.
+    window.__saidaErrors = [];
+    window.addEventListener('error', function(e) {
+      window.__saidaErrors.push('error: ' + e.message);
+      statusEl.textContent = 'JS error: ' + e.message;
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var reason = e.reason && (e.reason.stack || e.reason.message) || String(e.reason);
+      window.__saidaErrors.push('rejection: ' + reason);
+      statusEl.textContent = 'JS rejection: ' + reason;
+    });
+
+    // Les logs moteur restent lisibles depuis la page (dernière ligne) et la
+    // console ; le boot du jeu s'annonce par « saida-player: … started ».
+    window.__saidaLog = [];
+    var Module = {
+      canvas: document.getElementById('canvas'),
+      print: function(text) {
+        window.__saidaLog.push(text);
+        console.log(text);
+        statusEl.textContent = text;
+      },
+      printErr: function(text) {
+        window.__saidaLog.push(text);
+        console.error(text);
+        statusEl.textContent = text;
+      },
+      setStatus: function(text) { if (text) statusEl.textContent = text; }
+    };
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>

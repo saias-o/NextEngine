@@ -13,7 +13,11 @@ namespace saida {
 namespace fs = std::filesystem;
 
 std::string AutoLODBridge::exePath() {
-#ifdef SAIDA_AUTOLOD_EXE
+#if defined(__EMSCRIPTEN__)
+    // Pas de processus externe sur le web : resolveLoadPath rend le chemin tel
+    // quel (les _lod.glb pré-générés du package restent utilisés normalement).
+    return {};
+#elif defined(SAIDA_AUTOLOD_EXE)
     return SAIDA_AUTOLOD_EXE;
 #else
     const fs::path candidate = fs::path(SAIDA_PROJECT_ROOT) / "build" / "autolod" / "autolod.exe";
