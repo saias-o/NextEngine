@@ -38,7 +38,7 @@ void SceneTree::unmountWorld() {
     pendingChange_ = false;
     quitRequested_ = false;
     world_.reset();  // ~Scene clears children (and their physics bodies) while alive
-    timers_.clear();
+    timerQueue_.clear();
 }
 
 Scene& SceneTree::currentScene() {
@@ -142,74 +142,35 @@ void SceneTree::setPaused(bool paused) { Time::setScale(paused ? 0.0f : 1.0f); }
 bool SceneTree::paused() const { return Time::scale() == 0.0f; }
 
 
-TimerId SceneTree::addTimer(Timer t) {
-    t.id = ++nextTimerId_;
-    timers_.push_back(std::move(t));
-    return timers_.back().id;
-}
-
 TimerId SceneTree::after(Node* owner, float seconds, std::function<void()> fn) {
-    return addTimer({0, owner, nullptr, Timer::After, 0.0f, seconds, Easing::Linear, std::move(fn), {}, false});
+    return timerQueue_.after(owner, seconds, std::move(fn));
 }
 TimerId SceneTree::every(Node* owner, float interval, std::function<void()> fn) {
-    return addTimer({0, owner, nullptr, Timer::Every, 0.0f, interval, Easing::Linear, std::move(fn), {}, false});
+    return timerQueue_.every(owner, interval, std::move(fn));
 }
 TimerId SceneTree::tween(Node* owner, float duration, Easing easing,
                          std::function<void(float)> fn) {
-    return addTimer({0, owner, nullptr, Timer::Tween, 0.0f, duration, easing, {}, std::move(fn), false});
+    return timerQueue_.tween(owner, duration, easing, std::move(fn));
 }
 
 TimerId SceneTree::after(Behaviour* owner, float seconds, std::function<void()> fn) {
-    return addTimer({0, nullptr, owner, Timer::After, 0.0f, seconds, Easing::Linear, std::move(fn), {}, false});
+    return timerQueue_.after(owner, seconds, std::move(fn));
 }
 TimerId SceneTree::every(Behaviour* owner, float interval, std::function<void()> fn) {
-    return addTimer({0, nullptr, owner, Timer::Every, 0.0f, interval, Easing::Linear, std::move(fn), {}, false});
+    return timerQueue_.every(owner, interval, std::move(fn));
 }
 TimerId SceneTree::tween(Behaviour* owner, float duration, Easing easing,
                          std::function<void(float)> fn) {
-    return addTimer({0, nullptr, owner, Timer::Tween, 0.0f, duration, easing, {}, std::move(fn), false});
+    return timerQueue_.tween(owner, duration, easing, std::move(fn));
 }
 
-void SceneTree::cancelTimer(TimerId id) {
-    for (auto& t : timers_)
-        if (t.id == id) { t.dead = true; return; }
-}
+void SceneTree::cancelTimer(TimerId id) { timerQueue_.cancel(id); }
 
-void SceneTree::cancelTimersOwnedBy(Node* owner) {
-    for (auto& t : timers_)
-        if (t.nodeOwner == owner) t.dead = true;
-}
+void SceneTree::cancelTimersOwnedBy(Node* owner) { timerQueue_.cancelOwnedBy(owner); }
 
-void SceneTree::tickTimers(float dt) {
-    if (dt <= 0.0f) return;  // paused → timers freeze
+void SceneTree::cancelTimersOwnedBy(Behaviour* owner) { timerQueue_.cancelOwnedBy(owner); }
 
-    // Iterate by index over the initial range: a callback may append timers (run
-    // next frame) or mark some dead, but won't shift earlier indices. Copy the
-    // callable before invoking, since push_back may reallocate the vector.
-    size_t n = timers_.size();
-    for (size_t i = 0; i < n; ++i) {
-        if (timers_[i].dead) continue;
-        timers_[i].time += dt;
-
-        if (timers_[i].kind == Timer::Tween) {
-            float raw = timers_[i].duration > 0.0f ? timers_[i].time / timers_[i].duration : 1.0f;
-            bool done = raw >= 1.0f;
-            float eased = applyEasing(timers_[i].easing, done ? 1.0f : raw);
-            auto fn = timers_[i].tweenFn;
-            if (done) timers_[i].dead = true;
-            if (fn) fn(eased);
-        } else if (timers_[i].time >= timers_[i].duration) {
-            auto fn = timers_[i].fn;
-            if (timers_[i].kind == Timer::After) timers_[i].dead = true;
-            else timers_[i].time -= timers_[i].duration;  // Every: re-arm
-            if (fn) fn();
-        }
-    }
-
-    timers_.erase(std::remove_if(timers_.begin(), timers_.end(),
-                                 [](const Timer& t) { return t.dead; }),
-                  timers_.end());
-}
+void SceneTree::tickTimers(float dt) { timerQueue_.tick(dt); }
 
 
 void SceneTree::setAutoloadDef(const std::string& name, AutoloadFactory factory) {

@@ -63,6 +63,7 @@ public:
     uint64_t wait(float seconds, std::function<void()> fn);   // one-shot
     uint64_t every(float interval, std::function<void()> fn); // repeating
     uint64_t tween(float duration, Easing easing, std::function<void(float)> fn);
+    void cancelTimer(uint64_t id);
 
 private:
     friend class Node;  // sets node_ on attach, drives ready_/lifecycle
@@ -73,7 +74,6 @@ private:
     bool enabled_ = true;
     std::vector<Connection> connections_;  // owned subscriptions
     SceneTree* timerTree_ = nullptr;
-    std::vector<uint64_t> timerIds_;
 };
 
 } // namespace saida

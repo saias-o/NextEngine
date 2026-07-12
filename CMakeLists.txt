@@ -320,6 +320,7 @@ add_library(saida_engine STATIC
     src/scripting/JsContext.cpp
     src/scripting/JsEngineBindings.cpp
     src/scripting/JsRuntime.cpp
+    src/scripting/JsTimerBindings.cpp
     src/scripting/ScriptBehaviour.cpp
     src/ui/RmlUiRenderInterface.cpp
     src/ui/RmlUiRuntime.cpp
@@ -333,6 +334,7 @@ add_library(saida_engine STATIC
     src/scene/CameraFollowBehaviour.cpp
     src/scene/Scene.cpp
     src/scene/SceneTree.cpp
+    src/scene/SceneTimerQueue.cpp
     src/scene/SceneSerializer.cpp
     src/scene/SignalWiring.cpp
     src/scene/BVHLoader.cpp
@@ -482,6 +484,7 @@ add_dependencies(saida_engine Shaders)
 
 # Absolute paths baked at configure time so the exe runs from any cwd; and GLM
 # conventions (radians, Vulkan 0..1 depth) — PUBLIC so game code sees them too.
+target_compile_definitions(saida_engine PRIVATE SAIDA_SCENE_TREE_TIMERS)
 target_compile_definitions(saida_engine PUBLIC
     SAIDA_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
     SAIDA_BINARY_DIR="${CMAKE_BINARY_DIR}"
@@ -616,6 +619,12 @@ if (BUILD_TESTING)
     target_compile_options(saida_scene_lifecycle_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_scene_lifecycle_tests COMMAND $<TARGET_FILE:saida_scene_lifecycle_tests>)
 
+    add_executable(saida_scene_timer_tests tests/SceneTimerQueueTests.cpp)
+    saida_test_target(saida_scene_timer_tests)
+    target_link_libraries(saida_scene_timer_tests PRIVATE saida_engine)
+    target_compile_options(saida_scene_timer_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_scene_timer_tests COMMAND $<TARGET_FILE:saida_scene_timer_tests>)
+
     add_executable(saida_reflection_tests tests/ReflectionTests.cpp)
     saida_test_target(saida_reflection_tests)
     target_link_libraries(saida_reflection_tests PRIVATE saida_engine)
@@ -645,6 +654,12 @@ if (BUILD_TESTING)
     target_link_libraries(saida_js_signal_tests PRIVATE saida_engine)
     target_compile_options(saida_js_signal_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_js_signal_tests COMMAND $<TARGET_FILE:saida_js_signal_tests>)
+
+    add_executable(saida_js_timer_tests tests/JsTimerBindingTests.cpp)
+    saida_test_target(saida_js_timer_tests)
+    target_link_libraries(saida_js_timer_tests PRIVATE saida_engine)
+    target_compile_options(saida_js_timer_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_js_timer_tests COMMAND $<TARGET_FILE:saida_js_timer_tests>)
 
     add_executable(saida_gameplay_primitive_tests tests/GameplayPrimitiveTests.cpp)
     saida_test_target(saida_gameplay_primitive_tests)

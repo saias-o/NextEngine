@@ -8,6 +8,7 @@
 #include "scene/Node.hpp"
 #include "scene/SceneTree.hpp"
 #include "scripting/JsContext.hpp"
+#include "scripting/JsTimerBindings.hpp"
 
 #include <quickjs.h>
 
@@ -409,6 +410,7 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JSValue time = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, time, "delta", JS_NewCFunction(ctx, jsTimeDelta, "delta", 0));
     JS_SetPropertyStr(ctx, time, "elapsed", JS_NewCFunction(ctx, jsTimeElapsed, "elapsed", 0));
+    JsTimerBindings::install(context, behaviour, time);
     JS_SetPropertyStr(ctx, global, "time", time);
 
     JSValue input = JS_NewObject(ctx);

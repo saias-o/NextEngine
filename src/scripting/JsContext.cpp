@@ -70,11 +70,13 @@ void JsContext::clearSignalSubscriptions() {
     signalSubs_.clear();
 }
 
+void JsContext::executePendingJobs() { runtime_.executePendingJobs(); }
+
 bool JsContext::eval(const std::string& source, const std::string& filename) {
     JSValue value = JS_Eval(ctx_, source.c_str(), source.size(), filename.c_str(), JS_EVAL_TYPE_GLOBAL);
     if (JS_IsException(value)) {
         JS_FreeValue(ctx_, value);
-        logException(filename);
+        reportException(filename);
         return false;
     }
     JS_FreeValue(ctx_, value);
@@ -90,7 +92,7 @@ bool JsContext::evalModule(const std::string& source, const std::string& filenam
                                JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
     if (JS_IsException(compiled)) {
         JS_FreeValue(ctx_, compiled);
-        logException(filename);
+        reportException(filename);
         return false;
     }
 
@@ -103,14 +105,14 @@ bool JsContext::evalModule(const std::string& source, const std::string& filenam
     auto* module = static_cast<JSModuleDef*>(JS_VALUE_GET_PTR(compiled));
     if (JS_ResolveModule(ctx_, compiled) < 0) {
         JS_FreeValue(ctx_, compiled);
-        logException(filename);
+        reportException(filename);
         return false;
     }
 
     JSValue result = JS_EvalFunction(ctx_, compiled);
     if (JS_IsException(result)) {
         JS_FreeValue(ctx_, result);
-        logException(filename);
+        reportException(filename);
         return false;
     }
     JS_FreeValue(ctx_, result);
@@ -119,7 +121,7 @@ bool JsContext::evalModule(const std::string& source, const std::string& filenam
     if (JS_IsException(moduleNamespace_)) {
         JS_FreeValue(ctx_, moduleNamespace_);
         moduleNamespace_ = JS_UNDEFINED;
-        logException(filename);
+        reportException(filename);
         return false;
     }
 
@@ -199,7 +201,7 @@ bool JsContext::callGlobalImpl(const char* functionName, int argc, JSValue* argv
     JS_FreeValue(ctx_, global);
     if (JS_IsException(result)) {
         JS_FreeValue(ctx_, result);
-        logException(functionName);
+        reportException(functionName);
         return false;
     }
     JS_FreeValue(ctx_, result);
@@ -227,7 +229,7 @@ bool JsContext::callModuleExportImpl(const char* functionName, int argc, JSValue
     JS_FreeValue(ctx_, fn);
     if (JS_IsException(result)) {
         JS_FreeValue(ctx_, result);
-        logException(functionName);
+        reportException(functionName);
         return false;
     }
     JS_FreeValue(ctx_, result);
@@ -235,10 +237,10 @@ bool JsContext::callModuleExportImpl(const char* functionName, int argc, JSValue
     return true;
 }
 
-void JsContext::logException(const std::string& filename) {
+void JsContext::reportException(const std::string& source) {
     JSValue exc = JS_GetException(ctx_);
     const char* message = JS_ToCString(ctx_, exc);
-    Log::error("[JS] ", filename, ": ", message ? message : "unknown exception");
+    Log::error("[JS] ", source, ": ", message ? message : "unknown exception");
     JS_FreeCString(ctx_, message);
 
     if (JS_IsObject(exc)) {

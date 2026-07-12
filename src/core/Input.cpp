@@ -1,5 +1,13 @@
 #include "core/Input.hpp"
+
+// Sur le web il n'existe pas de wrapper Window (il force GLFW_INCLUDE_VULKAN) :
+// seule la voie bindRaw est compilée, g_window reste toujours null.
+#ifdef __EMSCRIPTEN__
+#include <GLFW/glfw3.h>
+namespace saida { class Window; }
+#else
 #include "core/Window.hpp"
+#endif
 
 #include <algorithm>
 
@@ -7,6 +15,15 @@ namespace saida {
 
 namespace {
 Window* g_window = nullptr;
+
+// Chemin brut (bindRaw) : fenêtre GLFW sans wrapper Window ; les deltas sont
+// accumulés par callbacks et consommés à chaque newFrame, comme Window le fait.
+GLFWwindow* g_rawWindow = nullptr;
+double g_rawMouseDx = 0.0, g_rawMouseDy = 0.0;
+bool g_rawHasLastPos = false;
+double g_rawLastX = 0.0, g_rawLastY = 0.0;
+double g_rawScrollDx = 0.0, g_rawScrollDy = 0.0;
+std::vector<uint32_t> g_rawTextInput;
 
 // Raw hardware state
 bool g_keyCurr[GLFW_KEY_LAST + 1] = {};
@@ -126,28 +143,70 @@ int glfwMouseFromMouseButton(MouseButton btn) {
 
 } // namespace
 
+namespace {
+
+void installDefaultBindings() {
+    Input::bindKey("MoveForward", KeyCode::W);
+    Input::bindKey("MoveBackward", KeyCode::S);
+    Input::bindKey("MoveLeft", KeyCode::A);
+    Input::bindKey("MoveRight", KeyCode::D);
+    Input::bindKey("MoveUp", KeyCode::E);
+    Input::bindKey("MoveDown", KeyCode::Q);
+
+    Input::bindKey("Jump", KeyCode::Space);
+    Input::bindKey("Sprint", KeyCode::LeftShift);
+
+    Input::bindMouse("Fire", MouseButton::Left);
+    Input::bindMouse("Aim", MouseButton::Right);
+}
+
+} // namespace
+
 void Input::bind(Window* window) {
     g_window = window;
-    
-    // Set up default bindings
-    bindKey("MoveForward", KeyCode::W);
-    bindKey("MoveBackward", KeyCode::S);
-    bindKey("MoveLeft", KeyCode::A);
-    bindKey("MoveRight", KeyCode::D);
-    bindKey("MoveUp", KeyCode::E);
-    bindKey("MoveDown", KeyCode::Q);
-    
-    bindKey("Jump", KeyCode::Space);
-    bindKey("Sprint", KeyCode::LeftShift);
-    
-    bindMouse("Fire", MouseButton::Left);
-    bindMouse("Aim", MouseButton::Right);
+    g_rawWindow = nullptr;
+    installDefaultBindings();
+}
+
+void Input::bindRaw(GLFWwindow* window) {
+    g_window = nullptr;
+    g_rawWindow = window;
+    g_rawHasLastPos = false;
+    g_rawMouseDx = g_rawMouseDy = 0.0;
+    g_rawScrollDx = g_rawScrollDy = 0.0;
+    g_rawTextInput.clear();
+
+    if (!window) return;
+
+    glfwSetCursorPosCallback(window, [](GLFWwindow*, double x, double y) {
+        if (g_rawHasLastPos) {
+            g_rawMouseDx += x - g_rawLastX;
+            g_rawMouseDy += y - g_rawLastY;
+        }
+        g_rawLastX = x;
+        g_rawLastY = y;
+        g_rawHasLastPos = true;
+    });
+    glfwSetScrollCallback(window, [](GLFWwindow*, double dx, double dy) {
+        g_rawScrollDx += dx;
+        g_rawScrollDy += dy;
+    });
+    glfwSetCharCallback(window, [](GLFWwindow*, unsigned int codepoint) {
+        g_rawTextInput.push_back(codepoint);
+    });
+
+    installDefaultBindings();
 }
 
 float Input::evaluateBinding(const ActionBinding& binding) {
-    if (!g_window) return 0.0f;
+    if (!g_window && !g_rawWindow) return 0.0f;
 
-    const bool ignoreUi = g_window->cursorCaptured();
+    // Sans wrapper Window (player brut), aucune UI ne capture l'input.
+#ifdef __EMSCRIPTEN__
+    const bool ignoreUi = true;
+#else
+    const bool ignoreUi = g_window ? g_window->cursorCaptured() : true;
+#endif
 
     if (binding.isKey) {
         if (g_uiCapturesKeyboard && !ignoreUi) return 0.0f;
@@ -173,8 +232,12 @@ void Input::setUiCapture(bool keyboard, bool mouse) {
 }
 
 void Input::newFrame() {
-    if (!g_window) return;
-    GLFWwindow* w = g_window->handle();
+    if (!g_window && !g_rawWindow) return;
+#ifdef __EMSCRIPTEN__
+    GLFWwindow* w = g_rawWindow;
+#else
+    GLFWwindow* w = g_window ? g_window->handle() : g_rawWindow;
+#endif
 
     // 1. Sample raw hardware state
     for (int k = 0; k <= GLFW_KEY_LAST; ++k) {
@@ -186,14 +249,26 @@ void Input::newFrame() {
         g_mouseCurr[b] = glfwGetMouseButton(w, b) == GLFW_PRESS;
     }
 
-    double dx, dy;
-    g_window->consumeMouseDelta(dx, dy);
-    g_mouseDelta = {static_cast<float>(dx), static_cast<float>(dy)};
+#ifndef __EMSCRIPTEN__
+    if (g_window) {
+        double dx, dy;
+        g_window->consumeMouseDelta(dx, dy);
+        g_mouseDelta = {static_cast<float>(dx), static_cast<float>(dy)};
 
-    double sx, sy;
-    g_window->consumeScrollDelta(sx, sy);
-    g_scrollDelta = {static_cast<float>(sx), static_cast<float>(sy)};
-    g_textInput = g_window->consumeTextInput();
+        double sx, sy;
+        g_window->consumeScrollDelta(sx, sy);
+        g_scrollDelta = {static_cast<float>(sx), static_cast<float>(sy)};
+        g_textInput = g_window->consumeTextInput();
+    } else
+#endif
+    {
+        g_mouseDelta = {static_cast<float>(g_rawMouseDx), static_cast<float>(g_rawMouseDy)};
+        g_rawMouseDx = g_rawMouseDy = 0.0;
+        g_scrollDelta = {static_cast<float>(g_rawScrollDx), static_cast<float>(g_rawScrollDy)};
+        g_rawScrollDx = g_rawScrollDy = 0.0;
+        g_textInput = std::move(g_rawTextInput);
+        g_rawTextInput.clear();
+    }
     g_touches = std::move(g_pendingTouches);
     g_pendingTouches.clear();
 
@@ -333,7 +408,7 @@ glm::vec2 Input::getVector(const std::string& left, const std::string& right, co
 }
 
 bool Input::isKeyDown(KeyCode key) {
-    if (!g_window) return false;
+    if (!g_window && !g_rawWindow) return false;
     int glfwKey = glfwKeyFromKeyCode(key);
     if (glfwKey >= 0 && glfwKey <= GLFW_KEY_LAST) {
         return g_keyCurr[glfwKey];
@@ -342,7 +417,7 @@ bool Input::isKeyDown(KeyCode key) {
 }
 
 bool Input::isKeyPressed(KeyCode key) {
-    if (!g_window) return false;
+    if (!g_window && !g_rawWindow) return false;
     int glfwKey = glfwKeyFromKeyCode(key);
     if (glfwKey >= 0 && glfwKey <= GLFW_KEY_LAST) {
         return g_keyCurr[glfwKey] && !g_keyPrev[glfwKey];
@@ -351,7 +426,7 @@ bool Input::isKeyPressed(KeyCode key) {
 }
 
 bool Input::isKeyReleased(KeyCode key) {
-    if (!g_window) return false;
+    if (!g_window && !g_rawWindow) return false;
     int glfwKey = glfwKeyFromKeyCode(key);
     if (glfwKey >= 0 && glfwKey <= GLFW_KEY_LAST) {
         return !g_keyCurr[glfwKey] && g_keyPrev[glfwKey];
@@ -360,7 +435,7 @@ bool Input::isKeyReleased(KeyCode key) {
 }
 
 bool Input::isMouseButtonDown(MouseButton btn) {
-    if (!g_window) return false;
+    if (!g_window && !g_rawWindow) return false;
     int glfwBtn = glfwMouseFromMouseButton(btn);
     if (glfwBtn >= 0 && glfwBtn <= GLFW_MOUSE_BUTTON_LAST) {
         return g_mouseCurr[glfwBtn];
@@ -369,7 +444,7 @@ bool Input::isMouseButtonDown(MouseButton btn) {
 }
 
 bool Input::isMouseButtonPressed(MouseButton btn) {
-    if (!g_window) return false;
+    if (!g_window && !g_rawWindow) return false;
     int glfwBtn = glfwMouseFromMouseButton(btn);
     if (glfwBtn >= 0 && glfwBtn <= GLFW_MOUSE_BUTTON_LAST) {
         return g_mouseCurr[glfwBtn] && !g_mousePrev[glfwBtn];
@@ -378,7 +453,7 @@ bool Input::isMouseButtonPressed(MouseButton btn) {
 }
 
 bool Input::isMouseButtonReleased(MouseButton btn) {
-    if (!g_window) return false;
+    if (!g_window && !g_rawWindow) return false;
     int glfwBtn = glfwMouseFromMouseButton(btn);
     if (glfwBtn >= 0 && glfwBtn <= GLFW_MOUSE_BUTTON_LAST) {
         return !g_mouseCurr[glfwBtn] && g_mousePrev[glfwBtn];

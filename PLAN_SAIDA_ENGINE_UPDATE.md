@@ -104,10 +104,21 @@ package `game.saida` comme l'exe desktop (BootManifest partage), charge projet
 et scene principale via le VRAI SceneSerializer, monte le World du SceneTree
 (autoloads, timers, operations differees) et rend via WebGPU. Verifie sur
 BeachDemo : 47 meshes charges sans loader specialise, boucle de jeu active.
-Contrat de capacites en place (`core/PlatformCaps`, principe 2.5) : le player
-v1 declare rendering seul ; physique, audio, scripts QuickJS, UI, input et
-storage rejoignent le meme executable par increments — les types de nodes
-absents sont diagnostiques au chargement, jamais silencieux.
+Contrat de capacites en place (`core/PlatformCaps`, principe 2.5). Deuxieme
+increment : clavier/souris branche sur l'`Input` commun (actions, transitions,
+position/delta/scroll/texte) et scripts gameplay QuickJS actifs dans le player
+(`ScriptBehaviour`, modules ES, bindings node/tree/time/input, jobs async).
+Les timers/tweens possedes par node ou behaviour ne sont plus neutralises par
+le backend WebGPU : une `SceneTimerQueue` commune, testee independamment du
+chargement de scene, alimente maintenant le `SceneTree` desktop et Web.
+La meme primitive est exposee aux `ScriptBehaviour` via `time.wait`,
+`time.every`, `time.tween` et `time.cancel`. Les callbacks sont possedes par le
+contexte qui les a crees, annules avant hot-reload/destruction et les easings
+acceptes sont valides explicitement.
+Le player declare maintenant `Rendering`, `KeyboardMouse` et `ScriptGameplay` ;
+physique, audio, UI, touch/manette et storage rejoignent le meme executable par
+increments — les types de nodes absents sont diagnostiques au chargement,
+jamais silencieux.
 
 ## 4. P0 - Input multi-peripherique complet
 

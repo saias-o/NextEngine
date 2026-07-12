@@ -7,11 +7,12 @@
 // SceneTree (autoloads) puis exécute le cycle de jeu — update des behaviours,
 // CameraDirector, opérations différées, timers — et rend via le backend WebGPU.
 //
-// v1 : physique, audio, scripts QuickJS, UI RmlUi et input sont déclarés
-// absents via PlatformCaps (dégradation explicite, §2.5). Ils rejoignent le
-// player par incréments, dans le même exécutable — jamais un runtime parallèle.
+// Physique, audio et UI RmlUi restent déclarés absents via PlatformCaps
+// (dégradation explicite, §2.5). Input clavier/souris et scripts QuickJS
+// utilisent désormais les mêmes API gameplay que le player desktop.
 
 #include "core/Camera.hpp"
+#include "core/Input.hpp"
 #include "core/Log.hpp"
 #include "core/PlatformCaps.hpp"
 #include "core/Time.hpp"
@@ -30,6 +31,7 @@
 #include "scene/Scene.hpp"
 #include "scene/SceneSerializer.hpp"
 #include "scene/SceneTree.hpp"
+#include "scripting/JsRuntime.hpp"
 
 #include <GLFW/glfw3.h>
 #include <emscripten.h>
@@ -133,7 +135,9 @@ void frame() {
     gApp.lastMs = now;
     Time::advance(realDt);
 
+    Input::sample();  // clavier/souris GLFW → actions, avant les behaviours
     gApp.world->update(Time::delta());
+    JsRuntime::instance().executePendingJobs();
     gApp.cameraDirector.update(*gApp.world, gApp.camera, Time::delta());
 
     gApp.tree->applyDeferred();
@@ -151,13 +155,26 @@ void frame() {
 } // namespace
 
 int main() {
-    glfwInit();
+    if (!glfwInit()) {
+        std::printf("saida-player: GLFW initialization failed\n");
+        return 1;
+    }
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwCreateWindow(int(kWidth), int(kHeight), "Saida player", nullptr, nullptr);
+    GLFWwindow* window =
+        glfwCreateWindow(int(kWidth), int(kHeight), "Saida player", nullptr, nullptr);
+    if (!window) {
+        std::printf("saida-player: window creation failed\n");
+        glfwTerminate();
+        return 1;
+    }
 
-    // v1 : rendu seul. Chaque capacité rejoint ce masque quand elle est réelle.
-    platform::setCapabilities(uint32_t(platform::Capability::Rendering));
+    // Chaque capacité rejoint ce masque quand elle devient réelle (§2.5).
+    platform::setCapabilities(uint32_t(platform::Capability::Rendering) |
+                              uint32_t(platform::Capability::KeyboardMouse) |
+                              uint32_t(platform::Capability::ScriptGameplay));
     Log::info(platform::report());
+
+    Input::bindRaw(window);  // actions clavier/souris sans le wrapper desktop
 
     rhi::Device::requestAsync([](std::unique_ptr<rhi::Device> device) {
         if (!device) {

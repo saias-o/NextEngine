@@ -3,6 +3,7 @@
 #include "core/Log.hpp"
 #include "core/Paths.hpp"
 #include "core/Profiler.hpp"
+#include "scene/SceneTimerQueue.hpp"
 #include "scripting/JsContext.hpp"
 #include "scripting/JsEngineBindings.hpp"
 #include "scripting/JsRuntime.hpp"
@@ -94,7 +95,116 @@ JSValue propertyToJs(JSContext* ctx, const ScriptProperty& property) {
 
 } // namespace
 
-ScriptBehaviour::~ScriptBehaviour() = default;
+ScriptBehaviour::~ScriptBehaviour() { cancelAllJsTimers(); }
+
+uint64_t ScriptBehaviour::scheduleJsTimer(JSContext* context, JSValueConst callback,
+                                          JsTimerKind kind, float duration,
+                                          Easing easing) {
+    if (!context) return kInvalidTimerId;
+
+    const uint64_t callbackId = ++nextJsCallbackId_;
+    uint64_t timerId = kInvalidTimerId;
+    uint64_t cleanupTimerId = kInvalidTimerId;
+
+    switch (kind) {
+    case JsTimerKind::Wait:
+        timerId = wait(duration, [this, callbackId] { invokeJsTimer(callbackId); });
+        break;
+    case JsTimerKind::Every:
+        timerId = every(duration, [this, callbackId] { invokeJsTimer(callbackId); });
+        break;
+    case JsTimerKind::Tween:
+        timerId = tween(duration, easing, [this, callbackId](float value) {
+            invokeJsTimer(callbackId, value);
+        });
+        // The queue's tween callback intentionally exposes only the eased value,
+        // which may overshoot 1.0. A paired one-shot gives cleanup an exact,
+        // easing-independent completion point and executes after the final sample.
+        if (timerId != kInvalidTimerId) {
+            cleanupTimerId = wait(duration, [this, callbackId] {
+                removeJsTimer(callbackId, false);
+            });
+        }
+        break;
+    }
+
+    if (timerId == kInvalidTimerId) {
+        if (cleanupTimerId != kInvalidTimerId) cancelTimer(cleanupTimerId);
+        return kInvalidTimerId;
+    }
+
+    jsTimers_.push_back({callbackId, timerId, cleanupTimerId, context,
+                         JS_DupValue(context, callback), kind});
+    return timerId;
+}
+
+bool ScriptBehaviour::cancelJsTimer(uint64_t timerId) {
+    auto it = std::find_if(jsTimers_.begin(), jsTimers_.end(),
+                           [timerId](const JsTimerCallback& timer) {
+                               return timer.timerId == timerId;
+                           });
+    if (it == jsTimers_.end()) return false;
+    removeJsTimer(it->callbackId, true);
+    return true;
+}
+
+void ScriptBehaviour::cancelJsTimersForContext(JSContext* context) {
+    for (size_t i = jsTimers_.size(); i > 0; --i) {
+        if (jsTimers_[i - 1].context == context)
+            removeJsTimer(jsTimers_[i - 1].callbackId, true);
+    }
+}
+
+void ScriptBehaviour::cancelAllJsTimers() {
+    while (!jsTimers_.empty()) removeJsTimer(jsTimers_.back().callbackId, true);
+}
+
+void ScriptBehaviour::invokeJsTimer(uint64_t callbackId, float tweenValue) {
+    auto it = std::find_if(jsTimers_.begin(), jsTimers_.end(),
+                           [callbackId](const JsTimerCallback& timer) {
+                               return timer.callbackId == callbackId;
+                           });
+    if (it == jsTimers_.end() || !it->context) return;
+
+    JSContext* context = it->context;
+    const JsTimerKind kind = it->kind;
+    JSValue callback = JS_DupValue(context, it->callback);
+    JSValue argument = JS_UNDEFINED;
+    int argumentCount = 0;
+    if (kind == JsTimerKind::Tween) {
+        argument = JS_NewFloat64(context, tweenValue);
+        argumentCount = 1;
+    }
+
+    JSValue result = JS_Call(context, callback, JS_UNDEFINED, argumentCount,
+                             argumentCount ? &argument : nullptr);
+    if (JS_IsException(result)) {
+        if (JsContext* wrapper = JsContext::fromRaw(context))
+            wrapper->reportException("time callback");
+    }
+    JS_FreeValue(context, result);
+    if (argumentCount) JS_FreeValue(context, argument);
+    JS_FreeValue(context, callback);
+
+    if (JsContext* wrapper = JsContext::fromRaw(context))
+        wrapper->executePendingJobs();
+
+    // A callback may cancel itself. Look it up again before releasing a one-shot.
+    if (kind == JsTimerKind::Wait) removeJsTimer(callbackId, false);
+}
+
+void ScriptBehaviour::removeJsTimer(uint64_t callbackId, bool cancelEngineTimer) {
+    auto it = std::find_if(jsTimers_.begin(), jsTimers_.end(),
+                           [callbackId](const JsTimerCallback& timer) {
+                               return timer.callbackId == callbackId;
+                           });
+    if (it == jsTimers_.end()) return;
+
+    if (cancelEngineTimer) cancelTimer(it->timerId);
+    if (it->cleanupTimerId != kInvalidTimerId) cancelTimer(it->cleanupTimerId);
+    if (it->context) JS_FreeValue(it->context, it->callback);
+    jsTimers_.erase(it);
+}
 
 void ScriptBehaviour::setScriptPath(std::string path) {
     scriptPath_ = std::move(path);
@@ -159,6 +269,7 @@ bool ScriptBehaviour::reloadContext(bool lifecycleReload) {
         loaded_ = context_->eval(ss.str(), path);
     }
     if (!loaded_) {
+        if (context_) cancelJsTimersForContext(context_->raw());
         context_ = std::move(previousContext);
         properties_ = std::move(previousProperties);
         loaded_ = previousLoaded;
@@ -168,9 +279,12 @@ bool ScriptBehaviour::reloadContext(bool lifecycleReload) {
         return false;
     }
 
-    if (lifecycleReload && previousContext) {
-        if (previousModuleMode) previousContext->callModuleExport("onDestroy");
-        else previousContext->callGlobal("onDestroy");
+    if (previousContext) {
+        if (lifecycleReload) {
+            if (previousModuleMode) previousContext->callModuleExport("onDestroy");
+            else previousContext->callGlobal("onDestroy");
+        }
+        cancelJsTimersForContext(previousContext->raw());
     }
 
     pruneUnexportedProperties();
@@ -253,6 +367,7 @@ void ScriptBehaviour::onUpdate(float dt) {
 
 void ScriptBehaviour::onDestroy() {
     callHook("onDestroy");
+    if (context_) cancelJsTimersForContext(context_->raw());
     context_.reset();
     loaded_ = false;
     started_ = false;

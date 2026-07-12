@@ -47,12 +47,16 @@ public:
     // disconnects every `node.on(...)` handler.
     void retainSignalSubscription(Connection&& connection, JSValue callback);
 
+    // Log and consume the exception currently pending on this context.
+    // Native asynchronous callbacks use this after JS_Call returns an exception.
+    void reportException(const std::string& source);
+    void executePendingJobs();
+
 private:
     void installConsole();
     void clearSignalSubscriptions();
     bool callGlobalImpl(const char* functionName, int argc, JSValue* argv);
     bool callModuleExportImpl(const char* functionName, int argc, JSValue* argv);
-    void logException(const std::string& filename);
 
     struct SignalSubscription {
         Connection connection;

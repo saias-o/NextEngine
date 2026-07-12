@@ -10,7 +10,7 @@
 # Servir : python web/serve.py build-web-player
 
 cmake_minimum_required(VERSION 3.20)
-project(SaidaWebPlayer CXX)
+project(SaidaWebPlayer LANGUAGES C CXX)
 
 if(NOT EMSCRIPTEN)
     message(FATAL_ERROR "This target is Emscripten-only; configure with emcmake.")
@@ -25,9 +25,22 @@ set(GLM_INCLUDE_DIR ${SAIDA_ROOT}/third_party/glm CACHE PATH "Directory containi
 # Décodeurs meshopt (EXT_meshopt_compression au chargement des GLB).
 file(GLOB MESHOPT_SOURCES ${SAIDA_ROOT}/third_party/meshoptimizer/src/*.cpp)
 
+# QuickJS reste le runtime JavaScript unique du moteur. Le player le compile
+# depuis les mêmes sources vendues que le target desktop.
+add_library(quickjs STATIC
+    ${SAIDA_ROOT}/third_party/quickjs/dtoa.c
+    ${SAIDA_ROOT}/third_party/quickjs/libregexp.c
+    ${SAIDA_ROOT}/third_party/quickjs/libunicode.c
+    ${SAIDA_ROOT}/third_party/quickjs/quickjs.c
+)
+target_include_directories(quickjs PUBLIC ${SAIDA_ROOT}/third_party/quickjs)
+target_compile_definitions(quickjs PRIVATE _GNU_SOURCE)
+
 add_executable(saida_player
     main.cpp
     # --- game core (le même moteur de jeu que le desktop, §2.1) ---
+    ${SAIDA_ROOT}/src/core/FileWatcher.cpp
+    ${SAIDA_ROOT}/src/core/Input.cpp
     ${SAIDA_ROOT}/src/core/PlatformCaps.cpp
     ${SAIDA_ROOT}/src/core/Reflection.cpp
     ${SAIDA_ROOT}/src/core/Profiler.cpp
@@ -53,11 +66,17 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/scene/Scene.cpp
     ${SAIDA_ROOT}/src/scene/SceneSerializer.cpp
     ${SAIDA_ROOT}/src/scene/SceneTree.cpp
+    ${SAIDA_ROOT}/src/scene/SceneTimerQueue.cpp
     ${SAIDA_ROOT}/src/scene/SignalWiring.cpp
     ${SAIDA_ROOT}/src/scene/SpawnerBehaviour.cpp
     ${SAIDA_ROOT}/src/scene/StateMachineBehaviour.cpp
     ${SAIDA_ROOT}/src/scene/Transform.cpp
     ${SAIDA_ROOT}/src/scene/WaterNode.cpp
+    ${SAIDA_ROOT}/src/scripting/JsContext.cpp
+    ${SAIDA_ROOT}/src/scripting/JsEngineBindings.cpp
+    ${SAIDA_ROOT}/src/scripting/JsRuntime.cpp
+    ${SAIDA_ROOT}/src/scripting/JsTimerBindings.cpp
+    ${SAIDA_ROOT}/src/scripting/ScriptBehaviour.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimBlackboard.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimGraphAsset.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimGraphParser.cpp
@@ -114,10 +133,13 @@ target_include_directories(saida_player PRIVATE
     ${SAIDA_ROOT}/third_party/tinyobjloader
     ${SAIDA_ROOT}/third_party/cgltf
     ${SAIDA_ROOT}/third_party/meshoptimizer/src
+    ${SAIDA_ROOT}/third_party/quickjs
 )
 target_compile_definitions(saida_player PRIVATE
-    SAIDA_RHI_WEBGPU GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE)
+    SAIDA_RHI_WEBGPU SAIDA_SCENE_TREE_TIMERS
+    GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE)
 target_compile_options(saida_player PRIVATE $<$<CONFIG:Release>:-Oz> --use-port=emdawnwebgpu)
+target_link_libraries(saida_player PRIVATE quickjs)
 
 target_link_options(saida_player PRIVATE
     --use-port=emdawnwebgpu

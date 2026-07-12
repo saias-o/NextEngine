@@ -1,11 +1,10 @@
 // Player-web implementation of registerReflectedTypes().
 //
 // Le player web (web/player) exécute le vrai cycle de jeu — SceneTree,
-// behaviours, signaux — mais son build v1 exclut volontairement physique/Jolt,
-// audio, QuickJS et RmlUi (PlatformCaps les déclare absents et les scènes qui
-// les référencent obtiennent un diagnostic explicite au chargement, jamais un
-// échec silencieux). On enregistre donc les nœuds rendables et les behaviours
-// gameplay portables uniquement.
+// behaviours, signaux et scripts QuickJS. Il exclut encore physique/Jolt,
+// audio et RmlUi (PlatformCaps les déclare absents et les scènes qui les
+// référencent obtiennent un diagnostic explicite au chargement). On enregistre
+// donc les nœuds rendables et les behaviours gameplay portables uniquement.
 //
 // Emscripten-only : ne collisionne jamais avec ReflectedTypes.cpp (desktop) ni
 // ReflectedTypesWeb.cpp (viewer d'authoring, autre exécutable).
@@ -24,6 +23,7 @@
 #include "scene/SpawnerBehaviour.hpp"
 #include "scene/StateMachineBehaviour.hpp"
 #include "scene/WaterNode.hpp"
+#include "scripting/ScriptBehaviour.hpp"
 
 namespace saida {
 namespace {
@@ -57,6 +57,7 @@ void registerReflectedTypes() {
     registerBehaviour<SpawnerBehaviour>();
     registerBehaviour<Blackboard>();
     registerBehaviour<StateMachineBehaviour>();
+    BehaviourRegistry::instance().registerType<ScriptBehaviour>("ScriptBehaviour");
 
     registerNode<LightNode>();
     registerNode<WaterNode>();

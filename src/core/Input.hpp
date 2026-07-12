@@ -8,6 +8,8 @@
 #include <functional>
 #include <unordered_map>
 
+struct GLFWwindow;
+
 namespace saida {
 
 class Window;
@@ -105,6 +107,15 @@ public:
     // ---- Callback System ----
     static uint32_t subscribe(const std::string& action, InputEvent eventType, ActionCallback callback, const InputContextID& context = kGlobalContext);
     static void unsubscribe(uint32_t callbackId);
+
+    // Attache directe à une fenêtre GLFW brute — chemin des players sans le
+    // wrapper Window desktop (web/Emscripten). Installe les callbacks delta
+    // souris/scroll/texte en interne et les mêmes bindings par défaut que bind().
+    static void bindRaw(GLFWwindow* window);
+
+    // Échantillonne une frame pour les players qui pilotent leur propre boucle.
+    // Engine utilise newFrame() directement.
+    static void sample() { newFrame(); }
 
 private:
     friend class Engine;

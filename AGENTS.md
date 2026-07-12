@@ -355,6 +355,9 @@ Le moteur est construit par étapes numérotées :
             `time` (`delta`, `elapsed`) et `input` action-based (`isHeld`,
             `justPressed`, `justReleased`, `strength`, `axis`, `vector`,
             `mousePosition`, `mouseDelta`) exposés aux `ScriptBehaviour`.
+      - [x] **Timers JS possédés** : `time.wait/every/tween/cancel` utilisent la
+            `SceneTimerQueue` commune desktop/Web ; callbacks libérés et timers
+            annulés au hot-reload ou à la destruction du `ScriptBehaviour`.
       - [x] **Binding `tree` runtime** : `changeScene`, `reloadScene`, `quit`,
             `setPaused`, `paused`, en respectant le modèle `SceneTree` existant.
       - [x] **Propriétés JS inspectables** : un script peut déclarer

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "scene/Node.hpp"
-#include "core/Easing.hpp"
+#include "scene/SceneTimerQueue.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -11,8 +11,6 @@
 #include <vector>
 
 namespace saida {
-
-using TimerId = uint64_t;
 
 class Scene;
 class ResourceManager;
@@ -58,6 +56,7 @@ public:
                   std::function<void(float)> fn);
     void cancelTimer(TimerId id);
     void cancelTimersOwnedBy(Node* owner);
+    void cancelTimersOwnedBy(Behaviour* owner);
     void tickTimers(float dt);
 
     template <typename T>
@@ -134,22 +133,7 @@ private:
     std::string projectRoot_;
     std::unordered_map<std::string, std::string> sceneCache_;
 
-    struct Timer {
-        TimerId id;
-        Node* nodeOwner;
-        Behaviour* behaviourOwner;
-        enum Kind { After, Every, Tween } kind;
-        float time = 0.0f;
-        float duration;
-        Easing easing = Easing::Linear;
-        std::function<void()> fn;
-        std::function<void(float)> tweenFn;
-        bool dead = false;
-    };
-    std::vector<Timer> timers_;
-    TimerId nextTimerId_ = 0;
-
-    TimerId addTimer(Timer t);
+    SceneTimerQueue timerQueue_;
 };
 
 } // namespace saida

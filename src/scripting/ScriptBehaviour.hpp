@@ -11,6 +11,8 @@
 
 namespace saida {
 
+class JsTimerBindings;
+
 struct ScriptProperty {
     enum class Type {
         Number,
@@ -55,6 +57,27 @@ public:
     void load(const nlohmann::json& j) override;
 
 private:
+    friend class JsTimerBindings;
+
+    enum class JsTimerKind { Wait, Every, Tween };
+
+    struct JsTimerCallback {
+        uint64_t callbackId = 0;
+        uint64_t timerId = 0;
+        uint64_t cleanupTimerId = 0;
+        JSContext* context = nullptr;
+        JSValue callback = JS_UNDEFINED;
+        JsTimerKind kind = JsTimerKind::Wait;
+    };
+
+    uint64_t scheduleJsTimer(JSContext* context, JSValueConst callback,
+                             JsTimerKind kind, float duration, Easing easing);
+    bool cancelJsTimer(uint64_t timerId);
+    void cancelJsTimersForContext(JSContext* context);
+    void cancelAllJsTimers();
+    void invokeJsTimer(uint64_t callbackId, float tweenValue = 0.0f);
+    void removeJsTimer(uint64_t callbackId, bool cancelEngineTimer);
+
     std::string resolveScriptPath() const;
     bool reloadContext(bool lifecycleReload);
     bool shouldLoadAsModule(const std::string& resolvedPath) const;
@@ -79,6 +102,8 @@ private:
     std::vector<WatchedFile> moduleWatchers_;
     std::vector<ScriptProperty> properties_;
     std::unique_ptr<JsContext> context_;
+    std::vector<JsTimerCallback> jsTimers_;
+    uint64_t nextJsCallbackId_ = 0;
     float hotReloadTimer_ = 0.0f;
     bool hotReloadEnabled_ = true;
     bool started_ = false;
