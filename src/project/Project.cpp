@@ -2,6 +2,7 @@
 
 #include "core/FormatVersions.hpp"
 #include "core/Log.hpp"
+#include "core/Paths.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -115,15 +116,23 @@ bool Project::load(const std::string& neprojPath) {
 
         if (!trimmed.empty() && trimmed.front() == '{') {
             json doc = json::parse(trimmed);
-            const int version = format::readVersion(doc, format::kLegacyVersion);
-            if (!format::hasIntegerVersion(doc)) {
-                Log::warn("Project::load: JSON project has no integer version, treating as v0: ", neprojPath);
-            } else if (version > format::kProjectVersion) {
-                Log::warn("Project::load: project format v", version,
-                          " is newer than supported v", format::kProjectVersion,
-                          "; loading known fields best-effort: ", neprojPath);
-            } else if (version < format::kProjectVersion) {
-                Log::info("Project::load: migrated project format v", version,
+            if (doc.contains("schema") && !doc["schema"].is_number_integer()) {
+                Log::error("Project::load: project schema must be an integer: ", neprojPath);
+                return false;
+            }
+            const int version = format::readSchema(doc, format::kLegacyVersion);
+            if (!format::hasIntegerSchema(doc)) {
+                Log::warn("Project::load: project has no integer schema, treating as legacy v",
+                          version, ": ", neprojPath);
+            }
+            if (version > format::kProjectVersion) {
+                Log::error("Project::load: project schema v", version,
+                           " is newer than supported v", format::kProjectVersion,
+                           ": ", neprojPath);
+                return false;
+            }
+            if (version < format::kProjectVersion) {
+                Log::info("Project::load: migrated project schema v", version,
                           " -> v", format::kProjectVersion, " in memory: ", neprojPath);
             }
 
@@ -230,6 +239,7 @@ bool Project::load(const std::string& neprojPath) {
     filePath_      = path.string();
     rootPath_      = path.parent_path().string();
     loaded_        = true;
+    setActiveProjectRoot(rootPath_);  // scripts/ui du projet résolus partout
 
     for (const auto& [aliasName, aliasPath] : audioAliases_)
         AudioManager::get().setAlias(aliasName, aliasPath);
@@ -259,7 +269,7 @@ bool Project::save() const {
     }
 
     json doc;
-    doc["version"] = format::kProjectVersion;
+    format::writeSchema(doc, format::kProjectVersion);
     doc["name"] = name_;
     doc["engineVersion"] = engineVersion_;
     if (!mainScene_.empty()) doc["mainScene"] = mainScene_;

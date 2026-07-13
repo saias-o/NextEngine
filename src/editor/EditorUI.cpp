@@ -6,6 +6,7 @@
 #include "core/Time.hpp"
 #include "editor/Command.hpp"
 #include "editor/BuildExporter.hpp"
+#include "editor/ExeMetadata.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Texture.hpp"
 #include "project/Project.hpp"
@@ -978,6 +979,25 @@ void EditorUI::drawBuildWindow(Project* project) {
                 ImGui::InputText("##WinOutputPath", buildOutputPath_, sizeof(buildOutputPath_));
 
                 ImGui::Spacing();
+                ImGui::Text("Product Version (a.b.c[.d]):");
+                ImGui::SetNextItemWidth(160.0f);
+                ImGui::InputText("##WinVersion", buildVersion_, sizeof(buildVersion_));
+                {
+                    unsigned short parsed[4];
+                    if (!saida::parseExeVersion(buildVersion_, parsed)) {
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(0.90f, 0.40f, 0.40f, 1.0f),
+                                           "invalid — expected e.g. 1.0.0");
+                    }
+                }
+                ImGui::Text("Company (optional):");
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##WinCompany", buildCompany_, sizeof(buildCompany_));
+                ImGui::Text("Icon .ico (optional, project-relative):");
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##WinIcon", buildIconPath_, sizeof(buildIconPath_));
+
+                ImGui::Spacing();
                 ImGui::Checkbox("Copy assets/ directory to output path", &buildCopyAssets_);
                 ImGui::Checkbox("Enable Link-Time Optimization (LTO / -O3)", &buildEnableLto_);
             }
@@ -1041,9 +1061,9 @@ void EditorUI::drawBuildWindow(Project* project) {
                 ImGui::InputText("##WebOutputPath", buildOutputPath_, sizeof(buildOutputPath_));
                 ImGui::Spacing();
                 ImGui::TextWrapped(
-                    "Export copies the compiled web runtime (build-web/) plus the "
+                    "Export copies the compiled game player (build-web-player/) plus the "
                     "COOP/COEP dev server. Compile it first from a shell with emsdk:");
-                ImGui::TextDisabled("  ./web/build_web.sh   (then Export here)");
+                ImGui::TextDisabled("  ./web/build_web_player.sh   (then Export here)");
                 ImGui::TextDisabled("  python web/serve.py <out>/web  ->  http://localhost:8080");
             }
         }
@@ -1090,6 +1110,9 @@ void EditorUI::drawBuildWindow(Project* project) {
                 ? std::string("scenes/main.scene")
                 : buildScenes_[buildMainSceneIndex_];
             opt.launchAfterBuild = andRun && !isWeb;
+            opt.productVersion = buildVersion_;
+            opt.companyName = buildCompany_;
+            opt.iconPath = buildIconPath_;
             BuildExporter::Result res = isWeb
                 ? BuildExporter::exportWebBuild(*project, opt)
                 : BuildExporter::exportWindowsBuild(*project, opt);
@@ -1782,9 +1805,12 @@ void EditorUI::drawColliderGizmos(Camera* camera, Scene* scene) {
     if ((app_ && app_->isPlayMode()) || !camera || !scene) return;
     if (ctxProject_ && !ctxProject_->showColliders()) return;
 
-    ImGuiViewport* vp = ImGui::GetMainViewport();
-    glm::vec2 vpPos(vp->WorkPos.x, vp->WorkPos.y);
-    glm::vec2 vpSize(vp->WorkSize.x, vp->WorkSize.y);
+    // Le rectangle de la vue 3D est le nœud central du dock (viewportPos_/
+    // viewportSize_), pas la fenêtre entière — même mapping que le gizmo de
+    // sélection, sinon les colliders dérivent dès que des panneaux sont dockés.
+    glm::vec2 vpPos = viewportPos_;
+    glm::vec2 vpSize = viewportSize_;
+    if (vpSize.x < 1.0f || vpSize.y < 1.0f) return;
     glm::mat4 viewProj = camera->projection() * camera->view();
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
 

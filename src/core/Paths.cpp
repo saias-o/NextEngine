@@ -62,6 +62,17 @@ void setRuntimeRoot(const std::string& dir) { g_runtimeRoot = dir; }
 
 const std::string& runtimeRoot() { return g_runtimeRoot; }
 
+namespace {
+// Racine du projet .saidaproj actuellement chargé (éditeur ou runtime).
+// Résout les fichiers de contenu projet (scripts, ui) hors du registre
+// d'assets. Vide quand aucun projet n'est chargé.
+std::string g_activeProjectRoot;
+} // namespace
+
+void setActiveProjectRoot(const std::string& dir) { g_activeProjectRoot = dir; }
+
+const std::string& activeProjectRoot() { return g_activeProjectRoot; }
+
 SandboxedPathResult resolveSandboxedProjectPath(const std::string& projectRoot,
                                                 const std::string& userPath,
                                                 const std::string& defaultDirectory) {

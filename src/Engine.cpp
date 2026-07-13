@@ -194,7 +194,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     NodeRegistry::instance().registerType<CollisionShapeNode>("CollisionShape");
     NodeRegistry::instance().registerType<StaticBodyNode>("StaticBody");
     NodeRegistry::instance().registerType<RigidBodyNode>("RigidBody");
-    NodeRegistry::instance().registerType<AreaNode>("Area");
+    // "Area" est enregistré par registerReflectedTypes() (signaux réfléchis).
     NodeRegistry::instance().registerType<CharacterBodyNode>("CharacterBody");
     // XR Toolkit nodes/behaviours are registered by xr::registerTypes() above.
     if (project_->isLoaded()) {
@@ -311,13 +311,20 @@ void Engine::mountWorld() {
     sceneTree_->setProjectRoot(project_->rootPath());  // resolve relative .scene paths
 
     // Register the project's data-driven autoloads (idempotent: dedup by name).
-    // A value ending in ".scene" is a prefab path; otherwise a behaviour type.
+    // A value ending in ".scene" is a prefab path, ".js"/".mjs" a script;
+    // otherwise a behaviour type.
     for (const auto& [name, value] : project_->autoloads()) {
-        bool isScene = value.size() > 6 && value.compare(value.size() - 6, 6, ".scene") == 0;
-        if (isScene) {
+        auto endsWith = [&value](const char* suffix) {
+            const size_t n = std::char_traits<char>::length(suffix);
+            return value.size() > n &&
+                   value.compare(value.size() - n, n, suffix) == 0;
+        };
+        if (endsWith(".scene")) {
             std::filesystem::path p(value);
             std::string path = p.is_absolute() ? value : (project_->rootPath() + "/" + value);
             sceneTree_->registerAutoloadScene(name, path);
+        } else if (endsWith(".js") || endsWith(".mjs")) {
+            sceneTree_->registerAutoloadScript(name, value);
         } else {
             sceneTree_->registerAutoloadType(name, value);
         }
@@ -393,6 +400,7 @@ bool Engine::tick() {
         tickLastTime_ = frameStart;
 
         Time::update(realDt);  // sets scaled delta + elapsed
+        resources_->pumpAssetLoads();
         Input::newFrame();     // single per-frame input snapshot
 
         bool isLeftDown = Input::isMouseButtonDown(MouseButton::Left);

@@ -252,7 +252,7 @@ Le moteur est construit par étapes numérotées. **Détails des tâches restant
 - [x] **Étape 5 — Multi-objets / scène.** Graphe à nœuds, hiérarchie parent/enfant, behaviours attachés.
 - [x] **Étape 6 — Éclairage.** Temps réel (Blinn-Phong), ombres (shadow mapping), lightmap baking GPU, PBR + IBL, post-processing (AO/fog/bloom), Vulkan 1.3 Dynamic Rendering.
 - [x] **Étape 7 — Outillage.** Pipeline cache, MSAA, log minimal, Dear ImGui avec backends GLFW+Vulkan.
-- [~] **Étape 8 — Couche jeu.** 95% : split moteur/jeu, sérialisation JSON, undo/redo, contrat authoring, signaux typés, World persistant, autoloads, groups, instanciation runtime, timers/tweens. **Manque** : runtime standalone (→ [TODO.md](TODO.md)).
+- [~] **Étape 8 — Couche jeu.** 98% : split moteur/jeu, sérialisation JSON, undo/redo, contrat authoring, signaux typés, World persistant, autoloads (types, scènes et scripts JS), groups, instanciation runtime, timers/tweens, runtime standalone (`SaidaEngineRuntime` + `game.saida`), API JS `storage` (save/load par slot), jeu témoin [WitnessGame/](WitnessGame/README.md) validé en standalone packagé. **Manque** : validation E2E sur machine vierge (→ [TODO.md](TODO.md), frictions dans [docs/WITNESS_GAME.md](docs/WITNESS_GAME.md)).
 - [x] **Étape 8b — Scripting JavaScript (QuickJS).** Fondation QuickJS, `ScriptBehaviour` MVP, bindings moteur (node/time/input/tree), propriétés inspectables, hot-reload transactionnel, modules ES.
 - [x] **Étape 9 — Rendu global / GI pragmatique.** DDGI, Realtime/Baked unified, IBL + AO + fog + bloom. **Future research** : Radiance Cascades 2D / World Cache / froxels (→ [TODO.md](TODO.md)).
 - [x] **Étape 10 — Animation System.** Chantier complet, du cooker au LLM : assets versionnés à diagnostics structurés (`.sclip` vues non destructives, `.sgraph` schéma 2 avec triggers/exit time/sync de phase, `.sretarget` schéma 2 avec corrections de rest pose + échelle, `.srig` sémantiques/hash, `.sseq` séquences multipistes déterministes) ; cooker + cache dérivé par hash (`.sanimc`, clés réduites/quantifiées — temps 16 bits paginés, quats smallest-three 48 bits, canaux constants, ~28 % du brut) ; kernel data-oriented (`AnimationProgram`/`AnimationInstance` : zéro allocation dans update, curseurs O(1), paramètres par indice) ; palette GPU affine 3x4 (48 o/os, Vulkan + WGSL identiques, upload borné au visible + compteurs profiler) ; playback production (Blend1D, layers/masks/additif, root motion Ignore/Extract/ApplyToNode, événements loop-aware, LOD de pose interpolé) ; retargeting sémantique + two-bone IK/look-at ; panneau éditeur Animation (vues, graphes, séquences avec scrub) ; outillage headless (`saida_tool inspect-anim/cook-anim/validate-*`) et 12 outils MCP animation (recette locomotion, dry-run, diagnostics). Le tout verrouillé par 6 suites de tests + bench dédiés.
@@ -260,7 +260,7 @@ Le moteur est construit par étapes numérotées. **Détails des tâches restant
 - [~] **Étape 12 — UI 2D (Screen & World Space).** 95% : RmlUi + QuickJS, Ultralight supprimé, `WebCanvasNode` avec rendu CPU réel, hot-reload transactionnel. **Future** : backend GPU/Vulkan (→ [TODO.md](TODO.md)).
 - [x] **Étape 13 — Intégration LLM Native.** 95% : M1-M6 complets (réflexion+manifeste, signaux data-driven, serveur MCP, outils code+validation, primitives FSM/Blackboard/Scénario, token-opt). **Manque** : inspecteur behaviours réfléchis, world model, skills, agents autonomes (→ [TODO.md](TODO.md)).
 - [~] **Étape 14 — XR / OpenXR.** 85% : OpenXR SDK, module `src/xr/`, VulkanDevice/Engine integration, multiview stereo 1-pass, controllers (action sets). **SaidaXRTK** 75% : Phase 1-3 complets (interaction, locomotion, anchors&passthrough). **Manque** : hand tracking, MSAA multiview, ImGui overlay, Renderer DRY refactor, anchor backends (→ [TODO.md](TODO.md)).
-- [~] **Étape 15 — Build & Release Windows.** 80% : export-template pipeline, runtime dédié, packager, UI Build Settings. **Manque** : version management, executable metadata/icon, LTO build optimization (→ [TODO.md](TODO.md)).
+- [~] **Étape 15 — Build & Release Windows.** 95% : export-template pipeline, runtime dédié, packager, UI Build Settings, version/métadonnées/icône de l'exe (`ExeMetadata` : VERSIONINFO + RT_GROUP_ICON patchés par UpdateResource). **Manque** : LTO build optimization (→ [TODO.md](TODO.md)).
 - [x] **Étape 16 — Export Web (WASM + WebGPU).** RHI compile-time (Vulkan desktop/XR + WebGPU), 33 shaders GLSL→SPIR-V→WGSL (naga, desktop identique au bit près), backend `rhi/webgpu/*` (émulation push constants, clears texture, layouts). Le **vrai `Renderer` tourne dans le navigateur** : shadows + DDGI + eau + skybox + particules GPU + AO + bloom + tonemap, validé sur BeachDemo (le projet de référence charge et rend identique au desktop), ~213 Ko brotli. Système de features sur web via `recordPrePass` (compute hoisté hors de la passe scène — corrige aussi un bug latent desktop). Packaging : `web/build_web.sh` + `serve.py` (COOP/COEP) + brotli + `BuildExporter::exportWebBuild`. **Future** : KTX2/Basis, fetch/IDBFS streaming, MSAA web (→ [TODO.md](TODO.md)).
 
 **Voir [TODO.md](TODO.md) pour les tâches restantes détaillées par priorité.**
@@ -335,6 +335,12 @@ réel vers texture et un hot-reload transactionnel des documents/dépendances Rm
 
 ## Quand tu modifies le projet
 - Toujours **compiler** après changement (`cmake --build build`) pour valider.
+- **Compatibilité des formats et de l'API JS** : toute modification d'un format
+  sérialisé ou d'une API publique suit le contrat de
+  [docs/PUBLIC_COMPATIBILITY.md](docs/PUBLIC_COMPATIBILITY.md) — incrément de
+  `schema`, migration testée des schémas encore supportés, fixture figé dans
+  `tests/fixtures/compat/` (jamais modifié ni régénéré), refus explicite d'un
+  schéma plus récent. Dépréciation d'API JS = au moins une version avec warning.
 - Ne pas lancer l'exe toi-même (boucle GUI bloquante) ; demander à l'utilisateur
   de tester visuellement, ou utiliser le skill de vérification s'il est dispo.
 - Respecter l'esprit « léger » : préférer la solution simple et lisible.

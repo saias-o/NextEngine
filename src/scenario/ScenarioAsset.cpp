@@ -148,14 +148,16 @@ bool ScenarioAsset::parse(const json& doc, ScenarioAsset& out, std::vector<Scena
         issue(local, "$", "scenario root must be an object");
     } else {
         out = ScenarioAsset{};
-        if (doc.contains("version") && !doc["version"].is_number_integer()) {
-            issue(local, "$.version", "scenario version must be an integer");
+        if (doc.contains("schema") && !doc["schema"].is_number_integer()) {
+            issue(local, "$.schema", "scenario schema must be an integer");
             out.version = format::kScenarioVersion;
         } else {
-            out.version = format::readVersion(doc, format::kScenarioVersion);
-            if (!format::hasIntegerVersion(doc)) {
-                Log::info("ScenarioAsset: missing version, treating as v",
-                          format::kScenarioVersion);
+            out.version = format::readSchema(doc, format::kLegacyVersion);
+            if (!format::hasIntegerSchema(doc)) {
+                Log::info("ScenarioAsset: migrated legacy schema v", out.version,
+                          " -> v", format::kScenarioVersion);
+                if (out.version == format::kLegacyVersion)
+                    out.version = format::kScenarioVersion;
             }
         }
         out.id = doc.value("id", std::string());
@@ -188,7 +190,7 @@ bool ScenarioAsset::parse(const json& doc, ScenarioAsset& out, std::vector<Scena
 
 json ScenarioAsset::toJson() const {
     json doc;
-    doc["version"] = format::kScenarioVersion;
+    format::writeSchema(doc, format::kScenarioVersion);
     doc["id"] = id;
     json roleJson = json::object();
     for (const auto& [name, role] : roles) roleJson[name] = role.data;

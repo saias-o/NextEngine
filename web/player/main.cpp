@@ -135,6 +135,7 @@ void frame() {
     gApp.lastMs = now;
     Time::advance(realDt);
 
+    gApp.resources->pumpAssetLoads();
     Input::sample();  // clavier/souris GLFW → actions, avant les behaviours
     gApp.world->update(Time::delta());
     JsRuntime::instance().executePendingJobs();

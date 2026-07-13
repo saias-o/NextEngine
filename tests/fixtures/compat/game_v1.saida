@@ -1,0 +1,4 @@
+# SaidaEngine game boot manifest
+schema=1
+project=CompatCorpus.saidaproj
+main_scene=scenes/main.scene

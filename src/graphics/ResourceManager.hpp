@@ -12,6 +12,7 @@
 #include <unordered_map>
 
 #include "project/AssetRegistry.hpp"
+#include "project/AssetLoader.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/GeometryRegistry.hpp"
 #include "rhi/Rhi.hpp"
@@ -103,8 +104,11 @@ public:
     
     GeometryRegistry& geometry() { return *geometryRegistry_; }
 
-    void setRegistry(AssetRegistry* registry) { registry_ = registry; }
+    void setRegistry(AssetRegistry* registry);
     AssetRegistry* getRegistry() const { return registry_; }
+    AssetLoader& assetLoader() { return *assetLoader_; }
+    const AssetLoader& assetLoader() const { return *assetLoader_; }
+    void pumpAssetLoads() { assetLoader_->pump(); }
 
     // Register a texture in the bindless array if needed, returns its index.
     uint32_t ensureBindlessTextureIndex(Texture* texture);
@@ -150,6 +154,7 @@ private:
     
     std::unique_ptr<Texture> defaultWhiteTexture_;
     std::unique_ptr<Texture> defaultNormalTexture_;
+    std::unique_ptr<AssetLoader> assetLoader_;
 };
 
 } // namespace saida

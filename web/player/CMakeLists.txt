@@ -47,6 +47,7 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/core/Camera.cpp
     ${SAIDA_ROOT}/src/runtime/BootManifest.cpp
     ${SAIDA_ROOT}/src/project/AssetRegistry.cpp
+    ${SAIDA_ROOT}/src/project/AssetLoader.cpp
     ${SAIDA_ROOT}/src/project/Project.cpp
     ${SAIDA_ROOT}/src/scene/Behaviour.cpp
     ${SAIDA_ROOT}/src/scene/BehaviourRegistry.cpp
@@ -149,14 +150,12 @@ target_link_options(saida_player PRIVATE
     $<$<CONFIG:Release>:-Oz>
     "SHELL:--preload-file \"${SAIDA_ROOT}/build/shaders/wgsl@/shaders\""
     # Le package du jeu de référence, monté tel quel sous /project.
-    "SHELL:--preload-file \"${SAIDA_ROOT}/BeachDemo@/project\""
-    "SHELL:--preload-file \"${CMAKE_CURRENT_SOURCE_DIR}/game.saida@/project/game.saida\""
+    -sFORCE_FILESYSTEM=1
     "SHELL:--shell-file \"${CMAKE_CURRENT_SOURCE_DIR}/shell.html\""
 )
 
 file(GLOB WEB_WGSL_SHADERS ${SAIDA_ROOT}/build/shaders/wgsl/*.wgsl)
 set_property(TARGET saida_player APPEND PROPERTY LINK_DEPENDS
-    ${WEB_WGSL_SHADERS} ${CMAKE_CURRENT_SOURCE_DIR}/shell.html
-    ${CMAKE_CURRENT_SOURCE_DIR}/game.saida)
+    ${WEB_WGSL_SHADERS} ${CMAKE_CURRENT_SOURCE_DIR}/shell.html)
 
 set_target_properties(saida_player PROPERTIES SUFFIX ".html" OUTPUT_NAME "index")

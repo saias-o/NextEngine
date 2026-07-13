@@ -47,6 +47,7 @@ static_assert(sizeof(MaterialData) == 64, "MaterialData must match shader.frag s
 
 ResourceManager::ResourceManager(rhi::Device& device, AssetRegistry* registry)
     : device_(device), registry_(registry) {
+    assetLoader_ = std::make_unique<AssetLoader>(registry_);
     geometryRegistry_ = std::make_unique<GeometryRegistry>(device_);
 #ifdef SAIDA_RHI_WEBGPU
     materialSetLayout_ = std::make_unique<rhi::BindGroupLayout>(device_,
@@ -76,6 +77,7 @@ ResourceManager::ResourceManager(rhi::Device& device, AssetRegistry* registry)
 }
 
 ResourceManager::~ResourceManager() {
+    assetLoader_.reset();
     // Clear caches first (resource destructors run while the device is alive),
     // then the descriptor objects they were allocated from.
     materials_.clear();
@@ -88,6 +90,11 @@ ResourceManager::~ResourceManager() {
     if (globalMaterialSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), globalMaterialSetLayout_, nullptr);
     if (globalMaterialPool_) vkDestroyDescriptorPool(device_.device(), globalMaterialPool_, nullptr);
 #endif
+}
+
+void ResourceManager::setRegistry(AssetRegistry* registry) {
+    registry_ = registry;
+    assetLoader_->setRegistry(registry);
 }
 
 void ResourceManager::createGlobalBindlessResources() {

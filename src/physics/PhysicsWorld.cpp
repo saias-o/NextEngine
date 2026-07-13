@@ -297,6 +297,12 @@ JPH::Ref<JPH::CharacterVirtual> PhysicsWorld::createCharacter(
     settings->mMass = mass;
     settings->mMaxSlopeAngle = maxSlopeAngleRad;
     settings->mUp = Vec3::sAxisY();
+    // Un CharacterVirtual n'existe pas dans la broadphase : sans inner body,
+    // les capteurs (Area) et les raycasts ne voient jamais le personnage.
+    // L'inner body kinématique suit le personnage et hérite de son userData
+    // (le dispatch de triggers retrouve donc le CharacterBodyNode).
+    settings->mInnerBodyShape = shape;
+    settings->mInnerBodyLayer = Layers::MOVING;
 
     return new CharacterVirtual(settings, RVec3(position.x, position.y, position.z),
                                 toJolt(rotation), reinterpret_cast<uint64>(userData),

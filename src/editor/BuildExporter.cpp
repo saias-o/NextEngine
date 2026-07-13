@@ -1,11 +1,18 @@
 #include "editor/BuildExporter.hpp"
 
 #include "core/Log.hpp"
+#include "core/FormatVersions.hpp"
+#include "editor/ExeMetadata.hpp"
 #include "project/Project.hpp"
 
+#include <nlohmann/json.hpp>
+
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <system_error>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -45,6 +52,65 @@ bool isInside(const fs::path& child, const fs::path& parent) {
     return true;
 }
 
+bool safePackagePath(const fs::path& path) {
+    if (path.empty() || path.is_absolute()) return false;
+    const fs::path normalized = path.lexically_normal();
+    return !normalized.empty() && normalized.begin()->string() != "..";
+}
+
+std::string safeFileStem(std::string value) {
+    for (char& c : value) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (!std::isalnum(uc) && c != '-' && c != '_' && c != ' ') c = '_';
+    }
+    while (!value.empty() && (value.back() == ' ' || value.back() == '.')) value.pop_back();
+    return value.empty() ? "Game" : value;
+}
+
+bool copyProjectData(const Project& project, const fs::path& outRoot, std::string& log) {
+    const fs::path root(project.rootPath());
+    for (const char* dir : {"assets", "scenes", "scripts", "ui", "shaders"}) {
+        if (!copyTree(root / dir, outRoot / dir, log)) return false;
+    }
+
+    std::error_code ec;
+    const fs::path projectFile(project.filePath());
+    fs::copy_file(projectFile, outRoot / projectFile.filename(),
+                  fs::copy_options::overwrite_existing, ec);
+    if (ec) return false;
+    log += "  " + projectFile.filename().string() + "\n";
+
+    const fs::path registry = root / "asset_registry.json";
+    if (fs::exists(registry)) {
+        fs::copy_file(registry, outRoot / registry.filename(),
+                      fs::copy_options::overwrite_existing, ec);
+        if (ec) return false;
+        log += "  asset_registry.json\n";
+    }
+    return true;
+}
+
+bool writeBootManifest(const Project& project, const fs::path& outRoot,
+                       const std::string& mainScene) {
+    std::ofstream manifest(outRoot / "game.saida", std::ios::trunc);
+    if (!manifest) return false;
+    manifest << "# SaidaEngine game boot manifest\n";
+    manifest << "schema=" << format::kBootManifestVersion << "\n";
+    manifest << "project=" << fs::path(project.filePath()).filename().string() << "\n";
+    manifest << "main_scene=" << mainScene << "\n";
+    return true;
+}
+
+std::vector<std::string> packageFileList(const fs::path& root) {
+    std::vector<std::string> files;
+    for (const auto& entry : fs::recursive_directory_iterator(root)) {
+        if (entry.is_regular_file())
+            files.push_back(fs::relative(entry.path(), root).generic_string());
+    }
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
 } // namespace
 
 BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
@@ -61,6 +127,10 @@ BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
     if (!project.isLoaded()) return fail("no project loaded");
 
     const fs::path projectRoot = fs::path(project.rootPath()).lexically_normal();
+    const fs::path mainScene = fs::path(options.mainScene).lexically_normal();
+    if (!safePackagePath(mainScene)) return fail("main scene must be a project-relative path");
+    if (!fs::is_regular_file(projectRoot / mainScene))
+        return fail("main scene not found: " + (projectRoot / mainScene).string());
 
     // Resolve output directory (relative paths are anchored to the project root).
     fs::path outDir = options.outputDir.empty() ? fs::path("build/export")
@@ -89,7 +159,7 @@ BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
         return fail("runtime template not found — build the SaidaEngineRuntime "
                     "target first: " + runtimeExe.string());
 
-    const std::string gameName = project.name().empty() ? "Game" : project.name();
+    const std::string gameName = safeFileStem(project.name());
     const fs::path gameExe = outDir / (gameName + ".exe");
 
     // 1. Runtime exe (renamed to the game name).
@@ -97,6 +167,26 @@ BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
     if (ec) return fail("failed to copy runtime exe: " + ec.message());
     r.gameExe = gameExe.string();
     r.log += "  exe -> " + gameExe.filename().string() + "\n";
+
+    // 1b. Version, métadonnées et icône de l'exe (VERSIONINFO / RT_GROUP_ICON).
+    {
+        ExeMetadata meta;
+        meta.productName = project.name().empty() ? gameName : project.name();
+        meta.version = options.productVersion.empty() ? "0.1.0" : options.productVersion;
+        meta.companyName = options.companyName;
+        if (!options.iconPath.empty()) {
+            fs::path icon = fs::path(options.iconPath);
+            if (icon.is_relative()) icon = projectRoot / icon;
+            if (!fs::is_regular_file(icon))
+                return fail("icon file not found: " + icon.string());
+            meta.iconPath = icon.string();
+        }
+        std::string metaError;
+        if (!applyExeMetadata(gameExe.string(), meta, metaError))
+            return fail("exe metadata: " + metaError);
+        r.log += "  version " + meta.version +
+                 (meta.iconPath.empty() ? "" : " + icon") + "\n";
+    }
 
     // 2. GLFW runtime DLL.
     const fs::path glfwDll = binDir / "glfw3.dll";
@@ -109,43 +199,21 @@ BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
         r.log += "  ! glfw3.dll not found in build dir (may already be on PATH)\n";
     }
 
-    // 3. Compiled SPIR-V shaders.
-    if (!copyTree(binDir / "shaders", outDir / "shaders", r.log))
+    // 3. Compiled SPIR-V shaders. They live in the build's shader output dir
+    //    (SAIDA_SHADER_DIR); the runtime resolves them under <exe>/shaders/.
+    const fs::path shaderDir = fs::path(SAIDA_SHADER_DIR);
+    if (!fs::exists(shaderDir))
+        return fail("compiled shaders not found: " + shaderDir.string());
+    if (!copyTree(shaderDir, outDir / "shaders", r.log))
         return fail("failed to copy shaders");
 
-    // 4. Project data, in a flat layout so Project::load() sets rootPath = outDir
-    //    and the AssetRegistry resolves every asset relative to it.
-    if (!copyTree(project.assetsDir(),  outDir / "assets",  r.log) ||
-        !copyTree(project.scenesDir(),  outDir / "scenes",  r.log) ||
-        !copyTree(project.scriptsDir(), outDir / "scripts", r.log))
+    // 4. Project data, in a flat layout so Project::load() sets rootPath = outDir.
+    if (!copyProjectData(project, outDir, r.log))
         return fail("failed to copy project data");
 
-    // .saidaproj + asset registry (the runtime loads the project from these).
-    const fs::path neproj = project.filePath();
-    if (fs::exists(neproj)) {
-        fs::copy_file(neproj, outDir / neproj.filename(),
-                      fs::copy_options::overwrite_existing, ec);
-        if (ec) return fail("failed to copy .saidaproj: " + ec.message());
-        r.log += "  " + neproj.filename().string() + "\n";
-    } else {
-        return fail("project file missing: " + neproj.string());
-    }
-    const fs::path registry = projectRoot / "asset_registry.json";
-    if (fs::exists(registry)) {
-        fs::copy_file(registry, outDir / "asset_registry.json",
-                      fs::copy_options::overwrite_existing, ec);
-        if (ec) r.log += "  ! failed to copy asset_registry.json\n";
-        else r.log += "  asset_registry.json\n";
-    }
-
     // 5. Boot manifest (read by SaidaEngineRuntime at startup).
-    {
-        std::ofstream manifest(outDir / "game.saida", std::ios::trunc);
-        if (!manifest) return fail("cannot write boot manifest game.saida");
-        manifest << "# SaidaEngine game boot manifest\n";
-        manifest << "project=" << neproj.filename().string() << "\n";
-        manifest << "main_scene=" << options.mainScene << "\n";
-    }
+    if (!writeBootManifest(project, outDir, options.mainScene))
+        return fail("cannot write boot manifest game.saida");
     r.log += "  game.saida (main_scene=" + options.mainScene + ")\n";
 
     r.success = true;
@@ -158,7 +226,6 @@ BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
 
 BuildExporter::Result BuildExporter::exportWebBuild(const Project& project,
                                                     const Options& options) {
-    (void)project;
     Result r;
     auto fail = [&](const std::string& msg) -> Result {
         r.success = false;
@@ -168,14 +235,28 @@ BuildExporter::Result BuildExporter::exportWebBuild(const Project& project,
         return r;
     };
 
-    const fs::path repoRoot = fs::path(SAIDA_PROJECT_ROOT);
-    const fs::path webBuild = repoRoot / "build-web";
-    if (!fs::exists(webBuild / "index.html"))
-        return fail("no web build found — run web/build_web.sh first (emsdk required)");
+    if (!project.isLoaded()) return fail("no project loaded");
+    const fs::path projectRoot = fs::path(project.rootPath()).lexically_normal();
+    const fs::path mainScene = fs::path(options.mainScene).lexically_normal();
+    if (!safePackagePath(mainScene)) return fail("main scene must be a project-relative path");
+    if (!fs::is_regular_file(projectRoot / mainScene))
+        return fail("main scene not found: " + (projectRoot / mainScene).string());
 
-    fs::path outDir = fs::path(options.outputDir);
-    if (outDir.is_relative()) outDir = repoRoot / outDir;
+    const fs::path repoRoot = fs::path(SAIDA_PROJECT_ROOT);
+    const fs::path webBuild = repoRoot / "build-web-player";
+    if (!fs::exists(webBuild / "index.html"))
+        return fail("web player template missing — build web/player first (emsdk required)");
+
+    fs::path outDir = options.outputDir.empty() ? fs::path("build/export")
+                                                : fs::path(options.outputDir);
+    if (outDir.is_relative()) outDir = projectRoot / outDir;
     outDir /= "web";
+    outDir = outDir.lexically_normal();
+    if (outDir == projectRoot || isInside(outDir, projectRoot / "assets") ||
+        isInside(outDir, projectRoot / "scenes") ||
+        isInside(outDir, projectRoot / "scripts") ||
+        isInside(outDir, projectRoot / "ui"))
+        return fail("output directory must not be inside packaged project data");
     std::error_code ec;
     fs::create_directories(outDir, ec);
     if (ec) return fail("cannot create " + outDir.string());
@@ -184,11 +265,27 @@ BuildExporter::Result BuildExporter::exportWebBuild(const Project& project,
 
     for (const char* name : {"index.html", "index.js", "index.wasm", "index.data"}) {
         const fs::path src = webBuild / name;
-        if (!fs::exists(src)) continue;  // .data is optional (no preloaded assets)
+        if (!fs::exists(src)) continue;
         fs::copy_file(src, outDir / name, fs::copy_options::overwrite_existing, ec);
         if (ec) return fail("failed to copy " + src.string());
         r.log += std::string("  copied ") + name + "\n";
     }
+    const fs::path packagedProject = outDir / "project";
+    fs::create_directories(packagedProject, ec);
+    if (ec || !copyProjectData(project, packagedProject, r.log))
+        return fail("failed to copy project data");
+    if (!writeBootManifest(project, packagedProject, options.mainScene))
+        return fail("cannot write web boot manifest");
+
+    nlohmann::json fileManifest = {
+        {"schema", 1},
+        {"files", packageFileList(packagedProject)}
+    };
+    std::ofstream filesJson(outDir / "project-files.json", std::ios::trunc);
+    if (!filesJson) return fail("cannot write project-files.json");
+    filesJson << fileManifest.dump(2) << "\n";
+    filesJson.close();
+    r.log += "  project-files.json\n";
     fs::copy_file(repoRoot / "web" / "serve.py", outDir / "serve.py",
                   fs::copy_options::overwrite_existing, ec);
     if (!ec) r.log += "  copied serve.py (COOP/COEP dev server)\n";
@@ -202,6 +299,7 @@ BuildExporter::Result BuildExporter::exportWebBuild(const Project& project,
     }
 
     r.success = true;
+    r.gameExe = (outDir / "index.html").string();
     r.log += "Web export succeeded.\n";
     Log::info("Web export succeeded: ", outDir.string());
     return r;

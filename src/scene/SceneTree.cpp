@@ -3,6 +3,7 @@
 #include "scene/Scene.hpp"
 #include "scene/SceneSerializer.hpp"
 #include "scene/BehaviourRegistry.hpp"
+#include "scripting/ScriptBehaviour.hpp"
 #include "core/Time.hpp"
 #include "core/Log.hpp"
 
@@ -136,6 +137,10 @@ void SceneTree::applyDeferred() {
             Log::warn("changeScene: failed to load '", pendingScenePath_, "'");
         }
     }
+
+    // 3) Les caches aplatis (meshes/lights) du World pointent encore sur les
+    // nœuds détruits ci-dessus ; le rendu de cette frame les consommerait.
+    world_->refreshHierarchy();
 }
 
 void SceneTree::setPaused(bool paused) { Time::setScale(paused ? 0.0f : 1.0f); }
@@ -202,6 +207,17 @@ void SceneTree::registerAutoloadScene(const std::string& name, const std::string
             Log::warn("autoload '", name, "': failed to load scene '", scenePath, "'");
             node = std::make_unique<Node>(name);
         }
+        return node;
+    });
+}
+
+void SceneTree::registerAutoloadScript(const std::string& name,
+                                       const std::string& scriptPath) {
+    setAutoloadDef(name, [name, scriptPath] {
+        auto node = std::make_unique<Node>(name);
+        auto script = std::make_unique<ScriptBehaviour>();
+        script->setScriptPath(scriptPath);
+        node->addBehaviour(std::move(script));
         return node;
     });
 }

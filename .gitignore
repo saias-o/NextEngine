@@ -14,6 +14,9 @@
 *.local.json
 pipeline_cache.bin
 
+# Sauvegardes runtime écrites par l'API storage pendant les playtests
+WitnessGame/saves/
+
 # Build logs and scratch files
 build_*.txt
 *.log

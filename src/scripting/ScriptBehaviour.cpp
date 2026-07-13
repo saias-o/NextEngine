@@ -433,6 +433,14 @@ std::string ScriptBehaviour::resolveScriptPath() const {
     std::filesystem::path p(scriptPath_);
     if (p.is_absolute() && std::filesystem::exists(p)) return p.string();
 
+    // Racine du projet chargé d'abord : c'est là que vivent les scripts d'un
+    // jeu ("scripts/foo.js" dans le .scene est relatif au projet).
+    if (!activeProjectRoot().empty()) {
+        std::filesystem::path projectRelative =
+            std::filesystem::path(activeProjectRoot()) / p;
+        if (std::filesystem::exists(projectRelative)) return projectRelative.string();
+    }
+
     std::filesystem::path cwdRelative = std::filesystem::current_path() / p;
     if (std::filesystem::exists(cwdRelative)) return cwdRelative.string();
 

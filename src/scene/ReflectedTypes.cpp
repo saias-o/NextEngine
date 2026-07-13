@@ -16,6 +16,7 @@
 #include "scene/RotatorBehaviour.hpp"
 #include "scene/SpawnerBehaviour.hpp"
 #include "scene/StateMachineBehaviour.hpp"
+#include "physics/AreaNode.hpp"
 #include "scenario/ScenarioAnchor.hpp"
 #include "scenario/ScenarioDirector.hpp"
 #include "scenario/ScenarioRunnerBehaviour.hpp"
@@ -73,6 +74,7 @@ void registerReflectedTypes() {
     registerNode<LightNode>();
     registerNode<WaterNode>();
     registerNode<ParticleSystemNode>();
+    registerNode<AreaNode>();
     // <<SAIDA_MCP_REGISTER>>  (write_cpp_behaviour inserts registerBehaviour<T>() calls above this line)
 }
 

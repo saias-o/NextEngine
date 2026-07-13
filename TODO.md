@@ -6,7 +6,8 @@
 ---
 
 ## Étape 8 — Couche jeu
-- [ ] Runtime standalone sans éditeur
+- [x] Runtime standalone sans éditeur (`SaidaEngineRuntime` + `game.saida`, packagé par Build Settings)
+- [ ] Valider le chemin « ship » de bout en bout sur machine vierge avec le jeu témoin (→ [PLAN_V1_ENGINE.md](PLAN_V1_ENGINE.md), chantier 1). Le jeu témoin existe ([WitnessGame/](WitnessGame/README.md), smoke test packagé validé) ; frictions restantes dans [docs/WITNESS_GAME.md](docs/WITNESS_GAME.md) (UI-depuis-JS, comms inter-nœuds JS, player web incomplet, animation/audio à brancher)
 
 ---
 
@@ -38,7 +39,7 @@
 ---
 
 ## Étape 15 — Build & Release Windows
-- [ ] Gestion versions, métadonnées executable, icône du jeu
+- [x] Gestion versions, métadonnées executable, icône du jeu (`ExeMetadata` : VERSIONINFO + RT_GROUP_ICON patchés dans le `<Game>.exe`, champs UI Build Settings)
 - [ ] LTO build optimization
 
 ---

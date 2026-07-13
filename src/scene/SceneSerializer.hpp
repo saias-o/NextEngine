@@ -32,6 +32,11 @@ public:
     static std::unique_ptr<Node> loadNodeFromSceneFile(const std::string& path,
                                                        ResourceManager& resources,
                                                        NodeIdPolicy idPolicy = NodeIdPolicy::Regenerate);
+
+    // Headless check that a .scene document is parseable and its schema is
+    // accepted (legacy or ≤ current, never newer). No resources touched — used
+    // by the retro-compat corpus in CI.
+    static bool validateSceneDocumentFile(const std::string& path);
 };
 
 } // namespace saida

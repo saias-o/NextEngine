@@ -17,6 +17,11 @@ public:
         std::string outputDir;            // absolute, or relative to project root
         std::string mainScene = "scenes/main.scene";  // project-relative
         bool launchAfterBuild = false;    // "Build & Run"
+
+        // Métadonnées de l'exécutable Windows (VERSIONINFO + icône).
+        std::string productVersion = "0.1.0";  // "a.b.c[.d]", champs ≤ 65535
+        std::string companyName;               // optionnel
+        std::string iconPath;                  // .ico, project-relative ou absolu; vide = aucun
     };
 
     struct Result {

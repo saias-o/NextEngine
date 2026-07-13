@@ -149,19 +149,19 @@ bool acceptSceneDocumentVersion(const json& doc, const std::string& context,
         Log::error(context, ": scene document root must be an object: ", path);
         return false;
     }
-    if (doc.contains("version") && !doc["version"].is_number_integer()) {
-        Log::error(context, ": scene document version must be an integer: ", path);
+    if (doc.contains("schema") && !doc["schema"].is_number_integer()) {
+        Log::error(context, ": scene document schema must be an integer: ", path);
         return false;
     }
 
-    const int version = format::readVersion(doc, format::kLegacyVersion);
+    const int version = format::readSchema(doc, format::kLegacyVersion);
     if (version > format::kSceneVersion) {
         Log::error(context, ": unsupported scene format v", version,
                    " (supported v", format::kSceneVersion, "): ", path);
         return false;
     }
-    if (!format::hasIntegerVersion(doc)) {
-        Log::info(context, ": migrated legacy scene format v0 -> v",
+    if (!format::hasIntegerSchema(doc)) {
+        Log::info(context, ": migrated legacy scene schema v", version, " -> v",
                   format::kSceneVersion, " in memory: ", path);
     } else if (version < format::kSceneVersion) {
         Log::info(context, ": migrated scene format v", version, " -> v",
@@ -212,10 +212,31 @@ std::unique_ptr<Node> SceneSerializer::loadNodeFromSceneFile(const std::string& 
     }
 }
 
+bool SceneSerializer::validateSceneDocumentFile(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        Log::error("validateSceneDocumentFile: cannot open ", path);
+        return false;
+    }
+    try {
+        json doc = json::parse(file);
+        if (!acceptSceneDocumentVersion(doc, "validateSceneDocumentFile", path))
+            return false;
+        if (!doc.contains("scene") || !doc["scene"].is_object()) {
+            Log::error("validateSceneDocumentFile: missing 'scene' object: ", path);
+            return false;
+        }
+        return true;
+    } catch (const std::exception& e) {
+        Log::error("validateSceneDocumentFile: ", e.what());
+        return false;
+    }
+}
+
 bool SceneSerializer::saveToFile(Node& sceneRoot, ResourceManager& resources,
                                  const std::string& path) {
     json doc;
-    doc["version"] = format::kSceneVersion;
+    format::writeSchema(doc, format::kSceneVersion);
     doc["scene"] = serializeNode(sceneRoot, resources);
 
     std::ofstream file(path);

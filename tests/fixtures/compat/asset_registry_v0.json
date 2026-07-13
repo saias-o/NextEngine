@@ -1,0 +1,12 @@
+{
+  "1001": {
+    "path": "scenes/main.scene",
+    "hash": 42,
+    "type": "Scene"
+  },
+  "1002": {
+    "path": "assets/textures/checker.png",
+    "hash": 7,
+    "type": "Texture"
+  }
+}

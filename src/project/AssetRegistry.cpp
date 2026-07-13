@@ -78,8 +78,12 @@ bool AssetRegistry::load(const std::string& projectRoot) {
         }
 
         const bool legacyShape = !j.contains("assets");
+        if (!legacyShape && j.contains("schema") && !j["schema"].is_number_integer()) {
+            Log::error("AssetRegistry: schema must be an integer: ", path.string());
+            return false;
+        }
         const int version = legacyShape ? format::kLegacyVersion
-                                        : format::readVersion(j, format::kLegacyVersion);
+                                        : format::readSchema(j, format::kLegacyVersion);
         if (!legacyShape && version > format::kAssetRegistryVersion) {
             Log::error("AssetRegistry: unsupported asset registry format v", version,
                        " (supported v", format::kAssetRegistryVersion, "): ", path.string());
@@ -149,10 +153,8 @@ bool AssetRegistry::save(const std::string& projectRoot) const {
         };
     }
 
-    json j = {
-        {"version", format::kAssetRegistryVersion},
-        {"assets", std::move(assets)}
-    };
+    json j = {{"assets", std::move(assets)}};
+    format::writeSchema(j, format::kAssetRegistryVersion);
 
     file << j.dump(4);
     return true;

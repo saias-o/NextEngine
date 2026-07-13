@@ -175,6 +175,9 @@ private:
     BuildPlatform selectedBuildPlatform_ = BuildPlatform::Windows;
     BuildConfig buildConfiguration_ = BuildConfig::Release;
     char buildOutputPath_[512] = "build/export";
+    char buildVersion_[32] = "0.1.0";
+    char buildCompany_[256] = "";
+    char buildIconPath_[512] = "";
     bool buildCopyAssets_ = true;
     bool buildEnableLto_ = false;
     bool buildSceneMainChecked_ = true;

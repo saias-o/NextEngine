@@ -16,7 +16,12 @@ int main() {
         if (typeof time.wait !== 'function' ||
             typeof time.every !== 'function' ||
             typeof time.tween !== 'function' ||
-            typeof time.cancel !== 'function') {
+            typeof time.cancel !== 'function' ||
+            typeof assets.load !== 'function' ||
+            typeof storage.save !== 'function' ||
+            typeof storage.load !== 'function' ||
+            typeof storage.has !== 'function' ||
+            typeof storage.remove !== 'function') {
             throw new Error('timer API missing');
         }
 
@@ -40,6 +45,16 @@ int main() {
         try { time.wait(0, function() {}); }
         catch (error) { mountedError = String(error).includes('SceneTree'); }
         if (!mountedError) throw new Error('missing SceneTree diagnostic');
+
+        let assetError = false;
+        try { assets.load('assets/example.bin'); }
+        catch (error) { assetError = String(error).includes('SceneTree'); }
+        if (!assetError) throw new Error('missing asset SceneTree diagnostic');
+
+        let storageError = false;
+        try { storage.save('slot', '{}'); }
+        catch (error) { storageError = String(error).includes('SceneTree'); }
+        if (!storageError) throw new Error('missing storage SceneTree diagnostic');
     )JS"));
 
     return 0;

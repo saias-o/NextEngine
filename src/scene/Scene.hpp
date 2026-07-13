@@ -102,6 +102,12 @@ public:
     SceneSettings& settings() { return settings_; }
     const SceneSettings& settings() const { return settings_; }
 
+    // Re-flatten les caches (meshes/lights/…) si l'arbre a changé depuis le
+    // dernier update. À appeler après les mutations différées (queueFree,
+    // changeScene) : le rendu de la même frame ne doit jamais voir de
+    // pointeurs vers des nœuds détruits.
+    void refreshHierarchy();
+
     const std::vector<MeshNode*>& meshes() const { return meshes_; }
     const std::vector<LightNode*>& lights() const { return lights_; }
     UICanvasNode* uiCanvas() const { return uiCanvas_; }

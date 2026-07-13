@@ -86,6 +86,7 @@ void testLegacyProjectMigratesToJson() {
 
     require(project.save());
     json saved = readJson(path);
+    require(saved["schema"] == saida::format::kProjectVersion);
     require(saved["version"] == saida::format::kProjectVersion);
     require(saved["runtime"]["maxFps"] == 144);
     require(saved["runtime"]["vsync"] == true);
@@ -94,11 +95,12 @@ void testLegacyProjectMigratesToJson() {
     require(saved["autoloads"]["GameState"] == "scripts/game_state.mjs");
 }
 
-void testFutureProjectLoadsBestEffort() {
+void testFutureProjectIsRejected() {
     const auto root = testRoot() / "FutureProject";
     std::filesystem::create_directories(root);
     const auto path = root / "FutureProject.saidaproj";
     writeText(path, json{
+        {"schema", 99},
         {"version", 99},
         {"name", "FutureProject"},
         {"engineVersion", "9.9.9"},
@@ -107,11 +109,7 @@ void testFutureProjectLoadsBestEffort() {
     }.dump(2));
 
     saida::Project project;
-    require(project.load(path.string()));
-    require(project.name() == "FutureProject");
-    require(project.engineVersion() == "9.9.9");
-    require(project.maxFps() == 30);
-    require(project.vSync());
+    require(!project.load(path.string()));
 }
 
 void testAssetRegistryMigratesToEnvelope() {
@@ -129,6 +127,7 @@ void testAssetRegistryMigratesToEnvelope() {
     require(registry.save(root.string()));
 
     json saved = readJson(path);
+    require(saved["schema"] == saida::format::kAssetRegistryVersion);
     require(saved["version"] == saida::format::kAssetRegistryVersion);
     require(saved["assets"]["123"]["path"] == "scenes/main.scene");
 }
@@ -137,6 +136,7 @@ void testFutureAssetRegistryIsRejected() {
     const auto root = testRoot() / "FutureRegistryProject";
     std::filesystem::create_directories(root);
     writeText(root / "asset_registry.json", json{
+        {"schema", 99},
         {"version", 99},
         {"assets", json::object()}
     }.dump(2));
@@ -151,11 +151,14 @@ void testScenarioVersioning() {
 
     json missing = baseScenario();
     missing.erase("version");
+    missing.erase("schema");
     require(saida::ScenarioAsset::parse(missing, asset, &issues));
     require(asset.version == saida::format::kScenarioVersion);
+    require(asset.toJson()["schema"] == saida::format::kScenarioVersion);
     require(asset.toJson()["version"] == saida::format::kScenarioVersion);
 
     json future = baseScenario();
+    future["schema"] = 99;
     future["version"] = 99;
     issues.clear();
     require(!saida::ScenarioAsset::parse(future, asset, &issues));
@@ -166,7 +169,7 @@ void testScenarioVersioning() {
 
 int main() {
     testLegacyProjectMigratesToJson();
-    testFutureProjectLoadsBestEffort();
+    testFutureProjectIsRejected();
     testAssetRegistryMigratesToEnvelope();
     testFutureAssetRegistryIsRejected();
     testScenarioVersioning();

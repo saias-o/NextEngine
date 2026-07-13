@@ -116,6 +116,13 @@ void Scene::update(float dt) {
 #endif
 }
 
+void Scene::refreshHierarchy() {
+    if (lastHierarchyVersion_ != g_hierarchyVersion) {
+        flattenHierarchy();
+        lastHierarchyVersion_ = g_hierarchyVersion;
+    }
+}
+
 void Scene::flattenHierarchy() {
     meshes_.clear();
     lights_.clear();

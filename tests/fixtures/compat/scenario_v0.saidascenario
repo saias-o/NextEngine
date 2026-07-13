@@ -1,0 +1,23 @@
+{
+  "id": "compat.scenario_v0",
+  "roles": {},
+  "blackboard": {},
+  "steps": [
+    {
+      "id": "start",
+      "enter": [
+        {
+          "blackboard.set": {
+            "key": "ready",
+            "value": true
+          }
+        }
+      ],
+      "next": "done"
+    },
+    {
+      "id": "done",
+      "end": "success"
+    }
+  ]
+}

@@ -22,6 +22,11 @@ namespace saida {
 void setRuntimeRoot(const std::string& dir);
 const std::string& runtimeRoot();  // empty when unset
 
+// Root of the currently loaded .saidaproj (editor or runtime). Used to resolve
+// project content files (scripts, ui) that aren't in the asset registry.
+void setActiveProjectRoot(const std::string& dir);
+const std::string& activeProjectRoot();  // empty when no project is loaded
+
 struct SandboxedPathResult {
     bool ok = false;
     std::string absolute;

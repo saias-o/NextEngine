@@ -10,12 +10,14 @@ namespace {
 void testBootManifestParse() {
     std::istringstream in(
         "# packaged by the editor\n"
+        "schema = 1\n"
         "project = MyGame.saidaproj\n"
         "\n"
         "main_scene=scenes/main.scene\n"
         "unknown_key=ignored\n");
     const auto result = saida::parseBootManifest(in);
     assert(result.ok);
+    assert(result.manifest.schema == 1);
     assert(result.manifest.project == "MyGame.saidaproj");
     assert(result.manifest.mainScene == "scenes/main.scene");
 }
@@ -33,6 +35,11 @@ void testBootManifestErrors() {
 
     auto r3 = saida::loadBootManifest("does/not/exist/game.saida");
     assert(!r3.ok);
+
+    std::istringstream future(
+        "schema=99\nproject=MyGame.saidaproj\nmain_scene=scenes/main.scene\n");
+    auto r4 = saida::parseBootManifest(future);
+    assert(!r4.ok);
 }
 
 void testPlatformCaps() {

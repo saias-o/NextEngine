@@ -4,6 +4,8 @@
 #include "core/Log.hpp"
 #include "core/Reflection.hpp"
 #include "core/Time.hpp"
+#include "graphics/ResourceManager.hpp"
+#include "project/AssetLoader.hpp"
 #include "scene/Behaviour.hpp"
 #include "scene/Node.hpp"
 #include "scene/SceneTree.hpp"
@@ -12,12 +14,202 @@
 
 #include <quickjs.h>
 
+#include <cctype>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
 namespace saida {
 
 namespace {
+
+JSClassID gAssetHandleClassId = 0;
+SceneTree* treeFromJs(JSContext* ctx);
+
+AssetHandle* assetHandleFromJs(JSContext* ctx, JSValueConst value) {
+    return static_cast<AssetHandle*>(JS_GetOpaque2(ctx, value, gAssetHandleClassId));
+}
+
+void jsAssetHandleFinalizer(JSRuntime*, JSValueConst value) {
+    delete static_cast<AssetHandle*>(JS_GetOpaque(value, gAssetHandleClassId));
+}
+
+JSValue jsAssetHandleState(JSContext* ctx, JSValueConst self, int, JSValueConst*) {
+    AssetHandle* handle = assetHandleFromJs(ctx, self);
+    return handle ? JS_NewString(ctx, assetLoadStateName(handle->state())) : JS_EXCEPTION;
+}
+
+JSValue jsAssetHandleReady(JSContext* ctx, JSValueConst self, int, JSValueConst*) {
+    AssetHandle* handle = assetHandleFromJs(ctx, self);
+    return handle ? JS_NewBool(ctx, handle->ready()) : JS_EXCEPTION;
+}
+
+JSValue jsAssetHandleFailed(JSContext* ctx, JSValueConst self, int, JSValueConst*) {
+    AssetHandle* handle = assetHandleFromJs(ctx, self);
+    return handle ? JS_NewBool(ctx, handle->failed()) : JS_EXCEPTION;
+}
+
+JSValue jsAssetHandleError(JSContext* ctx, JSValueConst self, int, JSValueConst*) {
+    AssetHandle* handle = assetHandleFromJs(ctx, self);
+    return handle ? JS_NewString(ctx, handle->error().c_str()) : JS_EXCEPTION;
+}
+
+JSValue jsAssetHandleSize(JSContext* ctx, JSValueConst self, int, JSValueConst*) {
+    AssetHandle* handle = assetHandleFromJs(ctx, self);
+    return handle ? JS_NewInt64(ctx, static_cast<int64_t>(handle->bytes().size())) : JS_EXCEPTION;
+}
+
+JSValue jsAssetHandleId(JSContext* ctx, JSValueConst self, int, JSValueConst*) {
+    AssetHandle* handle = assetHandleFromJs(ctx, self);
+    return handle ? JS_NewBigUint64(ctx, handle->id()) : JS_EXCEPTION;
+}
+
+JSValue jsAssetHandleRelease(JSContext* ctx, JSValueConst self, int, JSValueConst*) {
+    AssetHandle* handle = assetHandleFromJs(ctx, self);
+    if (!handle) return JS_EXCEPTION;
+    handle->reset();
+    return JS_UNDEFINED;
+}
+
+AssetLoadPriority readAssetPriority(JSContext* ctx, int argc, JSValueConst* argv) {
+    if (argc < 2 || JS_IsUndefined(argv[1])) return AssetLoadPriority::Normal;
+    const char* value = JS_ToCString(ctx, argv[1]);
+    if (!value) return AssetLoadPriority::Normal;
+    const std::string priority(value);
+    JS_FreeCString(ctx, value);
+    if (priority == "low") return AssetLoadPriority::Low;
+    if (priority == "high") return AssetLoadPriority::High;
+    if (priority == "critical") return AssetLoadPriority::Critical;
+    return AssetLoadPriority::Normal;
+}
+
+JSValue jsAssetsLoad(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    SceneTree* tree = treeFromJs(ctx);
+    if (!tree) return JS_ThrowInternalError(ctx, "assets.load requires a mounted SceneTree");
+    if (argc < 1) return JS_ThrowTypeError(ctx, "assets.load(path[, priority]) requires a path");
+    const char* raw = JS_ToCString(ctx, argv[0]);
+    if (!raw) return JS_EXCEPTION;
+    const std::string path(raw);
+    JS_FreeCString(ctx, raw);
+    const std::filesystem::path normalized = std::filesystem::path(path).lexically_normal();
+    if (path.empty() || normalized.is_absolute() || normalized.begin()->string() == "..")
+        return JS_ThrowTypeError(ctx, "asset path must stay inside the project");
+
+    AssetHandle handle = tree->resources().assetLoader().request(
+        normalized.generic_string(), AssetType::Unknown,
+        readAssetPriority(ctx, argc, argv));
+    if (!handle) return JS_ThrowInternalError(ctx, "asset loader is unavailable");
+    JSValue object = JS_NewObjectClass(ctx, gAssetHandleClassId);
+    if (JS_IsException(object)) return object;
+    JS_SetOpaque(object, new AssetHandle(std::move(handle)));
+    return object;
+}
+
+// ---- storage: persistance minimale par slot (fichiers saves/<slot>.json) ----
+// Le JS sérialise lui-même (JSON.stringify/parse) ; le moteur ne stocke que des
+// chaînes. Chemin résolu sous la racine projet → identique dans l'éditeur, le
+// runtime packagé (racine = dossier de l'exe) et le player web (MEMFS).
+
+bool validStorageSlot(const std::string& slot) {
+    if (slot.empty() || slot.size() > 64) return false;
+    for (char c : slot) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (!std::isalnum(uc) && c != '_' && c != '-') return false;
+    }
+    return true;
+}
+
+std::filesystem::path storageSlotPath(JSContext* ctx, int argc, JSValueConst* argv,
+                                      JSValue& outError) {
+    outError = JS_UNDEFINED;
+    SceneTree* tree = treeFromJs(ctx);
+    if (!tree) {
+        outError = JS_ThrowInternalError(ctx, "storage requires a mounted SceneTree");
+        return {};
+    }
+    if (argc < 1) {
+        outError = JS_ThrowTypeError(ctx, "storage: missing slot name");
+        return {};
+    }
+    const char* raw = JS_ToCString(ctx, argv[0]);
+    if (!raw) {
+        outError = JS_EXCEPTION;
+        return {};
+    }
+    const std::string slot(raw);
+    JS_FreeCString(ctx, raw);
+    if (!validStorageSlot(slot)) {
+        outError = JS_ThrowTypeError(
+            ctx, "storage: slot must match [A-Za-z0-9_-]{1,64}");
+        return {};
+    }
+    return std::filesystem::path(tree->resolveProjectPath("saves")) / (slot + ".json");
+}
+
+JSValue jsStorageSave(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    JSValue error;
+    const std::filesystem::path path = storageSlotPath(ctx, argc, argv, error);
+    if (path.empty()) return error;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "storage.save(slot, jsonString)");
+    const char* value = JS_ToCString(ctx, argv[1]);
+    if (!value) return JS_EXCEPTION;
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    const bool ok = static_cast<bool>(file << value);
+    JS_FreeCString(ctx, value);
+    if (!ok) Log::warn("[JS] storage.save: cannot write ", path.string());
+    return JS_NewBool(ctx, ok);
+}
+
+JSValue jsStorageLoad(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    JSValue error;
+    const std::filesystem::path path = storageSlotPath(ctx, argc, argv, error);
+    if (path.empty()) return error;
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return JS_NULL;
+    std::ostringstream content;
+    content << file.rdbuf();
+    const std::string text = content.str();
+    return JS_NewStringLen(ctx, text.data(), text.size());
+}
+
+JSValue jsStorageHas(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    JSValue error;
+    const std::filesystem::path path = storageSlotPath(ctx, argc, argv, error);
+    if (path.empty()) return error;
+    std::error_code ec;
+    return JS_NewBool(ctx, std::filesystem::is_regular_file(path, ec));
+}
+
+JSValue jsStorageRemove(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    JSValue error;
+    const std::filesystem::path path = storageSlotPath(ctx, argc, argv, error);
+    if (path.empty()) return error;
+    std::error_code ec;
+    return JS_NewBool(ctx, std::filesystem::remove(path, ec));
+}
+
+void installAssetHandleClass(JSContext* ctx) {
+    JSRuntime* runtime = JS_GetRuntime(ctx);
+    if (gAssetHandleClassId == 0) JS_NewClassID(runtime, &gAssetHandleClassId);
+    JSClassDef def{};
+    def.class_name = "SaidaAssetHandle";
+    def.finalizer = jsAssetHandleFinalizer;
+    JS_NewClass(runtime, gAssetHandleClassId, &def);
+
+    JSValue proto = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, proto, "state", JS_NewCFunction(ctx, jsAssetHandleState, "state", 0));
+    JS_SetPropertyStr(ctx, proto, "ready", JS_NewCFunction(ctx, jsAssetHandleReady, "ready", 0));
+    JS_SetPropertyStr(ctx, proto, "failed", JS_NewCFunction(ctx, jsAssetHandleFailed, "failed", 0));
+    JS_SetPropertyStr(ctx, proto, "error", JS_NewCFunction(ctx, jsAssetHandleError, "error", 0));
+    JS_SetPropertyStr(ctx, proto, "size", JS_NewCFunction(ctx, jsAssetHandleSize, "size", 0));
+    JS_SetPropertyStr(ctx, proto, "id", JS_NewCFunction(ctx, jsAssetHandleId, "id", 0));
+    JS_SetPropertyStr(ctx, proto, "release", JS_NewCFunction(ctx, jsAssetHandleRelease, "release", 0));
+    JS_SetClassProto(ctx, gAssetHandleClassId, proto);
+}
 
 Behaviour* behaviourFromJs(JSContext* ctx) {
     return static_cast<Behaviour*>(JS_GetContextOpaque(ctx));
@@ -391,6 +583,7 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     context.setOpaque(&behaviour);
 
     JSValue global = JS_GetGlobalObject(ctx);
+    installAssetHandleClass(ctx);
 
     JSValue node = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, node, "getName", JS_NewCFunction(ctx, jsNodeGetName, "getName", 0));
@@ -431,6 +624,17 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JS_SetPropertyStr(ctx, tree, "setPaused", JS_NewCFunction(ctx, jsTreeSetPaused, "setPaused", 1));
     JS_SetPropertyStr(ctx, tree, "paused", JS_NewCFunction(ctx, jsTreePaused, "paused", 0));
     JS_SetPropertyStr(ctx, global, "tree", tree);
+
+    JSValue assets = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, assets, "load", JS_NewCFunction(ctx, jsAssetsLoad, "load", 2));
+    JS_SetPropertyStr(ctx, global, "assets", assets);
+
+    JSValue storage = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, storage, "save", JS_NewCFunction(ctx, jsStorageSave, "save", 2));
+    JS_SetPropertyStr(ctx, storage, "load", JS_NewCFunction(ctx, jsStorageLoad, "load", 1));
+    JS_SetPropertyStr(ctx, storage, "has", JS_NewCFunction(ctx, jsStorageHas, "has", 1));
+    JS_SetPropertyStr(ctx, storage, "remove", JS_NewCFunction(ctx, jsStorageRemove, "remove", 1));
+    JS_SetPropertyStr(ctx, global, "storage", storage);
 
     JS_FreeValue(ctx, global);
 }

@@ -410,6 +410,7 @@ add_library(saida_engine STATIC
     # XR sources are added conditionally below via target_sources (SAIDA_ENABLE_XR)
     src/project/Project.cpp
     src/project/AssetRegistry.cpp
+    src/project/AssetLoader.cpp
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
     src/graphics/cgltf_impl.cpp
@@ -537,6 +538,7 @@ add_library(saida_editor STATIC
     src/editor/EditorApp.cpp
     src/editor/EditorUI.cpp
     src/editor/BuildExporter.cpp
+    src/editor/ExeMetadata.cpp
     src/editor/SceneDocument.cpp
     src/editor/Command.cpp
     src/editor/CommandHistory.cpp
@@ -593,7 +595,7 @@ if (BUILD_TESTING)
     add_executable(saida_runtime_boot_tests tests/RuntimeBootTests.cpp
                    src/runtime/BootManifest.cpp src/core/PlatformCaps.cpp)
     saida_test_target(saida_runtime_boot_tests)
-    target_include_directories(saida_runtime_boot_tests PRIVATE src)
+    target_include_directories(saida_runtime_boot_tests PRIVATE src third_party/json)
     target_compile_options(saida_runtime_boot_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_runtime_boot_tests COMMAND $<TARGET_FILE:saida_runtime_boot_tests>)
 
@@ -721,6 +723,33 @@ if (BUILD_TESTING)
     target_link_libraries(saida_format_version_tests PRIVATE saida_engine)
     target_compile_options(saida_format_version_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_format_version_tests COMMAND $<TARGET_FILE:saida_format_version_tests>)
+
+    add_executable(saida_asset_loader_tests tests/AssetLoaderTests.cpp)
+    saida_test_target(saida_asset_loader_tests)
+    target_link_libraries(saida_asset_loader_tests PRIVATE saida_engine)
+    target_compile_options(saida_asset_loader_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_asset_loader_tests COMMAND $<TARGET_FILE:saida_asset_loader_tests>)
+
+    # Corpus de rétro-compat (PLAN_V1_ENGINE chantier 2) : fixtures figés
+    # chargés à chaque build, toute rupture de chargement fait échouer la CI.
+    add_executable(saida_compat_corpus_tests tests/CompatCorpusTests.cpp)
+    saida_test_target(saida_compat_corpus_tests)
+    target_link_libraries(saida_compat_corpus_tests PRIVATE saida_engine)
+    target_compile_definitions(saida_compat_corpus_tests PRIVATE
+        SAIDA_COMPAT_CORPUS_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/compat")
+    target_compile_options(saida_compat_corpus_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_compat_corpus_tests COMMAND $<TARGET_FILE:saida_compat_corpus_tests>)
+
+    # Métadonnées d'exe du Build (Étape 15) : VERSIONINFO + icône.
+    add_executable(saida_exe_metadata_tests tests/ExeMetadataTests.cpp
+                   src/editor/ExeMetadata.cpp)
+    saida_test_target(saida_exe_metadata_tests)
+    target_include_directories(saida_exe_metadata_tests PRIVATE src)
+    target_compile_options(saida_exe_metadata_tests PRIVATE -Wall -Wextra)
+    if (WIN32)
+        target_link_libraries(saida_exe_metadata_tests PRIVATE version)
+    endif()
+    add_test(NAME saida_exe_metadata_tests COMMAND $<TARGET_FILE:saida_exe_metadata_tests>)
 
     add_executable(saida_meshopt_export_tests tests/MeshoptExportTests.cpp)
     saida_test_target(saida_meshopt_export_tests)

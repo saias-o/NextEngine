@@ -29,6 +29,7 @@ public:
     bool mounted() const { return world_ != nullptr; }
     Scene& world() { return *world_; }
     Scene& currentScene();
+    ResourceManager& resources() { return resources_; }
 
     void setProjectRoot(const std::string& root) { projectRoot_ = root; }
     std::string resolveProjectPath(const std::string& path) const;
@@ -69,6 +70,8 @@ public:
     }
     void registerAutoloadType(const std::string& name, const std::string& behaviourType);
     void registerAutoloadScene(const std::string& name, const std::string& scenePath);
+    // Autoload JS : un Node portant un ScriptBehaviour sur ce script (.js/.mjs).
+    void registerAutoloadScript(const std::string& name, const std::string& scriptPath);
 
     template <typename T>
     T* autoload() const {

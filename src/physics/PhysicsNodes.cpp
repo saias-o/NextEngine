@@ -55,11 +55,20 @@ void AreaNode::handleOverlap(CollisionObjectNode* other, bool entered) {
         if (it == overlapping_.end()) {
             overlapping_.push_back(other);
             bodyEntered.emit(other);
+            bodyEnteredNamed.emit(other->name());
         }
     } else if (it != overlapping_.end()) {
         overlapping_.erase(it);
         bodyExited.emit(other);
+        bodyExitedNamed.emit(other->name());
     }
+}
+
+void AreaNode::describe(reflect::TypeBuilder<AreaNode>& t) {
+    t.doc("Trigger volume: fires when a physics body enters or leaves. "
+          "The signal payload is the other node's name.");
+    t.signal("bodyEntered", &AreaNode::bodyEnteredNamed);
+    t.signal("bodyExited", &AreaNode::bodyExitedNamed);
 }
 
 } // namespace saida

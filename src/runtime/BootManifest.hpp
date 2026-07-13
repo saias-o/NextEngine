@@ -16,6 +16,7 @@
 namespace saida {
 
 struct BootManifest {
+    int schema = 1;
     std::string project;    // chemin du .saidaproj, relatif à la racine du package
     std::string mainScene;  // chemin de la scène de démarrage, relatif idem
 };

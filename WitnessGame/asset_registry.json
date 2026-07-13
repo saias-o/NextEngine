@@ -1,0 +1,16 @@
+{
+    "assets": {
+        "13376256074310275454": {
+            "hash": 10507522253427821797,
+            "path": "scenes/hub.scene",
+            "type": "Scene"
+        },
+        "2091199236596790819": {
+            "hash": 13286471414970534552,
+            "path": "scenes/arena.scene",
+            "type": "Scene"
+        }
+    },
+    "schema": 1,
+    "version": 1
+}
