@@ -1,11 +1,15 @@
 #pragma once
 
+#include "core/Signal.hpp"
 #include "scene/Behaviour.hpp"
 #include "scene/animation/Rig.hpp"
 #include "scene/animation/Pose.hpp"
 #include "scene/animation/AnimStateMachine.hpp"
 #include "scene/animation/AnimBlackboard.hpp"
 #include "scene/animation/Retarget.hpp"
+#include "scene/animation/RetargetProfile.hpp"
+
+#include <glm/glm.hpp>
 
 #include <memory>
 #include <string>
@@ -47,6 +51,10 @@ public:
     void setRetarget(RetargetMap map) { retarget_ = std::move(map); }
     const RetargetMap& retarget() const { return retarget_; }
 
+    // Profil complet : correspondance de noms + corrections de rest pose et
+    // d'échelle compilées contre le rig (appliquées sur la pose échantillonnée).
+    void setRetargetProfile(const RetargetProfile& profile);
+
     void play(const std::string& name, bool loop = true, float crossfade = 0.2f);
     const std::string& currentClip() const { return currentClip_; }
 
@@ -67,6 +75,26 @@ public:
     AnimBlackboard& blackboard() { return blackboard_; }
     void setFloat(std::string_view p, float v) { blackboard_.setFloat(p, v); }
     void setBool(std::string_view p, bool v) { blackboard_.setBool(p, v); }
+    void setTrigger(std::string_view p) { blackboard_.setTrigger(p); }
+
+    // Émis pour chaque événement de ClipView franchi par le clip actif
+    // (boucle et lecture inverse comprises), avec le nom de l'événement.
+    Signal<const std::string&> animationEvent;
+
+    // Root motion du clip actif (états play()/playView()).
+    //   Ignore      — la translation du root reste dans la pose (défaut).
+    //   Extract     — delta accumulé à consommer via consumeRootMotion().
+    //   ApplyToNode — le delta est appliqué au nœud porteur à chaque update.
+    enum class RootMotionMode { Ignore, Extract, ApplyToNode };
+    void setRootMotion(RootMotionMode mode) { rootMotionMode_ = mode; }
+    RootMotionMode rootMotion() const { return rootMotionMode_; }
+    glm::vec3 consumeRootMotion();
+
+    // LOD d'animation : le graphe (états, transitions, événements) avance à
+    // chaque tick, la pose n'est rééchantillonnée qu'à `hz` et interpolée
+    // entre les deux derniers échantillons. 0 = pose à chaque tick.
+    void setPoseRate(float hz);
+    float poseRate() const { return poseRate_; }
 
     const GlobalPose& globalPose() const { return globalPose_; }
     AnimNode* rootNode() const { return rootNode_.get(); }
@@ -79,6 +107,10 @@ public:
     const char* typeName() const override { return "Animator"; }
 
 private:
+    void refreshRootMotionExtraction();
+    void dispatchClipEvents();
+    void samplePose(float dt);
+
     Rig* rig_ = nullptr;
     std::unique_ptr<AnimNode> rootNode_;
 
@@ -90,9 +122,19 @@ private:
 
     AnimBlackboard blackboard_;
     RetargetMap retarget_;
+    RetargetCorrections retargetCorrections_;
     LocalPose bindPose_;
     LocalPose currentLocalPose_;
     GlobalPose globalPose_;
+
+    RootMotionMode rootMotionMode_ = RootMotionMode::Ignore;
+    glm::vec3 pendingRootMotion_{0.0f};
+
+    float poseRate_ = 0.0f;
+    float poseAccumulator_ = 0.0f;
+    bool sampledPosesPrimed_ = false;
+    LocalPose previousSampledPose_;
+    LocalPose lastSampledPose_;
 };
 
 } // namespace saida

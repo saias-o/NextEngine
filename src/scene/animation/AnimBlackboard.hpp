@@ -34,6 +34,12 @@ public:
     bool getBool(uint32_t paramHash, bool defaultValue = false) const;
     bool getBool(std::string_view paramName, bool defaultValue = false) const;
 
+    // Un trigger vaut 1 jusqu'à ce qu'une transition qui le consomme soit
+    // prise (la machine d'états appelle alors resetTrigger).
+    void setTrigger(uint32_t paramHash) { setFloat(paramHash, 1.0f); }
+    void setTrigger(std::string_view paramName) { setFloat(paramName, 1.0f); }
+    void resetTrigger(uint32_t paramHash) { setFloat(paramHash, 0.0f); }
+
 private:
     std::unordered_map<uint32_t, float> parameters_;
 };

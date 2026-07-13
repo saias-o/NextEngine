@@ -2,8 +2,11 @@
 
 #include "scene/animation/AnimNode.hpp"
 #include "scene/animation/AnimationClip.hpp"
+#include "scene/animation/ClipView.hpp"  // ClipViewEvent
 #include "scene/animation/Rig.hpp"
 #include "scene/animation/Retarget.hpp"
+
+#include <glm/glm.hpp>
 
 #include <vector>
 
@@ -34,13 +37,38 @@ public:
     float rangeStart() const { return rangeStart_; }
     float rangeEnd() const;  // range end, or the clip duration without a range
 
+    float normalizedTime() const override;
+    void seekNormalized(float phase) override;
+
+    // Événements (temps de la SOURCE, triés) : update() détecte les
+    // franchissements, boucle et lecture inverse comprises. firedEvents()
+    // liste les indices franchis pendant le dernier update.
+    void setEvents(std::vector<ClipViewEvent> events);
+    const std::vector<ClipViewEvent>& events() const { return events_; }
+    const std::vector<uint32_t>& firedEvents() const { return firedEvents_; }
+
+    // Extraction du root motion : la translation de l'os `boneIndex` est
+    // remplacée par sa valeur bind dans la pose, et le déplacement accumulé
+    // est disponible via takeRootMotionDelta().
+    void setRootMotionBone(int32_t boneIndex);
+    glm::vec3 takeRootMotionDelta();
+
 private:
+    void collectCrossings(float from, float to);
+    glm::vec3 rootTranslationAt(float time) const;
+
     const AnimationClip* clip_ = nullptr;
     float time_ = 0.0f;
     float speed_ = 1.0f;
     bool looping_ = true;
     float rangeStart_ = 0.0f;
     float rangeEnd_ = -1.0f;  // < 0 = play the whole clip
+
+    std::vector<ClipViewEvent> events_;
+    std::vector<uint32_t> firedEvents_;
+
+    int32_t rootMotionBone_ = -1;
+    glm::vec3 rootMotionDelta_{0.0f};
 
     // Mapping from Rig bone index to list of tracks
     std::vector<const std::vector<std::unique_ptr<AnimTrack>>*> boundTracks_;

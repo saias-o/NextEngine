@@ -12,9 +12,7 @@ layout(set = 0, binding = 0) uniform CameraUBO {
     mat4 proj[2];
 } cam;
 
-layout(std140, set = 0, binding = 3) readonly buffer BoneBuffer {
-    mat4 boneMatrices[];
-};
+#include "skinning.glsl"
 
 PUSH_QUALIFIER PushConstants {
     mat4 model;
@@ -49,13 +47,10 @@ void main() {
 
     int boneOffset = int(push.params.y);
     if (boneOffset >= 0) {
-        mat4 skinMat =
-            inBoneWeights.x * boneMatrices[boneOffset + inBoneIndices.x] +
-            inBoneWeights.y * boneMatrices[boneOffset + inBoneIndices.y] +
-            inBoneWeights.z * boneMatrices[boneOffset + inBoneIndices.z] +
-            inBoneWeights.w * boneMatrices[boneOffset + inBoneIndices.w];
-        localPos = (skinMat * vec4(inPosition, 1.0)).xyz;
-        localNormal = mat3(skinMat) * inNormal;
+        vec4 row0, row1, row2;
+        blendBoneRows(boneOffset, inBoneIndices, inBoneWeights, row0, row1, row2);
+        localPos = skinPoint(row0, row1, row2, inPosition);
+        localNormal = skinDirection(row0, row1, row2, inNormal);
     }
 
     mat3 normalMatrix = mat3(transpose(inverse(push.model)));

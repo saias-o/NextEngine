@@ -1,6 +1,6 @@
 #pragma once
 
-// ClipView — vue non destructive d'une animation source (PLAN_ANIMATION.md §4.3).
+// ClipView — vue non destructive d'une animation source.
 // Un fichier .sclip décrit une découpe/boucle/vitesse d'un clip importé sans
 // jamais dupliquer ses clés : plusieurs vues (Idle, Walk, RunStart…) partagent
 // la même AnimationClip source.
@@ -28,7 +28,7 @@ class AnimationClip;
 class ClipNode;
 class Rig;
 
-// Diagnostic structuré d'un asset d'authoring (PLAN_ANIMATION.md §12.3) :
+// Diagnostic structuré d'un asset d'authoring :
 // code stable pour l'outillage, chemin JSON pour pointer le champ fautif,
 // message lisible pour l'humain/LLM.
 struct AssetDiagnostic {

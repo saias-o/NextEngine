@@ -18,11 +18,12 @@ void AnimStateMachine::transitionTo(const std::string& stateName, float crossfad
     if (it != states_.end()) {
         if (currentState_ == it->second.get()) return;
 
-        previousState_ = currentState_;
-        currentState_ = it->second.get();
-        
         crossfadeDuration_ = std::max(0.0f, crossfadeDuration);
         crossfadeTime_ = 0.0f;
+        // Sans crossfade, la bascule est instantanée : aucun état précédent à
+        // évaluer, et les transitions restent immédiatement réévaluables.
+        previousState_ = crossfadeDuration_ > 0.0f ? currentState_ : nullptr;
+        currentState_ = it->second.get();
     }
 }
 
@@ -39,13 +40,22 @@ void AnimStateMachine::update(float deltaTime) {
     }
     
     if (currentState_) {
-        // Evaluate automatic transitions
-        if (blackboard_ && previousState_ == nullptr) { // Only evaluate if not currently transitioning
+        // Evaluate automatic transitions (never during a crossfade).
+        if (previousState_ == nullptr) {
+            const float phase = currentState_->normalizedTime();
             for (const auto& trans : currentState_->transitions()) {
-                if (trans.evaluate(blackboard_)) {
-                    transitionTo(trans.targetState, trans.crossfadeDuration);
-                    break; // Execute only the first valid transition
+                if (trans.exitTime >= 0.0f && (phase < 0.0f || phase < trans.exitTime))
+                    continue;
+                if (!trans.evaluate(blackboard_)) continue;
+
+                if (blackboard_) {
+                    for (const auto& cond : trans.conditions)
+                        if (cond.isTrigger) blackboard_->resetTrigger(cond.paramHash);
                 }
+                transitionTo(trans.targetState, trans.crossfadeDuration);
+                if (trans.syncPhase && currentState_ && currentState_->node() && phase >= 0.0f)
+                    currentState_->node()->seekNormalized(phase);
+                break;  // Execute only the first valid transition
             }
         }
 

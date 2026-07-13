@@ -4,10 +4,12 @@
 #include "editor/EditorEnums.hpp"
 #include "editor/SceneDocument.hpp"
 #include "editor/ThumbnailCache.hpp"
+#include "scene/animation/AnimationSequence.hpp"
 
 #include <any>
 #include <cstddef>
 #include <future>
+#include <memory>
 #include <string>
 #include <vector>
 #include <glm/glm.hpp>
@@ -119,9 +121,14 @@ private:
     bool animViewLoop_ = true;
     float animViewSpeed_ = 1.0f;
     std::string animStatus_;
-    std::vector<std::string> animAssetFiles_;  // .sclip/.sgraph du projet (relatifs)
+    std::vector<std::string> animAssetFiles_;  // .sclip/.sgraph/.sseq du projet (relatifs)
     double animAssetScanTime_ = -1.0;
     uint64_t animAppliedGraphId_ = 0;  // AssetID du .sgraph appliqué (0 = aucun)
+
+    // Séquence en preview : le player survit aux frames, l'Animator lié porte
+    // le nœud de piste tant que la lecture est active.
+    std::unique_ptr<SequencePlayer> animSequencePlayer_;
+    std::string animSequencePath_;
 
     Node* selectedNode_ = nullptr;
 

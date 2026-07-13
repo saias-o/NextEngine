@@ -109,7 +109,7 @@ void testLinearInterpolation() {
 
 // Golden poses from the versioned glTF fixture: a two-joint skin whose single
 // animation exercises LINEAR, STEP and CUBICSPLINE channels. The same file must
-// produce the same poses on desktop and web (Étape 0 exit criterion).
+// produce the same poses on desktop and web.
 void testGltfFixturePoses() {
     saida::GltfAnimationData data;
     std::string error;
@@ -397,7 +397,7 @@ void testRetargetProfile() {
     track->values = {{0, 0, 0}, {0, 1, 0}};
     clip.addTrack("mixamorig:Hips", std::move(track));
 
-    // L'auto-map devient un profil éditable (plan §8.1).
+    // L'auto-map devient un profil éditable.
     auto profile = saida::RetargetProfile::fromAutoMap(rig, clip);
     assert(profile.entries.size() == 1);
     assert(profile.entries[0].first == "Hips");

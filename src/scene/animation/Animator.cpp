@@ -7,6 +7,9 @@
 #include "core/Log.hpp"
 #include "core/Profiler.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 namespace saida {
 
 namespace {
@@ -151,16 +154,102 @@ ClipNode* Animator::activeClipNode() const {
     return nullptr;
 }
 
+void Animator::setRetargetProfile(const RetargetProfile& profile) {
+    retarget_ = profile.toRetargetMap();
+    retargetCorrections_ =
+        rig_ ? profile.compileCorrections(*rig_) : RetargetCorrections{};
+}
+
+glm::vec3 Animator::consumeRootMotion() {
+    const glm::vec3 delta = pendingRootMotion_;
+    pendingRootMotion_ = glm::vec3(0.0f);
+    return delta;
+}
+
+void Animator::setPoseRate(float hz) {
+    poseRate_ = std::max(0.0f, hz);
+    poseAccumulator_ = 0.0f;
+    sampledPosesPrimed_ = false;
+}
+
+// Le mode peut changer après la création des états : la configuration du clip
+// actif est réalignée à chaque tick (setter trivial).
+void Animator::refreshRootMotionExtraction() {
+    ClipNode* clip = activeClipNode();
+    if (!clip) return;
+    int32_t rootBone = -1;
+    if (rootMotionMode_ != RootMotionMode::Ignore) {
+        for (size_t i = 0; i < rig_->boneCount(); ++i) {
+            if (rig_->bones()[i].parentIndex < 0) {
+                rootBone = int32_t(i);
+                break;
+            }
+        }
+    }
+    clip->setRootMotionBone(rootBone);
+}
+
+void Animator::dispatchClipEvents() {
+    ClipNode* clip = activeClipNode();
+    if (!clip) return;
+    for (uint32_t index : clip->firedEvents())
+        animationEvent.emit(clip->events()[index].name);
+    if (rootMotionMode_ != RootMotionMode::Ignore)
+        pendingRootMotion_ += clip->takeRootMotionDelta();
+}
+
+// Control à chaque tick, pose à fréquence réduite : entre deux échantillons,
+// la sortie interpole les deux dernières poses évaluées.
+void Animator::samplePose(float dt) {
+    const float interval = poseRate_ > 0.0f ? 1.0f / poseRate_ : 0.0f;
+    if (interval <= 0.0f) {
+        rootNode_->evaluate(bindPose_, currentLocalPose_);
+        retargetCorrections_.apply(currentLocalPose_);
+        return;
+    }
+
+    poseAccumulator_ += dt;
+    if (!sampledPosesPrimed_) {
+        rootNode_->evaluate(bindPose_, lastSampledPose_);
+        previousSampledPose_ = lastSampledPose_;
+        sampledPosesPrimed_ = true;
+        poseAccumulator_ = 0.0f;
+    } else if (poseAccumulator_ >= interval) {
+        std::swap(previousSampledPose_, lastSampledPose_);
+        rootNode_->evaluate(bindPose_, lastSampledPose_);
+        poseAccumulator_ = std::fmod(poseAccumulator_, interval);
+    }
+
+    const float alpha = std::clamp(poseAccumulator_ / interval, 0.0f, 1.0f);
+    currentLocalPose_.resize(bindPose_.localTransforms.size());
+    for (size_t i = 0; i < currentLocalPose_.localTransforms.size(); ++i) {
+        const Transform& a = previousSampledPose_.localTransforms[i];
+        const Transform& b = lastSampledPose_.localTransforms[i];
+        Transform& out = currentLocalPose_.localTransforms[i];
+        out.position = glm::mix(a.position, b.position, alpha);
+        out.rotation = glm::slerp(a.rotation, b.rotation, alpha);
+        out.scale = glm::mix(a.scale, b.scale, alpha);
+    }
+    retargetCorrections_.apply(currentLocalPose_);
+}
+
 void Animator::onUpdate(float dt) {
     SAIDA_PROFILE_SCOPE("Animation/AnimatorUpdate");
     SAIDA_PROFILE_COUNTER_ADD("Animation/Animators", 1);
     if (!rig_) return;
 
     if (rootNode_) {
+        refreshRootMotionExtraction();
         rootNode_->update(dt);
-        rootNode_->evaluate(bindPose_, currentLocalPose_);
+        dispatchClipEvents();
+        samplePose(dt);
     } else {
         currentLocalPose_ = bindPose_;  // no graph → rest pose
+    }
+
+    if (rootMotionMode_ == RootMotionMode::ApplyToNode && node()) {
+        Transform& transform = node()->transform();
+        transform.position += transform.rotation * consumeRootMotion();
     }
 
     // GlobalPose in object space (identity base): the renderer applies the entity

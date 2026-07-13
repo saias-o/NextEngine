@@ -22,6 +22,8 @@ struct AnimCondition {
     uint32_t paramHash;
     ConditionOp op;
     float value;
+    // Les triggers sont remis à zéro quand la transition est prise.
+    bool isTrigger = false;
 
     bool evaluate(const AnimBlackboard* blackboard) const {
         if (!blackboard) return false;
@@ -42,8 +44,15 @@ struct AnimTransition {
     std::string targetState;
     std::vector<AnimCondition> conditions;
     float crossfadeDuration = 0.0f;
+    // Phase normalisée minimale de l'état courant avant de pouvoir sortir
+    // (< 0 = pas de contrainte). Une transition sans condition mais avec un
+    // exit time est le retour automatique d'un one-shot.
+    float exitTime = -1.0f;
+    // Démarre l'état cible à la phase de l'état source (marche/course).
+    bool syncPhase = false;
 
     bool evaluate(const AnimBlackboard* blackboard) const {
+        if (conditions.empty()) return exitTime >= 0.0f;
         for (const auto& cond : conditions) {
             if (!cond.evaluate(blackboard)) return false;
         }
@@ -75,6 +84,7 @@ public:
 
     const std::string& name() const { return name_; }
     AnimNode* node() const { return node_.get(); }
+    float normalizedTime() const { return node_ ? node_->normalizedTime() : -1.0f; }
 
     void addTransition(AnimTransition transition) {
         transitions_.push_back(std::move(transition));
@@ -96,7 +106,7 @@ public:
     void addState(std::unique_ptr<AnimState> state);
     void transitionTo(const std::string& stateName, float crossfadeDuration = 0.0f);
 
-    void setBlackboard(const AnimBlackboard* blackboard) { blackboard_ = blackboard; }
+    void setBlackboard(AnimBlackboard* blackboard) { blackboard_ = blackboard; }
 
     AnimState* currentState() const { return currentState_; }
 
@@ -105,7 +115,7 @@ public:
 
 private:
     std::unordered_map<std::string, std::unique_ptr<AnimState>> states_;
-    const AnimBlackboard* blackboard_ = nullptr;
+    AnimBlackboard* blackboard_ = nullptr;
     
     AnimState* currentState_ = nullptr;
     AnimState* previousState_ = nullptr;

@@ -1,4 +1,6 @@
 #include "scene/animation/ClipNode.hpp"
+
+#include <algorithm>
 #include <cmath>
 
 namespace saida {
@@ -29,15 +31,23 @@ float ClipNode::rangeEnd() const {
 void ClipNode::update(float deltaTime) {
     if (!clip_) return;
 
-    // Advance time
-    time_ += deltaTime * speed_;
+    const float previousTime = time_;
+    const float advance = deltaTime * speed_;
+    const bool forward = advance >= 0.0f;
+    time_ += advance;
 
     // Loop or clamp inside the playable window ([0, duration] or the view range).
     const float start = rangeStart_;
     const float end = rangeEnd();
     const float span = end - start;
+    bool wrapped = false;
     if (span > 0.0f) {
         if (looping_) {
+            // fmod ramène `end` exactement sur `start` : atteindre la fin en
+            // avant compte donc comme un tour, atteindre le début en arrière
+            // non. (Événements et root motion supposent au plus un tour par
+            // update — un dt plus long qu'une boucle en perdrait.)
+            wrapped = forward ? time_ >= end : time_ < start;
             time_ = start + std::fmod(time_ - start, span);
             if (time_ < start) {
                 time_ += span;
@@ -49,6 +59,81 @@ void ClipNode::update(float deltaTime) {
     } else {
         time_ = start;
     }
+
+    firedEvents_.clear();
+    if (!events_.empty()) {
+        if (!wrapped) {
+            collectCrossings(previousTime, time_);
+        } else if (forward) {
+            collectCrossings(previousTime, end);
+            collectCrossings(start, time_);
+        } else {
+            collectCrossings(previousTime, start);
+            collectCrossings(end, time_);
+        }
+    }
+
+    if (rootMotionBone_ >= 0) {
+        if (!wrapped) {
+            rootMotionDelta_ += rootTranslationAt(time_) - rootTranslationAt(previousTime);
+        } else if (forward) {
+            rootMotionDelta_ += (rootTranslationAt(end) - rootTranslationAt(previousTime)) +
+                                (rootTranslationAt(time_) - rootTranslationAt(start));
+        } else {
+            rootMotionDelta_ += (rootTranslationAt(start) - rootTranslationAt(previousTime)) +
+                                (rootTranslationAt(time_) - rootTranslationAt(end));
+        }
+    }
+}
+
+// Événements franchis entre `from` et `to` : intervalle ]from, to] en avant,
+// [to, from[ en arrière.
+void ClipNode::collectCrossings(float from, float to) {
+    if (from == to) return;
+    const bool forward = to > from;
+    for (uint32_t i = 0; i < events_.size(); ++i) {
+        const float t = events_[i].time;
+        const bool crossed = forward ? (t > from && t <= to) : (t >= to && t < from);
+        if (crossed) firedEvents_.push_back(i);
+    }
+}
+
+glm::vec3 ClipNode::rootTranslationAt(float time) const {
+    Transform transform;
+    if (rootMotionBone_ >= 0 && size_t(rootMotionBone_) < boundTracks_.size() &&
+        boundTracks_[size_t(rootMotionBone_)]) {
+        for (const auto& track : *boundTracks_[size_t(rootMotionBone_)])
+            track->evaluate(time, transform);
+    }
+    return transform.position;
+}
+
+void ClipNode::setEvents(std::vector<ClipViewEvent> events) {
+    events_ = std::move(events);
+    std::sort(events_.begin(), events_.end(),
+              [](const ClipViewEvent& a, const ClipViewEvent& b) { return a.time < b.time; });
+}
+
+void ClipNode::setRootMotionBone(int32_t boneIndex) {
+    rootMotionBone_ = boneIndex;
+    rootMotionDelta_ = glm::vec3(0.0f);
+}
+
+glm::vec3 ClipNode::takeRootMotionDelta() {
+    const glm::vec3 delta = rootMotionDelta_;
+    rootMotionDelta_ = glm::vec3(0.0f);
+    return delta;
+}
+
+float ClipNode::normalizedTime() const {
+    const float span = rangeEnd() - rangeStart_;
+    if (span <= 0.0f) return 0.0f;
+    return (time_ - rangeStart_) / span;
+}
+
+void ClipNode::seekNormalized(float phase) {
+    const float span = rangeEnd() - rangeStart_;
+    time_ = rangeStart_ + std::clamp(phase, 0.0f, 1.0f) * std::max(span, 0.0f);
 }
 
 void ClipNode::evaluate(const LocalPose& bindPose, LocalPose& outPose) const {
@@ -62,6 +147,13 @@ void ClipNode::evaluate(const LocalPose& bindPose, LocalPose& outPose) const {
                 track->evaluate(time_, outPose.localTransforms[i]);
             }
         }
+    }
+
+    // Le déplacement extrait est consommé par le gameplay : la pose garde le
+    // root à sa translation de repos pour ne pas l'appliquer deux fois.
+    if (rootMotionBone_ >= 0 && size_t(rootMotionBone_) < outPose.localTransforms.size()) {
+        outPose.localTransforms[size_t(rootMotionBone_)].position =
+            bindPose.localTransforms[size_t(rootMotionBone_)].position;
     }
 }
 

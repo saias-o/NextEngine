@@ -429,7 +429,7 @@ cd ../GitHub/saida && npm run engine:sync      # → apps/web/public/engine/dev/
 ## 8. Références
 
 - Contrat d'authoring moteur : [CLAUDE.md](CLAUDE.md) (« Comment coder un jeu »)
-- Architecture animation : [PLAN_ANIMATION.md](PLAN_ANIMATION.md)
+- Architecture animation : [CLAUDE.md](CLAUDE.md) (Étape 10 — système livré)
 - Architecture plateforme : `GitHub/saida/docs/architecture.md`
 - Runtime web dans la plateforme : `GitHub/saida/docs/engine-web-runtime.md`
 - Audit UI moteur (RmlUi, distinct) : [AUDIT_UI_WEB_V1.md](AUDIT_UI_WEB_V1.md)

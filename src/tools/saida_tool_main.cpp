@@ -8,6 +8,8 @@
 #include "scene/GLTFLoader.hpp"
 #include "scene/Scene.hpp"
 #include "scene/animation/AnimGraphAsset.hpp"
+#include "scene/animation/AnimationCache.hpp"
+#include "scene/animation/AnimationSequence.hpp"
 #include "scene/animation/AnimationClip.hpp"
 #include "scene/animation/ClipView.hpp"
 #include "scene/animation/Rig.hpp"
@@ -49,8 +51,10 @@ int usage(std::ostream& out) {
            "  saida_tool validate-scenario <scenario.json> [--pretty]\n"
            "  saida_tool apply-ops <scene.json> <ops.json> [--out <file>] [--skip-invalid]\n"
            "  saida_tool inspect-anim <file.gltf|.glb|.bvh> [--pretty]\n"
+           "  saida_tool cook-anim <file.gltf|.glb> [--clip <name>] [--cache <dir>] [--pretty]\n"
            "  saida_tool validate-clipview <view.sclip> [--root <dir>] [--pretty]\n"
            "  saida_tool validate-animgraph <graph.sgraph> [--root <dir>] [--pretty]\n"
+           "  saida_tool validate-sequence <sequence.sseq> [--root <dir>] [--pretty]\n"
            "  saida_tool help\n"
            "\n"
            "Commands:\n"
@@ -81,6 +85,10 @@ int usage(std::ostream& out) {
            "  inspect-anim      Load a glTF/GLB/BVH animation file headless and print\n"
            "                    its rigs (bone names) and clips (name, sub-asset key,\n"
            "                    duration, animated bone count) as JSON.\n"
+           "  cook-anim         Compile clips to the compact cooked format and print\n"
+           "                    the compression report (keys, bytes, max errors) as\n"
+           "                    JSON. --cache <dir> also writes/reuses .sanimc files.\n"
+           "                    exit 0 if every clip stays within tolerance.\n"
            "  validate-clipview Parse a .sclip non-destructive clip view, resolve its\n"
            "                    'source' sub-asset key against --root (default: the\n"
            "                    .sclip's directory) and validate ranges/events against\n"
@@ -89,6 +97,9 @@ int usage(std::ostream& out) {
            "                    consistency (states, clip aliases, parameters,\n"
            "                    reachability) and resolve every referenced clip against\n"
            "                    --root. Prints {ok, diagnostics}; exit 0/1.\n"
+           "  validate-sequence Parse a .sseq multi-track sequence, check clip\n"
+           "                    placements/blends/events and resolve every referenced\n"
+           "                    clip against --root. Prints {ok, diagnostics}; exit 0/1.\n"
            "\n"
            "Files may be '-' for stdin. Exit codes: 0 ok, 1 invalid input, 2 usage/IO.\n";
     return kExitUsage;
@@ -502,7 +513,7 @@ int cmdApplyOps(const std::vector<std::string>& args) {
 
 } // namespace
 
-// --- Animation authoring (PLAN_ANIMATION.md Étape 1) ------------------------
+// --- Animation authoring ----------------------------------------------------
 
 bool hasExtension(const std::string& path, const char* ext) {
     std::string e = std::filesystem::path(path).extension().string();
@@ -735,6 +746,167 @@ int cmdValidateAnimGraph(const std::vector<std::string>& args) {
     return saida::hasErrors(diags) ? kExitInvalid : kExitOk;
 }
 
+int cmdValidateSequence(const std::vector<std::string>& args) {
+    std::string path;
+    std::string root;
+    bool pretty = false;
+    for (size_t i = 0; i < args.size(); ++i) {
+        const std::string& a = args[i];
+        if (a == "--pretty") {
+            pretty = true;
+        } else if (a == "--root") {
+            if (i + 1 >= args.size()) {
+                std::cerr << "validate-sequence: --root needs a directory\n";
+                return kExitUsage;
+            }
+            root = args[++i];
+        } else if (!a.empty() && a[0] == '-' && a != "-") {
+            std::cerr << "validate-sequence: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (path.empty()) {
+            path = a;
+        } else {
+            std::cerr << "validate-sequence: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (path.empty()) {
+        std::cerr << "validate-sequence: missing <sequence.sseq>\n";
+        return kExitUsage;
+    }
+    if (root.empty()) root = std::filesystem::path(path).parent_path().string();
+
+    auto parsed = saida::AnimationSequence::loadFile(path);
+    std::vector<saida::AssetDiagnostic> diags = std::move(parsed.diagnostics);
+
+    if (parsed.ok) {
+        auto more = parsed.sequence.validate();
+        diags.insert(diags.end(), more.begin(), more.end());
+
+        // Chaque clip référencé doit exister dans sa source, chargée une fois.
+        std::unordered_map<std::string, saida::GltfAnimationData> cache;
+        for (const auto& track : parsed.sequence.animationTracks) {
+            for (const auto& entry : track.clips) {
+                const size_t hash = entry.clip.rfind('#');
+                const std::string relFile =
+                    hash == std::string::npos ? entry.clip : entry.clip.substr(0, hash);
+                const std::string clipName =
+                    hash == std::string::npos ? "" : entry.clip.substr(hash + 1);
+                const std::string sourcePath =
+                    (std::filesystem::path(root) / relFile).string();
+
+                auto it = cache.find(sourcePath);
+                if (it == cache.end()) {
+                    saida::GltfAnimationData data;
+                    std::string error;
+                    if (!loadAnimationFile(sourcePath, data, error)) {
+                        diags.push_back({"sequence.clip.unresolved",
+                                         saida::AssetDiagnostic::Severity::Error, "/tracks",
+                                         error});
+                        continue;
+                    }
+                    it = cache.emplace(sourcePath, std::move(data)).first;
+                }
+                bool found = false;
+                for (const auto& name : it->second.clipNames) {
+                    if (clipName.empty() || name == clipName) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    diags.push_back({"sequence.clip.clip_missing",
+                                     saida::AssetDiagnostic::Severity::Error, "/tracks",
+                                     "'" + relFile + "' has no clip named '" + clipName + "'"});
+            }
+        }
+    }
+
+    json report = {{"ok", !saida::hasErrors(diags)}, {"diagnostics", json::array()}};
+    for (const auto& d : diags) report["diagnostics"].push_back(d.toJson());
+    std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
+    return saida::hasErrors(diags) ? kExitInvalid : kExitOk;
+}
+
+int cmdCookAnim(const std::vector<std::string>& args) {
+    std::string path;
+    std::string clipName;
+    std::string cacheDir;
+    bool pretty = false;
+    for (size_t i = 0; i < args.size(); ++i) {
+        const std::string& a = args[i];
+        if (a == "--pretty") {
+            pretty = true;
+        } else if (a == "--clip" || a == "--cache") {
+            if (i + 1 >= args.size()) {
+                std::cerr << "cook-anim: " << a << " needs a value\n";
+                return kExitUsage;
+            }
+            (a == "--clip" ? clipName : cacheDir) = args[++i];
+        } else if (!a.empty() && a[0] == '-' && a != "-") {
+            std::cerr << "cook-anim: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (path.empty()) {
+            path = a;
+        } else {
+            std::cerr << "cook-anim: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (path.empty()) {
+        std::cerr << "cook-anim: missing <file.gltf|.glb>\n";
+        return kExitUsage;
+    }
+
+    saida::GltfAnimationData data;
+    std::string error;
+    if (!loadAnimationFile(path, data, error)) {
+        std::cerr << "cook-anim: " << error << "\n";
+        return kExitInvalid;
+    }
+    if (data.rigs.empty()) {
+        std::cerr << "cook-anim: '" << path << "' has no rig to cook against\n";
+        return kExitInvalid;
+    }
+
+    const saida::CookSettings settings;
+    json cooked = json::array();
+    bool allWithinTolerance = true;
+    for (size_t i = 0; i < data.clips.size(); ++i) {
+        if (!clipName.empty() && data.clipNames[i] != clipName) continue;
+        const saida::AnimationClip& clip = *data.clips[i];
+        const saida::Rig& rig = *data.rigs[0];
+
+        saida::CookReport report;
+        json entry;
+        if (cacheDir.empty()) {
+            saida::AnimationCooker::cook(clip, rig, settings, &report);
+        } else {
+            saida::AnimationCache cache(cacheDir);
+            const auto result = cache.getOrCook(clip, rig, settings);
+            if (result.fromCache)
+                saida::AnimationCooker::cook(clip, rig, settings, &report);
+            entry["cacheFile"] =
+                cache.cachePath(saida::AnimationCooker::contentHash(clip, rig, settings));
+            entry["fromCache"] = result.fromCache;
+        }
+        entry.update(report.toJson());
+        entry["withinTolerance"] = report.withinTolerance(settings);
+        allWithinTolerance = allWithinTolerance && report.withinTolerance(settings);
+        cooked.push_back(std::move(entry));
+    }
+    if (cooked.empty()) {
+        std::cerr << "cook-anim: no clip"
+                  << (clipName.empty() ? "" : " named '" + clipName + "'") << " in '"
+                  << path << "'\n";
+        return kExitInvalid;
+    }
+
+    const json report = {{"file", path}, {"ok", allWithinTolerance}, {"clips", cooked}};
+    std::cout << (pretty ? report.dump(2) : report.dump()) << "\n";
+    return allWithinTolerance ? kExitOk : kExitInvalid;
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return usage(std::cerr);
@@ -767,11 +939,17 @@ int main(int argc, char** argv) {
     if (command == "inspect-anim") {
         return cmdInspectAnim(rest);
     }
+    if (command == "cook-anim") {
+        return cmdCookAnim(rest);
+    }
     if (command == "validate-clipview") {
         return cmdValidateClipView(rest);
     }
     if (command == "validate-animgraph") {
         return cmdValidateAnimGraph(rest);
+    }
+    if (command == "validate-sequence") {
+        return cmdValidateSequence(rest);
     }
 
     std::cerr << "saida_tool: unknown command '" << command << "'\n\n";

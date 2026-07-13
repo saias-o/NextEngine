@@ -27,6 +27,7 @@ private:
                                   ResourceManager* resources, Project* project);
     static void drawGraphSection(EditorUI* editor, Animator* animator,
                                  ResourceManager* resources);
+    static void drawSequenceSection(EditorUI* editor);
 };
 
 } // namespace saida

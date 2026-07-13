@@ -49,9 +49,13 @@ const char* paramTypeName(AnimParamType t) {
         case AnimParamType::Float: return "float";
         case AnimParamType::Int: return "int";
         case AnimParamType::Bool: return "bool";
+        case AnimParamType::Trigger: return "trigger";
     }
     return "float";
 }
+
+// Seuil implicite des conditions sur trigger/bool ({param} abrégé).
+constexpr float kBooleanConditionThreshold = 0.5f;
 
 } // namespace
 
@@ -64,6 +68,12 @@ const AnimGraphClipRef* AnimGraphAsset::findClip(const std::string& alias) const
 const AnimGraphState* AnimGraphAsset::findState(const std::string& stateName) const {
     for (const auto& s : states)
         if (s.name == stateName) return &s;
+    return nullptr;
+}
+
+const AnimGraphParam* AnimGraphAsset::findParam(const std::string& paramName) const {
+    for (const auto& p : parameters)
+        if (p.name == paramName) return &p;
     return nullptr;
 }
 
@@ -112,11 +122,8 @@ AnimGraphParseResult AnimGraphAsset::parse(const nlohmann::json& j) {
                 if (type == "float") param.type = AnimParamType::Float;
                 else if (type == "int") param.type = AnimParamType::Int;
                 else if (type == "bool") param.type = AnimParamType::Bool;
-                else if (type == "trigger") {
-                    diags.push_back(error("animgraph.parameter.trigger_unsupported", path + "/type",
-                                          "'trigger' is reserved and not supported by schema 1"));
-                    continue;
-                } else {
+                else if (type == "trigger") param.type = AnimParamType::Trigger;
+                else {
                     diags.push_back(error("animgraph.parameter.unknown_type", path + "/type",
                                           "unknown parameter type '" + type + "'"));
                     continue;
@@ -177,6 +184,14 @@ AnimGraphParseResult AnimGraphAsset::parse(const nlohmann::json& j) {
                 }
                 state.loop = s["loop"].get<bool>();
             }
+            if (s.contains("speed")) {
+                if (!finiteNumber(s["speed"])) {
+                    diags.push_back(error("animgraph.state.bad_speed", path + "/speed",
+                                          "'speed' must be a finite number"));
+                    continue;
+                }
+                state.speed = s["speed"].get<float>();
+            }
             g.states.push_back(std::move(state));
         }
     }
@@ -215,6 +230,25 @@ AnimGraphParseResult AnimGraphAsset::parse(const nlohmann::json& j) {
                     }
                     tr.crossfade = t["crossfade"].get<float>();
                 }
+                if (t.contains("exitTime")) {
+                    if (!finiteNumber(t["exitTime"]) || t["exitTime"].get<float>() < 0.0f ||
+                        t["exitTime"].get<float>() > 1.0f) {
+                        diags.push_back(error("animgraph.transition.bad_exit_time",
+                                              path + "/exitTime",
+                                              "'exitTime' must be a normalized phase in [0, 1]"));
+                        continue;
+                    }
+                    tr.exitTime = t["exitTime"].get<float>();
+                }
+                if (t.contains("syncPhase")) {
+                    if (!t["syncPhase"].is_boolean()) {
+                        diags.push_back(error("animgraph.transition.bad_sync_phase",
+                                              path + "/syncPhase",
+                                              "'syncPhase' must be a boolean"));
+                        continue;
+                    }
+                    tr.syncPhase = t["syncPhase"].get<bool>();
+                }
                 bool badCondition = false;
                 if (t.contains("when")) {
                     if (!t["when"].is_array()) {
@@ -225,15 +259,27 @@ AnimGraphParseResult AnimGraphAsset::parse(const nlohmann::json& j) {
                     size_t c = 0;
                     for (const json& w : t["when"]) {
                         const std::string cpath = path + "/when/" + std::to_string(c++);
-                        if (!w.is_object() || !w.contains("param") || !w["param"].is_string() ||
-                            !w.contains("op") || !w["op"].is_string() || !w.contains("value")) {
+                        if (!w.is_object() || !w.contains("param") || !w["param"].is_string()) {
                             diags.push_back(error("animgraph.condition.malformed", cpath,
-                                                  "condition must be {param, op, value}"));
+                                                  "condition must be {param, op?, value?}"));
                             badCondition = true;
                             continue;
                         }
                         AnimGraphCondition cond;
                         cond.param = w["param"].get<std::string>();
+                        // Forme abrégée {param} : « le trigger/booléen est armé ».
+                        if (!w.contains("op") && !w.contains("value")) {
+                            cond.op = ">";
+                            cond.value = kBooleanConditionThreshold;
+                            tr.when.push_back(std::move(cond));
+                            continue;
+                        }
+                        if (!w.contains("op") || !w["op"].is_string() || !w.contains("value")) {
+                            diags.push_back(error("animgraph.condition.malformed", cpath,
+                                                  "condition must be {param, op?, value?}"));
+                            badCondition = true;
+                            continue;
+                        }
                         cond.op = w["op"].get<std::string>();
                         if (!validOp(cond.op)) {
                             diags.push_back(error("animgraph.condition.bad_op", cpath + "/op",
@@ -294,8 +340,11 @@ nlohmann::json AnimGraphAsset::toJson() const {
         j["clips"] = obj;
     }
     json statesArr = json::array();
-    for (const auto& s : states)
-        statesArr.push_back({{"name", s.name}, {"play", s.play}, {"loop", s.loop}});
+    for (const auto& s : states) {
+        json sj = {{"name", s.name}, {"play", s.play}, {"loop", s.loop}};
+        if (s.speed != 1.0f) sj["speed"] = s.speed;
+        statesArr.push_back(std::move(sj));
+    }
     j["states"] = statesArr;
 
     if (!transitions.empty()) {
@@ -303,6 +352,8 @@ nlohmann::json AnimGraphAsset::toJson() const {
         for (const auto& t : transitions) {
             json tj = {{"from", t.from}, {"to", t.to}};
             if (t.crossfade != 0.0f) tj["crossfade"] = t.crossfade;
+            if (t.exitTime >= 0.0f) tj["exitTime"] = t.exitTime;
+            if (t.syncPhase) tj["syncPhase"] = t.syncPhase;
             if (!t.when.empty()) {
                 json when = json::array();
                 for (const auto& w : t.when)
@@ -378,7 +429,7 @@ std::vector<AssetDiagnostic> AnimGraphAsset::validate() const {
         edges[t.from].push_back(t.to);
     }
 
-    // États inaccessibles depuis initial (warning §12.3).
+    // États inaccessibles depuis initial (warning).
     if (!initial.empty() && stateNames.count(initial)) {
         std::unordered_set<std::string> reached{initial};
         std::deque<std::string> frontier{initial};
@@ -421,6 +472,7 @@ std::unique_ptr<AnimStateMachine> AnimGraphAsset::build(
         }
         auto node = std::make_unique<ClipNode>(clip, rig);
         node->setLooping(state.loop);
+        node->setPlaybackSpeed(state.speed);
         auto animState = std::make_unique<AnimState>(state.name, std::move(node));
         built[state.name] = animState.get();
         sm->addState(std::move(animState));
@@ -437,8 +489,14 @@ std::unique_ptr<AnimStateMachine> AnimGraphAsset::build(
         AnimTransition trans;
         trans.targetState = t.to;
         trans.crossfadeDuration = t.crossfade;
-        for (const auto& w : t.when)
-            trans.conditions.push_back({hashString(w.param), toConditionOp(w.op), w.value});
+        trans.exitTime = t.exitTime;
+        trans.syncPhase = t.syncPhase;
+        for (const auto& w : t.when) {
+            const AnimGraphParam* param = findParam(w.param);
+            const bool isTrigger = param && param->type == AnimParamType::Trigger;
+            trans.conditions.push_back(
+                {hashString(w.param), toConditionOp(w.op), w.value, isTrigger});
+        }
         it->second->addTransition(std::move(trans));
     }
 

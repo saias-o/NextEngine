@@ -216,7 +216,11 @@ private:
     std::vector<std::unique_ptr<rhi::Buffer>> drawCommandBuffers_;
     std::vector<std::unique_ptr<rhi::Buffer>> countBuffers_;
     static constexpr uint32_t kMaxInstances = 100000;
-    static constexpr uint32_t kMaxBoneMatrices = (4u * 1024u * 1024u) / sizeof(glm::mat4);
+    // Palette de skinning : matrice affine 3x4 par os (3 lignes vec4, 48 octets),
+    // même layout dans les shaders Vulkan et WGSL.
+    static constexpr uint32_t kBoneRowsPerBone = 3;
+    static constexpr uint32_t kBytesPerBone = kBoneRowsPerBone * sizeof(glm::vec4);
+    static constexpr uint32_t kMaxPaletteBones = (4u * 1024u * 1024u) / kBytesPerBone;
     
 #ifdef SAIDA_RHI_WEBGPU
     std::unique_ptr<rhi::ComputePipeline> cullingPipeline_;

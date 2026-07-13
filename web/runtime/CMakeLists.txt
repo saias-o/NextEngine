@@ -78,11 +78,17 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/scene/animation/AnimStateMachine.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimationClip.cpp
     ${SAIDA_ROOT}/src/scene/animation/Animator.cpp
+    ${SAIDA_ROOT}/src/scene/animation/Blend1DNode.cpp
     ${SAIDA_ROOT}/src/scene/animation/ClipNode.cpp
+    ${SAIDA_ROOT}/src/scene/animation/LayerNode.cpp
+    ${SAIDA_ROOT}/src/scene/animation/AnimationProgram.cpp
     ${SAIDA_ROOT}/src/scene/animation/ClipView.cpp
+    ${SAIDA_ROOT}/src/scene/animation/CookedClip.cpp
     ${SAIDA_ROOT}/src/scene/animation/Pose.cpp
     ${SAIDA_ROOT}/src/scene/animation/Retarget.cpp
+    ${SAIDA_ROOT}/src/scene/animation/RetargetProfile.cpp
     ${SAIDA_ROOT}/src/scene/animation/Rig.cpp
+    ${SAIDA_ROOT}/src/scene/animation/RigAsset.cpp
     ${SAIDA_ROOT}/src/rhi/webgpu/BindGroup.cpp
     ${SAIDA_ROOT}/src/rhi/webgpu/Buffer.cpp
     ${SAIDA_ROOT}/src/rhi/webgpu/CommandEncoder.cpp

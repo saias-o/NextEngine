@@ -351,10 +351,17 @@ pas encore le controle attendu pour mixer un jeu complet.
 - les sons spatiaux suivent correctement la camera et leurs emetteurs ;
 - un grand nombre d'effets courts ne provoque pas d'allocations excessives.
 
-## 11. P1 - Systeme d'animation de production
+## 11. P1 - Systeme d'animation de production — TERMINE
 
-Ce chantier est detaille dans `PLAN_ANIMATION.md`. Il reste prioritaire pour les
-jeux 3D et les avatars VR, mais il depend des fondations d'assets et d'API runtime.
+Chantier livre (voir CLAUDE.md, Etape 10) : assets versionnes (.sclip/.sgraph/
+.sretarget/.srig/.sseq) avec diagnostics structures, cooker + cache derive par
+hash, kernel data-oriented sans allocation, palette GPU 3x4 commune
+Vulkan/WGSL, blend spaces, layers/masks/additif, root motion, events, LOD de
+pose, retargeting semantique avec corrections de rest pose, two-bone IK et
+look-at, sequences multipistes deterministes, panneau editeur et outils MCP
+d'authoring LLM. Restes volontairement conditionnes aux mesures : kernels
+SIMD/NEON dedies, pose sharing massif, evaluation GPU de foules, bindings JS
+d'animation.
 
 ### Perimetre minimum attendu
 

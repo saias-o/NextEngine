@@ -1,23 +1,30 @@
 #pragma once
 
-// AnimGraphAsset — l'asset persistant de logique de lecture (.sgraph, JSON,
-// PLAN_ANIMATION.md §4.1/§7). L'éditeur visuel et les outils LLM manipulent ce
-// document ; le runtime n'évalue jamais le JSON — build() le compile en
-// AnimStateMachine. Le DSL texte d'AnimGraphParser reste un chemin legacy.
+// AnimGraphAsset — l'asset persistant de logique de lecture (.sgraph, JSON).
+// L'éditeur visuel et les outils LLM manipulent ce document ; le runtime
+// n'évalue jamais le JSON — build() le compile en AnimStateMachine et
+// AnimationProgram::compile() en programme data-oriented. Le DSL texte
+// d'AnimGraphParser reste un chemin legacy.
 //
 // Schéma JSON (schema == kAnimGraphSchema) :
 //   {
-//     "schema": 1,
+//     "schema": 2,
 //     "name": "Locomotion",
-//     "parameters": [ { "name": "speed", "type": "float", "default": 0 } ],
+//     "parameters": [ { "name": "speed", "type": "float", "default": 0 },
+//                     { "name": "jump", "type": "trigger" } ],
 //     "clips": { "idle": "models/hero.glb#Idle" },   // alias → clé de sous-asset
-//     "states": [ { "name": "Idle", "play": "idle", "loop": true } ],
+//     "states": [ { "name": "Idle", "play": "idle", "loop": true, "speed": 1.0 } ],
 //     "initial": "Idle",
 //     "transitions": [
-//       { "from": "Idle", "to": "Walk", "crossfade": 0.2,
-//         "when": [ { "param": "speed", "op": ">", "value": 0.1 } ] }
+//       { "from": "Idle", "to": "Walk", "crossfade": 0.2, "syncPhase": true,
+//         "when": [ { "param": "speed", "op": ">", "value": 0.1 } ] },
+//       { "from": "Attack", "to": "Idle", "exitTime": 0.9 }   // one-shot
 //     ]
 //   }
+//
+// Le schéma 1 reste lisible tel quel : le schéma 2 n'ajoute que des champs
+// optionnels (type "trigger", speed d'état, exitTime/syncPhase de transition,
+// condition {param} abrégée pour les triggers).
 
 #include "scene/animation/ClipView.hpp"  // AssetDiagnostic
 
@@ -34,11 +41,11 @@ class AnimationClip;
 class AnimStateMachine;
 class Rig;
 
-constexpr int kAnimGraphSchema = 1;
+constexpr int kAnimGraphSchema = 2;
 
-// Types de paramètres du schéma 1. "trigger" (plan §7.3) est réservé : le
-// runtime ne le supporte pas encore, le parse le refuse explicitement.
-enum class AnimParamType { Float, Int, Bool };
+// Un trigger vaut 1 quand il est armé et repasse à 0 quand une transition qui
+// le consomme est prise.
+enum class AnimParamType { Float, Int, Bool, Trigger };
 
 struct AnimGraphParam {
     std::string name;
@@ -55,6 +62,7 @@ struct AnimGraphState {
     std::string name;
     std::string play;  // alias de clip
     bool loop = true;
+    float speed = 1.0f;
 };
 
 struct AnimGraphCondition {
@@ -67,6 +75,8 @@ struct AnimGraphTransition {
     std::string from;
     std::string to;
     float crossfade = 0.0f;
+    float exitTime = -1.0f;  // phase normalisée minimale de sortie (< 0 = libre)
+    bool syncPhase = false;  // l'état cible démarre à la phase de l'état source
     std::vector<AnimGraphCondition> when;  // conditions ET
 };
 
@@ -100,6 +110,7 @@ public:
 
     const AnimGraphClipRef* findClip(const std::string& alias) const;
     const AnimGraphState* findState(const std::string& stateName) const;
+    const AnimGraphParam* findParam(const std::string& paramName) const;
 };
 
 struct AnimGraphParseResult {

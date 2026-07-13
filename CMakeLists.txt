@@ -356,13 +356,22 @@ add_library(saida_engine STATIC
     src/scene/animation/Rig.cpp
     src/scene/animation/ClipView.cpp
     src/scene/animation/AnimGraphAsset.cpp
+    src/scene/animation/ProceduralNodes.cpp
     src/scene/animation/RetargetProfile.cpp
+    src/scene/animation/RigAsset.cpp
     src/scene/animation/ClipNode.cpp
+    src/scene/animation/Blend1DNode.cpp
     src/scene/animation/BlendNode.cpp
+    src/scene/animation/LayerNode.cpp
     src/scene/animation/AnimStateMachine.cpp
     src/scene/animation/Animator.cpp
     src/scene/animation/AnimBlackboard.cpp
     src/scene/animation/AnimGraphParser.cpp
+    src/scene/animation/AnimationCache.cpp
+    src/scene/animation/AnimationCooker.cpp
+    src/scene/animation/AnimationProgram.cpp
+    src/scene/animation/AnimationSequence.cpp
+    src/scene/animation/CookedClip.cpp
     src/scene/animation/PlayableDirector.cpp
     src/scene/animation/Retarget.cpp
     src/ui/UIInteractionSystem.cpp
@@ -596,6 +605,40 @@ if (BUILD_TESTING)
         SAIDA_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures")
     add_test(NAME saida_animation_core_tests COMMAND $<TARGET_FILE:saida_animation_core_tests>)
 
+    add_executable(saida_animation_playback_tests tests/AnimationPlaybackTests.cpp)
+    saida_test_target(saida_animation_playback_tests)
+    target_link_libraries(saida_animation_playback_tests PRIVATE saida_engine)
+    target_compile_options(saida_animation_playback_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_animation_playback_tests COMMAND $<TARGET_FILE:saida_animation_playback_tests>)
+
+    add_executable(saida_animation_retarget_tests tests/AnimationRetargetTests.cpp)
+    saida_test_target(saida_animation_retarget_tests)
+    target_link_libraries(saida_animation_retarget_tests PRIVATE saida_engine)
+    target_compile_options(saida_animation_retarget_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_animation_retarget_tests COMMAND $<TARGET_FILE:saida_animation_retarget_tests>)
+
+    add_executable(saida_animation_sequence_tests tests/AnimationSequenceTests.cpp)
+    saida_test_target(saida_animation_sequence_tests)
+    target_link_libraries(saida_animation_sequence_tests PRIVATE saida_engine)
+    target_compile_options(saida_animation_sequence_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_animation_sequence_tests COMMAND $<TARGET_FILE:saida_animation_sequence_tests>)
+
+    add_executable(saida_animation_cooker_tests tests/AnimationCookerTests.cpp)
+    saida_test_target(saida_animation_cooker_tests)
+    target_link_libraries(saida_animation_cooker_tests PRIVATE saida_engine)
+    target_compile_options(saida_animation_cooker_tests PRIVATE -Wall -Wextra)
+    target_compile_definitions(saida_animation_cooker_tests PRIVATE
+        SAIDA_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME saida_animation_cooker_tests COMMAND $<TARGET_FILE:saida_animation_cooker_tests>)
+
+    add_executable(saida_animation_instance_tests tests/AnimationInstanceTests.cpp)
+    saida_test_target(saida_animation_instance_tests)
+    target_link_libraries(saida_animation_instance_tests PRIVATE saida_engine)
+    target_compile_options(saida_animation_instance_tests PRIVATE -Wall -Wextra)
+    target_compile_definitions(saida_animation_instance_tests PRIVATE
+        SAIDA_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME saida_animation_instance_tests COMMAND $<TARGET_FILE:saida_animation_instance_tests>)
+
     add_executable(saida_cartoon_water_tests tests/CartoonWaterTests.cpp)
     saida_test_target(saida_cartoon_water_tests)
     target_link_libraries(saida_cartoon_water_tests PRIVATE saida_engine)
@@ -604,7 +647,7 @@ if (BUILD_TESTING)
     target_compile_options(saida_cartoon_water_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_cartoon_water_tests COMMAND $<TARGET_FILE:saida_cartoon_water_tests>)
 
-    # Headless animation benchmark (PLAN_ANIMATION.md §14.4). The ctest entry runs
+    # Headless animation benchmark. The ctest entry runs
     # a tiny workload as a smoke test; run it manually with real sizes to measure.
     add_executable(saida_animation_bench tests/AnimationBench.cpp)
     saida_test_target(saida_animation_bench)
@@ -855,6 +898,18 @@ if (BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/animation/bad_range.sclip
     )
     set_tests_properties(saida_tool_validate_clipview_invalid PROPERTIES WILL_FAIL TRUE)
+
+    add_test(
+        NAME saida_tool_validate_sequence_valid
+        COMMAND $<TARGET_FILE:saida_tool> validate-sequence
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/animation/intro.sseq
+    )
+    add_test(
+        NAME saida_tool_validate_sequence_invalid
+        COMMAND $<TARGET_FILE:saida_tool> validate-sequence
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/animation/bad_sequence.sseq
+    )
+    set_tests_properties(saida_tool_validate_sequence_invalid PROPERTIES WILL_FAIL TRUE)
 
     add_test(
         NAME saida_tool_validate_animgraph_valid

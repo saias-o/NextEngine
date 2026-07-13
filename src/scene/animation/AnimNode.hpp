@@ -16,6 +16,11 @@ public:
     // Evaluates the node without advancing time. Updates outPose.
     // bindPose: The fallback/rest pose of the rig.
     virtual void evaluate(const LocalPose& bindPose, LocalPose& outPose) const = 0;
+
+    // Phase de lecture normalisée [0,1] pour l'exit time et la synchronisation
+    // des transitions ; -1 quand la notion n'a pas de sens pour ce nœud.
+    virtual float normalizedTime() const { return -1.0f; }
+    virtual void seekNormalized(float phase) { (void)phase; }
 };
 
 } // namespace saida

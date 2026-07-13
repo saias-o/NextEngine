@@ -220,6 +220,7 @@ std::unique_ptr<ClipNode> ClipView::instantiate(const AnimationClip& sourceClip,
     node->setLooping(loop);
     node->setPlaybackSpeed(speed);
     node->setTime(effectiveStart());
+    node->setEvents(events);
     return node;
 }
 

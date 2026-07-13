@@ -33,10 +33,7 @@ layout(std140, set = 2, binding = 0) readonly buffer InstanceBuffer {
 };
 #endif
 
-// SSBO for all bone matrices in the scene
-layout(std140, set = 0, binding = 3) readonly buffer BoneBuffer {
-    mat4 boneMatrices[];
-};
+#include "skinning.glsl"
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
@@ -75,18 +72,13 @@ void main() {
     vec3 localTangent = inTangent.xyz;
 
     if (boneOffset >= 0) {
-        mat4 skinMat = 
-            inBoneWeights.x * boneMatrices[boneOffset + inBoneIndices.x] +
-            inBoneWeights.y * boneMatrices[boneOffset + inBoneIndices.y] +
-            inBoneWeights.z * boneMatrices[boneOffset + inBoneIndices.z] +
-            inBoneWeights.w * boneMatrices[boneOffset + inBoneIndices.w];
-
-        localPos = (skinMat * vec4(inPosition, 1.0)).xyz;
-        
+        vec4 row0, row1, row2;
+        blendBoneRows(boneOffset, inBoneIndices, inBoneWeights, row0, row1, row2);
+        localPos = skinPoint(row0, row1, row2, inPosition);
         // Strictly speaking, we should use inverse transpose for normals if scale is non-uniform,
         // but for bones, rotation/translation is the norm.
-        localNormal = mat3(skinMat) * inNormal;
-        localTangent = mat3(skinMat) * inTangent.xyz;
+        localNormal = skinDirection(row0, row1, row2, inNormal);
+        localTangent = skinDirection(row0, row1, row2, inTangent.xyz);
     }
 
     vec4 worldPos = modelMat * vec4(localPos, 1.0);

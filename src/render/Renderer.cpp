@@ -400,7 +400,7 @@ void Renderer::createUniformBuffers() {
     uniformBuffers_.reserve(kMaxFramesInFlight);
     lightingBuffers_.reserve(kMaxFramesInFlight);
     boneMatricesBuffers_.reserve(kMaxFramesInFlight);
-    const uint64_t kBoneBufferSize = uint64_t(kMaxBoneMatrices) * sizeof(glm::mat4);
+    const uint64_t kBoneBufferSize = uint64_t(kMaxPaletteBones) * kBytesPerBone;
     for (int i = 0; i < kMaxFramesInFlight; i++) {
         uniformBuffers_.push_back(std::make_unique<rhi::Buffer>(device_, sizeof(UniformBufferObject),
             rhi::BufferUsage::Uniform, MemoryUsage::HostVisible));
@@ -497,7 +497,7 @@ void Renderer::rebuildGlobalSet(int frame) {
     rhi::BindGroupEntry boneEntry;
     boneEntry.binding = 3;
     boneEntry.buffer = boneMatricesBuffers_[frame].get();
-    boneEntry.range = uint64_t(kMaxBoneMatrices) * sizeof(glm::mat4);
+    boneEntry.range = uint64_t(kMaxPaletteBones) * kBytesPerBone;
 
     rhi::BindGroupEntry giIrradianceEntry;
     giIrradianceEntry.binding = 4;
@@ -780,10 +780,11 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
     };
 
     uint32_t currentBoneCount = 0;
-    glm::mat4* boneData = static_cast<glm::mat4*>(boneMatricesBuffers_[currentFrame_]->mapped());
+    glm::vec4* boneRows = static_cast<glm::vec4*>(boneMatricesBuffers_[currentFrame_]->mapped());
     std::unordered_map<Animator*, int32_t> animatorBoneOffsets;
 
-    // Share one SSBO slice per Animator and reject overflow.
+    // Share one palette slice per Animator and reject overflow. The palette is
+    // affine 3x4: three vec4 rows per bone (the transposed top of the mat4).
     auto boneOffsetFor = [&](MeshNode* node) -> int32_t {
         Animator* animator = getAnimatorInParent(node);
         if (!animator || animator->globalPose().skinningMatrices.empty()) return -1;
@@ -792,17 +793,21 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
         if (found != animatorBoneOffsets.end()) return found->second;
 
         const auto& matrices = animator->globalPose().skinningMatrices;
-        const uint32_t matrixCount = static_cast<uint32_t>(matrices.size());
-        if (matrixCount > kMaxBoneMatrices || currentBoneCount > kMaxBoneMatrices - matrixCount) {
-            Log::warn("Renderer: bone matrix buffer exhausted; rendering one skeleton unskinned this frame.");
+        const uint32_t boneCount = static_cast<uint32_t>(matrices.size());
+        if (boneCount > kMaxPaletteBones || currentBoneCount > kMaxPaletteBones - boneCount) {
+            Log::warn("Renderer: bone palette exhausted; rendering one skeleton unskinned this frame.");
             animatorBoneOffsets.emplace(animator, -1);
             return -1;
         }
 
         const int32_t offset = static_cast<int32_t>(currentBoneCount);
-        std::memcpy(&boneData[currentBoneCount], matrices.data(),
-                    size_t(matrixCount) * sizeof(glm::mat4));
-        currentBoneCount += matrixCount;
+        glm::vec4* rows = boneRows + size_t(currentBoneCount) * kBoneRowsPerBone;
+        for (uint32_t b = 0; b < boneCount; ++b) {
+            const glm::mat4& m = matrices[b];
+            for (uint32_t r = 0; r < kBoneRowsPerBone; ++r)
+                rows[b * kBoneRowsPerBone + r] = glm::vec4(m[0][r], m[1][r], m[2][r], m[3][r]);
+        }
+        currentBoneCount += boneCount;
         animatorBoneOffsets.emplace(animator, offset);
         return offset;
     };
@@ -885,8 +890,11 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
         }
 
         if (currentBoneCount > 0) {
-            boneMatricesBuffers_[currentFrame_]->flush(uint64_t(currentBoneCount) * sizeof(glm::mat4));
+            boneMatricesBuffers_[currentFrame_]->flush(uint64_t(currentBoneCount) * kBytesPerBone);
         }
+        Profiler::instance().setCounter("anim/palette bones", double(currentBoneCount));
+        Profiler::instance().setCounter("anim/palette bytes",
+                                        double(uint64_t(currentBoneCount) * kBytesPerBone));
 
         if (gpuFrameActive_) {
             uploadGpuDrivenDraws();

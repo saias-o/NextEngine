@@ -88,7 +88,7 @@ void drawDiagnostics(const std::vector<AssetDiagnostic>& diagnostics) {
 
 } // namespace
 
-// Scan (mis en cache) des .sclip/.sgraph du projet, chemins projet-relatifs.
+// Scan (mis en cache) des .sclip/.sgraph/.sseq du projet, chemins projet-relatifs.
 void AnimationPanel::refreshAssetList(EditorUI* editor, Project* project) {
     const double now = ImGui::GetTime();
     if (editor->animAssetScanTime_ >= 0.0 && now - editor->animAssetScanTime_ < 2.0) return;
@@ -108,7 +108,7 @@ void AnimationPanel::refreshAssetList(EditorUI* editor, Project* project) {
             continue;
         }
         const std::string ext = entry.path().extension().string();
-        if (ext == ".sclip" || ext == ".sgraph") {
+        if (ext == ".sclip" || ext == ".sgraph" || ext == ".sseq") {
             editor->animAssetFiles_.push_back(
                 entry.path().lexically_relative(root).generic_string());
         }
@@ -254,9 +254,18 @@ void AnimationPanel::drawAssetsSection(EditorUI* editor, Animator* animator, Res
     if (ImGui::SmallButton("Rescanner")) editor->animAssetScanTime_ = -1.0;
 
     if (editor->animAssetFiles_.empty()) {
-        ImGui::TextDisabled("Aucun .sclip/.sgraph dans le projet.");
+        ImGui::TextDisabled("Aucun .sclip/.sgraph/.sseq dans le projet.");
         return;
     }
+
+    // Résolution locale d'une clé "fichier#clip" dans la bibliothèque de
+    // l'Animator sélectionné — même règle que Animator::playView.
+    const auto resolveClip = [animator](const std::string& key) -> const AnimationClip* {
+        const size_t hash = key.rfind('#');
+        const std::string clipName = hash == std::string::npos ? key : key.substr(hash + 1);
+        auto it = animator->clips().find(clipName);
+        return it != animator->clips().end() ? it->second : nullptr;
+    };
 
     for (const std::string& rel : editor->animAssetFiles_) {
         ImGui::PushID(rel.c_str());
@@ -266,8 +275,33 @@ void AnimationPanel::drawAssetsSection(EditorUI* editor, Animator* animator, Res
         const std::string abs =
             (std::filesystem::path(project->rootPath()) / rel).generic_string();
         const bool isClipView = rel.size() > 6 && rel.rfind(".sclip") == rel.size() - 6;
+        const bool isSequence = rel.size() > 5 && rel.rfind(".sseq") == rel.size() - 5;
 
-        if (isClipView) {
+        if (isSequence) {
+            if (ImGui::SmallButton("Jouer")) {
+                auto parsed = AnimationSequence::loadFile(abs);
+                std::vector<AssetDiagnostic> diags = parsed.diagnostics;
+                if (parsed.ok) {
+                    auto more = parsed.sequence.validate();
+                    diags.insert(diags.end(), more.begin(), more.end());
+                }
+                auto player = std::make_unique<SequencePlayer>();
+                // En preview, chaque piste d'animation est liée à l'Animator
+                // sélectionné, quel que soit son nom de cible.
+                if (parsed.ok && !hasErrors(diags) &&
+                    player->bind(parsed.sequence, [animator](const std::string&) {
+                        return animator;
+                    }, resolveClip, nullptr, &diags)) {
+                    editor->animSequencePlayer_ = std::move(player);
+                    editor->animSequencePath_ = rel;
+                    editor->animStatus_ = "Séquence '" + rel + "' liée (scrub ci-dessous).";
+                } else {
+                    editor->animSequencePlayer_.reset();
+                    editor->animStatus_ = "Séquence invalide : " + rel +
+                        (diags.empty() ? "" : " — " + diags.front().message);
+                }
+            }
+        } else if (isClipView) {
             if (ImGui::SmallButton("Jouer")) {
                 const AssetID id = resources->loadClipView(abs);
                 const ClipView* loaded = resources->getClipView(id);
@@ -338,6 +372,36 @@ void AnimationPanel::drawGraphSection(EditorUI* editor, Animator* animator, Reso
     }
 }
 
+// Scrub de la séquence en preview. Le seek est déterministe et n'émet pas
+// d'événements ; la lecture avance le player (événements émis).
+void AnimationPanel::drawSequenceSection(EditorUI* editor) {
+    SequencePlayer* player = editor->animSequencePlayer_.get();
+    if (!player) return;
+    if (!ImGui::CollapsingHeader("Séquence", ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+    ImGui::Text("Séquence : %s", editor->animSequencePath_.c_str());
+
+    static bool playing = false;
+    if (ImGui::Button(playing ? "Pause" : "Lecture", ImVec2(80, 0))) playing = !playing;
+    ImGui::SameLine();
+    if (ImGui::Button("Stop", ImVec2(60, 0))) {
+        playing = false;
+        editor->animSequencePlayer_.reset();
+        return;
+    }
+    ImGui::SameLine();
+
+    float time = player->time();
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##SeqTime", &time, 0.0f, player->duration(), "%.2fs")) {
+        playing = false;
+        player->seek(time);
+    } else if (playing) {
+        player->update(ImGui::GetIO().DeltaTime);
+        if (player->finished()) playing = false;
+    }
+}
+
 void AnimationPanel::draw(EditorUI* editor, Scene* scene, ResourceManager* resources,
                           Project* project) {
     if (!editor->showAnimation_) return;
@@ -365,6 +429,7 @@ void AnimationPanel::draw(EditorUI* editor, Scene* scene, ResourceManager* resou
     drawClipViewSection(editor, found.animator, resources, project);
     drawAssetsSection(editor, found.animator, resources, project);
     drawGraphSection(editor, found.animator, resources);
+    drawSequenceSection(editor);
 
     if (!editor->animStatus_.empty()) {
         ImGui::Separator();
