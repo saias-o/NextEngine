@@ -22,6 +22,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(SAIDA_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 set(GLM_INCLUDE_DIR ${SAIDA_ROOT}/third_party/glm CACHE PATH "Directory containing glm/")
 
+# Jolt en wasm (mêmes options que le build desktop ; job system mono-thread
+# choisi à la compilation dans PhysicsWorld).
+set(INTERPROCEDURAL_OPTIMIZATION OFF)
+set(ENABLE_ALL_WARNINGS OFF)
+set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF)
+set(ENABLE_OBJECT_STREAM OFF)
+set(ENABLE_INSTALL OFF)
+set(CROSS_PLATFORM_DETERMINISTIC OFF)
+set(DOUBLE_PRECISION OFF)
+add_subdirectory(${SAIDA_ROOT}/third_party/jolt/Build ${CMAKE_BINARY_DIR}/jolt)
+
 # Décodeurs meshopt (EXT_meshopt_compression au chargement des GLB).
 file(GLOB MESHOPT_SOURCES ${SAIDA_ROOT}/third_party/meshoptimizer/src/*.cpp)
 
@@ -41,6 +52,7 @@ add_executable(saida_player
     # --- game core (le même moteur de jeu que le desktop, §2.1) ---
     ${SAIDA_ROOT}/src/core/FileWatcher.cpp
     ${SAIDA_ROOT}/src/core/Input.cpp
+    ${SAIDA_ROOT}/src/core/Paths.cpp
     ${SAIDA_ROOT}/src/core/PlatformCaps.cpp
     ${SAIDA_ROOT}/src/core/Reflection.cpp
     ${SAIDA_ROOT}/src/core/Profiler.cpp
@@ -52,7 +64,9 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/scene/Behaviour.cpp
     ${SAIDA_ROOT}/src/scene/BehaviourRegistry.cpp
     ${SAIDA_ROOT}/src/scene/Blackboard.cpp
+    ${SAIDA_ROOT}/src/scene/CameraFollowBehaviour.cpp
     ${SAIDA_ROOT}/src/scene/CameraNode.cpp
+    ${SAIDA_ROOT}/src/scene/CharacterBehaviour.cpp
     ${SAIDA_ROOT}/src/scene/GLTFLoader.cpp
     ${SAIDA_ROOT}/src/scene/GltfMeshopt.cpp
     ${SAIDA_ROOT}/src/scene/LightNode.cpp
@@ -73,6 +87,14 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/scene/StateMachineBehaviour.cpp
     ${SAIDA_ROOT}/src/scene/Transform.cpp
     ${SAIDA_ROOT}/src/scene/WaterNode.cpp
+    ${SAIDA_ROOT}/src/physics/CollisionObjectNode.cpp
+    ${SAIDA_ROOT}/src/physics/CollisionShapeNode.cpp
+    ${SAIDA_ROOT}/src/physics/CharacterBodyNode.cpp
+    ${SAIDA_ROOT}/src/physics/PhysicsNodes.cpp
+    ${SAIDA_ROOT}/src/physics/PhysicsWorld.cpp
+    ${SAIDA_ROOT}/src/audio/AudioManager.cpp
+    ${SAIDA_ROOT}/src/audio/AudioSourceBehaviour.cpp
+    ${SAIDA_ROOT}/src/audio/AudioUsage.cpp
     ${SAIDA_ROOT}/src/scripting/JsContext.cpp
     ${SAIDA_ROOT}/src/scripting/JsEngineBindings.cpp
     ${SAIDA_ROOT}/src/scripting/JsRuntime.cpp
@@ -135,17 +157,21 @@ target_include_directories(saida_player PRIVATE
     ${SAIDA_ROOT}/third_party/cgltf
     ${SAIDA_ROOT}/third_party/meshoptimizer/src
     ${SAIDA_ROOT}/third_party/quickjs
+    ${SAIDA_ROOT}/third_party/jolt/Build/..
+    ${SAIDA_ROOT}/third_party/miniaudio
 )
 target_compile_definitions(saida_player PRIVATE
     SAIDA_RHI_WEBGPU SAIDA_SCENE_TREE_TIMERS
     GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE)
 target_compile_options(saida_player PRIVATE $<$<CONFIG:Release>:-Oz> --use-port=emdawnwebgpu)
-target_link_libraries(saida_player PRIVATE quickjs)
+target_link_libraries(saida_player PRIVATE quickjs Jolt)
 
 target_link_options(saida_player PRIVATE
     --use-port=emdawnwebgpu
     -sUSE_GLFW=3
     -sINITIAL_MEMORY=512MB
+    -sSTACK_SIZE=4MB
+    -lidbfs.js
     -sEXIT_RUNTIME=0
     $<$<CONFIG:Release>:-Oz>
     "SHELL:--preload-file \"${SAIDA_ROOT}/build/shaders/wgsl@/shaders\""

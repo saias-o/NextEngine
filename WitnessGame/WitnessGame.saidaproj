@@ -8,6 +8,12 @@
     "maxFps": 144,
     "vsync": true
   },
+  "audio": {
+    "aliases": {
+      "pickup": "assets/audio/pickup.ogg",
+      "save": "assets/audio/save.ogg"
+    }
+  },
   "autoloads": {
     "GameState": "scripts/game_state.mjs"
   }

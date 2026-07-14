@@ -2,6 +2,7 @@
 
 #include "core/FormatVersions.hpp"
 #include "core/Log.hpp"
+#include "core/Paths.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "scene/Behaviour.hpp"
@@ -38,9 +39,16 @@ bool isModelPath(const std::string& path) {
 bool reloadImportedModel(Node& target, const std::string& path, ResourceManager& resources) {
     if (!isModelPath(path)) return false;
 
+    // Chemin relatif = relatif à la racine du projet chargé (comme les scripts).
+    std::string resolved = path;
+    if (std::filesystem::path p(path); p.is_relative() && !activeProjectRoot().empty()) {
+        std::filesystem::path abs = std::filesystem::path(activeProjectRoot()) / p;
+        if (std::filesystem::exists(abs)) resolved = abs.string();
+    }
+
     Node temp("ImportRoot");
     GLTFLoadOptions opts;
-    if (!GLTFLoader::load(path, temp, resources, opts))
+    if (!GLTFLoader::load(resolved, temp, resources, opts))
         return false;
 
     if (temp.children().empty())

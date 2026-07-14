@@ -199,8 +199,10 @@ void AssetLoader::workerMain() {
 
 void AssetLoader::pump() {
 #ifdef __EMSCRIPTEN__
+    // Pas de worker : draine toute la file (mêmes garanties de complétion par
+    // frame que le worker desktop, l'API reste asynchrone).
     Job job;
-    if (popJob(job)) load(job.entry);
+    while (popJob(job)) load(job.entry);
 #endif
     collectGarbage();
     const AssetLoadStats current = stats();

@@ -117,7 +117,7 @@ public:
 
     // The per-scene physics world (created lazily once a body exists; null until then).
     PhysicsWorld* physics() const {
-#ifdef SAIDA_RHI_WEBGPU
+#ifdef SAIDA_NO_PHYSICS
         return nullptr;
 #else
         return physics_.get();
@@ -164,7 +164,7 @@ private:
     std::vector<CollisionObjectNode*> bodies_;
     uint32_t activeNodeCount_ = 0;
 
-#ifndef SAIDA_RHI_WEBGPU
+#ifndef SAIDA_NO_PHYSICS
     std::unique_ptr<PhysicsWorld> physics_;
 #endif
     SceneTree* tree_ = nullptr;

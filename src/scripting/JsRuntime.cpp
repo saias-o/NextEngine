@@ -15,7 +15,13 @@ namespace saida {
 
 namespace {
 constexpr size_t kJsMemoryLimit = 64ull * 1024ull * 1024ull;
+#ifdef __EMSCRIPTEN__
+// La pile wasm est plus petite que la pile native ; la limite QuickJS doit
+// rester sous STACK_SIZE du player (4 Mo).
+constexpr size_t kJsStackLimit = 256ull * 1024ull;
+#else
 constexpr size_t kJsStackLimit = 1024ull * 1024ull;
+#endif
 std::vector<std::string>* gModuleDependencyCapture = nullptr;
 
 void recordModuleDependency(const std::filesystem::path& path) {

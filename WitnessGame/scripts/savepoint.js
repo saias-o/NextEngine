@@ -14,6 +14,7 @@ function onReady() {
         }
         state.saves = (Number(state.saves) || 0) + 1;
         storage.save(SLOT, JSON.stringify(state));
+        audio.play("save");
         console.log("[SavePoint] saved — relics=" + state.relics +
                     " saves=" + state.saves);
     });

@@ -587,7 +587,8 @@
       "enabled": true,
       "moveSpeed": 6.0,
       "jumpForce": 6.0,
-      "faceMovement": true
+      "faceMovement": true,
+      "graph": "anim/locomotion.sgraph"
      }
     ],
     "children": [
@@ -622,16 +623,16 @@
       "axis": 1
      },
      {
-      "type": "MeshNode",
-      "id": 12656739240421448186,
-      "name": "PlayerMesh",
+      "type": "Node",
+      "id": 2719524225486534461,
+      "name": "Body",
       "enabled": true,
       "behaviours": [],
       "children": [],
       "transform": {
        "position": [
         0,
-        0,
+        -0.9,
         0
        ],
        "rotation": [
@@ -641,26 +642,12 @@
         1
        ],
        "scale": [
-        0.8,
-        1.8,
-        0.8
+        1,
+        1,
+        1
        ]
       },
-      "mesh": 1,
-      "baseColor": [
-       0.85,
-       0.55,
-       0.2,
-       1.0
-      ],
-      "emissive": [
-       0,
-       0,
-       0,
-       0
-      ],
-      "roughness": 0.7,
-      "metallic": 0.0
+      "importedFrom": "assets/models/totem.gltf"
      }
     ],
     "transform": {

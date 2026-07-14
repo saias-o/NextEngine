@@ -7,6 +7,9 @@
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
+#ifdef __EMSCRIPTEN__
+#include <Jolt/Core/JobSystemSingleThreaded.h>
+#endif
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Collision/Shape/Shape.h>
@@ -154,9 +157,14 @@ PhysicsWorld::PhysicsWorld() {
     layers_ = std::make_unique<LayerState>();
     tempAllocator_ = std::make_unique<TempAllocatorImpl>(16 * 1024 * 1024);
 
+#ifdef __EMSCRIPTEN__
+    // wasm sans pthreads : Jolt fournit un job system mono-thread équivalent.
+    jobSystem_ = std::make_unique<JobSystemSingleThreaded>(cMaxPhysicsJobs);
+#else
     unsigned hw = std::thread::hardware_concurrency();
     int workerThreads = std::max(1, static_cast<int>(hw) - 1);
     jobSystem_ = std::make_unique<JobSystemThreadPool>(cMaxPhysicsJobs, cMaxPhysicsBarriers, workerThreads);
+#endif
 
     system_ = std::make_unique<PhysicsSystem>();
     const uint cMaxBodies = 8192;

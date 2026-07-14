@@ -107,7 +107,9 @@ target_include_directories(saida_web PRIVATE
     ${SAIDA_ROOT}/third_party/stb
     ${SAIDA_ROOT}/third_party/tinyobjloader
 )
-target_compile_definitions(saida_web PRIVATE SAIDA_RHI_WEBGPU GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE)
+# SAIDA_NO_PHYSICS / SAIDA_NO_AUDIO : le viewer d'authoring ne compile ni Jolt
+# ni miniaudio (le player de jeu, si).
+target_compile_definitions(saida_web PRIVATE SAIDA_RHI_WEBGPU SAIDA_NO_PHYSICS SAIDA_NO_AUDIO GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
 # Size-conscious flags (16.6): -Oz in release, plus link-time stripping.
 target_compile_options(saida_web PRIVATE $<$<CONFIG:Release>:-Oz>)

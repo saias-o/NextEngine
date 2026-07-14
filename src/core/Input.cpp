@@ -37,6 +37,14 @@ std::vector<uint32_t> g_textInput;
 std::vector<TouchPoint> g_touches;
 std::vector<TouchPoint> g_pendingTouches;
 std::unordered_map<uint64_t, glm::vec2> g_lastTouchPositions;
+
+// Actions virtuelles injectées (tests/CI) : combinées aux bindings au max.
+struct InjectedAction {
+    float target = 0.0f;
+    float current = 0.0f;
+    float previous = 0.0f;
+};
+std::unordered_map<std::string, InjectedAction> g_injectedActions;
 bool g_uiCapturesKeyboard = false;
 bool g_uiCapturesMouse = false;
 
@@ -276,7 +284,13 @@ void Input::newFrame() {
     glfwGetCursorPos(w, &mx, &my);
     g_mousePos = {static_cast<float>(mx), static_cast<float>(my)};
 
-    // 2. Update bindings and trigger events
+    // 2. Advance injected action states (same current/previous cycle as bindings)
+    for (auto& [name, injected] : g_injectedActions) {
+        injected.previous = injected.current;
+        injected.current = injected.target;
+    }
+
+    // 3. Update bindings and trigger events
     for (auto& binding : g_bindings) {
         binding.previousValue = binding.currentValue;
         
@@ -364,6 +378,8 @@ float Input::getActionStrength(const std::string& action) {
             }
         }
     }
+    if (auto it = g_injectedActions.find(action); it != g_injectedActions.end())
+        strength = std::max(strength, it->second.current);
     return strength;
 }
 
@@ -371,7 +387,18 @@ bool Input::isActionHeld(const std::string& action) {
     return getActionStrength(action) > 0.5f;
 }
 
+void Input::injectAction(const std::string& action, float strength) {
+    g_injectedActions[action].target = strength;
+}
+
+void Input::clearInjectedActions() {
+    g_injectedActions.clear();
+}
+
 bool Input::isActionJustPressed(const std::string& action) {
+    if (auto it = g_injectedActions.find(action); it != g_injectedActions.end() &&
+        it->second.current > 0.5f && it->second.previous <= 0.5f)
+        return true;
     for (const auto& b : g_bindings) {
         if (b.actionName == action && b.currentValue > 0.5f && b.previousValue <= 0.5f) {
             // Check context stack
@@ -386,6 +413,9 @@ bool Input::isActionJustPressed(const std::string& action) {
 }
 
 bool Input::isActionJustReleased(const std::string& action) {
+    if (auto it = g_injectedActions.find(action); it != g_injectedActions.end() &&
+        it->second.current <= 0.5f && it->second.previous > 0.5f)
+        return true;
     for (const auto& b : g_bindings) {
         if (b.actionName == action && b.currentValue <= 0.5f && b.previousValue > 0.5f) {
             // Check context stack

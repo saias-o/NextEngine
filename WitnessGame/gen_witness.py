@@ -95,16 +95,20 @@ def floor_and_walls(prefix, extent=14.0):
 
 
 def player(prefix, pos):
+    # Le corps est un glTF riggé (gen_character.py) rechargé via importedFrom ;
+    # l'import attache l'Animator que Character pilote (Idle/Walk).
+    body = node(f"{prefix}/player/body", "Node", "Body", pos=(0, -0.9, 0))
+    body["importedFrom"] = "assets/models/totem.gltf"
     return node(f"{prefix}/player", "CharacterBody", "Player", pos=pos,
                 groups=["player"], children=[
                     node(f"{prefix}/player/shape", "CollisionShape", "Shape",
                          shapeType=SHAPE_CAPSULE, radius=0.4, height=1.8, axis=1),
-                    cube(f"{prefix}/player/mesh", "PlayerMesh", (0, 0, 0),
-                         (0.8, 1.8, 0.8), (0.85, 0.55, 0.2, 1.0)),
+                    body,
                 ],
                 behaviours=[{"type": "Character", "enabled": True,
                              "moveSpeed": 6.0, "jumpForce": 6.0,
-                             "faceMovement": True}])
+                             "faceMovement": True,
+                             "graph": "anim/locomotion.sgraph"}])
 
 
 def camera(prefix):

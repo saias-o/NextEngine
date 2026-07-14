@@ -40,6 +40,17 @@
     var Module = {
       canvas: document.getElementById('canvas'),
       preRun: [function() {
+        // Sauvegardes persistantes : /project/saves vit sur IDBFS (IndexedDB).
+        // Chargées avant le boot ; storage.save déclenche un syncfs côté moteur.
+        var savesDependency = 'saida-saves';
+        addRunDependency(savesDependency);
+        FS.mkdirTree('/project/saves');
+        FS.mount(IDBFS, {}, '/project/saves');
+        FS.syncfs(true, function(error) {
+          if (error) window.__saidaErrors.push('saves syncfs: ' + error);
+          removeRunDependency(savesDependency);
+        });
+
         var dependency = 'saida-project-package';
         addRunDependency(dependency);
         fetch('project-files.json')

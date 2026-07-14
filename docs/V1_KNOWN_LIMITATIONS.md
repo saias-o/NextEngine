@@ -2,6 +2,12 @@
 
 - Le player Web cible WebGPU. Un navigateur sans WebGPU ne peut pas lancer le
   jeu et affiche un diagnostic au démarrage.
+- Le player Web n'a pas encore les nœuds UI (`UICanvasNode`/`UITextNode`…) :
+  ils se dégradent en Node générique et `node.setText` y est un no-op signalé.
+  Physique, audio (Web Audio), scripts, animation et sauvegardes (IndexedDB)
+  sont au niveau du desktop.
+- L'audio Web démarre coupé tant que le navigateur n'a pas reçu un geste
+  utilisateur (politique d'autoplay) ; il se débloque au premier clic/touche.
 - Les builds Web doivent être servis par HTTP ; ouvrir `index.html` avec une URL
   `file://` n'est pas supporté.
 - Le rendu XR n'a pas encore le MSAA multiview et demande une validation sur le

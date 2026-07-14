@@ -1,10 +1,9 @@
 // Player-web implementation of registerReflectedTypes().
 //
 // Le player web (web/player) exécute le vrai cycle de jeu — SceneTree,
-// behaviours, signaux et scripts QuickJS. Il exclut encore physique/Jolt,
-// audio et RmlUi (PlatformCaps les déclare absents et les scènes qui les
-// référencent obtiennent un diagnostic explicite au chargement). On enregistre
-// donc les nœuds rendables et les behaviours gameplay portables uniquement.
+// behaviours, signaux, scripts QuickJS, physique Jolt (job system mono-thread)
+// et audio miniaudio (backend Web Audio). Seule l'UI reste absente (PlatformCaps
+// la déclare absente ; les nœuds UI se dégradent en Node générique).
 //
 // Emscripten-only : ne collisionne jamais avec ReflectedTypes.cpp (desktop) ni
 // ReflectedTypesWeb.cpp (viewer d'authoring, autre exécutable).
@@ -16,7 +15,15 @@
 #include "scene/BehaviourRegistry.hpp"
 #include "scene/NodeRegistry.hpp"
 
+#include "audio/AudioSourceBehaviour.hpp"
+#include "physics/AreaNode.hpp"
+#include "physics/CharacterBodyNode.hpp"
+#include "physics/CollisionShapeNode.hpp"
+#include "physics/RigidBodyNode.hpp"
+#include "physics/StaticBodyNode.hpp"
 #include "scene/Blackboard.hpp"
+#include "scene/CameraFollowBehaviour.hpp"
+#include "scene/CharacterBehaviour.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/RotatorBehaviour.hpp"
@@ -57,11 +64,19 @@ void registerReflectedTypes() {
     registerBehaviour<SpawnerBehaviour>();
     registerBehaviour<Blackboard>();
     registerBehaviour<StateMachineBehaviour>();
+    registerBehaviour<CharacterBehaviour>();
+    registerBehaviour<CameraFollowBehaviour>();
+    registerBehaviour<AudioSourceBehaviour>();
     BehaviourRegistry::instance().registerType<ScriptBehaviour>("ScriptBehaviour");
 
     registerNode<LightNode>();
     registerNode<WaterNode>();
     registerNode<ParticleSystemNode>();
+    registerNode<AreaNode>();
+    NodeRegistry::instance().registerType<CollisionShapeNode>("CollisionShape");
+    NodeRegistry::instance().registerType<StaticBodyNode>("StaticBody");
+    NodeRegistry::instance().registerType<RigidBodyNode>("RigidBody");
+    NodeRegistry::instance().registerType<CharacterBodyNode>("CharacterBody");
 }
 
 } // namespace saida

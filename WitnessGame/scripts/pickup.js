@@ -22,6 +22,7 @@ function onReady() {
     node.on("bodyEntered", function (who) {
         if (collected || who !== "Player") return;
         collected = true;
+        audio.play("pickup");
         const total = bump("relics", props.points);
         console.log("[Pickup] " + node.getName() + " collected — relics=" + total);
         node.queueFree();

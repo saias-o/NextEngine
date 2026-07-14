@@ -28,21 +28,28 @@ L'état (reliques, sauvegardes) vit dans l'autoload JS `GameState`
 |---|---|
 | Scènes + changement de scène | hub ⇄ arena via `tree.changeScene` (door.js) |
 | Physique | sols/murs StaticBody, caisses RigidBody, joueur CharacterBody, triggers Area |
-| Scripts JS | 4 ScriptBehaviour + 1 autoload module `.mjs` |
+| Scripts JS | ScriptBehaviours + 1 autoload module `.mjs` + pilote E2E |
 | Signaux → JS | `node.on("bodyEntered", …)` sur les Area (pickup/door/savepoint) |
 | Particules | `ParticleSystem` sur chaque relique |
-| UI | `UICanvasNode` + `UITextNode` (HUD) |
+| UI | `UICanvasNode` + `UITextNode` (HUD piloté par `node.setText`) |
 | Save/load | API `storage` (slot `witness`) |
-| Animation / Audio | **pas encore** — voir docs/WITNESS_GAME.md |
+| Animation | totem riggé skinné (`assets/models/totem.gltf`) + graphe `anim/locomotion.sgraph` (Idle ⇄ Walk par le paramètre `speed`) |
+| Audio | `audio.play` sur les alias `.ogg` `pickup`/`save` |
 
-## Régénérer les scènes
+## Régénérer le contenu
 
 ```sh
-python WitnessGame/gen_witness.py
+python WitnessGame/gen_witness.py     # scènes (ids stables dérivés des noms)
+python WitnessGame/gen_character.py   # assets/models/totem.gltf
 ```
 
-Les scènes sont générées (ids stables dérivés des noms) : modifier
-`gen_witness.py`, pas les `.scene` à la main.
+Modifier les générateurs, jamais les `.scene`/`.gltf` à la main.
+
+## Test E2E sans clavier
+
+```sh
+bash tools/witness_e2e.sh   # packe + lance le runtime + attend [E2E] PASS
+```
 
 ## Lancer
 

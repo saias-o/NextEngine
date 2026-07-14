@@ -11,6 +11,7 @@
 // (dégradation explicite, §2.5). Input clavier/souris et scripts QuickJS
 // utilisent désormais les mêmes API gameplay que le player desktop.
 
+#include "audio/AudioManager.hpp"
 #include "core/Camera.hpp"
 #include "core/Input.hpp"
 #include "core/Log.hpp"
@@ -105,10 +106,14 @@ bool bootGame() {
     gApp.tree = std::make_unique<SceneTree>(*gApp.resources);
     gApp.tree->setProjectRoot(gApp.project->rootPath());
     for (const auto& [name, value] : gApp.project->autoloads()) {
-        const bool isScene =
-            value.size() > 6 && value.compare(value.size() - 6, 6, ".scene") == 0;
-        if (isScene)
+        auto endsWith = [&value](const char* suffix) {
+            const size_t n = std::char_traits<char>::length(suffix);
+            return value.size() > n && value.compare(value.size() - n, n, suffix) == 0;
+        };
+        if (endsWith(".scene"))
             gApp.tree->registerAutoloadScene(name, gApp.project->rootPath() + "/" + value);
+        else if (endsWith(".js") || endsWith(".mjs"))
+            gApp.tree->registerAutoloadScript(name, value);
         else
             gApp.tree->registerAutoloadType(name, value);
     }
@@ -143,6 +148,7 @@ void frame() {
 
     gApp.tree->applyDeferred();
     gApp.tree->tickTimers(Time::delta());
+    AudioManager::get().update();
     if (gApp.tree->quitRequested()) {
         Log::info("saida-player: quit requested — stopping the loop");
         gApp.running = false;
@@ -172,7 +178,11 @@ int main() {
     // Chaque capacité rejoint ce masque quand elle devient réelle (§2.5).
     platform::setCapabilities(uint32_t(platform::Capability::Rendering) |
                               uint32_t(platform::Capability::KeyboardMouse) |
-                              uint32_t(platform::Capability::ScriptGameplay));
+                              uint32_t(platform::Capability::ScriptGameplay) |
+                              uint32_t(platform::Capability::Physics) |
+                              uint32_t(platform::Capability::Audio) |
+                              uint32_t(platform::Capability::UserStorage));
+    AudioManager::get().init();
     Log::info(platform::report());
 
     Input::bindRaw(window);  // actions clavier/souris sans le wrapper desktop
@@ -187,7 +197,12 @@ int main() {
         registerBuiltinRenderFeatures();
         if (!bootGame()) return;
         gApp.running = true;
-        emscripten_set_main_loop(frame, 0, false);
+        // ?smoke : boucle sur timer (30 fps) au lieu de rAF, pour que les
+        // harnais E2E tournent dans un onglet caché (rAF y est suspendu).
+        const int fps = EM_ASM_INT({
+            return location.search.indexOf('smoke') >= 0 ? 30 : 0;
+        });
+        emscripten_set_main_loop(frame, fps, false);
     });
 
     emscripten_exit_with_live_runtime();

@@ -5,7 +5,7 @@
 #include "scene/SerializationHelpers.hpp"
 #include "core/Log.hpp"
 
-#ifndef SAIDA_RHI_WEBGPU
+#ifndef SAIDA_NO_AUDIO
 #include "audio/AudioManager.hpp"
 #endif
 
@@ -28,10 +28,10 @@ Node::~Node() {
         if (b->ready_) b->onDestroy();
         b->cancelTimers();
     }
-#ifndef SAIDA_RHI_WEBGPU
+#ifdef SAIDA_SCENE_TREE_TIMERS
     if (SceneTree* t = tree()) t->cancelTimersOwnedBy(this);
 #endif
-#ifndef SAIDA_RHI_WEBGPU
+#ifndef SAIDA_NO_AUDIO
     AudioManager::get().stopAllOnNode(this);
 #endif
 }

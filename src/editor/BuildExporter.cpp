@@ -69,7 +69,7 @@ std::string safeFileStem(std::string value) {
 
 bool copyProjectData(const Project& project, const fs::path& outRoot, std::string& log) {
     const fs::path root(project.rootPath());
-    for (const char* dir : {"assets", "scenes", "scripts", "ui", "shaders"}) {
+    for (const char* dir : {"assets", "scenes", "scripts", "ui", "anim", "shaders"}) {
         if (!copyTree(root / dir, outRoot / dir, log)) return false;
     }
 

@@ -2,9 +2,11 @@
 #include "scene/Node.hpp"
 #include "scene/SceneTree.hpp"
 #include "physics/CharacterBodyNode.hpp"
+#include "scene/animation/AnimGraphAsset.hpp"
 #include "scene/animation/Animator.hpp"
 #include "core/Input.hpp"
 #include "core/Log.hpp"
+#include "core/Paths.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -13,6 +15,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <cmath>
+#include <filesystem>
 
 namespace saida {
 
@@ -104,6 +107,26 @@ void CharacterBehaviour::updateAnimation(bool onFloor, bool moving) {
     if (!animator_) animator_ = node()->findBehaviourInChildren<Animator>();
     if (!animator_) return;  // no skinned character → nothing to drive
 
+    if (!graph.empty() && !graphFailed_) {
+        if (!graphApplied_) {
+            std::string path = graph;
+            if (std::filesystem::path p(graph); p.is_relative() && !activeProjectRoot().empty())
+                path = (std::filesystem::path(activeProjectRoot()) / p).string();
+            AnimGraphParseResult parsed = AnimGraphAsset::loadFile(path);
+            std::vector<AssetDiagnostic> diags;
+            if (!parsed.ok || !animator_->setGraph(parsed.graph, &diags)) {
+                graphFailed_ = true;
+                const auto& all = parsed.ok ? diags : parsed.diagnostics;
+                Log::warn("Character: cannot apply anim graph '", graph, "'",
+                          all.empty() ? "" : (": " + all.front().message));
+                return;
+            }
+            graphApplied_ = true;
+        }
+        animator_->setFloat("speed", moving ? 1.0f : 0.0f);
+        return;
+    }
+
     const std::string& want = !onFloor ? jumpClip : (moving ? walkClip : idleClip);
     if (!want.empty() && animator_->clips().count(want))
         animator_->play(want);  // play() no-ops if it's already the current clip
@@ -123,6 +146,8 @@ void CharacterBehaviour::describe(reflect::TypeBuilder<CharacterBehaviour>& t) {
     t.property("idleClip", &CharacterBehaviour::idleClip).tooltip("animation clip name");
     t.property("walkClip", &CharacterBehaviour::walkClip).tooltip("animation clip name");
     t.property("jumpClip", &CharacterBehaviour::jumpClip).tooltip("animation clip name");
+    t.property("graph", &CharacterBehaviour::graph)
+        .tooltip(".sgraph path (project-relative); when set, drives the 'speed' parameter");
 }
 
 } // namespace saida

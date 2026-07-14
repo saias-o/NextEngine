@@ -34,21 +34,32 @@ jamais régénérés) et est chargé à chaque build par `saida_compat_corpus_te
 toute rupture de chargement d'un ancien schéma fait échouer la CI, et le test
 vérifie qu'un chargement ne modifie pas les octets du document source.
 
+## Assets média
+
+Audio : **`.ogg` (Vorbis) est le format recommandé et fortement conseillé**
+pour tout contenu de jeu. `.wav` reste accepté en dépannage. FLAC et MP3 ne
+sont pas compilés dans le moteur.
+
 ## API JavaScript stable
 
 Les globals gameplay suivants sont publics :
 
 - `node`: `getName`, `setName`, `getPosition`, `setPosition`, `translate`,
-  `setEnabled`, `queueFree`, groupes, `on`, `emit` ;
+  `setEnabled`, `queueFree`, groupes, `on`, `emit` ; sur un `UITextNode` :
+  `setText`, `getText` ;
 - `time`: `delta`, `elapsed`, `wait`, `every`, `tween`, `cancel` ;
-- `input`: actions, axes, vecteurs, position et delta souris ;
+- `input`: actions, axes, vecteurs, position et delta souris ; `inject(action,
+  strength)` est un outil de test/CI (pilote une action sans périphérique) ;
+- `audio`: `play(alias)` — joue un alias audio déclaré par le projet (no-op
+  explicite sur les plateformes sans backend audio) ;
 - `tree`: `changeScene`, `reloadScene`, `quit`, pause ;
 - `assets.load(path, priority)`: retourne immédiatement un handle. Le handle
   expose `state`, `ready`, `failed`, `error`, `size`, `id` et `release` ;
 - `storage`: persistance par slot — `save(slot, jsonString)`, `load(slot)`
   (chaîne ou `null`), `has(slot)`, `remove(slot)`. Le slot respecte
   `[A-Za-z0-9_-]{1,64}` ; les données vivent dans `saves/<slot>.json` sous la
-  racine du projet. Le moteur stocke des chaînes opaques : la sérialisation
+  racine du projet (sur le Web : IndexedDB via IDBFS, persistant entre
+  sessions). Le moteur stocke des chaînes opaques : la sérialisation
   (`JSON.stringify`/`parse`) appartient au jeu.
 
 `assets.load` ne promet jamais un chargement bloquant. Les états publics sont

@@ -35,11 +35,17 @@ public:
     std::string walkClip = "Walk";
     std::string jumpClip = "Jump";
 
+    // .sgraph optionnel (chemin projet-relatif). Si présent, la FSM du graphe
+    // possède la lecture ; ce behaviour alimente seulement le paramètre "speed".
+    std::string graph;
+
 private:
     void updateAnimation(bool onFloor, bool moving);
 
     bool warned_ = false;     // warn once if attached to a non-CharacterBody node
     Animator* animator_ = nullptr;  // cached child Animator (found lazily)
+    bool graphApplied_ = false;
+    bool graphFailed_ = false;
 };
 
 } // namespace saida

@@ -72,6 +72,12 @@ public:
     static bool isActionJustReleased(const std::string& action);
     static float getActionStrength(const std::string& action);
 
+    // ---- Injection (tests/CI) ----
+    // Force d'action virtuelle, combinée aux bindings réels au max. Persiste
+    // jusqu'au prochain injectAction/clearInjectedActions.
+    static void injectAction(const std::string& action, float strength);
+    static void clearInjectedActions();
+
     static float getAxis(const std::string& negativeAction, const std::string& positiveAction);
     static glm::vec2 getVector(const std::string& left, const std::string& right, const std::string& down, const std::string& up);
 

@@ -11,7 +11,7 @@
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/SerializationHelpers.hpp"
 #include "graphics/ResourceManager.hpp"
-#ifndef SAIDA_RHI_WEBGPU
+#ifndef SAIDA_NO_PHYSICS
 #include "physics/PhysicsWorld.hpp"
 #include "physics/CollisionObjectNode.hpp"
 #include "physics/AreaNode.hpp"
@@ -65,7 +65,7 @@ void Scene::update(float dt) {
         updateTransforms(glm::mat4(1.0f), false);
     }
 
-#ifndef SAIDA_RHI_WEBGPU
+#ifndef SAIDA_NO_PHYSICS
     // Freeze each Auto collision shape once, now that world transforms are fresh
     // (runs in edit mode too, so the editor wireframe is stable and correct).
     {

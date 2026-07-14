@@ -1,5 +1,6 @@
 #include "scripting/JsEngineBindings.hpp"
 
+#include "audio/AudioManager.hpp"
 #include "core/Input.hpp"
 #include "core/Log.hpp"
 #include "core/Reflection.hpp"
@@ -9,10 +10,17 @@
 #include "scene/Behaviour.hpp"
 #include "scene/Node.hpp"
 #include "scene/SceneTree.hpp"
+#ifndef SAIDA_RHI_WEBGPU
+#include "scene/UITextNode.hpp"
+#endif
 #include "scripting/JsContext.hpp"
 #include "scripting/JsTimerBindings.hpp"
 
 #include <quickjs.h>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include <cctype>
 #include <filesystem>
@@ -107,6 +115,15 @@ JSValue jsAssetsLoad(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv)
     return object;
 }
 
+JSValue jsAudioPlay(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "audio.play(aliasName)");
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) return JS_EXCEPTION;
+    const bool ok = AudioManager::get().play(name) != kInvalidAudioID;
+    JS_FreeCString(ctx, name);
+    return JS_NewBool(ctx, ok);
+}
+
 // ---- storage: persistance minimale par slot (fichiers saves/<slot>.json) ----
 // Le JS sérialise lui-même (JSON.stringify/parse) ; le moteur ne stocke que des
 // chaînes. Chemin résolu sous la racine projet → identique dans l'éditeur, le
@@ -157,10 +174,17 @@ JSValue jsStorageSave(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
     if (!value) return JS_EXCEPTION;
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
-    std::ofstream file(path, std::ios::binary | std::ios::trunc);
-    const bool ok = static_cast<bool>(file << value);
+    bool ok;
+    {
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        ok = static_cast<bool>(file << value);
+    }
     JS_FreeCString(ctx, value);
     if (!ok) Log::warn("[JS] storage.save: cannot write ", path.string());
+#ifdef __EMSCRIPTEN__
+    // saves/ vit sur IDBFS (monté par le shell) : flush vers IndexedDB.
+    if (ok) EM_ASM({ FS.syncfs(false, function() {}); });
+#endif
     return JS_NewBool(ctx, ok);
 }
 
@@ -189,7 +213,11 @@ JSValue jsStorageRemove(JSContext* ctx, JSValueConst, int argc, JSValueConst* ar
     const std::filesystem::path path = storageSlotPath(ctx, argc, argv, error);
     if (path.empty()) return error;
     std::error_code ec;
-    return JS_NewBool(ctx, std::filesystem::remove(path, ec));
+    const bool removed = std::filesystem::remove(path, ec);
+#ifdef __EMSCRIPTEN__
+    if (removed) EM_ASM({ FS.syncfs(false, function() {}); });
+#endif
+    return JS_NewBool(ctx, removed);
 }
 
 void installAssetHandleClass(JSContext* ctx) {
@@ -346,6 +374,43 @@ JSValue jsNodeQueueFree(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     return JS_UNDEFINED;
 }
 
+// Les nœuds UI ne sont pas encore portés sur le player web : là-bas ils se
+// dégradent en Node générique et setText/getText deviennent des no-ops
+// (warning unique), pour que le même script tourne sur les deux plateformes.
+JSValue jsNodeSetText(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+#ifdef SAIDA_RHI_WEBGPU
+    (void)argc; (void)argv;
+    static bool warned = false;
+    if (!warned) {
+        warned = true;
+        Log::warn("[JS] node.setText: UI nodes are not ported to the web player yet (no-op)");
+    }
+    return JS_UNDEFINED;
+#else
+    Node* node = nodeFromJs(ctx);
+    auto* text = dynamic_cast<UITextNode*>(node);
+    if (!text)
+        return JS_ThrowTypeError(ctx, "node.setText: script is not attached to a UITextNode");
+    if (argc < 1) return JS_ThrowTypeError(ctx, "node.setText(text)");
+    const char* value = JS_ToCString(ctx, argv[0]);
+    if (!value) return JS_EXCEPTION;
+    text->setText(value);
+    JS_FreeCString(ctx, value);
+    return JS_UNDEFINED;
+#endif
+}
+
+JSValue jsNodeGetText(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+#ifdef SAIDA_RHI_WEBGPU
+    return JS_NewString(ctx, "");
+#else
+    auto* text = dynamic_cast<UITextNode*>(nodeFromJs(ctx));
+    if (!text)
+        return JS_ThrowTypeError(ctx, "node.getText: script is not attached to a UITextNode");
+    return JS_NewString(ctx, text->text().c_str());
+#endif
+}
+
 JSValue jsNodeAddToGroup(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     Node* node = nodeFromJs(ctx);
     if (!node || argc < 1) return JS_NewBool(ctx, false);
@@ -402,6 +467,16 @@ JSValue jsInputJustReleased(JSContext* ctx, JSValueConst, int argc, JSValueConst
     std::string action;
     if (!readActionName(ctx, argc, argv, 0, action)) return JS_NewBool(ctx, false);
     return JS_NewBool(ctx, Input::isActionJustReleased(action));
+}
+
+// Outil de test/CI : pilote une action sans clavier (voir Input::injectAction).
+JSValue jsInputInject(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    std::string action;
+    if (!readActionName(ctx, argc, argv, 0, action)) return JS_NewBool(ctx, false);
+    double strength = 1.0;
+    if (argc >= 2 && JS_ToFloat64(ctx, &strength, argv[1]) != 0) return JS_EXCEPTION;
+    Input::injectAction(action, static_cast<float>(strength));
+    return JS_NewBool(ctx, true);
 }
 
 JSValue jsInputStrength(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -593,6 +668,8 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JS_SetPropertyStr(ctx, node, "translate", JS_NewCFunction(ctx, jsNodeTranslate, "translate", 3));
     JS_SetPropertyStr(ctx, node, "setEnabled", JS_NewCFunction(ctx, jsNodeSetEnabled, "setEnabled", 1));
     JS_SetPropertyStr(ctx, node, "queueFree", JS_NewCFunction(ctx, jsNodeQueueFree, "queueFree", 0));
+    JS_SetPropertyStr(ctx, node, "setText", JS_NewCFunction(ctx, jsNodeSetText, "setText", 1));
+    JS_SetPropertyStr(ctx, node, "getText", JS_NewCFunction(ctx, jsNodeGetText, "getText", 0));
     JS_SetPropertyStr(ctx, node, "addToGroup", JS_NewCFunction(ctx, jsNodeAddToGroup, "addToGroup", 1));
     JS_SetPropertyStr(ctx, node, "removeFromGroup", JS_NewCFunction(ctx, jsNodeRemoveFromGroup, "removeFromGroup", 1));
     JS_SetPropertyStr(ctx, node, "isInGroup", JS_NewCFunction(ctx, jsNodeIsInGroup, "isInGroup", 1));
@@ -613,6 +690,7 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JS_SetPropertyStr(ctx, input, "strength", JS_NewCFunction(ctx, jsInputStrength, "strength", 1));
     JS_SetPropertyStr(ctx, input, "axis", JS_NewCFunction(ctx, jsInputAxis, "axis", 2));
     JS_SetPropertyStr(ctx, input, "vector", JS_NewCFunction(ctx, jsInputVector, "vector", 4));
+    JS_SetPropertyStr(ctx, input, "inject", JS_NewCFunction(ctx, jsInputInject, "inject", 2));
     JS_SetPropertyStr(ctx, input, "mousePosition", JS_NewCFunction(ctx, jsInputMousePosition, "mousePosition", 0));
     JS_SetPropertyStr(ctx, input, "mouseDelta", JS_NewCFunction(ctx, jsInputMouseDelta, "mouseDelta", 0));
     JS_SetPropertyStr(ctx, global, "input", input);
@@ -628,6 +706,10 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JSValue assets = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, assets, "load", JS_NewCFunction(ctx, jsAssetsLoad, "load", 2));
     JS_SetPropertyStr(ctx, global, "assets", assets);
+
+    JSValue audio = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, audio, "play", JS_NewCFunction(ctx, jsAudioPlay, "play", 1));
+    JS_SetPropertyStr(ctx, global, "audio", audio);
 
     JSValue storage = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, storage, "save", JS_NewCFunction(ctx, jsStorageSave, "save", 2));
