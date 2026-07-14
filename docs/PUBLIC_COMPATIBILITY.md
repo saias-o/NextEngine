@@ -55,6 +55,9 @@ Les globals gameplay suivants sont publics :
 - `tree`: `changeScene`, `reloadScene`, `quit`, pause ;
 - `assets.load(path, priority)`: retourne immédiatement un handle. Le handle
   expose `state`, `ready`, `failed`, `error`, `size`, `id` et `release` ;
+  `assets.stats()` retourne les compteurs du loader (`live`, `queued`,
+  `loading`, `ready`, `failed`, `residentBytes`, `budgetBytes`) — diagnostics
+  de fuite ;
 - `storage`: persistance par slot — `save(slot, jsonString)`, `load(slot)`
   (chaîne ou `null`), `has(slot)`, `remove(slot)`. Le slot respecte
   `[A-Za-z0-9_-]{1,64}` ; les données vivent dans `saves/<slot>.json` sous la

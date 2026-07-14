@@ -55,5 +55,21 @@ lancement avec un autoload de test qui appelle `tree.quit()` après 8 s :
 - le HUD lit `storage` chaque 0,5 s ;
 - `saves/witness.json` est écrit à côté de l'exe.
 
-Restes du chemin ship : passer par le **bouton Build de l'UI** (plutôt que le
-packaging manuel), tester sur machine vierge, export Web du même projet.
+## Chemin ship via le vrai exporteur (validé)
+
+`saida_tool export-game` invoque le **même `BuildExporter` que le bouton
+Build** (Windows et `--platform web`) ; les deux harnais E2E passent par lui :
+
+- `tools/witness_e2e.sh` — export Windows réel + runtime standalone,
+  phase 1 gameplay (porte + relique par input injecté) puis phase 2
+  chantier 3 : **16 cycles hub↔arena** par `tree.changeScene`, mémoire du
+  loader stable et sous budget (`assets.stats()`), verdict `[E2E] PASS` ;
+- `tools/witness_web_stage.sh` — export web réel (layout `exportWebBuild` :
+  player wasm + `project/` + `project-files.json`), boot navigateur validé.
+
+Restes du chemin ship : bouton Build depuis l'UI de l'éditeur (même code,
+clic non automatisé), test sur machine vierge, séquence `.sseq` non traversée.
+Note chantier 3 : `residentBytes=0` sur les cycles — les ressources de scène
+ne passent pas encore par l'`AssetLoader` (l'intégration textures/meshes est
+le gros reste du chantier) ; le critère « N cycles sans fuite » est en place
+et deviendra contraignant au fil de l'intégration.

@@ -1,6 +1,8 @@
 // Headless tool entry point. Keep machine output on stdout and diagnostics on stderr.
 
 #include "authoring/EngineManifest.hpp"
+#include "editor/BuildExporter.hpp"
+#include "project/Project.hpp"
 #include "authoring/SaidaOp.hpp"
 #include "authoring/SaidaOpApplier.hpp"
 #include "authoring/SceneSnapshot.hpp"
@@ -55,6 +57,9 @@ int usage(std::ostream& out) {
            "  saida_tool validate-clipview <view.sclip> [--root <dir>] [--pretty]\n"
            "  saida_tool validate-animgraph <graph.sgraph> [--root <dir>] [--pretty]\n"
            "  saida_tool validate-sequence <sequence.sseq> [--root <dir>] [--pretty]\n"
+           "  saida_tool export-game <project.saidaproj> [--platform windows|web]\n"
+           "                    [--out <dir>] [--main-scene <rel>] [--version a.b.c]\n"
+           "                    [--company <name>] [--icon <ico>]\n"
            "  saida_tool help\n"
            "\n"
            "Commands:\n"
@@ -100,6 +105,10 @@ int usage(std::ostream& out) {
            "  validate-sequence Parse a .sseq multi-track sequence, check clip\n"
            "                    placements/blends/events and resolve every referenced\n"
            "                    clip against --root. Prints {ok, diagnostics}; exit 0/1.\n"
+           "  export-game       Package a project exactly like the editor's Build\n"
+           "                    button (same BuildExporter): runtime exe + shaders +\n"
+           "                    project data + boot manifest. --platform web emits the\n"
+           "                    wasm player layout instead (requires build-web-player).\n"
            "\n"
            "Files may be '-' for stdin. Exit codes: 0 ok, 1 invalid input, 2 usage/IO.\n";
     return kExitUsage;
@@ -907,6 +916,66 @@ int cmdCookAnim(const std::vector<std::string>& args) {
     return allWithinTolerance ? kExitOk : kExitInvalid;
 }
 
+// Le chemin « ship » réel (PLAN_V1_ENGINE chantier 1) : le même
+// BuildExporter que le bouton Build de l'éditeur, scriptable pour la CI.
+int cmdExportGame(const std::vector<std::string>& args) {
+    std::string projectPath, platform = "windows";
+    saida::BuildExporter::Options options;
+    for (size_t i = 0; i < args.size(); ++i) {
+        const std::string& a = args[i];
+        auto next = [&](const char* flag) -> std::string {
+            if (i + 1 >= args.size()) {
+                std::cerr << "export-game: " << flag << " requires a value\n";
+                std::exit(kExitUsage);
+            }
+            return args[++i];
+        };
+        if (a == "--platform") platform = next("--platform");
+        else if (a == "--out") options.outputDir = next("--out");
+        else if (a == "--main-scene") options.mainScene = next("--main-scene");
+        else if (a == "--version") options.productVersion = next("--version");
+        else if (a == "--company") options.companyName = next("--company");
+        else if (a == "--icon") options.iconPath = next("--icon");
+        else if (!a.empty() && a[0] == '-') {
+            std::cerr << "export-game: unknown option '" << a << "'\n";
+            return kExitUsage;
+        } else if (projectPath.empty()) projectPath = a;
+        else {
+            std::cerr << "export-game: unexpected extra argument '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+    if (projectPath.empty()) {
+        std::cerr << "usage: saida_tool export-game <project.saidaproj> "
+                     "[--platform windows|web] [--out <dir>] [--main-scene <rel>]\n"
+                     "       [--version a.b.c] [--company <name>] [--icon <ico>]\n";
+        return kExitUsage;
+    }
+    if (platform != "windows" && platform != "web") {
+        std::cerr << "export-game: --platform must be 'windows' or 'web'\n";
+        return kExitUsage;
+    }
+
+    saida::Project project;
+    if (!project.load(projectPath)) {
+        std::cerr << "export-game: cannot load project: " << projectPath << "\n";
+        return kExitInvalid;
+    }
+    if (options.mainScene == "scenes/main.scene" && !project.mainScene().empty())
+        options.mainScene = project.mainScene();
+
+    const saida::BuildExporter::Result result = platform == "web"
+        ? saida::BuildExporter::exportWebBuild(project, options)
+        : saida::BuildExporter::exportWindowsBuild(project, options);
+    std::cout << result.log;
+    if (!result.success) {
+        std::cerr << "export-game: FAILED: " << result.error << "\n";
+        return kExitInvalid;
+    }
+    std::cout << "export-game: OK " << result.gameExe << "\n";
+    return kExitOk;
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         return usage(std::cerr);
@@ -950,6 +1019,9 @@ int main(int argc, char** argv) {
     }
     if (command == "validate-sequence") {
         return cmdValidateSequence(rest);
+    }
+    if (command == "export-game") {
+        return cmdExportGame(rest);
     }
 
     std::cerr << "saida_tool: unknown command '" << command << "'\n\n";

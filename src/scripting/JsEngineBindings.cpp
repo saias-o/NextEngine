@@ -220,6 +220,24 @@ JSValue jsStorageRemove(JSContext* ctx, JSValueConst, int argc, JSValueConst* ar
     return JS_NewBool(ctx, removed);
 }
 
+// Compteurs du loader (diagnostics de fuite, PLAN_V1_ENGINE chantier 3).
+JSValue jsAssetsStats(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    SceneTree* tree = treeFromJs(ctx);
+    if (!tree) return JS_ThrowInternalError(ctx, "assets.stats requires a mounted SceneTree");
+    const AssetLoadStats stats = tree->resources().assetLoader().stats();
+    JSValue o = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, o, "live", JS_NewInt64(ctx, stats.live));
+    JS_SetPropertyStr(ctx, o, "queued", JS_NewInt64(ctx, stats.queued));
+    JS_SetPropertyStr(ctx, o, "loading", JS_NewInt64(ctx, stats.loading));
+    JS_SetPropertyStr(ctx, o, "ready", JS_NewInt64(ctx, stats.ready));
+    JS_SetPropertyStr(ctx, o, "failed", JS_NewInt64(ctx, stats.failed));
+    JS_SetPropertyStr(ctx, o, "residentBytes",
+                      JS_NewInt64(ctx, static_cast<int64_t>(stats.residentBytes)));
+    JS_SetPropertyStr(ctx, o, "budgetBytes",
+                      JS_NewInt64(ctx, static_cast<int64_t>(stats.budgetBytes)));
+    return o;
+}
+
 void installAssetHandleClass(JSContext* ctx) {
     JSRuntime* runtime = JS_GetRuntime(ctx);
     if (gAssetHandleClassId == 0) JS_NewClassID(runtime, &gAssetHandleClassId);
@@ -705,6 +723,7 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
 
     JSValue assets = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, assets, "load", JS_NewCFunction(ctx, jsAssetsLoad, "load", 2));
+    JS_SetPropertyStr(ctx, assets, "stats", JS_NewCFunction(ctx, jsAssetsStats, "stats", 0));
     JS_SetPropertyStr(ctx, global, "assets", assets);
 
     JSValue audio = JS_NewObject(ctx);

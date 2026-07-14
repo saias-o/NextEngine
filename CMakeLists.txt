@@ -848,6 +848,9 @@ endif()
 # apply-ops). Never opens a Vulkan context — safe to run in CI/headless.
 add_executable(saida_tool
     src/tools/saida_tool_main.cpp
+    # export-game réutilise l'exporteur du bouton Build (pas de dépendance UI).
+    src/editor/BuildExporter.cpp
+    src/editor/ExeMetadata.cpp
 )
 saida_app_target(saida_tool)
 target_link_libraries(saida_tool PRIVATE saida_engine)

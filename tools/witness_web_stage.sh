@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
-# Met en scène le package web du jeu témoin (miroir de exportWebBuild) dans
-# build/witness-web : player compilé (build-web-player) + données projet +
-# project-files.json. Servir ensuite avec : python web/serve.py build/witness-web
+# Stage web du jeu témoin via le VRAI BuildExporter (saida_tool export-game
+# --platform web, le même code que le bouton Build) + pilote E2E en autoload.
+# Servir ensuite : python web/serve.py build/witness-web  →  http://localhost:8081/?smoke
 set -e
 cd "$(dirname "$0")/.."
+ROOT="$(pwd)"
 
-OUT="${1:-build/witness-web}"
-[ -f build-web-player/index.html ] || { echo "build-web-player manquant — lancer web/build_web_player.sh"; exit 1; }
+EXPORT="$ROOT/build/witness-web-export"
+OUT="${1:-$ROOT/build/witness-web}"
+rm -rf "$EXPORT" "$OUT"
 
-rm -rf "$OUT"
-mkdir -p "$OUT/project"
+./build/bin/saida_tool.exe export-game WitnessGame/WitnessGame.saidaproj \
+    --platform web --out "$EXPORT" > /dev/null
 
-for f in index.html index.js index.wasm index.data; do
-    [ -f "build-web-player/$f" ] && cp "build-web-player/$f" "$OUT/"
-done
-
-cp -r WitnessGame/scenes WitnessGame/scripts WitnessGame/assets WitnessGame/anim "$OUT/project/"
-cp WitnessGame/WitnessGame.saidaproj "$OUT/project/"
+# exportWebBuild écrit <out>/web ; on publie ce dossier tel quel.
+mv "$EXPORT/web" "$OUT"
+rm -rf "$EXPORT"
 
 # Pilote E2E en autoload (comme tools/witness_e2e.sh côté desktop).
 python - "$OUT/project/WitnessGame.saidaproj" <<'EOF'
@@ -24,20 +23,6 @@ import json, sys
 p = json.load(open(sys.argv[1]))
 p.setdefault("autoloads", {})["E2EDriver"] = "scripts/e2e_driver.js"
 json.dump(p, open(sys.argv[1], "w"), indent=2)
-EOF
-
-printf '# SaidaEngine game boot manifest\nschema=1\nproject=WitnessGame.saidaproj\nmain_scene=scenes/hub.scene\n' > "$OUT/project/game.saida"
-
-python - "$OUT" <<'EOF'
-import json, os, sys
-root = os.path.join(sys.argv[1], "project")
-files = []
-for base, _, names in os.walk(root):
-    for n in names:
-        files.append(os.path.relpath(os.path.join(base, n), root).replace(os.sep, "/"))
-files.sort()
-with open(os.path.join(sys.argv[1], "project-files.json"), "w") as f:
-    json.dump({"schema": 1, "files": files}, f, indent=2)
 EOF
 
 echo "staged: $OUT (servir: python web/serve.py $OUT)"
