@@ -69,7 +69,7 @@ void SkyboxFeature::record(FrameContext& fc) {
     Texture* tex = resources_->getTexture(settings.skyboxTexture);
     if (!tex) return;
 
-    if (settings.skyboxTexture != currentTexture_ || !set_) {
+    if (settings.skyboxTexture != currentTexture_ || tex != currentTexturePtr_ || !set_) {
 #ifdef SAIDA_RHI_WEBGPU
         rhi::BindGroupEntry texEntry;
         texEntry.binding = 0;
@@ -87,6 +87,7 @@ void SkyboxFeature::record(FrameContext& fc) {
         set_ = std::make_unique<rhi::BindGroup>(*setLayout_, std::vector<rhi::BindGroupEntry>{entry});
 #endif
         currentTexture_ = settings.skyboxTexture;
+        currentTexturePtr_ = tex;
     }
 
     fc.pass.setPipeline(*pipeline_);

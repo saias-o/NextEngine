@@ -15,7 +15,11 @@ A lightweight 3D game engine written in **C++17 + Vulkan** and LLM-native.
 - **Physics** — Jolt Physics integration (rigid bodies, characters, areas, triggers)
 - **OpenXR / VR** — stereo multiview rendering, action sets, SaidaXRTK toolkit (grab, teleport, anchors, passthrough)
 - **Editor** — scene tree, inspector, file browser, undo/redo, ImGui
-- **Scripting-ready** — node + behaviour + signal architecture (in Javascript)
+- **JavaScript scripting** — QuickJS modules, ScriptBehaviour, autoloads,
+  signals and gameplay bindings; API coverage and execution sandboxing remain
+  incomplete for untrusted public projects
+- **Web targets** — a WASM/WebGPU authoring runtime and a separate game player;
+  the web player still lacks rendered game UI and full input/capability parity
 
 ## Build on Windows
 
@@ -214,9 +218,26 @@ The engine compiles as a static library (`saida_engine`); game code links agains
 
 ## Status
 
-Alpha — actively developed. Read [AGENTS.md](AGENTS.md) first for the complete
-architecture, development rules, roadmap and known environment pitfalls.
+**Alpha — actively developed; not a stable public engine release.**
+
+| Area | Current state |
+|---|---|
+| Desktop editor/runtime | Broad feature set and a packaged WitnessGame path exist. Final Build-button proof on a pristine machine, signing/installer/crash reporting and release operations are not complete. |
+| JavaScript gameplay | QuickJS, modules, autoloads, timers, signals, storage, audio and asset handles exist. Cross-node/autoload access and several gameplay services are incomplete; scripts have no instruction/deadline interrupt and filesystem confinement needs hardening. |
+| Web game player | Rendering, scripts, Jolt physics, Web Audio and IndexedDB storage exist. RmlUi game UI is not rendered, gamepad/touch parity is incomplete and corrupt content can still abort the player. |
+| Web authoring / Saida integration | SaidaOps, manifests, snapshots and browser runtime exist. Native/web type registries diverge; headless snapshot round-trips can lose types/behaviours and Mesh creation lacks a ResourceManager in the fold path. Do not use for irreplaceable project data yet. |
+| Asset lifecycle | Async `AssetLoader` and JS handles exist. Texture/mesh integration is currently being completed and has uncommitted work in this checkout; scene-wide memory/streaming guarantees are not closed. |
+| XR | OpenXR, controllers, multiview and skeletal hand tracking code exist. MSAA multiview, ImGui overlay, real anchor backends and a repeatable hardware validation matrix remain open. |
+| Compatibility | Schemas, migrations and a fixture corpus exist as a V1 candidate contract. Public stability is not declared until semantic cross-runtime round-trips and the V1 ship gates pass. |
+
+Read [TODO.md](TODO.md), [PLAN_V1_ENGINE.md](PLAN_V1_ENGINE.md),
+[docs/V1_KNOWN_LIMITATIONS.md](docs/V1_KNOWN_LIMITATIONS.md) and the Saida
+platform [production audit](https://github.com/saias-o/saida/blob/main/AUDIT_BEFORE_PROD.md) before using
+the engine as a release dependency.
 
 ## License
 
-Source available. License TBD before stable release.
+The repository root contains the GNU GPL version 3 license text and the project
+is documented as **GPL-3.0**. Third-party code and assets keep their respective
+licenses. Before a stable distribution, add explicit project copyright/SPDX
+notices where needed and complete a dependency/asset/model license review.

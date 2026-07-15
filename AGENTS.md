@@ -339,7 +339,9 @@ Le moteur est construit par étapes numérotées :
             - **Cycle de vie** : `Behaviour::onDestroy/onEnable/onDisable`.
             - **`SpawnerBehaviour`** (démo réutilisable, enregistrée) : spawn une
               scène sur timer + lifetime/`queueFree`.
-      - [ ] *À faire (couche jeu)* : runtime standalone sans éditeur (Étape 15).
+      - [x] **Runtime standalone** : `SaidaEngineRuntime` + `game.saida` et
+            `BuildExporter` existent. La gate restante est le Build UI sur
+            machine vierge, pas l'absence du runtime.
 - [x] **Étape 8b — Scripting JavaScript (QuickJS).** Voir « Décision scripting »
       ci-dessous. Objectif : un seul runtime JS léger et complet pour SaidaEngine :
       `ScriptBehaviour`, autoloads JS, bindings moteur, hot-reload, inspector et
@@ -374,8 +376,10 @@ Le moteur est construit par étapes numérotées :
             sont des exports (`export function onUpdate(dt) {}`), les imports
             relatifs (`./foo.mjs`) sont résolus depuis le fichier courant avec
             fallback projet, et les modules importés participent au hot-reload.
-      - *Futurs bindings spécialisés* : physics/audio/UI/signaux peuvent être
-        ajoutés au même pont natif quand un gameplay concret le demande.
+      - **Bindings spécialisés partiels** : audio, storage, assets et signaux
+        locaux existent. Accès autoload/cross-node, physique, animation, UI,
+        caméra et XR restent incomplets. QuickJS doit aussi recevoir un
+        interrupt/deadline et un sandbox de modules avant contenu tiers.
 - [x] **Étape 9 — Rendu global / GI pragmatique.** Validé jusqu'à nouvel ordre :
       l'objectif actif n'est plus d'empiler Radiance Cascades / World Cache /
       froxels, mais de garder un rendu moderne, léger, optimisé VR/mobile et
@@ -417,8 +421,11 @@ Le moteur est construit par étapes numérotées :
             **viewer de squelette** (pipeline `LINE_LIST` `debug_line.*`, toggle
             `SceneSettings::showSkeletons`, desktop) ; **drag-drop `.bvh`** (payload
             `FILE_BVH` → drop sur un `Animator` dans l'inspecteur → `addClip`).
-            *Restes hors-périmètre* : retargeting proportionnel/rest-pose (notre
-            `AnimationClip` ne stocke pas la bind pose source) — pass futur.
+            Les étapes suivantes ont depuis ajouté retargeting rest-pose/
+            proportions, assets animation versionnés, cooker, séquences,
+            outils headless/MCP et TimelinePropertyTrack réfléchi. La gate
+            produit restante est de traverser une `.sseq` dans le jeu témoin et
+            de compléter les bindings JS/parités plateforme.
 - [x] **Étape 11 — Simulation Physique.** Intégration d'un moteur physique robuste :
       - [x] **Jolt Physics vendu** (`third_party/jolt`, lib statique via
             `add_subdirectory`, SIMD/ABI propagés en PUBLIC). Wrapper moteur dans
@@ -451,9 +458,10 @@ Le moteur est construit par étapes numérotées :
       - [x] **Éditeur** : menu « Physics » (StaticBody/RigidBody/CharacterBody/
             Area, crée corps + cube + CollisionShape Auto en un geste), inspecteurs
             corps/shape (tous les types), sérialisation JSON, `NodeRegistry`.
-      - **Étape 11 terminée.** *Restes hors-périmètre/futurs* : vérification
-            visuelle en éditeur (test manuel) ; *Note perf* : build sans
-            `CMAKE_BUILD_TYPE` → Jolt non optimisé ; passer en Release pour la perf.
+      - **Cœur Étape 11 livré, API produit partielle.** Restent notamment les
+            queries communes/shape casts/overlaps, joints, matériaux, CCD,
+            bindings JS et mesures de parité desktop/Web/VR. *Note perf* : build
+            sans `CMAKE_BUILD_TYPE` → Jolt non optimisé.
 - [~] **Étape 12 — UI 2D (Screen & World Space).** Migration active vers une UI
       web légère et libre : **RmlUi + QuickJS**, sans Ultralight.
       - Canvas 2D en Screen Space (overlay classique) et World Space (panneaux
@@ -473,8 +481,9 @@ Le moteur est construit par étapes numérotées :
       - [x] **Rendu WebCanvas réel vers texture** : backend RmlUi CPU
             déterministe (`RmlUiRenderInterface`) qui rasterize les triangles
             RmlUi en RGBA, dirty-only, puis upload via staging buffer persistant
-            dans la texture du `WebCanvasNode`. Ce chemin est léger, portable et
-            garantit le même rendu sur desktop/mobile/VR.
+            dans la texture du `WebCanvasNode`. Ce chemin est le contrat
+            desktop/Vulkan actuel ; il ne garantit pas le player WASM/WebGPU,
+            où les nœuds UI sont encore dégradés en Node générique.
       - [x] **Hot-reload WebCanvas transactionnel** : les documents `.rml/.html`
             chargés par URL/fichier et les dépendances réellement ouvertes par
             RmlUi (`.rcss`, imports, textures chargées au rendu) sont surveillés
@@ -484,10 +493,11 @@ Le moteur est construit par étapes numérotées :
             l'interface fichier.
       - [ ] Optimisation future optionnelle : backend GPU/Vulkan pour très gros
             documents animés, sans changer l'API `WebCanvasNode`.
-- [ ] **Étape 13 — Intégration LLM Native.** Support natif d'intelligence artificielle agentique dans le moteur :
-      - World model (compréhension et représentation de l'état du monde par l'IA).
-      - Protocole MCP (Model Context Protocol) pour connecter des outils.
-      - Concept de "skills" (compétences exécutables par l'IA) et d'agents autonomes interagissant directement avec la scène.
+- [~] **Étape 13 — Intégration LLM Native.** Le serveur MCP in-process, bridge
+      stdio, réflexion/manifeste, outils scène/code/validation et primitives
+      FSM/Blackboard/Scénario existent. Restent : permissions par outil,
+      transactions/diff/dry-run/rollback, inspecteur behaviours, world model,
+      skills et agents autonomes.
 - [~] **Étape 14 — XR / OpenXR.** Rendu et interactions XR via OpenXR (Objectif final du moteur).
       Cible : PCVR Quest Link, multiview (1 passe), auto-détection du casque. *Mise en
       route casque = itérative (le rendu/tracking ne se valide que dans le casque).*
@@ -591,10 +601,14 @@ Le moteur est construit par étapes numérotées :
               tout le toolkit est « vivant » avec contrôleurs ou mains nues.
               *Restant (optionnel, casque)* : backend d'anchors réel
               (`XRAnchors::setBackend` sur une extension), modèle de main skinné.
-- [ ] **Étape 15 — Build & Release Windows.** Gestion de la release finale du jeu :
-      - Pipeline de build autonome d'un projet (packaging des assets et shaders sans dépendances de développement).
-      - Gestion des versions, métadonnées de l'exécutable, et icône du jeu.
-      - Optimisation finale de build (Link-Time Optimization, suppression des traces de debug/ImGui si nécessaire).
+- [~] **Étape 15 — Build & Release Windows.** Runtime dédié, packager,
+      Build Settings, versions, metadata et icône existent. Restent : preuve sur
+      machine vierge via le bouton UI, archive/installeur signé, crash logs,
+      validation DLL, SBOM/provenance, rollback et LTO.
+- [~] **Étape 16 — Web.** Renderer WASM/WebGPU et player distinct existent.
+      Le player gameplay garde UI/input/robustesse incomplets ; l'authoring web
+      garde des divergences de types et de snapshot. Voir `TODO.md` et
+      `docs/V1_KNOWN_LIMITATIONS.md`.
 
 Quand une étape est finie : cocher ici et compiler pour vérifier.
 

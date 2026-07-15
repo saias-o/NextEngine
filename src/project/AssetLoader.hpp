@@ -5,6 +5,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -17,6 +18,25 @@ namespace saida {
 
 enum class AssetLoadState : uint8_t { Queued, Loading, Ready, Failed };
 enum class AssetLoadPriority : uint8_t { Low, Normal, High, Critical };
+
+// Distingue les requêtes du même AssetID selon la forme demandée : les bytes
+// bruts (JS assets.load) et un payload décodé (texture, mesh) coexistent sans
+// se télescoper dans le cache d'entrées.
+enum class AssetPayloadKind : uint8_t { Raw = 0, Image = 1, MeshObj = 2 };
+
+// Résultat d'un décodage exécuté sur le worker (desktop) ou dans pump() (web) :
+// un payload opaque typé par l'appelant + sa taille réelle pour la comptabilité
+// (remplace la taille du fichier une fois les bytes bruts libérés).
+struct AssetDecodeResult {
+    std::shared_ptr<void> payload;
+    uint64_t bytes = 0;
+};
+
+// Consomme les bytes bruts du fichier et produit le payload décodé. Retourne
+// false + `error` en cas d'échec. Exécuté hors du thread principal sur desktop :
+// ne toucher ni au GPU ni à l'état du moteur.
+using AssetDecoder =
+    std::function<bool(std::vector<uint8_t>&& bytes, AssetDecodeResult& out, std::string& error)>;
 
 struct AssetLoadStats {
     uint32_t live = 0;
@@ -39,6 +59,9 @@ public:
     bool ready() const { return state() == AssetLoadState::Ready; }
     bool failed() const { return state() == AssetLoadState::Failed; }
     const std::vector<uint8_t>& bytes() const;
+    // Payload produit par le décodeur de la requête (null pour une requête Raw
+    // ou tant que l'asset n'est pas Ready).
+    std::shared_ptr<void> payload() const;
     std::string error() const;
     uint32_t referenceCount() const;
     explicit operator bool() const { return entry_ != nullptr; }
@@ -61,9 +84,13 @@ public:
 
     void setRegistry(AssetRegistry* registry) { registry_ = registry; }
     AssetHandle request(AssetID id,
-                        AssetLoadPriority priority = AssetLoadPriority::Normal);
+                        AssetLoadPriority priority = AssetLoadPriority::Normal,
+                        AssetPayloadKind kind = AssetPayloadKind::Raw,
+                        AssetDecoder decoder = {});
     AssetHandle request(const std::string& path, AssetType type = AssetType::Unknown,
-                        AssetLoadPriority priority = AssetLoadPriority::Normal);
+                        AssetLoadPriority priority = AssetLoadPriority::Normal,
+                        AssetPayloadKind kind = AssetPayloadKind::Raw,
+                        AssetDecoder decoder = {});
     std::vector<AssetHandle> preload(const std::vector<AssetID>& ids,
                                      AssetLoadPriority priority = AssetLoadPriority::High);
 
@@ -87,8 +114,20 @@ private:
         bool operator()(const Job& a, const Job& b) const;
     };
 
+    struct EntryKey {
+        AssetID id = kAssetInvalid;
+        AssetPayloadKind kind = AssetPayloadKind::Raw;
+        bool operator==(const EntryKey& o) const { return id == o.id && kind == o.kind; }
+    };
+    struct EntryKeyHash {
+        size_t operator()(const EntryKey& k) const {
+            return std::hash<AssetID>()(k.id) ^ (static_cast<size_t>(k.kind) * 0x9e3779b97f4a7c15ull);
+        }
+    };
+
     AssetHandle requestResolved(AssetID id, const std::string& absolutePath,
-                                AssetLoadPriority priority);
+                                AssetLoadPriority priority, AssetPayloadKind kind,
+                                AssetDecoder decoder);
     bool popJob(Job& job);
     void load(const std::shared_ptr<AssetHandle::Entry>& entry);
     void workerMain();
@@ -98,7 +137,7 @@ private:
     mutable std::mutex mutex_;
     std::condition_variable wake_;
     std::priority_queue<Job, std::vector<Job>, JobOrder> jobs_;
-    std::unordered_map<AssetID, std::weak_ptr<AssetHandle::Entry>> entries_;
+    std::unordered_map<EntryKey, std::weak_ptr<AssetHandle::Entry>, EntryKeyHash> entries_;
     uint64_t nextSequence_ = 1;
     bool stopping_ = false;
 #ifndef __EMSCRIPTEN__

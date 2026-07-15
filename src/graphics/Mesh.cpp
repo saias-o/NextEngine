@@ -12,8 +12,11 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <istream>
 #include <limits>
 #include <stdexcept>
+#include <streambuf>
 #include <unordered_map>
 
 namespace saida {
@@ -68,6 +71,12 @@ std::array<VkVertexInputAttributeDescription, 8> Vertex::attributeDescriptions()
 Mesh::Mesh(GeometryRegistry& registry, const std::vector<Vertex>& vertices,
            const std::vector<uint32_t>& indices)
     : registry_(registry) {
+    upload(vertices, indices);
+}
+
+Mesh::Mesh(GeometryRegistry& registry) : registry_(registry) {}
+
+void Mesh::upload(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
     // Cache the local-space AABB while the vertices are still on the CPU (they
     // are GPU-only after allocate). Used by the physics layer for auto-shape.
     if (!vertices.empty()) {
@@ -83,34 +92,48 @@ Mesh::Mesh(GeometryRegistry& registry, const std::vector<Vertex>& vertices,
 
     // Retain positions + indices on the CPU for collider generation (the GPU
     // buffers are write-only from here on).
+    collisionVertices_.clear();
     collisionVertices_.reserve(vertices.size());
     for (const Vertex& v : vertices) collisionVertices_.push_back(v.pos);
     collisionIndices_ = indices;
 
+    if (allocation_.indexCount != 0) registry_.free(allocation_);
     allocation_ = registry_.allocate(vertices, indices);
+    gpuBytes_ = static_cast<uint64_t>(vertices.size()) * sizeof(Vertex) +
+                static_cast<uint64_t>(indices.size()) * sizeof(uint32_t);
 }
 
 Mesh::~Mesh() {
     registry_.free(allocation_);
 }
 
-std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::string& path,
-                                        bool generateLightmapUVs) {
-    SAIDA_PROFILE_SCOPE("Resource/LoadObjMesh");
-    (void)generateLightmapUVs; // Kept for API compatibility; UV unwrap baking was removed.
+namespace {
+// Vue streambuf sans copie sur un bloc mémoire (parse .obj depuis les bytes
+// de l'AssetLoader).
+struct MemoryStreamBuf : std::streambuf {
+    MemoryStreamBuf(const uint8_t* data, size_t size) {
+        char* p = const_cast<char*>(reinterpret_cast<const char*>(data));
+        setg(p, p, p + size);
+    }
+};
+} // namespace
+
+bool Mesh::parseObjBytes(const uint8_t* data, size_t size, MeshData& out, std::string& error) {
+    SAIDA_PROFILE_SCOPE("Resource/ParseObjMesh");
 
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
     std::string warn, err;
 
-    std::string baseDir;
-    if (auto slash = path.find_last_of("/\\"); slash != std::string::npos)
-        baseDir = path.substr(0, slash + 1);
-
-    // triangulate=true is the default: polygon faces (e.g. quads) are split.
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, path.c_str(), baseDir.c_str()))
-        throw std::runtime_error("failed to load model '" + path + "': " + warn + err);
+    MemoryStreamBuf buf(data, size);
+    std::istream stream(&buf);
+    // Pas de MaterialReader : les .mtl ne sont pas résolus (les matériaux du
+    // moteur viennent des scènes, pas des .obj). triangulate=true par défaut.
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, &stream)) {
+        error = warn + err;
+        return false;
+    }
 
     // Compute the bounding box to recenter the model on the origin and scale it
     // uniformly so its largest dimension fits within a unit cube.
@@ -126,8 +149,10 @@ std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::s
     float extent = std::max({dim.x, dim.y, dim.z});
     float scale = extent > 0.0f ? 1.0f / extent : 1.0f;
 
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
+    std::vector<Vertex>& vertices = out.vertices;
+    std::vector<uint32_t>& indices = out.indices;
+    vertices.clear();
+    indices.clear();
     std::unordered_map<uint64_t, uint32_t> uniqueVertices;
 
     for (const auto& shape : shapes) {
@@ -202,13 +227,34 @@ std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::s
         v.tangent = glm::vec4(glm::normalize(t - n * glm::dot(n, t)), 1.0f);
     }
 
-    Log::info("loaded '", path, "': ", vertices.size(), " vertices, ",
-              indices.size() / 3, " triangles");
+    return true;
+}
+
+std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::string& path,
+                                        bool generateLightmapUVs) {
+    SAIDA_PROFILE_SCOPE("Resource/LoadObjMesh");
+    (void)generateLightmapUVs; // Kept for API compatibility; UV unwrap baking was removed.
+
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) throw std::runtime_error("failed to open model '" + path + "'");
+    const std::streamoff size = file.tellg();
+    std::vector<uint8_t> bytes(static_cast<size_t>(std::max<std::streamoff>(size, 0)));
+    file.seekg(0, std::ios::beg);
+    if (!bytes.empty() && !file.read(reinterpret_cast<char*>(bytes.data()), size))
+        throw std::runtime_error("failed to read model '" + path + "'");
+
+    MeshData data;
+    std::string error;
+    if (!parseObjBytes(bytes.data(), bytes.size(), data, error))
+        throw std::runtime_error("failed to load model '" + path + "': " + error);
+
+    Log::info("loaded '", path, "': ", data.vertices.size(), " vertices, ",
+              data.indices.size() / 3, " triangles");
     Log::warn(".obj is deprecated: heavy, uncompressed, web-hostile. "
               "Re-export as meshopt GLB (Build Settings / exportMeshoptGlb) — "
               "same loader, ~10-20x smaller.");
 
-    return std::make_unique<Mesh>(registry, vertices, indices);
+    return std::make_unique<Mesh>(registry, data.vertices, data.indices);
 }
 
 void Mesh::bind(rhi::RenderPassEncoder& rp) const {

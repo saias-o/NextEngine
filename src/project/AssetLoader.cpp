@@ -15,6 +15,9 @@ struct AssetHandle::Entry {
     std::atomic<AssetLoadState> state{AssetLoadState::Queued};
     mutable std::mutex mutex;
     std::vector<uint8_t> data;
+    std::shared_ptr<void> payload;      // sortie du decoder (Ready + decoder fournis)
+    AssetDecoder decoder;               // vide = requête Raw (bytes bruts)
+    AssetPayloadKind kind = AssetPayloadKind::Raw;
     std::string error;
     std::shared_ptr<AssetLoader::Accounting> accounting;
     uint64_t accountedBytes = 0;
@@ -40,6 +43,12 @@ AssetLoadState AssetHandle::state() const {
 
 const std::vector<uint8_t>& AssetHandle::bytes() const {
     return ready() ? entry_->data : emptyBytes();
+}
+
+std::shared_ptr<void> AssetHandle::payload() const {
+    if (!entry_ || !ready()) return nullptr;
+    std::lock_guard<std::mutex> lock(entry_->mutex);
+    return entry_->payload;
 }
 
 std::string AssetHandle::error() const {
@@ -89,35 +98,41 @@ AssetLoader::~AssetLoader() {
 #endif
 }
 
-AssetHandle AssetLoader::request(AssetID id, AssetLoadPriority priority) {
+AssetHandle AssetLoader::request(AssetID id, AssetLoadPriority priority,
+                                 AssetPayloadKind kind, AssetDecoder decoder) {
     if (!registry_ || id == kAssetInvalid) return {};
     std::string path = registry_->getAbsolutePath(id);
     if (path.empty()) path = registry_->getPath(id);
     if (path.empty()) return {};
-    return requestResolved(id, path, priority);
+    return requestResolved(id, path, priority, kind, std::move(decoder));
 }
 
 AssetHandle AssetLoader::request(const std::string& path, AssetType type,
-                                 AssetLoadPriority priority) {
+                                 AssetLoadPriority priority,
+                                 AssetPayloadKind kind, AssetDecoder decoder) {
     if (!registry_ || path.empty()) return {};
     const AssetID id = registry_->registerAsset(path, type);
     std::string absolute = registry_->getAbsolutePath(id);
     if (absolute.empty()) absolute = path;
-    return requestResolved(id, absolute, priority);
+    return requestResolved(id, absolute, priority, kind, std::move(decoder));
 }
 
 AssetHandle AssetLoader::requestResolved(AssetID id, const std::string& absolutePath,
-                                         AssetLoadPriority priority) {
+                                         AssetLoadPriority priority, AssetPayloadKind kind,
+                                         AssetDecoder decoder) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (auto it = entries_.find(id); it != entries_.end()) {
+    const EntryKey key{id, kind};
+    if (auto it = entries_.find(key); it != entries_.end()) {
         if (auto existing = it->second.lock()) return AssetHandle(std::move(existing));
     }
 
     auto entry = std::make_shared<AssetHandle::Entry>();
     entry->id = id;
     entry->path = absolutePath;
+    entry->kind = kind;
+    entry->decoder = std::move(decoder);
     entry->accounting = accounting_;
-    entries_[id] = entry;
+    entries_[key] = entry;
     jobs_.push({priority, nextSequence_++, entry});
     wake_.notify_one();
     return AssetHandle(std::move(entry));
@@ -178,6 +193,39 @@ void AssetLoader::load(const std::shared_ptr<AssetHandle::Entry>& entry) {
         entry->error = "failed to read asset: " + entry->path;
         entry->state.store(AssetLoadState::Failed, std::memory_order_release);
         return;
+    }
+
+    if (entry->decoder) {
+        AssetDecodeResult decoded;
+        std::string decodeError;
+        const bool ok = entry->decoder(std::move(entry->data), decoded, decodeError);
+        entry->data.clear();
+        // Les bytes bruts sont consommés : la comptabilité bascule sur la
+        // taille décodée (le budget s'applique à ce qui reste réellement
+        // résident, pas au fichier transitoire).
+        accounting_->residentBytes.fetch_sub(entry->accountedBytes, std::memory_order_relaxed);
+        entry->accountedBytes = 0;
+        if (!ok) {
+            std::lock_guard<std::mutex> lock(entry->mutex);
+            entry->error = "failed to decode asset: " + entry->path +
+                           (decodeError.empty() ? "" : " (" + decodeError + ")");
+            entry->state.store(AssetLoadState::Failed, std::memory_order_release);
+            Log::warn(entry->error);
+            return;
+        }
+        const uint64_t decodedPrevious =
+            accounting_->residentBytes.fetch_add(decoded.bytes, std::memory_order_relaxed);
+        if (decodedPrevious + decoded.bytes > accounting_->budgetBytes.load(std::memory_order_relaxed)) {
+            accounting_->residentBytes.fetch_sub(decoded.bytes, std::memory_order_relaxed);
+            std::lock_guard<std::mutex> lock(entry->mutex);
+            entry->error = "asset memory budget exceeded after decode: " + entry->path;
+            entry->state.store(AssetLoadState::Failed, std::memory_order_release);
+            Log::warn(entry->error);
+            return;
+        }
+        entry->accountedBytes = decoded.bytes;
+        std::lock_guard<std::mutex> lock(entry->mutex);
+        entry->payload = std::move(decoded.payload);
     }
     entry->state.store(AssetLoadState::Ready, std::memory_order_release);
 }

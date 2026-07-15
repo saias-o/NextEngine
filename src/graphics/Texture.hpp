@@ -48,6 +48,9 @@ public:
     void setBindlessIndex(uint32_t idx) { bindlessIndex_ = idx; }
     uint32_t bindlessIndex() const { return bindlessIndex_; }
 
+    // Octets GPU de la chaîne de mips — comptabilité assets (chantier 3).
+    uint64_t gpuBytes() const { return trackedBytes_; }
+
 private:
     void createSampler();
     void generateMipmaps();

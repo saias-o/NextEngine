@@ -1,9 +1,13 @@
 #include "scene/SceneTree.hpp"
 
 #include "scene/Scene.hpp"
+#include "scene/MeshNode.hpp"
+#include "scene/UIImageNode.hpp"
 #include "scene/SceneSerializer.hpp"
 #include "scene/BehaviourRegistry.hpp"
 #include "scripting/ScriptBehaviour.hpp"
+#include "graphics/Material.hpp"
+#include "graphics/ResourceManager.hpp"
 #include "core/Time.hpp"
 #include "core/Log.hpp"
 
@@ -11,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 
@@ -118,6 +123,40 @@ void SceneTree::requestFree(Node* node) {
     if (node) pendingFree_.push_back(node);
 }
 
+namespace {
+// Marque tout ce que ce nœud (et ses descendants) référence dans le
+// ResourceManager : meshes + matériaux (et leurs textures) des MeshNode et de
+// leurs LODs, textures des UIImageNode, skybox des Scene traversées.
+void collectAssetUsage(Node& node, ResourceManager::AssetUsage& usage) {
+    if (auto* meshNode = dynamic_cast<MeshNode*>(&node)) {
+        auto markMaterial = [&usage](Material* material) {
+            if (!material) return;
+            usage.materials.insert(material);
+            const MaterialDesc& d = material->desc();
+            for (AssetID id : {d.albedoId, d.normalId, d.metallicRoughnessId, d.emissiveId})
+                if (id != kAssetInvalid) usage.textures.insert(id);
+        };
+        if (meshNode->mesh()) usage.meshes.insert(meshNode->mesh());
+        markMaterial(meshNode->material());
+        for (const MeshLodLevel& lvl : meshNode->lods()) {
+            if (lvl.mesh) usage.meshes.insert(lvl.mesh);
+            markMaterial(lvl.material);
+        }
+    } else if (std::strcmp(node.typeName(), "UIImageNode") == 0) {
+        // static_cast via typeName : le player web ne compile pas les nœuds UI
+        // (ils se dégradent en Node générique), un dynamic_cast exigerait leur
+        // typeinfo au link.
+        auto* image = static_cast<UIImageNode*>(&node);
+        if (image->texture() != kAssetInvalid) usage.textures.insert(image->texture());
+    }
+    if (auto* scene = dynamic_cast<Scene*>(&node)) {
+        if (scene->settings().skyboxTexture != kAssetInvalid)
+            usage.textures.insert(scene->settings().skyboxTexture);
+    }
+    for (const auto& child : node.children()) collectAssetUsage(*child, usage);
+}
+} // namespace
+
 void SceneTree::applyDeferred() {
     if (!world_) return;
 
@@ -128,17 +167,30 @@ void SceneTree::applyDeferred() {
     pendingFree_.clear();
 
     // 2) Swap the gameplay sub-scene if requested (World + autoloads untouched).
+    bool sceneChanged = false;
     if (pendingChange_) {
         pendingChange_ = false;
         if (auto sub = SceneSerializer::loadNodeFromSceneFile(resolvePath(pendingScenePath_), resources_)) {
             currentScenePath_ = pendingScenePath_;
             loadCurrentScene(std::move(sub));
+            sceneChanged = true;
         } else {
             Log::warn("changeScene: failed to load '", pendingScenePath_, "'");
         }
     }
 
-    // 3) Les caches aplatis (meshes/lights) du World pointent encore sur les
+    // 3) Déchargement réel (PLAN_V1_ENGINE chantier 3) : après un changement
+    // de scène, tout ce que le World (autoloads + nouvelle sous-scène) ne
+    // référence plus est évincé du ResourceManager — la mémoire GPU reste
+    // bornée sur N cycles hub↔arena. L'ancienne sous-scène est déjà détruite,
+    // donc le walk voit exactement ce qui doit survivre.
+    if (sceneChanged) {
+        ResourceManager::AssetUsage usage;
+        collectAssetUsage(*world_, usage);
+        resources_.trimUnused(usage);
+    }
+
+    // 4) Les caches aplatis (meshes/lights) du World pointent encore sur les
     // nœuds détruits ci-dessus ; le rendu de cette frame les consommerait.
     world_->refreshHierarchy();
 }

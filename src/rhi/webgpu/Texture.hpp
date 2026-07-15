@@ -28,6 +28,18 @@ public:
     uint32_t bindlessIndex() const { return bindlessIndex_; }
     void setBindlessIndex(uint32_t index) { bindlessIndex_ = index; }
 
+    // Octets GPU approximatifs de la chaîne de mips (RGBA8) — comptabilité
+    // assets, aligné sur l'accesseur Vulkan du même nom.
+    uint64_t gpuBytes() const {
+        uint64_t total = 0;
+        uint32_t w = width_, h = height_;
+        for (uint32_t i = 0; i < mipLevels_; ++i) {
+            total += uint64_t(w > 0 ? w : 1) * (h > 0 ? h : 1) * 4;
+            w /= 2; h /= 2;
+        }
+        return total;
+    }
+
     void updatePixels(const uint8_t* pixels, size_t size);
 
 private:

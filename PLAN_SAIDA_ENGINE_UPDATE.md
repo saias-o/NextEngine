@@ -1,5 +1,10 @@
 # Plan de mise a niveau de Saida Engine
 
+État resynchronisé : 2026-07-15. Ce plan décrit une cible. Une rubrique n'est
+« terminée » que si ses critères de sortie sont prouvés sur desktop et Web avec
+les artefacts de release ; la présence des classes ou d'un test local ne suffit
+pas. Le projet reste Alpha.
+
 ## 1. Objectif
 
 Ce document definit la feuille de route runtime necessaire pour faire de Saida
@@ -19,6 +24,19 @@ Les priorites sont classees selon quatre niveaux :
 - P1 : necessaire pour une premiere version publique credible ;
 - P2 : important pour elargir les types de jeux supportes ;
 - P3 : extension optionnelle a engager lorsque le socle est stabilise.
+
+Résumé actuel :
+
+| Chantier | État |
+|---|---|
+| Player Web | Partiel : renderer, scènes, scripts, Jolt, audio et storage existent ; UI, input complet et robustesse contenu restent ouverts. |
+| Input | Partiel : clavier/souris/actions/touch brut existent ; axes gamepad, rebinding et multi-device ne sont pas complets. |
+| Storage | MVP : slots JS et IDBFS existent ; atomicité, migrations, préférences, métadonnées et emplacements plateforme restent ouverts. |
+| Physique | Large base Jolt desktop/web ; API de queries/contraintes et parité JS restent incomplètes. |
+| JavaScript | Large base QuickJS ; accès cross-node/autoload, services complets, interrupt et sandbox restent ouverts. |
+| Assets | AssetLoader async/handles/budgets existent ; intégration de toutes les ressources et streaming web sont en cours. |
+| Animation | Implémentation large ; preuve WitnessGame `.sseq` et bindings JS complets restent ouverts. |
+| UI | Desktop partiel/avancé ; player WebGPU sans rendu UI. |
 
 ## 2. Principes directeurs
 
@@ -60,13 +78,14 @@ ou retourner une valeur neutre donnant l'impression qu'elle est supportee.
 
 ### Probleme
 
-Le runtime Web actuel compile un sous-ensemble principalement oriente rendu et
-authoring. Il ne demarre pas le meme moteur de jeu que le player desktop et ne
-dispose pas de plusieurs services essentiels, notamment le SceneTree complet,
-la physique, l'audio, les scripts gameplay et l'input unifie.
+Le problème initial a été réduit : un player web distinct de l'authoring démarre
+maintenant le SceneTree, QuickJS, Jolt, Web Audio et le storage communs. La
+parité reste toutefois incomplète : UI non rendue, input multi-périphérique
+partiel, capabilities trop optimistes et contenu corrompu pouvant interrompre
+le player.
 
-Cette divergence rend impossible la promesse d'un moteur oriente Web : un jeu
-desktop ne peut pas etre exporte tel quel vers le navigateur.
+Un jeu desktop ne peut donc pas encore être présenté comme exportable tel quel
+vers le navigateur dans tous les cas.
 
 ### Perimetre
 
@@ -98,27 +117,17 @@ concuees de maniere a etre compatibles avec le player Web des leur introduction.
 
 ### Etat (juillet 2026)
 
-Premier increment livre : `web/player` (target `saida_player`, CI
-web-artifacts) — player wasm distinct du runtime d'authoring, qui boote un
-package `game.saida` comme l'exe desktop (BootManifest partage), charge projet
-et scene principale via le VRAI SceneSerializer, monte le World du SceneTree
-(autoloads, timers, operations differees) et rend via WebGPU. Verifie sur
-BeachDemo : 47 meshes charges sans loader specialise, boucle de jeu active.
-Contrat de capacites en place (`core/PlatformCaps`, principe 2.5). Deuxieme
-increment : clavier/souris branche sur l'`Input` commun (actions, transitions,
-position/delta/scroll/texte) et scripts gameplay QuickJS actifs dans le player
-(`ScriptBehaviour`, modules ES, bindings node/tree/time/input, jobs async).
-Les timers/tweens possedes par node ou behaviour ne sont plus neutralises par
-le backend WebGPU : une `SceneTimerQueue` commune, testee independamment du
-chargement de scene, alimente maintenant le `SceneTree` desktop et Web.
-La meme primitive est exposee aux `ScriptBehaviour` via `time.wait`,
-`time.every`, `time.tween` et `time.cancel`. Les callbacks sont possedes par le
-contexte qui les a crees, annules avant hot-reload/destruction et les easings
-acceptes sont valides explicitement.
-Le player declare maintenant `Rendering`, `KeyboardMouse` et `ScriptGameplay` ;
-physique, audio, UI, touch/manette et storage rejoignent le meme executable par
-increments — les types de nodes absents sont diagnostiques au chargement,
-jamais silencieux.
+`web/player` est distinct du runtime d'authoring et boote `game.saida` via le
+BootManifest/SceneSerializer commun. WebGPU, SceneTree, autoloads, timers,
+opérations différées, QuickJS, Jolt mono-thread, Web Audio et storage IDBFS sont
+intégrés. Des scénarios BeachDemo/WitnessGame ont été consignés comme validations
+locales historiques.
+
+Le chantier n'est pas terminé : les nœuds UI se dégradent en Node générique,
+gamepad/touch ne couvrent pas le contrat multi-périphérique, des contenus glTF
+corrompus peuvent interrompre le player, et la parité complète du jeu témoin
+n'est pas une gate de release. `PlatformCaps` doit refléter le comportement
+réel ; aujourd'hui certains caps desktop, notamment Gamepad, sont trop larges.
 
 ## 4. P0 - Input multi-peripherique complet
 
@@ -128,6 +137,13 @@ Le systeme d'actions prend en charge le clavier et la souris, mais les bindings
 gamepad sont incomplets et le touch reste une entree brute. Un jeu ne peut pas
 encore definir une intention de gameplay unique utilisable sur desktop, mobile,
 Web et VR.
+
+### État actuel
+
+Actions, contexts, clavier/souris, boutons gamepad, événements touch et input XR
+existent. `Input.cpp` laisse encore les axes gamepad non implémentés ; rebinding,
+profils persistants, multi-joueur local, hotplug et touch-as-bindings restent
+ouverts. Le bit `GamepadInput` desktop ne doit pas être lu comme support complet.
 
 ### Perimetre
 
@@ -162,6 +178,14 @@ La serialisation de scene actuelle decrit le contenu du projet. Elle ne fournit
 pas un systeme de sauvegarde pour la progression, les preferences ou les donnees
 propres a un joueur.
 
+### État actuel
+
+L'API JS `storage.save/load/has/remove` par slot existe sur desktop et utilise
+IDBFS dans le player web. Elle a couvert le WitnessGame. Elle ne satisfait pas
+encore le périmètre complet : écritures atomiques/rollback, schéma+migrations de
+sauvegarde, préférences séparées, metadata de slots, quotas et emplacement
+utilisateur OS au lieu du dossier projet/package.
+
 ### Perimetre
 
 - emplacement utilisateur adapte a chaque plateforme ;
@@ -192,6 +216,13 @@ propres a un joueur.
 Jolt fournit un bon coeur physique, mais l'API exposee au gameplay reste limitee.
 Les characters ne participent pas aux memes queries que les rigid bodies et des
 recherches lineaires dans l'arbre de scene compensent cette difference.
+
+### État actuel
+
+Jolt, bodies, CharacterBody, Area/triggers, inner body du character et player
+web existent. Les queries communes, filtres complets, shape casts/overlaps,
+joints, matériaux, CCD et parité des bindings JS ne couvrent pas encore les
+critères ci-dessous.
 
 ### Perimetre
 
@@ -228,6 +259,15 @@ recherches lineaires dans l'arbre de scene compensent cette difference.
 QuickJS, les modules et le hot reload forment une bonne base, mais les bindings
 actuels ne donnent acces qu'a une petite partie du moteur. Un gameplay complet
 necessite encore du C++ pour des operations fondamentales.
+
+### État actuel
+
+Node, tree, time, input, signals locaux, audio, storage et assets couvrent une
+partie significative du gameplay. L'accès aux autoloads et la communication
+cross-node restent insuffisants, comme le montre le contournement storage du
+WitnessGame. Physique/animation/UI/camera/XR ne sont pas exposés au niveau
+annoncé. QuickJS manque aussi d'interrupt/deadline et la résolution de modules
+doit être confinée avant exécution de contenu tiers.
 
 ### Perimetre
 
@@ -267,6 +307,15 @@ Les ressources sont principalement chargees de facon synchrone et conservees
 jusqu'a la destruction du ResourceManager. Ce fonctionnement est simple mais ne
 permet pas de controler les temps de chargement ni la memoire sur Web, mobile et
 VR.
+
+### État actuel
+
+Cette description initiale est partiellement dépassée : un `AssetLoader`
+asynchrone avec handles, états, priorités, budget, garbage collection et API JS
+existe. L'intégration texture/mesh au `ResourceManager` est en cours dans la
+copie de travail actuelle. Toutes les ressources de scène ne passent pas encore
+par ce cycle, le graphe de dépendances/annulation/streaming web n'est pas fermé
+et la stabilité mémoire doit être mesurée sur des scènes représentatives.
 
 ### Perimetre
 
@@ -351,17 +400,20 @@ pas encore le controle attendu pour mixer un jeu complet.
 - les sons spatiaux suivent correctement la camera et leurs emetteurs ;
 - un grand nombre d'effets courts ne provoque pas d'allocations excessives.
 
-## 11. P1 - Systeme d'animation de production — TERMINE
+## 11. P1 - Systeme d'animation de production — implémentation large, validation partielle
 
-Chantier livre (voir CLAUDE.md, Etape 10) : assets versionnes (.sclip/.sgraph/
+Implémentation livrée en grande partie (voir CLAUDE.md, Etape 10) : assets versionnes (.sclip/.sgraph/
 .sretarget/.srig/.sseq) avec diagnostics structures, cooker + cache derive par
 hash, kernel data-oriented sans allocation, palette GPU 3x4 commune
 Vulkan/WGSL, blend spaces, layers/masks/additif, root motion, events, LOD de
 pose, retargeting semantique avec corrections de rest pose, two-bone IK et
 look-at, sequences multipistes deterministes, panneau editeur et outils MCP
-d'authoring LLM. Restes volontairement conditionnes aux mesures : kernels
-SIMD/NEON dedies, pose sharing massif, evaluation GPU de foules, bindings JS
-d'animation.
+d'authoring LLM. `TimelinePropertyTrack` n'est plus un no-op : il utilise la
+réflexion et l'interpolation. Les critères produit ne sont pas tous fermés : le
+WitnessGame ne traverse pas encore une séquence `.sseq` exportée, les bindings
+JS animation ne sont pas complets et les budgets/parités plateforme restent à
+prouver. Les optimisations SIMD/NEON, pose sharing et GPU crowds restent gated
+par les mesures.
 
 ### Perimetre minimum attendu
 
@@ -639,6 +691,9 @@ ensemble afin d'eviter des variantes incompatibles par langage ou plateforme.
 3. Modules de gameplay reutilisables hors du coeur.
 
 ## 22. Definition d'une premiere version prete pour les developpeurs indes
+
+**État au 2026-07-15 : définition non atteinte.** Les points ci-dessous restent
+des gates, pas une description de l'état actuel.
 
 Saida Engine pourra etre considere comme un moteur de jeu indé complet lorsque :
 

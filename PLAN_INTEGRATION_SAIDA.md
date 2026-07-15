@@ -1,7 +1,10 @@
 # Saida — Plan d'intégration & backlog production
 
-> **Document unique de pilotage** (fusion de l'ancien plan et de l'audit
-> plateforme du 2026-07-05, points fermés retirés). Mis à jour : **2026-07-07**.
+> **Plan d'intégration historique, resynchronisé le 2026-07-15.** Les travaux
+> des 3-8 juillet ont livré beaucoup de fondations, mais plusieurs éléments
+> marqués « fermés/prouvés » ne résistent pas aux scénarios de crash ou aux
+> allers-retours cross-runtime. La source de vérité pour le go/no-go est
+> l'[audit avant production](https://github.com/saias-o/saida/blob/main/AUDIT_BEFORE_PROD.md).
 >
 > Deux repos : **`NextEngine`** (moteur C++/Vulkan+WebGPU, nom final *Saida
 > Engine*) et **`GitHub/saida`** (plateforme web : `apps/web` Next.js,
@@ -75,120 +78,90 @@ Collaboration Gateway (WebSocket, in-process API)
         │
         ▼
 Saida Headless Tools (saida_tool)
-  describe-engine · validate-* · apply-ops · (à venir : export-web)
+  describe-engine · validate-* · apply-ops · export-game (desktop/web)
 ```
 
-## 4. Ce qui est FAIT et prouvé (état 2026-07-07)
+## 4. Fondations implémentées et limites actuelles (2026-07-15)
 
 ### Moteur (`NextEngine`)
 
-- **Export web WASM/WebGPU livré** : le vrai `Renderer` dans le navigateur
-  (ombres, DDGI, eau, particules, AO, bloom), parité desktop validée sur
-  BeachDemo, ~170-213 Ko brotli.
-- **Authoring-core extrait** (`src/authoring/`) : `SaidaOp` versionnées et
-  inversibles, `EngineManifest` déterministe/hashable, validation stricte de
-  forme, applier atomique. Compilé dans : l'éditeur desktop, `saida_tool`, le
-  runtime web, le WASM de validation du gateway.
-- **`saida_tool` headless** : `describe-engine`, `validate-ops/scene/script/
-  scenario`, `apply-ops` (atomique, `--skip-invalid` pour le fold tolérant,
-  snapshot byte-reproductible). CTests verts.
-- **Runtime web d'édition** (`web/runtime/main.cpp`) : `saida_apply_op`,
-  `saida_engine_manifest`, `saida_scene_snapshot`, `saida_load_snapshot`
-  (charge un doc `/scene`), `saida_pick` (ray-AABB). **Refs mesh/matériau
-  transportées** par le snapshot headless (round-trip byte-stable), résolues
-  via AssetRegistry/MEMFS `/project`, placeholders + `missingAssets` jamais
-  silencieux. Vérifié E2E navigateur (BeachDemo 47 meshes, parité S4 17/17).
-- **Contrat d'ops actuel** (validés forme WASM, inversibles, foldables) :
-  `set_transform`, `create_node`, `delete_node`, `rename_node`,
-  `reparent_node`, `set_property`, `set_scene_setting`, `add/remove_behaviour`,
-  `set_behaviour_property`, `add/remove_signal_connection`. Les nœuds sont
-  référencés par **nom** (migration NodeId = décision ouverte).
+- Le vrai Renderer WASM/WebGPU, l'authoring-core, `saida_tool`, les bindings
+  `applyOp/manifest/snapshot/loadSnapshot/pick` et le contrat SaidaOp existent.
+- Les SaidaOps sont partagées en code, mais **le contrat effectif ne l'est pas** :
+  le manifest API est dérivé du natif, l'authoring web enregistre moins de
+  types, le loader web a encore d'autres fallbacks et le headless ne reconstruit
+  pas tous les behaviours/nœuds.
+- `SceneSnapshot` peut transformer des types en `Node` ou ignorer un behaviour.
+  `MeshNode` exige un `ResourceManager` que le fold n'a pas. Le mode
+  `--skip-invalid` rend alors la perte silencieuse ; il ne doit pas être utilisé
+  pour un snapshot durable.
+- Les tests/validations BeachDemo et fold documentés restent des preuves
+  historiques ciblées, pas un round-trip sémantique de tous les types.
+- Les nœuds sont encore adressés par nom mutable, pas par NodeId stable.
 
 ### Plateforme — backend (`apps/api`)
 
-- **Auth complète**, plans/abonnements Stripe (webhooks idempotents), credit
-  ledger + réservations (ToolRun **et** tours d'agent), admin read-only,
-  pipeline img-to-3d (Temporal), rôles projet owner/editor/viewer cohérents
-  API+WS+UI, invitations/partage, `ProjectFile` versionnés, uploads contrôlés.
-- **Collaboration** : hub à révisions strictement monotones (sérialisation par
-  projet, persist-avant-ack), re-sync + retry sur collision de révision (op
-  jamais perdue sur écrivain concurrent), validation des ops via **WASM
-  in-process du vrai contrat C++**, snapshots périodiques par fold natif,
-  reconstruction complète depuis Postgres, dry-run atomique, time-travel
-  lecture (`?at=N`), batchs atomiques avec `expectedRevision` (TOCTOU fermé),
-  `lastRevisionAck` réel.
-- **Agent IA** : pipeline complet prompt (manifest **borné web** + scène
-  compacte **bornée en nœuds**, JSON toujours valide) → extraction → validation
-  WASM → dry-run → proposition → apply atomique. **Crédits réservés avant tout
-  appel LLM, capturés à la réponse, libérés sinon** (kill-switch
-  `AGENT_INSUFFICIENT_CREDITS`). Contexte scopé par conversation. Modèle par
-  projet via `AGENT_LLM_MODEL_MAP`. Pièces jointes lues bornées, secrets
-  masqués, contexte balisé non-fiable.
+- Auth, projets, fichiers, invitations, plans, Stripe, ledger/réservations,
+  uploads, ToolRuns, agent, collaboration et admin read-only ont des routes et
+  modèles réels.
+- Ce n'est pas « auth complète » : un EDITOR peut inviter OWNER, la suppression
+  omet les nouvelles tables et Stripe, `disabledAt` ne coupe pas une session
+  existante et l'admin dépend d'une allowlist email sans MFA.
+- Le hub persiste avant ack, utilise des révisions et des batchs avec
+  `expectedRevision`, ce qui est une bonne base. Mais `lastRevisionAck` mesure
+  l'envoi socket, pas l'ack client ; clientOpId n'est pas persisté ; WS n'a pas
+  de dry-run d'état, rate limit, backpressure ou révocation live ; les rooms ne
+  sont pas évincées.
+- L'agent valide/propose/applique des SaidaOps et réserve des crédits, mais ses
+  transitions DB/Temporal/LLM/OperationLog ne sont pas une saga atomique. Un
+  crash peut facturer sans proposition, appliquer sans marquer l'action ou
+  exécuter après expiration de la réservation.
+- Stripe est signé et journalisé, mais `PROCESSING` peut rester bloqué et
+  l'ordre des webhooks n'est pas réconcilié.
+- Les uploads ne sont pas « contrôlés » au sens production : PUT réutilisable
+  après confirm, checksum non recalculé et quotas concurrents.
 
 ### Plateforme — frontend (`apps/web`)
 
-- Éditeur web : viewport moteur réel, hiérarchie + inspecteur éditable
-  (scalaires/bool/enum) → SaidaOps, picking sélection, chat agent avec
-  proposition/apply, mode viewer read-only de bout en bout, multi-client (ops
-  distantes + mirror JS structurel `create/delete/reparent` dans
-  `packages/shared/scene-mirror`), setup Guidé/Manuel persisté
-  (`creationMode`/`designSkillId`/`initializedAt`, ne se rouvre jamais).
-- Client live-edit (`live-edit-client.ts`) : bootstrap `/scene` → WS
-  `?since=rev`, optimiste + rollback correct (fenêtre de manipulation continue :
-  le rollback restaure l'état d'avant-drag ; `cancelPreview()` pour Échap),
-  reconnexion backoff, statuts fiables.
-- **Façades UI fermées (07-07)** : réglages graphiques réellement appliqués au
-  runtime (`saida_set_render_settings` : cap FPS par frame-skip rAF, toggle
-  ombres Renderer ; `renderScale` masqué — pas de chemin de resize web, cf.
-  P3) ; labels de modèles IA servis par l'API (`availableAiModels` dans
-  GET/PATCH settings, validation dynamique depuis `AGENT_LLM_MODEL_MAP`) ;
-  Save câblé (POST `/scene/snapshot`, reason `MANUAL`, feedback + hint
-  auto-save) ; onglet Drive mock supprimé ; lignes d'assets = download signé
-  (`/files/:id/download`) ; download d'output de job réel
-  (`/v1/tool-runs/:id/download`) ; « download soon » retiré, « play coming
-  soon » dégradé en note. **Premier prompt Guidé (D0)** : à la création d'un
-  projet GUIDED, le ChatPanel envoie le prompt pipeline du skill (une seule
-  tentative, garde skill inconnu) — l'agent ouvre la conversation.
-- **Bindings runtime web ajoutés (07-07)** : `saida_set_render_settings`,
-  `saida_camera_state` (base caméra pour les gizmos). WASM rebuildé + syncé
-  (contrat d'ops inchangé → pas de rebuild du wasm de validation gateway).
-- **Agent en worker Temporal (P0, fermé 07-07)** : `runAgentTurn` découpé en
-  `prepareAgentTurn` (requête API : message user + attachments + run `QUEUED` +
-  réservation de crédits — le 402 kill-switch reste synchrone) et
-  `executeAgentTurn` (LLM → extraction → validation WASM → dry-run natif →
-  `PROPOSED/FAILED`, capture/release des crédits). Claim atomique
-  `QUEUED→RUNNING` = LLM at-most-once (un retry sur run `RUNNING` échoue en
-  `AGENT_TURN_INTERRUPTED` au lieu de re-payer). `AGENT_RUNNER=temporal` →
-  `AgentTurnWorkflow` sur la queue dédiée `agent-turn` (réponse 202, UI en
-  polling du run) ; défaut `inline` = dev sans worker. Le worker partage le
-  pipeline exact via l'export workspace `@saida/api/agent-runtime` (init WASM +
-  folders saida_tool — `SAIDA_TOOL_PATH` requis sur l'hôte worker). Smoke test
-  reproductible : `npx tsx apps/api/scripts/smoke-agent-temporal.ts`.
+- Viewport réel, hiérarchie, inspecteur scalaire/bool/enum, picking, settings,
+  Save, modèle IA, chat proposition/apply, viewer et multi-client existent.
+- Move/Rotate restent des modes sans vrais gizmos ; scripts/UI/assets/builds et
+  undo/redo complet ne sont pas livrés.
+- Le bootstrap/replay n'est pas fiable : un `loadSnapshot` ou `applyOp` en échec
+  peut quand même avancer la révision. Les pending ops ne sont pas réconciliées
+  après ack perdu.
+- Le timer de reconnexion n'est pas annulé par `close()` et peut rouvrir une
+  ancienne session sur le runtime singleton après navigation de projet.
+- Les réglages FPS/ombres et downloads existent ; `renderScale` n'a pas de
+  chemin runtime complet et le player marketplace reste absent.
+- Le polling agent peut rester bloqué après une erreur transitoire.
 
 ### Qualité / vérification
 
-- **Suite 100 % verte** possible localement : `npm run infra:up` +
-  `RUN_E2E=1 SAIDA_TOOL_PATH=<NextEngine/build/bin/saida_tool.exe> npm run test`
-  → **API 93/93, 0 skip ; shared 14/14**. Typecheck + build verts.
-- Smoke test du chemin Temporal agent : `npx tsx
-  apps/api/scripts/smoke-agent-temporal.ts` (202 → QUEUED → worker →
-  FAILED/AGENT_LLM_NOT_CONFIGURED vérifié le 07-07).
-- E2E navigateur Playwright 2 sessions écrit (`apps/web/e2e`), harness prêt.
-- CI GitHub sur les deux repos (mais elle n'exerce **ni** le binaire natif
-  **ni** l'e2e DB — gap listé en P0.2).
+- Des suites API/shared/C++ et un scénario Playwright collaboration existent.
+- Les résultats datés de juillet sont des exécutions historiques et n'ont pas
+  été rejoués lors de la synchronisation documentaire.
+- La CI Saida peut sauter l'E2E moteur/web quand `ENGINE_REPO_TOKEN` manque tout
+  en restant verte ; le workflow web NextEngine est séparé et build-oriented.
+- Aucun gate ne couvre encore le round-trip exhaustif, les fenêtres de crash,
+  Stripe désordonné, suppression complète, upload immuable, vrai GPU ou package
+  marketplace.
 
 ---
 
 ## 5. RESTE À FAIRE — checklist de mise en production
 
-> **P0 = tout ce qui sépare l'état actuel d'une prod publique.** Chaque case
-> est vérifiable. P1/P2/P3 (§5bis) sont du produit — rien n'y bloque la prod.
+> **P0 = tout ce qui sépare l'état actuel d'une prod publique.** La checklist
+> historique ci-dessous n'est plus exhaustive ; plusieurs éléments de §5bis
+> bloquent eux aussi la promesse de « SaaS complet ». Utiliser l'audit Saida
+> comme gate de release.
 
 ### P0.1 — Binaire `saida_tool` déployable (API **et** worker agent)
 
 Dépendance runtime dure : `GET /scene` (reconstruction), snapshots périodiques,
-dry-run agent, `POST /scene/snapshot`. Aujourd'hui buildé **Windows/MSYS2
-uniquement**.
+dry-run agent, `POST /scene/snapshot`. Un build Linux existe désormais ; le
+blocage actuel est la livraison pinée et la parité de contrat, pas l'absence de
+compilation Linux.
 
 - [x] **Build Linux de `saida_tool`** (fermé 07-08) : `docker/saida-tool.Dockerfile`
       — base **Debian bookworm exprès** (même glibc 2.36 que `node:24-slim` ;
@@ -200,7 +173,11 @@ uniquement**.
       (SceneTree.hpp). Prouvé : **ctest 24/24 sur Linux** (GCC 12 bookworm et
       GCC 13 ubuntu) + **apply-ops byte-identique Windows↔Linux** sur le fixture
       versionné `tests/fixtures/fold-determinism/` (sha256 d2205858…).
-- [x] **Packaging** (fermé 07-08) : `apps/api/Dockerfile` et
+- [ ] **Packaging reproductible** : les Dockerfiles existent, mais la gate
+      n'est pas fermée. `apps/web/Dockerfile` exige `engine-web/index.wasm`
+      gitignoré que Render ne télécharge pas ; API/workers consomment par défaut
+      `saida_tool:latest`; images root/tsx et absence de release manifest.
+      Historique de l'implémentation initiale : `apps/api/Dockerfile` et
       `apps/workers/Dockerfile` (monorepo via tsx + `COPY --from` du binaire →
       `SAIDA_TOOL_PATH=/usr/local/bin/saida_tool` fixé + vendor WASM commité +
       prisma generate) ; `apps/web/Dockerfile` : `npm run engine:sync` **dans**
@@ -216,19 +193,24 @@ uniquement**.
       les entrées head du projet à chaque commit pour borner la mémoire. Le
       time-travel `?at=N` est caché quand `N ≤ head` (immuable). Câblé dans
       `reconstructSceneResilient` (route `GET /scene`).
+      **Limite actuelle :** le LRU est borné en nombre d'entrées, pas en octets ;
+      scènes volumineuses et time-travel peuvent donc épuiser la mémoire.
 - [x] **Dégradation gracieuse** (fermé 07-07) : `reconstructSceneResilient`
       (`scene-cache.ts`) — si le fold échoue (binaire absent/mort), sert le
       **dernier snapshot persisté** (`latestSnapshot`/`snapshotAtOrBefore`) avec
       sa révision + `degraded: true` au lieu d'un 500 ; le client reconnecte le
       WS `?since=révision` et rejoue les ops manquantes (self-heal). 500 seulement
       s'il n'existe aucun snapshot de repli.
+      **Limite actuelle :** ce fallback ne protège pas d'un snapshot déjà
+      appauvri par le fold et le client peut avancer malgré un échec d'apply ;
+      « self-heal » n'est donc pas encore une garantie.
 
 ### P0.2 — CI qui prouve la recette verte (2 repos)
 
-> Workflows **écrits le 07-08** (YAML validés) — reste à prouver un run vert
-> sur GitHub, et à créer le secret `ENGINE_REPO_TOKEN` (PAT lecture
-> contents+actions sur NextEngine) dans les settings du repo saida pour les
-> artefacts cross-repo. Sans lui, la CI saida dégrade en unit-tests + warning.
+> Workflows écrits et résultats historiques consignés le 07-08. Le problème
+> actuel est que `ENGINE_REPO_TOKEN` reste conditionnel : sans lui, la CI Saida
+> dégrade en unit-tests + warning au lieu d'échouer. Une release ne doit jamais
+> être verte sans ses tests/artefacts moteur obligatoires.
 
 - [x] **NextEngine** — **run vert 07-08**. Workflow `ci.yml` : job `linux-tool`
       (conteneur bookworm, même glibc que les images plateforme) — build complet
@@ -238,15 +220,21 @@ uniquement**.
       pas gater le binaire) : emsdk 6.0.1 + naga + glslc, `lfs: true` (asset
       BeachDemo préembarqué), scripts `web/*.sh` en +x — artefacts
       `engine-web-runtime` et `saida-authoring-wasm`. **Vert.**
-- [x] **saida** job `verify` — **VERT 07-08**. Infra par le docker-compose du
+- [ ] **saida** job `verify` comme gate obligatoire. Un run historique vert est
+      documenté, mais le workflow peut dégrader en unit tests si
+      `ENGINE_REPO_TOKEN` manque. Exiger l'artefact moteur piné et faire échouer
+      la CI s'il ne peut pas être téléchargé. Historique : infra par le docker-compose du
       repo (postgres, redis, minio, temporal), artefact `saida-tool-linux`
       téléchargé depuis la CI moteur (+ `libvulkan1/libglfw3` runtime installés
       sur le runner), `db:migrate:deploy` → `RUN_E2E=1 npm run test` vert →
       typecheck + build. Secret `ENGINE_REPO_TOKEN` configuré côté saida.
-- [x] Le smoke Temporal tourne dans `verify` avec le worker démarré en
+- [ ] Le smoke Temporal existe dans `verify`, mais il doit devenir obligatoire
+      et être complété par kill/retry/reconciliation. Historique : worker démarré en
       arrière-plan (`npx tsx apps/workers/src/worker.ts &`) — vert (prouve
       queue → worker → pipeline → DB).
-- [x] **saida** job `web-e2e` — Playwright chromium, **vert 07-08 en local**
+- [ ] **saida** job `web-e2e` — Playwright chromium a un résultat local
+      historique, mais il peut être sauté en CI et ne couvre qu'un scénario
+      étroit. Il doit devenir un gate obligatoire. Historique :
       (WebGPU headless OK en CI). L'assertion rouge (`collaboration.spec.ts:225`,
       rename non propagé au viewer) était un **vrai bug backend** : le handler WS
       `/collab` autorisait avec le rôle minimum par défaut (EDITOR), donc les
@@ -278,8 +266,11 @@ uniquement**.
 - [ ] **Billing Stripe (mode test)** : checkout abonnement → webhook →
       crédits ; portal ; downgrade en fin d'abonnement.
 - [ ] **Jobs** : un run 2Dto3D complet → download de l'output ; download d'un
-      fichier projet depuis le panneau assets.
-- [ ] **Marketplace** : publier un jeu (draft → publish), page publique.
+      fichier projet depuis le panneau assets. Le run doit utiliser le vrai
+      backend GPU, jamais le stub JSON.
+- [ ] **Marketplace** : d'abord implémenter l'attachement build depuis l'UI, un
+      package web multi-fichiers immuable, un player isolé/sandboxé, scan et
+      modération ; ensuite tester draft → review/publish → play → rollback.
 
 ### P0.4 — Environnement & déploiement (à mettre en place)
 
@@ -296,9 +287,11 @@ moteur (job `publish-tool-image`), consommée au build des images api/workers
 Reste à faire **par le propriétaire** (comptes + secrets, cf. runbook) puis
 dérouler :
 
-- [x] **Topologie** définie dans `render.yaml` : web (autoscale) + **API 1
+- [ ] **Topologie déployable** : `render.yaml` décrit web + **API 1
       instance** (WS in-process, pas d'autoscale horizontal — verticale seulement)
-      + workers (autoscale) + Postgres managé + Redis managé + R2 + Temporal Cloud.
+      + workers + Postgres/Redis/R2/Temporal, mais le web manque l'artefact
+      moteur, le worker réel 2D→3D demande Windows/GPU, les migrations sont
+      manuelles et le healthcheck masque les dépendances en échec.
 - [ ] **DNS + TLS** : domaine web, domaine API (CORS `WEB_ORIGIN` exact),
       WebSocket `wss://` de bout en bout (proxy avec upgrade + timeouts longs).
 - [ ] **Env API** (checklist `.env` prod) : `NODE_ENV=production`,
@@ -312,14 +305,18 @@ dérouler :
       `AGENT_TURN_CREDIT_COST>0`, **pas** de `ALLOW_DEV_ACCOUNT_FALLBACK`.
 - [ ] **Env worker** : `DATABASE_URL`, `TEMPORAL_ADDRESS`, S3, `SAIDA_TOOL_PATH`,
       mêmes `AGENT_LLM_*` que l'API (le LLM est appelé **depuis le worker**).
-- [ ] **Env web** : `NEXT_PUBLIC_API_URL` (build-time), `engine:sync` dans le
-      build.
-- [ ] **Base** : `npm run db:migrate:deploy` au déploiement + seed des plans ;
+- [ ] **Env web** : `NEXT_PUBLIC_API_URL` (build-time) et bundle `engine-web`
+      téléchargé par SHA/hash avant `engine:sync` ; le checkout Render seul ne
+      contient pas ces fichiers.
+- [ ] **Base** : `npm run db:migrate:deploy` au déploiement + migration/référence
+      plans-only. Ne pas utiliser le seed actuel en prod (compte dev + faux jeux) ;
       stratégie de migration documentée (rollback = restore).
 - [ ] **Stripe live** : endpoint webhook enregistré sur le domaine API, secret
       en env, prix live créés, un checkout de bout en bout vérifié.
-- [ ] **`NODE_ENV=production` vérifié** : `assertProductionEnv` passe, sandbox
-      dev (`?projectId=test`) inerte, admin debug 404.
+- [ ] **`NODE_ENV=production` vérifié** : `assertProductionEnv` doit refuser
+      explicitement stub 2D→3D, `ALLOW_DEV_ACCOUNT_FALLBACK=true`, placeholders,
+      `latest`, prix manquants et contrats moteur divergents ; sandbox dev
+      inerte, admin debug 404.
 
 ### P0.5 — Phase G minimale : observabilité & résilience
 
@@ -338,10 +335,16 @@ dérouler :
       coût IA journalier anormal, somme du ledger ≠ attendu (réservations
       ACTIVE > 24 h), disque/DB pleins, certificat TLS expirant.
 - [ ] **Sweep des réservations** : vérifier que le job d'expiration des
-      réservations ACTIVE > 24 h tourne bien en prod (il est la garantie de
-      non-fuite des crédits en cas de crash).
+      réservations ACTIVE > 24 h tourne bien en prod. Le sweep actuel ne suffit
+      pas : il libère la réservation sans terminer/annuler le run ou workflow,
+      ce qui peut autoriser un calcul tardif gratuit. Rendre expiration,
+      cancellation et transition du run atomiques.
 
-## 5bis. Backlog produit (ne bloque pas la prod)
+## 5bis. Backlog produit et gates de promesse
+
+Ces éléments ne sont pas tous des bloqueurs de sécurité, mais ils bloquent une
+sortie présentée comme **SaaS complet** lorsqu'ils correspondent à une promesse
+publique (éditeur complet, queue paid, scripts/UI, export, marketplace).
 
 ### P1 — la boucle d'édition complète
 
@@ -361,7 +364,7 @@ dérouler :
 | **`set_mesh` / `set_material`** | `create_node` MeshNode n'a pas d'op pour assigner un mesh/matériau. À cadrer avec l'import d'assets web. |
 | **Registre DesignSkill (E0)** | 4 skills codés en dur dans l'UI. Modèle DB/API (`DesignSkill` : version, auteur, visibilité, prompt pipeline), skill officiel par défaut, marketplace communautaire. |
 | **Gate post-apply bloquante (E4)** | Brancher `validate-scene`/`validate-ops` en vérification bloquante après l'apply d'une action agent (les briques headless existent). |
-| **Coût par tour fonction des tokens réels** | décision produit — aujourd'hui forfait fixe (`AGENT_TURN_CREDIT_COST`) — le risque est borné ; le raffinement tarifaire est un choix business, pas une dette. |
+| **Coût par tour fonction des tokens réels** | Aujourd'hui forfait fixe (`AGENT_TURN_CREDIT_COST`) sans `max_tokens` strict ni budget fournisseur démontré. Le risque n'est pas suffisamment borné : plafonner la sortie/coût et mesurer avant de décider le modèle tarifaire. |
 
 ### P3 — long terme
 
@@ -371,7 +374,7 @@ dérouler :
 | **GC du journal d'ops (2.4)** | Le journal accumule les no-ops droppées au fold (design C7). Conflit assumé avec l'historique/time-travel D8 : décision produit de rétention avant toute purge. |
 | **Runtime web multi-instance (5.4)** | Un seul runtime/canvas par page (`-sMODULARIZE` absent) ; échec d'init = reload complet. Limite structurelle documentée. |
 | **Durcissements runtime web** | `.obj` corrompu (présent mais invalide) aborte encore le wasm (exceptions off) ; MSAA web ; fetch/IDBFS streaming d'assets ; réévaluer `-sINITIAL_MEMORY=512MB` quand le port emdawnwebgpu acceptera les ArrayBuffers resizables ; `renderScale` (resize des render targets web — la surface est figée 1280×720, le slider est masqué dans l'UI en attendant). |
-| **Réflexion complète au web** | Le manifest web n'expose aucun behaviour (l'API borne le contrat agent en conséquence — divergence fermée). La parité de réflexion (behaviours au web) reviendra avec son coût taille quand le produit en aura besoin. |
+| **Réflexion complète au web** | Le manifest API est dérivé du natif puis filtré, tandis que le bundle web enregistre un autre sous-ensemble. La divergence n'est pas fermée : générer le contrat depuis le bundle livré et couvrir tous les types annoncés par round-trip. |
 
 ## 6. Décisions ouvertes
 
@@ -429,7 +432,7 @@ cd ../GitHub/saida && npm run engine:sync      # → apps/web/public/engine/dev/
 ## 8. Références
 
 - Contrat d'authoring moteur : [CLAUDE.md](CLAUDE.md) (« Comment coder un jeu »)
-- Architecture animation : [CLAUDE.md](CLAUDE.md) (Étape 10 — système livré)
+- Architecture animation : [CLAUDE.md](CLAUDE.md) (Étape 10 — implémentation large, gates produit restantes)
 - Architecture plateforme : `GitHub/saida/docs/architecture.md`
 - Runtime web dans la plateforme : `GitHub/saida/docs/engine-web-runtime.md`
 - Audit UI moteur (RmlUi, distinct) : [AUDIT_UI_WEB_V1.md](AUDIT_UI_WEB_V1.md)

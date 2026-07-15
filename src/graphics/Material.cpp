@@ -26,23 +26,57 @@ struct MaterialParams {
 
 Material::Material(rhi::Device& device, ResourceManager& manager, const MaterialDesc& desc)
     : device_(device), desc_(desc) {
-    
-    albedo_ = manager.getTexture(desc.albedoId);
-    if (!albedo_) albedo_ = manager.defaultWhiteTexture();
-    
-    normalMap_ = manager.getTexture(desc.normalId, false);
-    if (!normalMap_) normalMap_ = manager.defaultNormalTexture();
-    
-    metallicRoughnessMap_ = manager.getTexture(desc.metallicRoughnessId, false);
-    if (!metallicRoughnessMap_) metallicRoughnessMap_ = manager.defaultWhiteTexture();
-    
-    emissiveMap_ = manager.getTexture(desc.emissiveId);
-    if (!emissiveMap_) emissiveMap_ = manager.defaultWhiteTexture();
 
     MaterialParams params{desc.baseColor, desc.metallic, desc.roughness, desc.ao, 0.0f, desc.emissiveColor};
     paramsBuffer_ = std::make_unique<Buffer>(device_, sizeof(MaterialParams),
         rhi::BufferUsage::Uniform, MemoryUsage::HostVisible);
     paramsBuffer_->write(&params, sizeof(params));
+
+    bindTextures(manager);
+
+    // 2. GPU-Driven Path: Register into global MaterialData SSBO
+    if (device_.capabilities().descriptorIndexing) {
+        bindlessIndex_ = manager.registerMaterialData(
+            desc.baseColor, desc.emissiveColor, desc.metallic, desc.roughness, desc.ao,
+            manager.ensureBindlessTextureIndex(albedo_),
+            manager.ensureBindlessTextureIndex(normalMap_),
+            manager.ensureBindlessTextureIndex(metallicRoughnessMap_),
+            manager.ensureBindlessTextureIndex(emissiveMap_),
+            desc.type
+        );
+    }
+}
+
+void Material::rebindTextures(ResourceManager& manager) {
+    // L'ancien descriptor set peut encore être lu par une frame en vol : il
+    // part au graveyard du manager au lieu d'être détruit ici.
+    manager.retireBindGroup(std::move(descriptorSet_));
+    bindTextures(manager);
+    if (device_.capabilities().descriptorIndexing) {
+        manager.updateMaterialData(bindlessIndex_,
+            desc_.baseColor, desc_.emissiveColor, desc_.metallic, desc_.roughness, desc_.ao,
+            manager.ensureBindlessTextureIndex(albedo_),
+            manager.ensureBindlessTextureIndex(normalMap_),
+            manager.ensureBindlessTextureIndex(metallicRoughnessMap_),
+            manager.ensureBindlessTextureIndex(emissiveMap_),
+            desc_.type);
+    }
+}
+
+void Material::bindTextures(ResourceManager& manager) {
+    const MaterialDesc& desc = desc_;
+
+    albedo_ = manager.getTexture(desc.albedoId);
+    if (!albedo_) albedo_ = manager.defaultWhiteTexture();
+
+    normalMap_ = manager.getTexture(desc.normalId, false);
+    if (!normalMap_) normalMap_ = manager.defaultNormalTexture();
+
+    metallicRoughnessMap_ = manager.getTexture(desc.metallicRoughnessId, false);
+    if (!metallicRoughnessMap_) metallicRoughnessMap_ = manager.defaultWhiteTexture();
+
+    emissiveMap_ = manager.getTexture(desc.emissiveId);
+    if (!emissiveMap_) emissiveMap_ = manager.defaultWhiteTexture();
 
     // 1. Classic Path: set 1 (albedo/normal/metallic-roughness/params/emissive).
     rhi::BindGroupEntry albedoEntry;
@@ -99,18 +133,6 @@ Material::Material(rhi::Device& device, ResourceManager& manager, const Material
     descriptorSet_ = std::make_unique<rhi::BindGroup>(manager.materialSetLayout(),
         std::vector<rhi::BindGroupEntry>{albedoEntry, normalEntry, mrEntry, paramsEntry, emissiveEntry});
 #endif
-
-    // 2. GPU-Driven Path: Register into global MaterialData SSBO
-    if (device_.capabilities().descriptorIndexing) {
-        bindlessIndex_ = manager.registerMaterialData(
-            desc.baseColor, desc.emissiveColor, desc.metallic, desc.roughness, desc.ao,
-            manager.ensureBindlessTextureIndex(albedo_),
-            manager.ensureBindlessTextureIndex(normalMap_),
-            manager.ensureBindlessTextureIndex(metallicRoughnessMap_),
-            manager.ensureBindlessTextureIndex(emissiveMap_),
-            desc.type
-        );
-    }
 }
 
 Material::~Material() = default;  // paramsBuffer_ / descriptorSet_ RAII

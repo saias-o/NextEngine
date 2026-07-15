@@ -124,12 +124,13 @@ Texture::Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, ui
     : device_(device), width_(width), height_(height) {
     SAIDA_PROFILE_SCOPE("Resource/CreateMemoryTexture");
     const VkFormat format = rhi::vulkan::toVk(fmt);
-    mipLevels_ = 1; 
+    const uint32_t texelBytes = rhi::bytesPerTexel(fmt);
+    mipLevels_ = 1;
     if (genMipmaps && (width > 1 || height > 1)) {
         mipLevels_ = static_cast<uint32_t>(std::floor(std::log2(std::max(width_, height_)))) + 1;
     }
 
-    VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
+    VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * texelBytes;
 
     Buffer staging(device_, imageSize, rhi::BufferUsage::TransferSrc, MemoryUsage::HostVisible);
     staging.write(pixels, imageSize);
@@ -155,7 +156,7 @@ Texture::Texture(VulkanDevice& device, const uint8_t* pixels, uint32_t width, ui
     if (vmaCreateImage(device_.allocator(), &imageInfo, &allocInfo,
                        &image_, &allocation_, nullptr) != VK_SUCCESS)
         throw std::runtime_error("failed to create texture image");
-    trackedBytes_ = mipChainBytes(width_, height_, 4u, mipLevels_);
+    trackedBytes_ = mipChainBytes(width_, height_, texelBytes, mipLevels_);
     trackedCategory_ = "Texture/Dynamic";
     MemoryProfiler::registerAllocation(trackedCategory_, trackedBytes_);
 

@@ -59,8 +59,14 @@ public:
     // moving/rotating the whole body leaves it invariant (so the shape stays
     // stable), but changing the mesh's scale/offset relative to the body — or the
     // identity→scaled transition right after a scene load — re-derives the shape.
-    // No-op for non-Auto shapes.
-    void ensureResolved(const glm::mat4& invBodyTR, Node& bodyNode);
+    // No-op for non-Auto shapes. Retourne true si la détection vient de
+    // (re)tourner — le body doit alors reconstruire sa shape Jolt.
+    bool ensureResolved(const glm::mat4& invBodyTR, Node& bodyNode);
+
+    // Vrai tant que le mesh référencé attend sa géométrie (chargement .obj
+    // asynchrone) : buildShape ne produit rien et le body est différé jusqu'à
+    // ce que les données de collision existent.
+    bool meshPending() const { return meshPending_; }
     // Re-arm Auto so the next ensureResolved detects again (editor "Recompute").
     void resetAuto() { autoResolved_ = false; }
 
@@ -86,6 +92,7 @@ public:
 private:
     CollisionShapeType resolved_ = CollisionShapeType::Box;
     bool autoResolved_ = false;        // true once Auto has detected a primitive
+    bool meshPending_ = false;         // mesh proxy sans géométrie (async .obj)
     glm::mat4 resolvedFrom_{0.0f};     // mesh-in-body matrix the detection used
 };
 

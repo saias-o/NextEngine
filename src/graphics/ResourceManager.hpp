@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "project/AssetRegistry.hpp"
 #include "project/AssetLoader.hpp"
@@ -49,7 +50,12 @@ public:
 
     // Mesh by id: a built-in primitive or an .obj AssetID.
     Mesh* getMesh(AssetID id);
-    // Texture / material, content-addressed (cached, uploaded once).
+    // Texture par id — NON BLOQUANT (PLAN_V1_ENGINE chantier 3) : retourne la
+    // texture si elle est résidente, sinon lance le chargement asynchrone
+    // (lecture + décodage stbi sur le worker) et retourne nullptr — l'appelant
+    // retombe sur ses fallbacks et les matériaux sont rebindés quand la
+    // texture devient prête. Un asset en échec rend la texture « missing »
+    // (damier magenta), jamais nullptr en boucle.
     Texture* getTexture(AssetID id, bool srgb = true);
     Material* getMaterial(const MaterialDesc& desc);
     Rig* getRig(AssetID id);
@@ -92,6 +98,8 @@ public:
 
     Texture* defaultWhiteTexture();
     Texture* defaultNormalTexture();
+    // Fallback visible d'un asset manquant/corrompu : damier magenta 2x2.
+    Texture* missingTexture();
 
     rhi::BindGroupLayout& materialSetLayout() const { return *materialSetLayout_; }
 
@@ -108,7 +116,41 @@ public:
     AssetRegistry* getRegistry() const { return registry_; }
     AssetLoader& assetLoader() { return *assetLoader_; }
     const AssetLoader& assetLoader() const { return *assetLoader_; }
-    void pumpAssetLoads() { assetLoader_->pump(); }
+    // Tick par frame : avance l'horloge de rétention, draine le graveyard
+    // GPU, finalise les chargements async prêts (création GPU + rebind des
+    // matériaux) puis pompe l'AssetLoader.
+    void pumpAssetLoads();
+
+    // Octets GPU des ressources résidentes chargées par asset (textures,
+    // meshes) — diagnostics de fuite du chantier 3, exposé via assets.stats().
+    uint64_t gpuResidentBytes() const { return gpuResidentBytes_; }
+
+    // Ensemble des ressources encore référencées par les scènes vivantes —
+    // construit par le SceneTree (walk du World) après un changeScene.
+    struct AssetUsage {
+        std::unordered_set<const Mesh*> meshes;
+        std::unordered_set<AssetID> textures;
+        std::unordered_set<const Material*> materials;
+    };
+
+    // Déchargement réel (PLAN_V1_ENGINE chantier 3) : évince du cache tout ce
+    // que `used` ne référence plus (mark-and-sweep au changement de scène).
+    // Les objets GPU partent au graveyard et sont détruits kRetireFrames plus
+    // tard (une frame en vol peut encore les lire) ; leurs index bindless et
+    // slots matériaux sont alors recyclés. Les builtins, les textures par
+    // défaut et les proxies en cours de chargement sont exempts.
+    void trimUnused(const AssetUsage& used);
+
+    // Confie un objet GPU potentiellement encore référencé par une frame en
+    // vol ; il sera détruit après kRetireFrames pumps (pattern ThumbnailCache).
+    void retireBindGroup(std::unique_ptr<rhi::BindGroup> group);
+
+    // Réécrit le slot MaterialData d'un matériau déjà enregistré (rebind après
+    // chargement async d'une de ses textures).
+    void updateMaterialData(uint32_t index, const glm::vec4& baseColor, const glm::vec4& emissive,
+                            float metallic, float roughness, float ao,
+                            uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx, uint32_t emissiveIdx,
+                            MaterialType type);
 
     // Register a texture in the bindless array if needed, returns its index.
     uint32_t ensureBindlessTextureIndex(Texture* texture);
@@ -124,6 +166,14 @@ private:
                      const std::vector<uint32_t>& indices);
     void ensureDefaultTextures();
     uint32_t getBindlessTextureIndex(Texture* texture);
+    void finalizePendingTextures();
+    void finalizePendingMeshes();
+    void rebindMaterialsUsing(AssetID textureId);
+    void drainGraveyard();
+    void writeMaterialSlot(uint32_t index, const glm::vec4& baseColor, const glm::vec4& emissive,
+                           float metallic, float roughness, float ao,
+                           uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx, uint32_t emissiveIdx,
+                           MaterialType type);
 
     rhi::Device& device_;
     AssetRegistry* registry_;
@@ -154,7 +204,36 @@ private:
     
     std::unique_ptr<Texture> defaultWhiteTexture_;
     std::unique_ptr<Texture> defaultNormalTexture_;
+    std::unique_ptr<Texture> missingTexture_;
     std::unique_ptr<AssetLoader> assetLoader_;
+
+    // --- Chargement async + cycle de vie (PLAN_V1_ENGINE chantier 3) ---
+    struct PendingTexture {
+        bool srgb = true;
+        AssetHandle handle;
+    };
+    std::unordered_map<AssetID, PendingTexture> pendingTextures_;
+    std::unordered_set<AssetID> failedTextures_;
+    // Proxies Mesh en attente de leur géométrie (parse .obj sur le worker).
+    std::unordered_map<AssetID, AssetHandle> pendingMeshes_;
+
+    // Objets GPU retirés mais possiblement encore lus par une frame en vol :
+    // détruits (et leur index bindless recyclé) après kRetireFrames pumps.
+    static constexpr uint64_t kRetireFrames = 4;  // > frames en vol (2)
+    struct Retired {
+        std::unique_ptr<Texture> texture;
+        std::unique_ptr<Mesh> mesh;
+        std::unique_ptr<Material> material;
+        std::unique_ptr<rhi::BindGroup> bindGroup;
+        uint32_t bindlessIndex = ~0u;
+        uint32_t materialIndex = ~0u;
+        uint64_t frame = 0;
+    };
+    std::vector<Retired> graveyard_;
+    uint64_t frameClock_ = 0;
+    std::vector<uint32_t> freeBindlessIndices_;
+    std::vector<uint32_t> freeMaterialIndices_;
+    uint64_t gpuResidentBytes_ = 0;
 };
 
 } // namespace saida

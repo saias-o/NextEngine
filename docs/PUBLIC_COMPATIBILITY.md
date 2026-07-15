@@ -1,6 +1,11 @@
-# Contrat de compatibilité publique V1
+# Contrat candidat de compatibilité V1
 
-Ce document est la source de vérité des formats et API garantis. Un document
+Mise à jour : 2026-07-15.
+
+Ce document décrit le contrat **candidat** des formats et API que la V1 entend
+garantir. Le moteur est encore Alpha : ce texte n'est pas une promesse de
+stabilité publique tant que les gates de `PLAN_V1_ENGINE.md` ne sont pas
+fermées. Un document
 persistant écrit par le moteur porte un champ entier `schema`. Pendant la
 transition V1, le champ historique `version` est écrit avec la même valeur pour
 les consommateurs existants. Un chargeur accepte les schémas anciens qu'il sait
@@ -10,16 +15,16 @@ migrer et refuse tout schéma plus récent avec un diagnostic explicite.
 
 | Surface | Schéma | Politique |
 |---|---:|---|
-| `game.saida` | 1 | Stable, migration obligatoire |
-| `.saidaproj` | 1 | Stable, migration obligatoire |
-| `asset_registry.json` | 1 | Stable, migration obligatoire ; les `AssetID` restent stables |
-| `.scene` | 2 | Stable, migration obligatoire |
-| `.saidascenario` | 1 | Stable, migration obligatoire |
-| `.sclip` | 1 | Stable, migration obligatoire |
-| `.sgraph` | 2 | Stable, migration obligatoire |
-| `.sretarget` | 2 | Stable, migration obligatoire |
-| `.srig` | 1 | Stable, migration obligatoire |
-| `.sseq` | 1 | Stable, migration obligatoire |
+| `game.saida` | 1 | Candidat V1, migration obligatoire |
+| `.saidaproj` | 1 | Candidat V1, migration obligatoire |
+| `asset_registry.json` | 1 | Candidat V1, migration obligatoire ; les `AssetID` visent la stabilité |
+| `.scene` | 2 | Candidat V1, migration obligatoire |
+| `.saidascenario` | 1 | Candidat V1, migration obligatoire |
+| `.sclip` | 1 | Candidat V1, migration obligatoire |
+| `.sgraph` | 2 | Candidat V1, migration obligatoire |
+| `.sretarget` | 2 | Candidat V1, migration obligatoire |
+| `.srig` | 1 | Candidat V1, migration obligatoire |
+| `.sseq` | 1 | Candidat V1, migration obligatoire |
 | `.sanimc` | interne | Cache régénérable, aucune compatibilité garantie |
 | `asset_registry.local.json` | interne | Cache local régénérable, aucune compatibilité garantie |
 | `pipeline_cache.bin` | interne | Cache GPU régénérable, aucune compatibilité garantie |
@@ -34,13 +39,19 @@ jamais régénérés) et est chargé à chaque build par `saida_compat_corpus_te
 toute rupture de chargement d'un ancien schéma fait échouer la CI, et le test
 vérifie qu'un chargement ne modifie pas les octets du document source.
 
+Cette preuve couvre la lecture/migration des fixtures, pas encore l'équivalence
+sémantique de toutes les scènes entre éditeur desktop, player, authoring web et
+fold headless. Le `SceneSnapshot` headless et les registres de types divergents
+peuvent encore perdre ou dégrader des types/behaviours ; ce P0 doit être fermé
+avant de remplacer « candidat » par « stable ».
+
 ## Assets média
 
 Audio : **`.ogg` (Vorbis) est le format recommandé et fortement conseillé**
 pour tout contenu de jeu. `.wav` reste accepté en dépannage. FLAC et MP3 ne
 sont pas compilés dans le moteur.
 
-## API JavaScript stable
+## API JavaScript candidate
 
 Les globals gameplay suivants sont publics :
 
@@ -56,8 +67,9 @@ Les globals gameplay suivants sont publics :
 - `assets.load(path, priority)`: retourne immédiatement un handle. Le handle
   expose `state`, `ready`, `failed`, `error`, `size`, `id` et `release` ;
   `assets.stats()` retourne les compteurs du loader (`live`, `queued`,
-  `loading`, `ready`, `failed`, `residentBytes`, `budgetBytes`) — diagnostics
-  de fuite ;
+  `loading`, `ready`, `failed`, `residentBytes`, `budgetBytes`,
+  `gpuResidentBytes` — octets GPU des textures/meshes résidents chargés par
+  asset) — diagnostics de fuite ;
 - `storage`: persistance par slot — `save(slot, jsonString)`, `load(slot)`
   (chaîne ou `null`), `has(slot)`, `remove(slot)`. Le slot respecte
   `[A-Za-z0-9_-]{1,64}` ; les données vivent dans `saves/<slot>.json` sous la
@@ -73,6 +85,11 @@ collection ou par `release()`.
 Toute suppression ou modification incompatible d'une API JavaScript passe par
 au moins une version publiée de dépréciation. Durant cette version, l'ancien
 appel reste fonctionnel et émet un warning une seule fois par contexte.
+
+Cette politique devient une garantie publique à la première release stable.
+Avant cela, les API manquantes (notamment accès autoload/cross-node, input
+gamepad complet et plusieurs services gameplay) doivent être soit livrées, soit
+explicitement exclues du contrat.
 
 ## API C++ réfléchie
 
@@ -90,3 +107,7 @@ Toute modification d'une surface stable doit fournir dans le même changement :
 3. un fixture ancien immuable ;
 4. un test de chargement et de refus du schéma futur ;
 5. une entrée dans les notes de version.
+
+Le passage du statut « candidat » au statut « stable » exige en plus un corpus
+de round-trip sémantique cross-runtime et un release manifest liant les hashes
+du player web, de l'authoring WASM, du binaire headless et des formats.

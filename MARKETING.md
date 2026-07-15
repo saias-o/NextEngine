@@ -1,32 +1,50 @@
-# Plan Stratégique de Succès pour SaidaEngine
+# Positionnement et pistes marketing de SaidaEngine
 
-Pour que SaidaEngine devienne un projet phare et connaisse un grand succès auprès des développeurs et de la communauté IA, voici les prochaines étapes stratégiques à franchir :
+Mise à jour : 2026-07-15.
 
----
+Ce document est une stratégie, pas une liste de fonctionnalités livrées. Toute
+démonstration publique doit utiliser un artefact reproductible et annoncer les
+limites de `docs/V1_KNOWN_LIMITATIONS.md`.
 
-## 1. Créer un Serveur MCP (Model Context Protocol)
-C'est l'étape la plus cruciale pour asseoir le positionnement **"LLM-Native"**. 
-- **Qu'est-ce que c'est ?** Développer un connecteur standardisé MCP pour SaidaEngine.
-- **Pourquoi ?** Cela permettra à n'importe quel LLM (dans Cursor, Claude Desktop, Windsurf, etc.) de se connecter directement à l'instance locale de SaidaEngine, de lire l'arbre de scène (`scene tree`), d'ajouter des objets, de compiler le projet et de voir les logs d'erreurs C++. 
-- *L'impact : SaidaEngine deviendrait le premier moteur de jeu nativement pilotable par les outils IA du marché.*
+## État des idées historiques
 
-## 2. Le "Viral Demo Loop" (Démonstrateur Autonome)
-Les développeurs croient ce qu'ils voient. Il faut un projet de démonstration spectaculaire :
-- **La démo :** Une vidéo montrant un agent IA autonome (comme Claude ou GPT-4o) générant un mini-jeu complet jouable dans SaidaEngine à partir d'un simple prompt textuel (ex: *"Crée un jeu de tir spatial rétro en pixel art"*).
-- Partager cette démo sur **Twitter/X**, **Hacker News (Show HN)**, et le subreddit **r/LocalLLaMA** et **r/cpp**. C'est le meilleur moyen d'obtenir vos 2 000 premières étoiles GitHub en une semaine.
+| Idée | État réel |
+|---|---|
+| Serveur MCP | **Implémenté.** Serveur MCP in-process de l'éditeur, bridge stdio et outils de scène/code/validation existent. Il reste à renforcer permissions, transactions, dry-run/diff et rollback avant de le présenter comme sûr pour un agent autonome. |
+| Démo IA autonome | **À produire.** Les briques MCP existent, mais aucune démo ne doit promettre un mini-jeu « complet » tant que le chemin ship, l'UI web, les snapshots et le sandbox ne sont pas fermés. |
+| Hot reload | **Partiel.** QuickJS/ScriptBehaviour et certaines surfaces UI ont du hot reload transactionnel. Il n'existe pas de promesse générale de hot reload C++/DLL/Lua ; Lua n'est pas le langage de scripting retenu. |
+| Ray tracing / convertisseurs | **Non prioritaire pour V1.** Le moteur possède déjà un renderer riche. L'intégrité des projets, le shipping et le cycle de vie des assets priment sur une nouvelle feature graphique. |
+| FOSS / local-first | **Positionnement valide à cadrer.** Le dépôt contient GPL-3.0 et le runtime est local. Finaliser notices, SBOM et revue des licences avant campagne publique. |
+| Playground WebAssembly | **Fondations présentes.** Runtime d'authoring et player WebGPU existent. Il n'existe pas encore de playground public isolé permettant de saisir un prompt en sécurité. |
 
-## 3. Intégrer le Hot-Reloading (C++ / Lua / Shaders)
-Pour que la collaboration Humain-IA soit fluide, il ne faut pas devoir redémarrer le moteur à chaque modification de code :
-- Permettre à l'IA d'écrire des scripts (par exemple en Lua, ou en C++ via des DLLs chargées dynamiquement) et de voir le résultat instantanément dans le moteur sans coupure.
+## Positionnement honnête recommandé
 
-## 4. Lancer le jalon "Vulkan Raytracing" & Assets Pipelines
-Pour attirer les développeurs humains exigeants sur les performances :
-- Finaliser le pipeline de raytracing hybride sous Vulkan (le jalon mentionné sur le site).
-- Proposer un convertisseur d'assets simple : glTF/OBJ vers voxel ou rendu pixel-art 3D optimisé.
+À court terme, SaidaEngine peut être présenté comme :
 
-## 5. Positionnement "Anti-Unity / Anti-Unreal" & FOSS
-Profiter du mécontentement actuel des développeurs vis-à-vis des moteurs propriétaires (frais d'installation, cloud obligatoire, télémétrie) :
-- Mettre en avant le côté **GPL v3**, 100% local, léger (compile en quelques secondes via CMake), et respectueux de la vie privée des créateurs.
+- un moteur C++17/Vulkan/WebGPU expérimental et local-first ;
+- un éditeur pilotable par MCP avec opérations structurées ;
+- un projet Alpha doté d'un player web, d'un runtime d'authoring et d'un jeu
+  témoin, mais pas encore d'une V1 stable.
 
-## 6. Intégrer un Web Playground (Wasm) sur le site
-- Compiler une version ultra-légère de SaidaEngine en WebAssembly (Wasm) et l'intégrer directement dans la page d'accueil du site pour que les visiteurs puissent taper un prompt simple (ex: `spawn neon_cube`) et voir le moteur s'exécuter directement dans le navigateur.
+Ne pas revendiquer pour l'instant :
+
+- une supériorité de performance sans benchmarks reproductibles ;
+- une parité desktop/Web complète ;
+- un moteur sûr pour exécuter des projets tiers non fiables ;
+- une compatibilité V1 garantie ;
+- une génération de jeu complet depuis un prompt ;
+- un support XR production sans matrice matérielle.
+
+## Démonstration publique à viser
+
+Une démo crédible devrait être reproductible depuis un tag signé et montrer :
+
+1. création/modification d'une scène via MCP avec diff et validation ;
+2. ouverture du même projet dans l'éditeur ;
+3. export desktop et web via le vrai BuildExporter ;
+4. exécution du jeu témoin avec les limitations visibles ;
+5. hashes, version moteur et instructions permettant à un tiers de reproduire
+   le résultat.
+
+Les objectifs de vues, d'étoiles ou de calendrier ne doivent pas être présentés
+comme garantis.

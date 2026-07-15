@@ -3,6 +3,13 @@
 > Guide pratique pour assistants IA et contributeurs. Lis ceci avant de creer
 > ou debugger une UI Web dans SaidaEngine.
 
+> **Portée resynchronisée le 2026-07-15 :** ce guide décrit `WebCanvasNode` et
+> l'UI RmlUi/QuickJS du runtime desktop/Vulkan. Il ne prouve pas la parité du
+> player WASM/WebGPU : dans le player web, les nœuds UI sont encore dégradés en
+> `Node` générique et `node.setText` est un no-op signalé. Toute section parlant
+> de screen/world space doit être lue comme contrat desktop tant que le backend
+> UI WebGPU n'est pas livré.
+
 ## Objectif
 
 SaidaEngine veut une UI auteur aussi proche que possible de Chrome: HTML-like,

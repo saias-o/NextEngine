@@ -1,6 +1,7 @@
 #include "graphics/ResourceManager.hpp"
 
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 #include "graphics/Pipeline.hpp"
 #include "graphics/Buffer.hpp"
 #include "graphics/Material.hpp"
@@ -21,6 +22,7 @@
 
 #include <stb_image.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstring>
@@ -43,6 +45,60 @@ struct MaterialData {
     glm::vec4 emissive;
 };
 static_assert(sizeof(MaterialData) == 64, "MaterialData must match shader.frag std430 layout");
+
+// Image décodée sur le worker de l'AssetLoader : pixels RGBA prêts pour
+// l'upload GPU (fait sur le thread principal dans finalizePendingTextures).
+struct DecodedImage {
+    void* pixels = nullptr;  // allocation stbi
+    uint32_t width = 0;
+    uint32_t height = 0;
+    bool hdr = false;  // pixels en float RGBA (16 o/px), sinon RGBA8
+    ~DecodedImage() {
+        if (pixels) stbi_image_free(pixels);
+    }
+};
+
+// Décodage stbi pur CPU — exécuté hors du thread principal sur desktop. Le
+// HDR (.hdr → RGBA32F) n'est décodé en float que sur desktop ; le backend web
+// suit son comportement historique (stbi convertit en LDR).
+AssetDecoder makeImageDecoder() {
+    return [](std::vector<uint8_t>&& bytes, AssetDecodeResult& out, std::string& error) {
+        auto image = std::make_shared<DecodedImage>();
+        int w = 0, h = 0, channels = 0;
+        const auto* data = bytes.data();
+        const int size = static_cast<int>(bytes.size());
+#ifndef SAIDA_RHI_WEBGPU
+        image->hdr = size > 0 && stbi_is_hdr_from_memory(data, size) != 0;
+        if (image->hdr)
+            image->pixels = stbi_loadf_from_memory(data, size, &w, &h, &channels, STBI_rgb_alpha);
+        else
+#endif
+            image->pixels = stbi_load_from_memory(data, size, &w, &h, &channels, STBI_rgb_alpha);
+        if (!image->pixels) {
+            const char* reason = stbi_failure_reason();
+            error = reason ? reason : "unrecognized image";
+            return false;
+        }
+        image->width = static_cast<uint32_t>(w);
+        image->height = static_cast<uint32_t>(h);
+        out.payload = image;
+        out.bytes = static_cast<uint64_t>(image->width) * image->height * (image->hdr ? 16 : 4);
+        return true;
+    };
+}
+
+// Parse .obj pur CPU — exécuté hors du thread principal sur desktop. L'upload
+// GPU (GeometryRegistry) reste sur le thread principal (finalizePendingMeshes).
+AssetDecoder makeMeshDecoder() {
+    return [](std::vector<uint8_t>&& bytes, AssetDecodeResult& out, std::string& error) {
+        auto data = std::make_shared<MeshData>();
+        if (!Mesh::parseObjBytes(bytes.data(), bytes.size(), *data, error)) return false;
+        out.payload = data;
+        out.bytes = static_cast<uint64_t>(data->vertices.size()) * sizeof(Vertex) +
+                    static_cast<uint64_t>(data->indices.size()) * sizeof(uint32_t);
+        return true;
+    };
+}
 }
 
 ResourceManager::ResourceManager(rhi::Device& device, AssetRegistry* registry)
@@ -78,8 +134,12 @@ ResourceManager::ResourceManager(rhi::Device& device, AssetRegistry* registry)
 
 ResourceManager::~ResourceManager() {
     assetLoader_.reset();
+    pendingTextures_.clear();
+    pendingMeshes_.clear();
     // Clear caches first (resource destructors run while the device is alive),
-    // then the descriptor objects they were allocated from.
+    // then the descriptor objects they were allocated from. The graveyard goes
+    // with them (retired bind groups were allocated from the same layout/pool).
+    graveyard_.clear();
     materials_.clear();
     textures_.clear();
     meshes_.clear();
@@ -197,11 +257,18 @@ uint32_t ResourceManager::getBindlessTextureIndex(Texture* texture) {
 #else
     if (!globalMaterialSet_) return 0;
     if (!texture) return 0;
-    if (nextBindlessTextureIndex_ >= kMaxBindlessTextures)
-        throw std::runtime_error("bindless texture table exhausted");
-    
-    uint32_t index = nextBindlessTextureIndex_++;
-    
+
+    // Réutilise un index recyclé par le graveyard avant d'étendre la table.
+    uint32_t index;
+    if (!freeBindlessIndices_.empty()) {
+        index = freeBindlessIndices_.back();
+        freeBindlessIndices_.pop_back();
+    } else {
+        if (nextBindlessTextureIndex_ >= kMaxBindlessTextures)
+            throw std::runtime_error("bindless texture table exhausted");
+        index = nextBindlessTextureIndex_++;
+    }
+
     VkDescriptorImageInfo imageInfo{};
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     imageInfo.imageView = texture->imageView();
@@ -237,11 +304,13 @@ uint32_t ResourceManager::ensureBindlessTextureIndex(Texture* texture) {
 }
 
 
-uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const glm::vec4& emissive,
-                                               float metallic, float roughness, float ao,
-                                               uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx,
-                                               uint32_t emissiveIdx, MaterialType type) {
+void ResourceManager::writeMaterialSlot(uint32_t index, const glm::vec4& baseColor,
+                                        const glm::vec4& emissive,
+                                        float metallic, float roughness, float ao,
+                                        uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx,
+                                        uint32_t emissiveIdx, MaterialType type) {
 #ifdef SAIDA_RHI_WEBGPU
+    (void)index;
     (void)baseColor;
     (void)emissive;
     (void)metallic;
@@ -252,16 +321,9 @@ uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const
     (void)mrIdx;
     (void)emissiveIdx;
     (void)type;
-    return 0;
 #else
-    if (!globalMaterialBuffer_) return 0;
-    
-    uint32_t index = nextMaterialIndex_++;
-    if (index >= kMaxBindlessMaterials) {
-        Log::warn("Global material buffer full! Cap is ", kMaxBindlessMaterials, ".");
-        return 0; // fallback to 0
-    }
-    
+    if (!globalMaterialBuffer_) return;
+
     MaterialData data{};
     data.baseColor = baseColor;
     data.emissive = emissive;
@@ -282,15 +344,61 @@ uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const
         // this flush made newly-created bindless materials platform-dependent.
         globalMaterialBuffer_->flush(sizeof(MaterialData), offset);
     }
+#endif
+}
 
+uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const glm::vec4& emissive,
+                                               float metallic, float roughness, float ao,
+                                               uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx,
+                                               uint32_t emissiveIdx, MaterialType type) {
+#ifdef SAIDA_RHI_WEBGPU
+    (void)baseColor;
+    (void)emissive;
+    (void)metallic;
+    (void)roughness;
+    (void)ao;
+    (void)albedoIdx;
+    (void)normalIdx;
+    (void)mrIdx;
+    (void)emissiveIdx;
+    (void)type;
+    return 0;
+#else
+    if (!globalMaterialBuffer_) return 0;
+
+    // Réutilise un slot libéré par l'éviction d'un matériau avant d'étendre.
+    uint32_t index;
+    if (!freeMaterialIndices_.empty()) {
+        index = freeMaterialIndices_.back();
+        freeMaterialIndices_.pop_back();
+    } else {
+        index = nextMaterialIndex_++;
+        if (index >= kMaxBindlessMaterials) {
+            Log::warn("Global material buffer full! Cap is ", kMaxBindlessMaterials, ".");
+            return 0; // fallback to 0
+        }
+    }
+
+    writeMaterialSlot(index, baseColor, emissive, metallic, roughness, ao,
+                      albedoIdx, normalIdx, mrIdx, emissiveIdx, type);
     return index;
 #endif
+}
+
+void ResourceManager::updateMaterialData(uint32_t index, const glm::vec4& baseColor,
+                                         const glm::vec4& emissive,
+                                         float metallic, float roughness, float ao,
+                                         uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx,
+                                         uint32_t emissiveIdx, MaterialType type) {
+    writeMaterialSlot(index, baseColor, emissive, metallic, roughness, ao,
+                      albedoIdx, normalIdx, mrIdx, emissiveIdx, type);
 }
 
 Mesh* ResourceManager::createMesh(AssetID id, const std::vector<Vertex>& vertices,
                                   const std::vector<uint32_t>& indices) {
     auto mesh = std::make_unique<Mesh>(*geometryRegistry_, vertices, indices);
     Mesh* ptr = mesh.get();
+    gpuResidentBytes_ += ptr->gpuBytes();
     meshes_.emplace(id, std::move(mesh));
     reverseMeshMap_[ptr] = id;
     return ptr;
@@ -299,16 +407,53 @@ Mesh* ResourceManager::createMesh(AssetID id, const std::vector<Vertex>& vertice
 Mesh* ResourceManager::loadMesh(AssetID id) {
     if (auto it = meshes_.find(id); it != meshes_.end())
         return it->second.get();
-    
+
     if (!registry_) return nullptr;
     std::string path = registry_->getPath(id);
     if (path.empty()) return nullptr;
 
-    auto mesh = Mesh::fromObjFile(*geometryRegistry_, path);
+    // Chargement asynchrone (chantier 3) : le parse .obj part sur le worker et
+    // l'appelant reçoit tout de suite un proxy stable — draw() est un no-op et
+    // les colliders Auto attendent la géométrie (meshPending). Le proxy est
+    // rempli par finalizePendingMeshes().
+    AssetHandle handle = assetLoader_->request(id, AssetLoadPriority::High,
+                                               AssetPayloadKind::MeshObj, makeMeshDecoder());
+    if (!handle) return nullptr;
+
+    auto mesh = std::make_unique<Mesh>(*geometryRegistry_);
     Mesh* ptr = mesh.get();
     meshes_.emplace(id, std::move(mesh));
     reverseMeshMap_[ptr] = id;
+    pendingMeshes_.emplace(id, std::move(handle));
     return ptr;
+}
+
+void ResourceManager::finalizePendingMeshes() {
+    if (pendingMeshes_.empty()) return;
+    for (auto it = pendingMeshes_.begin(); it != pendingMeshes_.end();) {
+        const AssetLoadState state = it->second.state();
+        if (state == AssetLoadState::Queued || state == AssetLoadState::Loading) {
+            ++it;
+            continue;
+        }
+        const AssetID id = it->first;
+        if (state == AssetLoadState::Ready) {
+            if (auto data = std::static_pointer_cast<MeshData>(it->second.payload())) {
+                SAIDA_PROFILE_SCOPE("Resource/FinalizeAsyncMesh");
+                if (auto meshIt = meshes_.find(id); meshIt != meshes_.end()) {
+                    meshIt->second->upload(data->vertices, data->indices);
+                    gpuResidentBytes_ += meshIt->second->gpuBytes();
+                    Log::info("loaded '", registry_ ? registry_->getPath(id) : std::string(), "': ",
+                              data->vertices.size(), " vertices, ",
+                              data->indices.size() / 3, " triangles");
+                }
+            }
+        }
+        // Échec : le proxy reste vide (rien à dessiner), le diagnostic est
+        // déjà loggué par le loader. Le handle relâché libère la géométrie
+        // CPU décodée de la comptabilité du loader.
+        it = pendingMeshes_.erase(it);
+    }
 }
 
 Mesh* ResourceManager::getMesh(AssetID id) {
@@ -334,23 +479,188 @@ AnimationClip* ResourceManager::getAnimation(AssetID id) {
 }
 
 Texture* ResourceManager::getTexture(AssetID id, bool srgb) {
+    if (id == kAssetInvalid) return nullptr;
     if (auto it = textures_.find(id); it != textures_.end())
         return it->second.get();
-
+    // Un asset en échec rend le damier magenta (fallback visible) au lieu de
+    // relancer un chargement voué à l'échec à chaque frame.
+    if (failedTextures_.count(id)) return missingTexture();
     if (!registry_) return nullptr;
-    // Resolve against the project root: registry paths are project-relative, so a
-    // renamed/moved project dir still finds its assets (absolute paths would not).
-    // Fall back to the raw path if there is no project root (already-absolute or
-    // cwd-relative entries still load).
-    std::string path = registry_->getAbsolutePath(id);
-    if (path.empty()) path = registry_->getPath(id);
-    if (path.empty()) return nullptr;
 
-    auto tex = std::make_unique<Texture>(device_, path, srgb);
-    ensureBindlessTextureIndex(tex.get());
-    Texture* ptr = tex.get();
-    textures_.emplace(id, std::move(tex));
-    return ptr;
+    // Chargement asynchrone : lecture fichier + décodage stbi sur le worker
+    // (l'AssetLoader résout le chemin via le registre — relatif à la racine
+    // projet, donc robuste au déplacement du dossier). L'appelant retombe sur
+    // ses fallbacks ; finalizePendingTextures() crée la texture GPU et rebinde
+    // les matériaux quand les pixels sont prêts.
+    if (!pendingTextures_.count(id)) {
+        AssetHandle handle = assetLoader_->request(id, AssetLoadPriority::High,
+                                                   AssetPayloadKind::Image, makeImageDecoder());
+        if (!handle) return nullptr;
+        pendingTextures_.emplace(id, PendingTexture{srgb, std::move(handle)});
+    }
+    return nullptr;
+}
+
+void ResourceManager::finalizePendingTextures() {
+    if (pendingTextures_.empty()) return;
+    for (auto it = pendingTextures_.begin(); it != pendingTextures_.end();) {
+        const AssetLoadState state = it->second.handle.state();
+        if (state == AssetLoadState::Queued || state == AssetLoadState::Loading) {
+            ++it;
+            continue;
+        }
+        const AssetID id = it->first;
+        bool created = false;
+        if (state == AssetLoadState::Ready) {
+            if (auto image = std::static_pointer_cast<DecodedImage>(it->second.handle.payload())) {
+                SAIDA_PROFILE_SCOPE("Resource/FinalizeAsyncTexture");
+                rhi::Format format = it->second.srgb ? rhi::Format::RGBA8Srgb : rhi::Format::RGBA8Unorm;
+#ifndef SAIDA_RHI_WEBGPU
+                if (image->hdr) format = rhi::Format::RGBA32Float;
+#endif
+                auto tex = std::make_unique<Texture>(
+                    device_, static_cast<const uint8_t*>(image->pixels),
+                    image->width, image->height, format);
+                ensureBindlessTextureIndex(tex.get());
+                gpuResidentBytes_ += tex->gpuBytes();
+                textures_.emplace(id, std::move(tex));
+                created = true;
+            }
+        }
+        if (!created) failedTextures_.insert(id);  // diagnostic déjà loggué par le loader
+        // Libère le handle (les pixels décodés sortent de la comptabilité du
+        // loader), puis rebinde les matériaux qui référencent cet asset.
+        it = pendingTextures_.erase(it);
+        rebindMaterialsUsing(id);
+    }
+}
+
+void ResourceManager::rebindMaterialsUsing(AssetID textureId) {
+    for (auto& [desc, material] : materials_) {
+        if (desc.albedoId == textureId || desc.normalId == textureId ||
+            desc.metallicRoughnessId == textureId || desc.emissiveId == textureId)
+            material->rebindTextures(*this);
+    }
+}
+
+void ResourceManager::trimUnused(const AssetUsage& used) {
+    SAIDA_PROFILE_SCOPE("Resource/TrimUnused");
+    const size_t texturesBefore = textures_.size();
+    const size_t meshesBefore = meshes_.size();
+    const size_t materialsBefore = materials_.size();
+
+    // Textures : tout ce qu'aucun matériau/nœud/skybox vivant ne référence.
+    for (auto it = textures_.begin(); it != textures_.end();) {
+        if (used.textures.count(it->first)) {
+            ++it;
+            continue;
+        }
+        Retired r;
+        r.bindlessIndex = it->second->bindlessIndex();
+        gpuResidentBytes_ -= std::min(gpuResidentBytes_, it->second->gpuBytes());
+        r.texture = std::move(it->second);
+        r.frame = frameClock_;
+        graveyard_.push_back(std::move(r));
+        it = textures_.erase(it);
+    }
+
+    // Meshes : builtins et proxies en attente de géométrie exempts.
+    for (auto it = meshes_.begin(); it != meshes_.end();) {
+        if (it->first == kAssetBuiltinCube || used.meshes.count(it->second.get()) ||
+            pendingMeshes_.count(it->first)) {
+            ++it;
+            continue;
+        }
+        gpuResidentBytes_ -= std::min(gpuResidentBytes_, it->second->gpuBytes());
+        reverseMeshMap_.erase(it->second.get());
+        Retired r;
+        r.mesh = std::move(it->second);
+        r.frame = frameClock_;
+        graveyard_.push_back(std::move(r));
+        it = meshes_.erase(it);
+    }
+
+    // Matériaux : un matériau utilisé garde ses textures vivantes (marquées
+    // par le collecteur), donc l'inverse — évincer un matériau dont les
+    // textures survivent ailleurs — est sain.
+    for (auto it = materials_.begin(); it != materials_.end();) {
+        if (used.materials.count(it->second.get())) {
+            ++it;
+            continue;
+        }
+        Retired r;
+        r.materialIndex = it->second->bindlessIndex();
+        // Le slot 0 sert aussi de fallback quand la table est pleine : il peut
+        // être partagé par plusieurs matériaux, on ne le recycle jamais.
+        if (r.materialIndex == 0) r.materialIndex = ~0u;
+        r.material = std::move(it->second);
+        r.frame = frameClock_;
+        graveyard_.push_back(std::move(r));
+        it = materials_.erase(it);
+    }
+
+    const size_t evicted = (texturesBefore - textures_.size()) +
+                           (meshesBefore - meshes_.size()) +
+                           (materialsBefore - materials_.size());
+    if (evicted)
+        Log::info("assets: evicted ", texturesBefore - textures_.size(), " textures, ",
+                  meshesBefore - meshes_.size(), " meshes, ",
+                  materialsBefore - materials_.size(), " materials (gpu resident ",
+                  gpuResidentBytes_, " bytes)");
+}
+
+void ResourceManager::retireBindGroup(std::unique_ptr<rhi::BindGroup> group) {
+    if (!group) return;
+    Retired r;
+    r.bindGroup = std::move(group);
+    r.frame = frameClock_;
+    graveyard_.push_back(std::move(r));
+}
+
+void ResourceManager::drainGraveyard() {
+    for (auto it = graveyard_.begin(); it != graveyard_.end();) {
+        if (frameClock_ - it->frame < kRetireFrames) {
+            ++it;
+            continue;
+        }
+        // Plus aucune frame en vol ne référence l'objet : l'index bindless
+        // repointe sur la texture blanche puis redevient allouable, le slot
+        // matériau retourne en freelist, et les destructeurs libèrent le GPU.
+        if (it->bindlessIndex != ~0u) {
+#ifndef SAIDA_RHI_WEBGPU
+            if (globalMaterialSet_) {
+                ensureDefaultTextures();
+                VkDescriptorImageInfo imageInfo{};
+                imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                imageInfo.imageView = defaultWhiteTexture_->imageView();
+                imageInfo.sampler = defaultWhiteTexture_->sampler();
+                VkWriteDescriptorSet write{};
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.dstSet = globalMaterialSet_;
+                write.dstBinding = 0;
+                write.dstArrayElement = it->bindlessIndex;
+                write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                write.descriptorCount = 1;
+                write.pImageInfo = &imageInfo;
+                vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
+            }
+#endif
+            freeBindlessIndices_.push_back(it->bindlessIndex);
+        }
+        if (it->materialIndex != ~0u) freeMaterialIndices_.push_back(it->materialIndex);
+        it = graveyard_.erase(it);
+    }
+}
+
+void ResourceManager::pumpAssetLoads() {
+    ++frameClock_;
+    drainGraveyard();
+    // pump() d'abord : sur le web (pas de worker) c'est lui qui exécute les
+    // chargements — finaliser ensuite rend les assets prêts dès cette frame.
+    assetLoader_->pump();
+    finalizePendingTextures();
+    finalizePendingMeshes();
+    SAIDA_PROFILE_COUNTER("Assets/GpuResidentBytes", gpuResidentBytes_);
 }
 
 Material* ResourceManager::getMaterial(const MaterialDesc& desc) {
@@ -381,7 +691,8 @@ AssetID ResourceManager::registerMemoryTexture(const uint8_t* data, size_t size,
     auto tex = std::make_unique<Texture>(device_, pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), format);
     ensureBindlessTextureIndex(tex.get());
     stbi_image_free(pixels);
-    
+    gpuResidentBytes_ += tex->gpuBytes();
+
     static std::atomic<AssetID> s_dynamicId{0x8000000000000000ULL};
     AssetID id = s_dynamicId++;
     textures_.emplace(id, std::move(tex));
@@ -396,6 +707,7 @@ AssetID ResourceManager::registerGeneratedTexture(const uint8_t* pixels, uint32_
 
     auto tex = std::make_unique<Texture>(device_, pixels, width, height, format, generateMipmaps);
     ensureBindlessTextureIndex(tex.get());
+    gpuResidentBytes_ += tex->gpuBytes();
 
     static std::atomic<AssetID> s_generatedId{0x8100000000000000ULL};
     AssetID id = s_generatedId++;
@@ -499,6 +811,20 @@ Texture* ResourceManager::defaultWhiteTexture() {
 Texture* ResourceManager::defaultNormalTexture() {
     ensureDefaultTextures();
     return defaultNormalTexture_.get();
+}
+
+Texture* ResourceManager::missingTexture() {
+    if (!missingTexture_) {
+        // Damier magenta/anthracite 2x2 — le fallback visible du chantier 3 :
+        // un asset manquant se voit, il ne fait ni crash ni surface noire.
+        const uint8_t px[2 * 2 * 4] = {
+            255, 0, 255, 255,  24, 24, 24, 255,
+            24, 24, 24, 255,  255, 0, 255, 255,
+        };
+        missingTexture_ = std::make_unique<Texture>(device_, px, 2, 2, rhi::Format::RGBA8Srgb);
+        ensureBindlessTextureIndex(missingTexture_.get());
+    }
+    return missingTexture_.get();
 }
 
 } // namespace saida

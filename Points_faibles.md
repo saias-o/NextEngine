@@ -1,6 +1,18 @@
 # Points faibles / chantiers a renforcer
 
-Notes pour plus tard. Le moteur a deja une base solide ; ces points concernent surtout la stabilisation produit, la preuve de performance et la differenciation publique.
+État resynchronisé le 2026-07-15. Le moteur a une base large, mais certains
+points ci-dessous sont des blocages d'intégrité/sécurité et non de simples
+améliorations « pour plus tard ».
+
+## 0. Priorité absolue : préserver les projets
+
+- Aligner les registres natif, authoring web, loader web et headless.
+- Faire un round-trip canonique de tous les types/propriétés/behaviours ; aucun
+  fallback `Node` ou behaviour ignoré ne doit être silencieux.
+- Corriger le fold Mesh sans `ResourceManager` et interdire `skipInvalid` pour
+  un snapshot durable.
+- Lier runtime web, WASM authoring, `saida_tool` et formats dans un release
+  manifest hashé.
 
 ## 1. Prouver les performances
 
@@ -16,9 +28,19 @@ Notes pour plus tard. Le moteur a deja une base solide ; ces points concernent s
 
 ## 3. Durcir l'export runtime
 
-- Ajouter une vraie couche "Shipping" : icone, metadata exe, version, zip portable, crash log, validation des DLL.
+- Icône, metadata exe, version et packaging existent. Restent : preuve par le
+  bouton Build sur machine vierge, archive/installeur signé, crash log,
+  validation des DLL et rollback de release.
 - Garantir que l'export jeu ne contient ni code editeur ni MCP.
 - Enrichir le manifest `game.saida` si besoin : version format, main scene, options runtime, plateforme cible.
+
+## 3bis. Sandboxing runtime
+
+- Ajouter un interrupt/deadline QuickJS et une borne sur la boucle des pending
+  jobs.
+- Confiner modules et fichiers au package du projet ; aucun chemin absolu ou
+  cwd hôte ne doit être visible à du contenu tiers.
+- Isoler le player marketplace de l'origine/processus de confiance.
 
 ## 4. Rendre le MCP plus sur pour les agents
 
@@ -48,6 +70,23 @@ Notes pour plus tard. Le moteur a deja une base solide ; ces points concernent s
 
 ## 8. Versionner les formats
 
-- Versionner `.scene`, `.saidaproj`, scenarios et `asset_registry.json`.
-- Ajouter migrations automatiques.
-- Prevoir compatibilite arriere avant que des agents generent beaucoup de contenu.
+- Les champs `schema`, migrations, refus des versions futures et fixtures
+  existent pour les principales surfaces. Le contrat reste **candidat V1**.
+- Ajouter des fixtures sémantiques de round-trip entre desktop, player web,
+  authoring web et headless ; la simple lecture JSON ne suffit pas.
+- Prévoir la migration des snapshots Saida et des noms/types réfléchis avant que
+  des agents génèrent beaucoup de contenu.
+
+## 9. Corriger les capacités et l'input
+
+- Implémenter les axes gamepad avant d'annoncer Gamepad dans `PlatformCaps`.
+- Terminer bindings touch/rebinding/per-device et tester reconnect/hotplug.
+- Transformer les capacités en tests de comportement, pas seulement en bits au
+  boot.
+
+## 10. Clarifier la release et les licences
+
+- Le dépôt contient GPL-3.0 ; ajouter notices copyright/SPDX et confirmer les
+  obligations des dépendances, assets et modèles.
+- Ne pas employer « stable V1 » avant fermeture de `PLAN_V1_ENGINE.md`.
+- Produire SBOM, provenance de build, signatures et notes de migration.

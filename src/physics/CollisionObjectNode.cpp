@@ -46,8 +46,11 @@ void CollisionObjectNode::resolveAutoShapes() {
     glm::mat4 invTR;
     decomposeTR(worldTransform(), position, rotation, invTR);
     for (const auto& child : children()) {
-        if (auto* cs = dynamic_cast<CollisionShapeNode*>(child.get()))
-            cs->ensureResolved(invTR, *this);
+        if (auto* cs = dynamic_cast<CollisionShapeNode*>(child.get())) {
+            // Une re-résolution (ex. géométrie d'un mesh async arrivée) rend
+            // la shape Jolt obsolète : le prochain syncToPhysics reconstruit.
+            if (cs->ensureResolved(invTR, *this)) markDirty();
+        }
     }
 }
 
@@ -62,7 +65,14 @@ JPH::Ref<JPH::Shape> CollisionObjectNode::buildCompoundShape(const glm::mat4& in
         }
     }
     if (shapes.empty()) {
-        Log::warn("CollisionObject '", name(), "' has no CollisionShape child — no shape built");
+        // Un mesh en cours de chargement asynchrone n'est pas une erreur : le
+        // body sera (re)tenté à chaque sync jusqu'à l'arrivée de la géométrie.
+        bool pending = false;
+        for (const auto& child : children())
+            if (auto* cs = dynamic_cast<CollisionShapeNode*>(child.get()))
+                pending = pending || cs->meshPending();
+        if (!pending)
+            Log::warn("CollisionObject '", name(), "' has no CollisionShape child — no shape built");
         return Ref<Shape>();
     }
     if (shapes.size() == 1) return shapes[0];

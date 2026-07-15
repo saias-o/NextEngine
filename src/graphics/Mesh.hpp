@@ -46,14 +46,40 @@ struct Aabb {
     glm::vec3 extent() const { return max - min; }  // full size along each axis
 };
 
+// Géométrie CPU issue d'un parse (.obj sur le worker de l'AssetLoader) —
+// prête à être uploadée dans un Mesh sur le thread principal.
+struct MeshData {
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+};
+
 // Owns device-local vertex and index buffers and knows how to bind/draw itself.
 class Mesh {
 public:
     Mesh(GeometryRegistry& registry, const std::vector<Vertex>& vertices,
          const std::vector<uint32_t>& indices);
+    // Proxy vide (chantier 3) : pointeur stable rendu immédiatement pendant un
+    // chargement asynchrone. draw() est un no-op tant que upload() n'a pas
+    // rempli la géométrie ; bounds() et collisionVertices() sont vides.
+    explicit Mesh(GeometryRegistry& registry);
     ~Mesh();
     Mesh(const Mesh&) = delete;
     Mesh& operator=(const Mesh&) = delete;
+
+    // Remplit un proxy (alloue + uploade la géométrie, calcule bounds et
+    // données de collision). Appelé sur le thread principal une fois le parse
+    // asynchrone terminé.
+    void upload(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
+
+    // Faux tant qu'un proxy n'a pas reçu sa géométrie.
+    bool loaded() const { return allocation_.indexCount != 0; }
+
+    // Octets GPU de la géométrie (comptabilité assets, chantier 3).
+    uint64_t gpuBytes() const { return gpuBytes_; }
+
+    // Parse un .obj depuis la mémoire — pur CPU, sûr hors du thread principal.
+    // Ne résout pas les .mtl (les matériaux du moteur viennent des scènes).
+    static bool parseObjBytes(const uint8_t* data, size_t size, MeshData& out, std::string& error);
 
     // Loads an .obj. generateLightmapUVs is retained for compatibility and is
     // currently ignored; the secondary UV set mirrors the texture UVs.
@@ -78,6 +104,7 @@ private:
     GeometryRegistry& registry_;
     GeometryAllocation allocation_;
     Aabb bounds_;
+    uint64_t gpuBytes_ = 0;
     std::vector<glm::vec3> collisionVertices_;
     std::vector<uint32_t> collisionIndices_;
 };

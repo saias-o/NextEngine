@@ -93,6 +93,54 @@ int main() {
         assert(waitForResidentZero(loader));
     }
 
+    // --- Étape de décodage (PLAN_V1_ENGINE chantier 3) ---
+
+    // Un decoder consomme les bytes bruts et produit un payload typé ; la
+    // comptabilité bascule sur la taille décodée.
+    struct Sum { uint64_t total = 0; };
+    auto sumDecoder = [](std::vector<uint8_t>&& bytes, saida::AssetDecodeResult& out,
+                         std::string&) {
+        auto sum = std::make_shared<Sum>();
+        for (uint8_t b : bytes) sum->total += b;
+        out.payload = sum;
+        out.bytes = sizeof(Sum);
+        return true;
+    };
+    auto decoded = loader.request(small, saida::AssetLoadPriority::Normal,
+                                  saida::AssetPayloadKind::Image, sumDecoder);
+    assert(waitForTerminal(decoded));
+    assert(decoded.ready());
+    assert(decoded.bytes().empty());  // bytes bruts libérés après décodage
+    auto sum = std::static_pointer_cast<Sum>(decoded.payload());
+    assert(sum && sum->total == 4096ull * 0x2a);
+    assert(loader.stats().residentBytes == sizeof(Sum));
+
+    // Une requête Raw du même id ne partage pas l'entrée décodée.
+    auto rawAgain = loader.request(small);
+    assert(waitForTerminal(rawAgain));
+    assert(rawAgain.ready());
+    assert(rawAgain.bytes().size() == 4096);
+    assert(rawAgain.payload() == nullptr);
+
+    decoded.reset();
+    rawAgain.reset();
+    assert(waitForResidentZero(loader));
+
+    // Un decoder qui échoue produit un état Failed avec son diagnostic, et ne
+    // laisse rien de résident.
+    auto failingDecoder = [](std::vector<uint8_t>&&, saida::AssetDecodeResult&,
+                             std::string& error) {
+        error = "corrupt payload";
+        return false;
+    };
+    auto failed = loader.request(small, saida::AssetLoadPriority::Normal,
+                                 saida::AssetPayloadKind::MeshObj, failingDecoder);
+    assert(waitForTerminal(failed));
+    assert(failed.failed());
+    assert(failed.error().find("corrupt payload") != std::string::npos);
+    failed.reset();
+    assert(waitForResidentZero(loader));
+
     fs::remove_all(root);
     return 0;
 }

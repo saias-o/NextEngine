@@ -6,6 +6,10 @@ les sous-systèmes du moteur. Chaque friction rencontrée en le construisant ou
 en l'exportant est un bug de V1 — elles sont consignées dans
 [docs/WITNESS_GAME.md](../docs/WITNESS_GAME.md).
 
+Le projet couvre beaucoup de sous-systèmes, mais ne prouve pas encore une V1
+ship-ready : UI du player web, communication cross-node/autoload JS, séquence
+`.sseq`, bouton Build UI et machine vierge restent des gates ouvertes.
+
 ## Le jeu
 
 Deux scènes en greybox (cube builtin uniquement) :

@@ -5,7 +5,10 @@
 // Relic2 alignée dans l'arène ; validé dès qu'une relique est sauvegardée.
 // Phase 2 — chantier 3 : N cycles hub↔arena par tree.changeScene, puis
 // vérifie que la mémoire résidente de l'AssetLoader est stable (pas de
-// croissance entre le début et la fin des cycles) et sous le budget.
+// croissance entre le début et la fin des cycles) et sous le budget, et que
+// la mémoire GPU des ressources chargées (gpuResidentBytes : textures/meshes
+// du ResourceManager, évincées par trimUnused au changement de scène) est
+// elle aussi stable — le vrai critère « déchargement réel » du chantier 3.
 // PASS/FAIL dans les logs ([E2E] …) ; le code de sortie du process reste 0.
 
 const TIMEOUT = 25;
@@ -18,6 +21,7 @@ let phase = 1;
 let cycles = 0;
 let sinceSwap = 0;
 let residentAtStart = -1;
+let gpuAtStart = -1;
 
 function finish(verdict) {
     finished = true;
@@ -59,7 +63,9 @@ function onUpdate(dt) {
 
     if (cycles === 2) {
         // Référence après quelques cycles (les caches chauds sont remplis).
-        residentAtStart = assets.stats().residentBytes;
+        const s = assets.stats();
+        residentAtStart = s.residentBytes;
+        gpuAtStart = s.gpuResidentBytes;
     }
     if (cycles >= CYCLES) {
         const s = assets.stats();
@@ -68,8 +74,11 @@ function onUpdate(dt) {
         if (residentAtStart >= 0 && s.residentBytes > residentAtStart)
             return finish("FAIL: loader memory grew across cycles (" +
                           residentAtStart + " -> " + s.residentBytes + ")");
+        if (gpuAtStart >= 0 && s.gpuResidentBytes > gpuAtStart)
+            return finish("FAIL: GPU resident memory grew across cycles (" +
+                          gpuAtStart + " -> " + s.gpuResidentBytes + ")");
         return finish("PASS (cycles=" + CYCLES + ", resident=" + s.residentBytes +
-                      "/" + s.budgetBytes + ")");
+                      "/" + s.budgetBytes + ", gpu=" + s.gpuResidentBytes + ")");
     }
     cycles++;
     tree.changeScene(cycles % 2 ? "scenes/hub.scene" : "scenes/arena.scene");

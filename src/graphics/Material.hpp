@@ -85,7 +85,15 @@ public:
     const MaterialDesc& desc() const { return desc_; }
     Texture* texture() const { return albedo_; }
 
+    // Re-résout les textures de la desc et reconstruit le descriptor set +
+    // l'entrée MaterialData — appelé par le ResourceManager quand une texture
+    // asynchrone devient prête (ou échoue → damier « missing »). L'ancien
+    // descriptor set part au graveyard : une frame en vol peut encore le lire.
+    void rebindTextures(ResourceManager& manager);
+
 private:
+    void bindTextures(ResourceManager& manager);
+
     rhi::Device& device_;
     MaterialDesc desc_;
     Texture* albedo_;

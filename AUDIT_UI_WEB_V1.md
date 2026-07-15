@@ -4,7 +4,15 @@ Date : 2026-06-26
 Scope : couche UI Web `WebCanvasNode` + RmlUi + QuickJS, rendu screen space et world space, cible PC / mobile / VR.  
 Contraintes : aucun changement de code dans cet audit ; document de diagnostic et feuille de route.
 
-## Verdict court
+> **Document historique.** Plusieurs manques listés ici ont été implémentés
+> depuis juin (DOM/event bridge plus riche, input touch/clavier, world/screen
+> space et outillage desktop). Ne pas utiliser la checklist ci-dessous comme
+> statut courant. Les sources actuelles sont [WEB_UI.md](WEB_UI.md),
+> [docs/V1_KNOWN_LIMITATIONS.md](docs/V1_KNOWN_LIMITATIONS.md) et
+> [TODO.md](TODO.md). Le blocage majeur restant est différent : le player
+> WASM/WebGPU ne rend toujours pas les nœuds UI.
+
+## Verdict de l'audit au 2026-06-26 (historique)
 
 La couche UI Web n'est pas encore une V1 fonctionnelle. Elle contient une base prometteuse : RmlUi et Freetype sont vendus et linkes, QuickJS existe deja comme runtime central, `WebCanvasNode` sait charger un document RmlUi, rasterizer son rendu CPU vers une texture Vulkan, serialiser son URL et hot-reloader des dependances.
 

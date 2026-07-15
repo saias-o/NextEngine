@@ -1,11 +1,22 @@
 # Plan V1 — ce qu'il faut verrouiller avant de publier le moteur
 
-> Statut : en cours. Chantier 2 quasi verrouillé (schema partout, corpus de
-> rétro-compat en CI, contrat publié dans `docs/PUBLIC_COMPATIBILITY.md`) ;
-> chantier 3 fondation posée (`AssetLoader` async + `assets.load` JS) ;
-> chantier 1 : jeu témoin créé et joué de bout en bout
-> ([WitnessGame/](WitnessGame/README.md)), frictions consignées dans
-> [docs/WITNESS_GAME.md](docs/WITNESS_GAME.md). Complète `PLAN_SAIDA_ENGINE_UPDATE.md`
+> Statut resynchronisé le 2026-07-15 : **aucun des trois chantiers n'est encore
+> fermé pour une publication publique**. Le jeu témoin et les exports CLI ont
+> franchi une grande partie du chemin nominal, les schémas/fixtures existent et
+> l'API asynchrone d'assets est posée. **Chantier 3, cœur livré le
+> 2026-07-15** : textures et meshes `.obj` transitent par l'`AssetLoader`
+> (lecture + décodage stbi/tinyobj sur le worker, création GPU sur le thread
+> principal, fallbacks visibles : défauts pendant le chargement, damier magenta
+> pour un asset en échec), déchargement GPU réel par mark-and-sweep au
+> `changeScene` (graveyard > frames en vol, recyclage des index bindless et des
+> slots matériaux), `gpuResidentBytes` exposé dans `assets.stats()` et asserté
+> stable sur 16 cycles par l'E2E **desktop + web** (évictions vérifiées dans
+> les logs) ; restes chantier 3 : budget GPU contraignant en cours de scène
+> (LRU), rigs/animations dans le sweep. Restent néanmoins la preuve sur machine
+> vierge et via l'UI, la parité sémantique des snapshots entre runtimes et la
+> stabilité publique du contrat. Voir aussi [docs/V1_KNOWN_LIMITATIONS.md](docs/V1_KNOWN_LIMITATIONS.md)
+> et l'[audit plateforme](https://github.com/saias-o/saida/blob/main/AUDIT_BEFORE_PROD.md). Complète
+> `PLAN_SAIDA_ENGINE_UPDATE.md`
 > (qui reste la feuille de route fonctionnelle) : ce document ne liste pas des
 > features, mais les trois chantiers qui rendent une publication publique
 > *irréversible sans casse*. Principe directeur : on priorise ce qu'on ne peut
@@ -29,14 +40,16 @@ version sans douleur. Ces trois-là, non.
 
 ## 2. Chantier 1 — Le chemin « ship » : du bouton Build au jeu autonome
 
-### Problème
+### État réel
 
-L'éditeur sait créer, l'export-template pipeline existe (~80 %), mais le test
-qui définit un moteur n'a jamais été passé de bout en bout : produire un jeu
-qui tourne **sans l'éditeur, sur une machine vierge**. C'est la différence
-entre un moteur et une démo d'éditeur. Restes connus : runtime standalone
-(Étape 8), versioning/métadonnées/icône (Étape 15), et tout ce que le trajet
-complet révélera.
+Le runtime standalone, le packaging, les métadonnées/icône, `saida_tool
+export-game` et des harnais WitnessGame Windows/Web existent. Des exécutions
+locales historiques sont consignées dans `docs/WITNESS_GAME.md`.
+
+Le critère public n'est toutefois pas atteint : le bouton Build UI n'est pas
+automatisé, aucune preuve sur machine vierge n'est attachée à la release, le
+player web ne rend pas l'UI du jeu, une séquence `.sseq` n'est pas traversée et
+les ressources de scène ne passent pas toutes encore par l'AssetLoader.
 
 ### Méthode : le jeu témoin
 
@@ -79,6 +92,24 @@ inégale : l'animation a schéma + migration + refus-du-plus-récent testés ;
 les autres formats ont au mieux un numéro de version, au pire rien.
 `FormatVersionTests.cpp` existe comme embryon.
 
+### État réel
+
+Le champ `schema`, des migrations, `docs/PUBLIC_COMPATIBILITY.md` et un corpus
+de fixtures existent. Cette discipline structurelle est une bonne base, mais le
+contrat n'est pas encore « gelé » :
+
+- le snapshot headless ne reconstruit pas tous les types et peut ignorer des
+  behaviours ;
+- Mesh dépend d'un `ResourceManager` absent du fold Saida ;
+- les registres natif/web/headless et le loader web ne coïncident pas ;
+- les fixtures prouvent surtout la lecture/migration, pas l'équivalence
+  sémantique exhaustive après round-trip ;
+- l'API JS manque encore des services annoncés et son sandbox/interrupt n'est
+  pas prêt pour du contenu public non fiable.
+
+Le document `PUBLIC_COMPATIBILITY.md` est donc un **contrat candidat V1**, pas
+encore une garantie de stabilité déjà offerte aux utilisateurs.
+
 ### Livrables
 
 - **inventaire des surfaces gelées** : chaque format sérialisé et chaque API
@@ -116,6 +147,16 @@ le passage ultérieur à l'asynchrone casse les signatures, les ordres
 d'initialisation et donc tout le code gameplay existant. C'est le retrofit le
 plus douloureux de l'histoire des moteurs — à faire pendant qu'on est seuls
 sur le code. Il doit donc aboutir avant que le chantier 2 ne gèle l'API JS.
+
+### État réel
+
+`AssetLoader`, les handles/états/priorités, le budget et `assets.load/stats`
+existent. La copie de travail actuelle intègre aussi progressivement textures
+et meshes au chargement asynchrone. Ce chantier reste en cours : toutes les
+ressources de scène ne sont pas encore comptées/libérées par ce chemin, le Web
+ne démontre pas encore le streaming fetch/IDBFS attendu et les modifications
+assets locales doivent être commitées, revues et couvertes avant de déclarer le
+contrat stable.
 
 ### Périmètre minimum (celui du plan maître §8)
 
@@ -161,3 +202,7 @@ La V1 est publiable quand : le jeu témoin s'exporte et tourne sur machine
 vierge (desktop + Web) ; le corpus de rétro-compat passe en CI ; l'API de
 chargement est asynchrone et gelée ; les limitations restantes sont écrites.
 À ce moment-là — et pas avant — on ouvre au public.
+
+**État au 2026-07-15 : non atteint.** Aucun document ou badge de CI ne doit
+présenter la V1 comme stable tant que ces trois critères et le round-trip
+cross-runtime ne sont pas prouvés sur les artefacts exacts d'une release.

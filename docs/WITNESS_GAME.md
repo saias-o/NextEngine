@@ -6,6 +6,11 @@ construisant, en le packageant ou en le lançant est un bug de V1. Ce document
 est le journal de bord. Convention : ✅ corrigé, 🔴 ouvert, 🟡 contournement
 assumé.
 
+> Synchronisation documentaire du 2026-07-15 : les mentions « validé » ci-dessous
+> sont le journal historique des exécutions des 13-14 juillet ; elles n'ont pas
+> été rejouées pendant cette revue statique. Elles ne valent pas validation d'un
+> artefact de release ni test sur machine vierge.
+
 ## Frictions découvertes (session du 2026-07-13)
 
 | # | État | Friction | Détail / correctif |
@@ -14,10 +19,10 @@ assumé.
 | 2 | ✅ | Aucune API de save/load dans le moteur | le plan exige save/load dans le jeu témoin ; rien n'existait. Corrigé : API JS `storage` (save/load/has/remove par slot, `saves/<slot>.json` sous la racine projet), documentée dans PUBLIC_COMPATIBILITY.md. |
 | 3 | ✅ | Les autoloads JS déclarés dans le `.saidaproj` étaient ignorés | `autoloads: {GameState: "scripts/game_state.mjs"}` produisait « unknown behaviour type ». Corrigé : valeur en `.js`/`.mjs` → Node + ScriptBehaviour (`SceneTree::registerAutoloadScript`). |
 | 4 | ✅ | L'export Windows copiait les shaders depuis un dossier inexistant | `BuildExporter` lisait `build/bin/shaders` alors qu'ils sont dans `build/shaders` (`SAIDA_SHADER_DIR`) : tout export échouait à l'étape 3. Corrigé + validé par un packaging manuel bouté sur machine locale. |
-| 5 | ✅ | Hooks de module `.mjs` silencieusement ignorés s'ils ne sont pas `export` | un `function onReady()` de portée module ne fait rien, sans diagnostic. Contourné (export) ; un warning « script chargé mais aucun hook trouvé » serait un vrai correctif. |
+| 5 | 🟡 | Hooks de module `.mjs` silencieusement ignorés s'ils ne sont pas `export` | contourné dans le jeu en exportant les hooks, mais le moteur ne produit toujours pas le warning « script chargé mais aucun hook trouvé ». Ce n'est pas fermé. |
 | 6 | 🟡 | Pas de communication inter-nœuds en JS | pas d'accès aux autoloads (`tree.autoload`), pas de requête de groupe, pas de signaux cross-node depuis JS. Le jeu fait transiter l'état par `storage` (fichier) — fonctionnel mais inacceptable pour la V1. L'API JS doit exposer au minimum l'accès aux autoloads. |
 | 7 | ✅ | Pas de binding JS pour muter l'UI | corrigé : `node.setText`/`getText` quand le script est attaché à un `UITextNode` ; le HUD affiche le score à l'écran. |
-| 8 | 🟡 | Player web : types de nœuds manquants | **parité gameplay livrée** : Jolt en wasm (job system mono-thread, `SAIDA_NO_PHYSICS` réservé au viewer d'authoring), physique complète + Character/CameraFollow, **audio miniaudio (Web Audio)** avec `AudioSourceBehaviour` enregistré et `audio.play` réel, **saves persistantes** (`saves/` sur IDBFS : syncfs au boot + flush après `storage.save`, vérifié dans IndexedDB après reload), AssetLoader qui draine toute sa file par frame. E2E navigateur `[E2E] PASS` (porte + relique). Reste **l'UI seule** : `UIRenderer` non porté au RHI WebGPU, nœuds UI dégradés en Node générique, `setText` no-op signalé une fois. |
+| 8 | 🟡 | Player web : types de nœuds manquants | **Parité partielle historiquement validée** : Jolt en wasm (job system mono-thread, `SAIDA_NO_PHYSICS` réservé au viewer d'authoring), Character/CameraFollow, Web Audio, saves IDBFS et AssetLoader ont couvert le scénario porte + relique. La parité complète n'est pas livrée : `UIRenderer` n'est pas porté au RHI WebGPU, les nœuds UI deviennent des Node génériques et `setText` est un no-op signalé. |
 | 9 | ✅ | Animation absente du jeu témoin | corrigé : personnage riggé committé (`assets/models/totem.gltf`, généré par `gen_character.py` — 3 os, clips Idle/Walk, mesh skinné, buffer base64), chargé via `importedFrom` sur le joueur ; graphe `anim/locomotion.sgraph` (schéma 2) appliqué par la propriété `graph` de Character, qui alimente le paramètre `speed` du blackboard au lieu de piloter les clips. Reste : une séquence `.sseq` (cinématique d'intro) non traversée. |
 | 10 | ✅ | Audio absent du jeu témoin | corrigé : API JS `audio.play(alias)` + assets **.ogg** committés (`assets/audio/pickup.ogg`, `save.ogg` — .ogg est le format recommandé, cf. PUBLIC_COMPATIBILITY) joués au ramassage et à la sauvegarde. |
 | 11 | ✅ | Pas d'injection d'input headless | corrigé : `Input::injectAction(action, strength)` (combinée aux bindings réels, mêmes fronts justPressed/justReleased) + binding JS `input.inject`. `tools/witness_e2e.sh` packe le jeu, ajoute l'autoload `e2e_driver.js` et greppe `[E2E] PASS` : porte traversée + relique ramassée sans clavier. |
@@ -40,11 +45,11 @@ assumé.
 | 18 | ✅ | Tous les scripts JS crashaient au chargement sur wasm | « Maximum call stack size exceeded » : la pile wasm d'emscripten (64 Ko par défaut) est plus petite que la limite QuickJS (1 Mo). Corrigé : `-sSTACK_SIZE=4MB` + limite QuickJS à 256 Ko sur `__EMSCRIPTEN__`. |
 | 19 | 🟡 | Dispatch des autoloads dupliqué | `Engine::mountWorld` et `web/player/main.cpp` réimplémentent chacun le tri `.scene`/`.js`/type — le web avait raté le support des scripts. Les deux sont alignés ; à factoriser dans `SceneTree`. |
 
-Playtest complet validé le 2026-07-14 : déplacement, physique (murs, caisses),
+Playtest desktop historique validé le 2026-07-14 : déplacement, physique (murs, caisses),
 triggers, hub ⇄ arène, 3 reliques ramassées, sauvegarde persistée
 (`saves/witness.json` : `relics=3`).
 
-## Smoke test packagé (validé)
+## Smoke test packagé (validation historique)
 
 Packaging manuel identique à `BuildExporter::exportWindowsBuild` (exe runtime
 renommé + glfw3.dll + `shaders/` + données projet + `game.saida`), puis
@@ -55,7 +60,7 @@ lancement avec un autoload de test qui appelle `tree.quit()` après 8 s :
 - le HUD lit `storage` chaque 0,5 s ;
 - `saves/witness.json` est écrit à côté de l'exe.
 
-## Chemin ship via le vrai exporteur (validé)
+## Chemin ship via le vrai exporteur (validation historique)
 
 `saida_tool export-game` invoque le **même `BuildExporter` que le bouton
 Build** (Windows et `--platform web`) ; les deux harnais E2E passent par lui :
@@ -69,7 +74,8 @@ Build** (Windows et `--platform web`) ; les deux harnais E2E passent par lui :
 
 Restes du chemin ship : bouton Build depuis l'UI de l'éditeur (même code,
 clic non automatisé), test sur machine vierge, séquence `.sseq` non traversée.
-Note chantier 3 : `residentBytes=0` sur les cycles — les ressources de scène
-ne passent pas encore par l'`AssetLoader` (l'intégration textures/meshes est
-le gros reste du chantier) ; le critère « N cycles sans fuite » est en place
-et deviendra contraignant au fil de l'intégration.
+Note chantier 3 : lors de cette exécution historique, `residentBytes=0` montrait
+que les ressources de scène ne passaient pas par l'`AssetLoader`. L'intégration
+textures/meshes est désormais en cours dans la copie de travail ; le scénario
+doit être rejoué après commit pour vérifier que le compteur devient
+représentatif et reste borné sur N cycles.

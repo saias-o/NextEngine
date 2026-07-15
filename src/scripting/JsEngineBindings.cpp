@@ -235,6 +235,10 @@ JSValue jsAssetsStats(JSContext* ctx, JSValueConst, int, JSValueConst*) {
                       JS_NewInt64(ctx, static_cast<int64_t>(stats.residentBytes)));
     JS_SetPropertyStr(ctx, o, "budgetBytes",
                       JS_NewInt64(ctx, static_cast<int64_t>(stats.budgetBytes)));
+    // Octets GPU des ressources résidentes (textures/meshes chargés par asset)
+    // — champ additif (compat OK), critère de fuite du chantier 3 en E2E.
+    JS_SetPropertyStr(ctx, o, "gpuResidentBytes",
+                      JS_NewInt64(ctx, static_cast<int64_t>(tree->resources().gpuResidentBytes())));
     return o;
 }
 

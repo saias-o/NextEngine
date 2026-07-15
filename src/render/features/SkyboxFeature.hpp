@@ -2,6 +2,7 @@
 
 #include "render/RenderFeature.hpp"
 #include "graphics/Pipeline.hpp"
+#include "graphics/Texture.hpp"
 #include "project/AssetRegistry.hpp"
 #include "rhi/Rhi.hpp"
 
@@ -33,6 +34,9 @@ private:
     std::unique_ptr<rhi::BindGroupLayout> setLayout_;
     std::unique_ptr<rhi::BindGroup> set_;
     AssetID currentTexture_ = kAssetInvalid;
+    // Le même AssetID peut renaître dans un autre objet Texture après une
+    // éviction (trimUnused) + un rechargement : comparer aussi le pointeur.
+    const Texture* currentTexturePtr_ = nullptr;
 };
 
 } // namespace saida

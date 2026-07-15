@@ -159,10 +159,27 @@ void CollisionShapeNode::autoDetectFrom(const Aabb& b) {
     }
 }
 
-void CollisionShapeNode::ensureResolved(const glm::mat4& invBodyTR, Node& bodyNode) {
+bool CollisionShapeNode::ensureResolved(const glm::mat4& invBodyTR, Node& bodyNode) {
+    // Un mesh proxy encore vide (chargement .obj asynchrone) ne fournit ni
+    // bounds ni données de collision : on diffère la résolution ET le body
+    // (meshPending_) jusqu'à l'arrivée de la géométrie. Le passage
+    // pending→loaded re-résout et rend true → le body se reconstruit.
+    {
+        glm::mat4 ignored(1.0f);
+        Mesh* m = findMesh(bodyNode, ignored);
+        const bool pending = m && !m->loaded();
+        const bool becameReady = meshPending_ && !pending;
+        meshPending_ = pending;
+        if (pending) return false;
+        if (becameReady && shapeType != CollisionShapeType::Auto) {
+            resolved_ = shapeType;
+            return true;  // ConvexHull/Mesh relisent les données de collision
+        }
+    }
+
     if (shapeType != CollisionShapeType::Auto) {
         resolved_ = shapeType;
-        return;
+        return false;
     }
 
     // Derive the primitive from the mesh AABB expressed in the body's local
@@ -172,12 +189,14 @@ void CollisionShapeNode::ensureResolved(const glm::mat4& invBodyTR, Node& bodyNo
     // changes — including the identity→scaled transition right after a load.
     glm::mat4 meshWorld(1.0f);
     if (Mesh* m = findMesh(bodyNode, meshWorld)) {
-        resolveAutoFrom(m->bounds(), invBodyTR * meshWorld);
-    } else if (!autoResolved_) {
+        return resolveAutoFrom(m->bounds(), invBodyTR * meshWorld);
+    }
+    if (!autoResolved_) {
         resolved_ = CollisionShapeType::Box;
         halfExtents = glm::vec3(0.5f);
         autoResolved_ = true;
     }
+    return false;
 }
 
 bool CollisionShapeNode::resolveAutoFrom(const Aabb& meshBounds, const glm::mat4& toBody) {
@@ -197,6 +216,9 @@ JPH::Ref<JPH::Shape> CollisionShapeNode::buildShape(const glm::mat4& invBodyTR, 
     using namespace JPH;
 
     ensureResolved(invBodyTR, bodyNode);
+    // Géométrie pas encore chargée : pas de shape (plutôt qu'une box fausse) ;
+    // le body sera construit quand le mesh arrive (resolveAutoShapes → dirty).
+    if (meshPending_) return Ref<Shape>();
 
     // Build the primitive.
     Ref<Shape> prim;
