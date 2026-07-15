@@ -1,5 +1,6 @@
 {
-  "version": 3,
+  "schema": 2,
+  "version": 2,
   "snapshotMode": "authoring-headless",
   "scene": {
     "type": "Scene",

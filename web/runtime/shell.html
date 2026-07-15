@@ -64,8 +64,12 @@
           return res;
         },
         manifest: function() { return JSON.parse(call('saida_engine_manifest')); },
+        runtimeStatus: function() { return JSON.parse(call('saida_runtime_status')); },
         snapshot: function() { return JSON.parse(call('saida_scene_snapshot')); },
         snapshotCompare: function() { return JSON.parse(call('saida_scene_snapshot_compare')); },
+        loadSnapshot: function(doc) {
+          return JSON.parse(call('saida_load_snapshot', JSON.stringify(doc)));
+        },
         connectWebSocket: function(url) {
           var self = this;
           if (self.ws && self.ws.readyState === WebSocket.OPEN)
@@ -192,6 +196,113 @@
       return value;
     }
 
+    function runContractSelfTest(saida) {
+      var transform = {
+        position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1]
+      };
+      var base = {
+        schema: 2,
+        version: 2,
+        scene: {
+          type: 'Scene', id: 1, name: 'ContractTest', enabled: true,
+          transform: transform, behaviours: [], settings: {}, connections: [],
+          children: [
+            {
+              type: 'Camera', id: 2, name: 'Camera', enabled: true,
+              transform: transform, behaviours: [], children: [],
+              fovDegrees: 72, nearZ: 0.25, farZ: 900, priority: 4, active: false
+            },
+            {
+              type: 'ParticleSystem', id: 3, name: 'Particles', enabled: true,
+              transform: transform, behaviours: [], children: [], maxParticles: 32
+            }
+          ]
+        }
+      };
+      var accepted = saida.loadSnapshot(base);
+      var createdNode = saida.applyOp({
+        type: 'create_node', opVersion: 1,
+        payload: {nodeType: 'Node', name: 'CreatedNode'}
+      });
+      var createdCamera = saida.applyOp({
+        type: 'create_node', opVersion: 1,
+        payload: {nodeType: 'Camera', name: 'CreatedCamera'}
+      });
+      var acceptedSnapshot = saida.snapshot();
+      var unknown = JSON.parse(JSON.stringify(base));
+      unknown.scene.children[0].type = 'DesktopOnly';
+      var rejectedUnknown = saida.loadSnapshot(unknown);
+      var afterUnknown = saida.snapshot();
+      var malformed = JSON.parse(JSON.stringify(base));
+      malformed.scene.children[0].fovDegrees = 'not-a-number';
+      var rejectedMalformed = saida.loadSnapshot(malformed);
+      var afterMalformed = saida.snapshot();
+      var future = JSON.parse(JSON.stringify(base));
+      future.schema = future.version = 999;
+      var rejectedFuture = saida.loadSnapshot(future);
+      var behaviour = JSON.parse(JSON.stringify(base));
+      behaviour.scene.children[0].behaviours = [{type: 'Rotator', enabled: true}];
+      var rejectedBehaviour = saida.loadSnapshot(behaviour);
+      var manifest = saida.manifest();
+      var types = accepted.ok && acceptedSnapshot.scene &&
+          Array.isArray(acceptedSnapshot.scene.children)
+        ? acceptedSnapshot.scene.children.map(function(node) { return node.type; })
+        : [];
+      var passed = accepted.ok === true &&
+        types.indexOf('Camera') !== -1 && types.indexOf('ParticleSystem') !== -1 &&
+        createdNode.ok === true && createdCamera.ok === true &&
+        rejectedUnknown.ok === false && rejectedMalformed.ok === false &&
+        rejectedFuture.ok === false &&
+        rejectedBehaviour.ok === false &&
+        JSON.stringify(acceptedSnapshot) === JSON.stringify(afterUnknown) &&
+        JSON.stringify(acceptedSnapshot) === JSON.stringify(afterMalformed) &&
+        manifest.sceneSnapshot && manifest.sceneSnapshot.schema === 2 &&
+        manifest.sceneSnapshot.atomicLoad === true &&
+        manifest.sceneSnapshot.unsupportedTypePolicy === 'reject';
+      var result = {
+        passed: passed,
+        accepted: accepted,
+        createdNode: createdNode,
+        createdCamera: createdCamera,
+        types: types,
+        rejectedUnknown: rejectedUnknown,
+        rejectedMalformed: rejectedMalformed,
+        rejectedFuture: rejectedFuture,
+        rejectedBehaviour: rejectedBehaviour,
+        rollbackPreservedSnapshot:
+          JSON.stringify(acceptedSnapshot) === JSON.stringify(afterUnknown) &&
+          JSON.stringify(acceptedSnapshot) === JSON.stringify(afterMalformed),
+        sceneSnapshotContract: manifest.sceneSnapshot
+      };
+      window.__saidaContractTest = result;
+      var output = document.createElement('pre');
+      output.id = 'contract-test-results';
+      output.textContent = JSON.stringify(result, null, 2);
+      document.body.appendChild(output);
+      statusEl.textContent = passed ? 'contract self-test passed' : 'contract self-test failed';
+    }
+
+    function runContractSelfTestWhenReady(saida, attemptsLeft) {
+      var runtime = saida.runtimeStatus();
+      if (runtime.ready) {
+        runContractSelfTest(saida);
+        return;
+      }
+      if (runtime.state === 'error' || attemptsLeft <= 0) {
+        var result = {passed: false, runtimeStatus: runtime};
+        window.__saidaContractTest = result;
+        var output = document.createElement('pre');
+        output.id = 'contract-test-results';
+        output.textContent = JSON.stringify(result, null, 2);
+        document.body.appendChild(output);
+        statusEl.textContent = 'contract self-test could not start';
+        return;
+      }
+      setTimeout(function() {
+        runContractSelfTestWhenReady(saida, attemptsLeft - 1);
+      }, 50);
+    }
+
     var Module = {
       canvas: document.getElementById('canvas'),
       print: function(t) { console.log(t); statusEl.textContent = t; },
@@ -205,6 +316,8 @@
         if (wsUrl) window.saida.connectWebSocket(wsUrl);
         if (/(?:^|[?&])edit(?:[=&]|$)/.test(location.search))
           buildEditBar(window.saida);
+        if (/(?:^|[?&])contract-test(?:[=&]|$)/.test(location.search))
+          runContractSelfTestWhenReady(window.saida, 600);
       },
     };
     if (!navigator.gpu) {

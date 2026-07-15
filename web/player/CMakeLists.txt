@@ -163,7 +163,7 @@ target_include_directories(saida_player PRIVATE
 target_compile_definitions(saida_player PRIVATE
     SAIDA_RHI_WEBGPU SAIDA_SCENE_TREE_TIMERS
     GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE)
-target_compile_options(saida_player PRIVATE $<$<CONFIG:Release>:-Oz> --use-port=emdawnwebgpu)
+target_compile_options(saida_player PRIVATE -fexceptions $<$<CONFIG:Release>:-Oz> --use-port=emdawnwebgpu)
 target_link_libraries(saida_player PRIVATE quickjs Jolt)
 
 target_link_options(saida_player PRIVATE
@@ -173,6 +173,9 @@ target_link_options(saida_player PRIVATE
     -sSTACK_SIZE=4MB
     -lidbfs.js
     -sEXIT_RUNTIME=0
+    -sDISABLE_EXCEPTION_CATCHING=0
+    -sEXPORTED_RUNTIME_METHODS=ccall
+    -sEXPORTED_FUNCTIONS=_main,_saida_player_status
     $<$<CONFIG:Release>:-Oz>
     "SHELL:--preload-file \"${SAIDA_ROOT}/build/shaders/wgsl@/shaders\""
     # Le package du jeu de référence, monté tel quel sous /project.

@@ -3,7 +3,7 @@
 // Le player web (web/player) exécute le vrai cycle de jeu — SceneTree,
 // behaviours, signaux, scripts QuickJS, physique Jolt (job system mono-thread)
 // et audio miniaudio (backend Web Audio). Seule l'UI reste absente (PlatformCaps
-// la déclare absente ; les nœuds UI se dégradent en Node générique).
+// la déclare absente ; les scènes qui l'exigent sont refusées au chargement).
 //
 // Emscripten-only : ne collisionne jamais avec ReflectedTypes.cpp (desktop) ni
 // ReflectedTypesWeb.cpp (viewer d'authoring, autre exécutable).

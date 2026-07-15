@@ -98,10 +98,14 @@ Le champ `schema`, des migrations, `docs/PUBLIC_COMPATIBILITY.md` et un corpus
 de fixtures existent. Cette discipline structurelle est une bonne base, mais le
 contrat n'est pas encore « gelé » :
 
-- le snapshot headless ne reconstruit pas tous les types et peut ignorer des
-  behaviours ;
-- Mesh dépend d'un `ResourceManager` absent du fold Saida ;
-- les registres natif/web/headless et le loader web ne coïncident pas ;
+- le snapshot headless est fail-closed et préserve son sous-ensemble enregistré,
+  Camera incluse, mais UI/physique restent explicitement hors contrat ;
+- les refs Mesh existantes round-trippent sans GPU, tandis que l'opération
+  `create_node MeshNode` reste explicitement interdite sans `ResourceManager` ;
+- l'authoring Web annonce maintenant son registre réel et charge ce sous-ensemble
+  de façon atomique/fail-closed ; le player Web publie également son registre,
+  valide scènes et autoloads avant `ready` et refuse tout type absent. Les types
+  UI/physique restent à implémenter ou aligner avec le natif/headless ;
 - les fixtures prouvent surtout la lecture/migration, pas l'équivalence
   sémantique exhaustive après round-trip ;
 - l'API JS manque encore des services annoncés et son sandbox/interrupt n'est

@@ -5,20 +5,31 @@
 #include "graphics/ResourceManager.hpp"
 #include "scene/Behaviour.hpp"
 #include "scene/BehaviourRegistry.hpp"
+#include "scene/CameraNode.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/Node.hpp"
+#include "scene/NodeRegistry.hpp"
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/ReflectedTypes.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SerializationHelpers.hpp"
 #include "scene/WaterNode.hpp"
 
+#ifndef __EMSCRIPTEN__
+#include "physics/AreaNode.hpp"
+#include "scene/LODGroupBehaviour.hpp"
+#include "scene/animation/Animator.hpp"
+#include "scripting/ScriptBehaviour.hpp"
+#endif
+
 #include <nlohmann/json.hpp>
 
 #include <glm/gtc/quaternion.hpp>
 
+#include <exception>
 #include <memory>
+#include <stdexcept>
 
 namespace saida::authoring {
 namespace {
@@ -33,17 +44,65 @@ json transformToJson(const Transform& t) {
     };
 }
 
-const reflect::TypeDesc* reflectedNodeDesc(const Node& n) {
-    const std::string type = n.typeName() ? n.typeName() : "";
-    if (type == LightNode::reflectName()) return &reflect::localDesc<LightNode>();
-    if (type == WaterNode::reflectName()) return &reflect::localDesc<WaterNode>();
-    if (type == ParticleSystemNode::reflectName()) return &reflect::localDesc<ParticleSystemNode>();
-    return nullptr;
+void ensureHeadlessRegistries() {
+    registerReflectedTypes();
+
+    auto& nodes = NodeRegistry::instance();
+    if (nodes.factories().find("Node") == nodes.factories().end())
+        nodes.registerType<Node>("Node");
+    if (nodes.factories().find("MeshNode") == nodes.factories().end())
+        nodes.registerType<MeshNode>("MeshNode");
+    if (nodes.factories().find("Camera") == nodes.factories().end())
+        nodes.registerType<CameraNode>("Camera");
+
+#ifndef __EMSCRIPTEN__
+    // These behaviours have hand-written serializers rather than reflected
+    // descriptors. Registering them here only reconstructs their durable data;
+    // no script, animation or GPU runtime is started by load().
+    auto& behaviours = BehaviourRegistry::instance();
+    if (behaviours.factories().find("ScriptBehaviour") == behaviours.factories().end())
+        behaviours.registerType<ScriptBehaviour>("ScriptBehaviour");
+    if (behaviours.factories().find("Animator") == behaviours.factories().end())
+        behaviours.registerType<Animator>("Animator");
+    if (behaviours.factories().find("LOD Group") == behaviours.factories().end())
+        behaviours.registerType<LODGroupBehaviour>("LOD Group");
+#endif
 }
 
-json serializeNodeWithoutResources(const Node& node) {
+const reflect::TypeDesc* reflectedNodeDesc(const Node& node) {
+    const char* typeName = node.typeName();
+    if (!typeName) return nullptr;
+    const reflect::TypeDesc* desc = reflect::TypeRegistry::instance().find(typeName);
+    return desc && desc->category == "node" ? desc : nullptr;
+}
+
+bool isSupportedHeadlessNodeType(const std::string& type) {
+    if (type == "Node" || type == "MeshNode" || type == "Camera") return true;
+    const reflect::TypeDesc* desc = reflect::TypeRegistry::instance().find(type);
+    return desc && desc->category == "node";
+}
+
+bool isSupportedHeadlessBehaviourType(const std::string& type) {
+#ifndef __EMSCRIPTEN__
+    if (type == "ScriptBehaviour" || type == "Animator" || type == "LOD Group")
+        return true;
+#endif
+    const reflect::TypeDesc* desc = reflect::TypeRegistry::instance().find(type);
+    return desc && desc->category == "behaviour";
+}
+
+json serializeNodeWithoutResources(const Node& node, const std::string& path,
+                                   bool sceneRoot = false) {
+    ensureHeadlessRegistries();
+    const std::string type = node.typeName() ? node.typeName() : "";
+    if ((sceneRoot && type != "Scene") ||
+        (!sceneRoot && !isSupportedHeadlessNodeType(type))) {
+        throw std::runtime_error(path + ": unsupported node type '" + type +
+                                 "' in headless snapshot");
+    }
+
     json out;
-    out["type"] = node.typeName();
+    out["type"] = type;
     out["id"] = node.id();
     out["name"] = node.name();
     out["enabled"] = node.enabled();
@@ -52,14 +111,19 @@ json serializeNodeWithoutResources(const Node& node) {
     // Behaviours (gameplay logic) — same {type, enabled, ...reflected props}
     // shape as the full serializer, so the headless snapshot carries logic too.
     json behavioursJson = json::array();
-    for (const auto& b : node.behaviours()) {
-        if (const char* tn = b->typeName()) {
-            json bj;
-            bj["type"] = tn;
-            bj["enabled"] = b->enabled();
-            b->save(bj);
-            behavioursJson.push_back(std::move(bj));
+    for (std::size_t i = 0; i < node.behaviours().size(); ++i) {
+        const auto& b = node.behaviours()[i];
+        const std::string behaviourPath = path + ".behaviours[" + std::to_string(i) + "]";
+        const std::string behaviourType = b->typeName() ? b->typeName() : "";
+        if (!isSupportedHeadlessBehaviourType(behaviourType)) {
+            throw std::runtime_error(behaviourPath + ": unsupported behaviour type '" +
+                                     behaviourType + "' in headless snapshot");
         }
+        json bj;
+        bj["type"] = behaviourType;
+        bj["enabled"] = b->enabled();
+        b->save(bj);
+        behavioursJson.push_back(std::move(bj));
     }
     out["behaviours"] = std::move(behavioursJson);
 
@@ -70,6 +134,17 @@ json serializeNodeWithoutResources(const Node& node) {
 
     if (const reflect::TypeDesc* desc = reflectedNodeDesc(node))
         desc->saveTo(&node, out);
+
+#ifndef __EMSCRIPTEN__
+    // Area uses hand-written physics serialization because its reflection
+    // descriptor intentionally contains signals only.
+    if (std::string(node.typeName() ? node.typeName() : "") == "Area") {
+        const auto& area = static_cast<const AreaNode&>(node);
+        out["friction"] = area.friction;
+        out["restitution"] = area.restitution;
+        out["moving"] = area.moving;
+    }
+#endif
 
     // MeshNode (Track 1-F) : les champs d'identité de rendu du format complet.
     // Les flags viennent du node ; les refs de ressources (mesh, texture,
@@ -93,9 +168,20 @@ json serializeNodeWithoutResources(const Node& node) {
         }
     }
 
+    if (std::string(node.typeName() ? node.typeName() : "") == "Camera") {
+        const auto& camera = static_cast<const CameraNode&>(node);
+        out["fovDegrees"] = camera.fovDegrees;
+        out["nearZ"] = camera.nearZ;
+        out["farZ"] = camera.farZ;
+        out["priority"] = camera.priority;
+        out["active"] = camera.active;
+    }
+
     json children = json::array();
-    for (const auto& child : node.children())
-        children.push_back(serializeNodeWithoutResources(*child));
+    for (std::size_t i = 0; i < node.children().size(); ++i) {
+        children.push_back(serializeNodeWithoutResources(
+            *node.children()[i], path + ".children[" + std::to_string(i) + "]"));
+    }
     out["children"] = std::move(children);
     return out;
 }
@@ -133,7 +219,7 @@ json sceneSettingsToJson(const Scene& scene) {
 }
 
 json serializeSceneWithoutResources(Scene& scene) {
-    json root = serializeNodeWithoutResources(scene);
+    json root = serializeNodeWithoutResources(scene, "scene", true);
     root["settings"] = sceneSettingsToJson(scene);
     if (!scene.connections().empty()) {
         json conns = json::array();
@@ -147,21 +233,29 @@ json serializeSceneWithoutResources(Scene& scene) {
 
 // --- headless deserialization (inverse of serializeSceneWithoutResources) ----
 
-// Build a bare node of the given type without any GPU resource. Types the
-// authoring-core knows how to reflect (LightNode / Water / ParticleSystem) are
-// rebuilt as themselves; MeshNode is rebuilt with null mesh/material refs;
-// everything else degrades to a generic Node (structure is preserved).
-std::unique_ptr<Node> makeHeadlessNode(const std::string& type) {
-    if (type == LightNode::reflectName()) return std::make_unique<LightNode>();
-    if (type == WaterNode::reflectName()) return std::make_unique<WaterNode>();
-    if (type == ParticleSystemNode::reflectName()) return std::make_unique<ParticleSystemNode>();
-    if (type == "MeshNode") return std::make_unique<MeshNode>();
-    return std::make_unique<Node>();
+// Build only types covered by the headless contract. A type that exists in a
+// desktop-only registry is not automatically safe here: accepting it without a
+// resource-free codec would silently discard its properties.
+std::unique_ptr<Node> makeHeadlessNode(const std::string& type,
+                                       const std::string& path,
+                                       std::string& error) {
+    ensureHeadlessRegistries();
+    if (!isSupportedHeadlessNodeType(type)) {
+        error = path + ": unsupported node type '" + type + "' in headless snapshot";
+        return nullptr;
+    }
+    std::unique_ptr<Node> node = NodeRegistry::instance().create(type);
+    if (!node) {
+        error = path + ": node type '" + type + "' has no headless factory";
+        return nullptr;
+    }
+    return node;
 }
 
 // Restore the resource-free fields written by serializeNodeWithoutResources.
 // Children are handled by the caller so the root Scene can reuse this too.
-void loadNodeFields(Node& node, const json& j) {
+bool loadNodeFields(Node& node, const json& j, const std::string& path,
+                    std::string& error) {
     if (auto it = j.find("id"); it != j.end() && it->is_number_integer())
         node.assignSerializedId(it->get<NodeId>());
     node.setName(j.value("name", node.name()));
@@ -186,6 +280,15 @@ void loadNodeFields(Node& node, const json& j) {
     if (const reflect::TypeDesc* desc = reflectedNodeDesc(node))
         desc->loadFrom(&node, j);
 
+#ifndef __EMSCRIPTEN__
+    if (std::string(node.typeName() ? node.typeName() : "") == "Area") {
+        auto& area = static_cast<AreaNode&>(node);
+        if (auto it = j.find("friction"); it != j.end()) area.friction = it->get<float>();
+        if (auto it = j.find("restitution"); it != j.end()) area.restitution = it->get<float>();
+        if (auto it = j.find("moving"); it != j.end()) area.moving = it->get<bool>();
+    }
+#endif
+
     // MeshNode (Track 1-F) : restaure les flags de rendu et capture les refs
     // de ressources telles quelles (résolues plus tard par un runtime qui a un
     // ResourceManager ; re-sérialisées à l'identique par le chemin headless).
@@ -205,29 +308,77 @@ void loadNodeFields(Node& node, const json& j) {
         mesh.captureDurableResourceRefs(j);
     }
 
+    if (std::string(node.typeName() ? node.typeName() : "") == "Camera") {
+        auto& camera = static_cast<CameraNode&>(node);
+        if (auto it = j.find("fovDegrees"); it != j.end() && it->is_number())
+            camera.fovDegrees = it->get<float>();
+        if (auto it = j.find("nearZ"); it != j.end() && it->is_number())
+            camera.nearZ = it->get<float>();
+        if (auto it = j.find("farZ"); it != j.end() && it->is_number())
+            camera.farZ = it->get<float>();
+        if (auto it = j.find("priority"); it != j.end() && it->is_number_integer())
+            camera.priority = it->get<int>();
+        if (auto it = j.find("active"); it != j.end() && it->is_boolean())
+            camera.active = it->get<bool>();
+    }
+
     // Behaviours: rebuild by type from the registry, then load reflected props.
-    if (auto it = j.find("behaviours"); it != j.end() && it->is_array()) {
-        registerReflectedTypes();  // idempotent: ensure the factory registry is ready
-        for (const auto& bj : *it) {
-            if (!bj.contains("type") || !bj["type"].is_string()) continue;
+    if (auto it = j.find("behaviours"); it != j.end()) {
+        if (!it->is_array()) {
+            error = path + ".behaviours: expected an array";
+            return false;
+        }
+        ensureHeadlessRegistries();
+        for (std::size_t i = 0; i < it->size(); ++i) {
+            const json& bj = (*it)[i];
+            const std::string behaviourPath = path + ".behaviours[" + std::to_string(i) + "]";
+            if (!bj.is_object() || !bj.contains("type") || !bj["type"].is_string()) {
+                error = behaviourPath + ": behaviour needs a string 'type'";
+                return false;
+            }
             const std::string tn = bj["type"].get<std::string>();
             if (tn == "SceneSettings") continue;  // legacy; handled by scene settings
-            if (auto b = BehaviourRegistry::instance().create(tn)) {
-                if (bj.contains("enabled") && bj["enabled"].is_boolean())
-                    b->setEnabled(bj["enabled"].get<bool>());
-                b->load(bj);
-                node.addBehaviour(std::move(b));
+            if (!isSupportedHeadlessBehaviourType(tn)) {
+                error = behaviourPath + ": unsupported behaviour type '" + tn +
+                        "' in headless snapshot";
+                return false;
             }
+            auto b = BehaviourRegistry::instance().create(tn);
+            if (!b) {
+                error = behaviourPath + ": behaviour type '" + tn +
+                        "' has no headless factory";
+                return false;
+            }
+            if (bj.contains("enabled") && bj["enabled"].is_boolean())
+                b->setEnabled(bj["enabled"].get<bool>());
+            b->load(bj);
+            node.addBehaviour(std::move(b));
         }
     }
+    return true;
 }
 
-std::unique_ptr<Node> deserializeNodeHeadless(const json& j) {
-    std::unique_ptr<Node> node = makeHeadlessNode(j.value("type", std::string("Node")));
-    loadNodeFields(*node, j);
-    if (auto it = j.find("children"); it != j.end() && it->is_array())
-        for (const json& cj : *it)
-            if (cj.is_object()) node->addChild(deserializeNodeHeadless(cj));
+std::unique_ptr<Node> deserializeNodeHeadless(const json& j, const std::string& path,
+                                              std::string& error) {
+    if (!j.is_object() || !j.contains("type") || !j["type"].is_string()) {
+        error = path + ": node needs a string 'type'";
+        return nullptr;
+    }
+    const std::string type = j["type"].get<std::string>();
+    std::unique_ptr<Node> node = makeHeadlessNode(type, path, error);
+    if (!node || !loadNodeFields(*node, j, path, error)) return nullptr;
+    if (auto it = j.find("children"); it != j.end()) {
+        if (!it->is_array()) {
+            error = path + ".children: expected an array";
+            return nullptr;
+        }
+        for (std::size_t i = 0; i < it->size(); ++i) {
+            const std::string childPath = path + ".children[" + std::to_string(i) + "]";
+            std::unique_ptr<Node> child = deserializeNodeHeadless((*it)[i], childPath, error);
+            if (!child) return nullptr;
+            node->addChild(std::move(child));
+        }
+    }
     return node;
 }
 
@@ -268,7 +419,7 @@ void loadSceneSettings(Scene& scene, const json& s) {
 
 std::string serializeSceneSnapshot(Scene& scene, ResourceManager& resources) {
     json doc;
-    doc["version"] = format::kSceneVersion;
+    format::writeSchema(doc, format::kSceneVersion);
     scene.serialize(doc["scene"], resources);
     return doc.dump(2);
 }
@@ -277,7 +428,7 @@ std::string serializeSceneSnapshot(Scene& scene, ResourceManager* resources) {
     if (resources) return serializeSceneSnapshot(scene, *resources);
 
     json doc;
-    doc["version"] = format::kSceneVersion;
+    format::writeSchema(doc, format::kSceneVersion);
     doc["scene"] = serializeSceneWithoutResources(scene);
     doc["snapshotMode"] = "authoring-headless";
     return doc.dump(2);
@@ -285,9 +436,15 @@ std::string serializeSceneSnapshot(Scene& scene, ResourceManager* resources) {
 
 bool deserializeSceneSnapshot(const json& doc, Scene& out, std::string* error) {
     auto fail = [&](const std::string& m) {
+        out.clearChildren();
+        out.clearConnections();
+        out.connections().clear();
+        out.settings() = SceneSettings{};
         if (error) *error = m;
         return false;
     };
+
+    if (error) error->clear();
 
     // Leave a clean, empty scene behind on any failure (never a half-built one).
     out.clearChildren();
@@ -296,25 +453,55 @@ bool deserializeSceneSnapshot(const json& doc, Scene& out, std::string* error) {
     out.settings() = SceneSettings{};
 
     if (!doc.is_object()) return fail("snapshot document must be a JSON object");
+    if (doc.contains("schema") && !doc["schema"].is_number_integer())
+        return fail("snapshot schema must be an integer");
+    if (doc.contains("version") && !doc["version"].is_number_integer())
+        return fail("snapshot version must be an integer");
+    if (doc.contains("schema") && doc.contains("version") &&
+        doc["schema"].is_number_integer() && doc["version"].is_number_integer() &&
+        doc["schema"] != doc["version"])
+        return fail("snapshot schema/version mismatch");
+    const int schema = format::readSchema(doc, format::kLegacyVersion);
+    if (schema > format::kSceneVersion) {
+        return fail("unsupported snapshot schema v" + std::to_string(schema) +
+                    " (supported through v" + std::to_string(format::kSceneVersion) + ")");
+    }
+
     auto it = doc.find("scene");
     if (it == doc.end() || !it->is_object())
         return fail("snapshot document needs a 'scene' object");
     const json& root = *it;
+    if (!root.contains("type") || !root["type"].is_string() || root["type"] != "Scene")
+        return fail("snapshot root must have type 'Scene'");
 
-    loadNodeFields(out, root);
-    if (!root.contains("id")) out.regenerateId();
+    try {
+        ensureHeadlessRegistries();
+        std::string detail;
+        if (!loadNodeFields(out, root, "scene", detail)) return fail(detail);
+        if (!root.contains("id")) out.regenerateId();
 
-    if (auto sit = root.find("settings"); sit != root.end() && sit->is_object())
-        loadSceneSettings(out, *sit);
+        if (auto sit = root.find("settings"); sit != root.end()) {
+            if (!sit->is_object()) return fail("scene.settings: expected an object");
+            loadSceneSettings(out, *sit);
+        }
 
-    if (auto cit = root.find("children"); cit != root.end() && cit->is_array())
-        for (const json& cj : *cit)
-            if (cj.is_object()) out.addChild(deserializeNodeHeadless(cj));
+        if (auto cit = root.find("children"); cit != root.end()) {
+            if (!cit->is_array()) return fail("scene.children: expected an array");
+            for (std::size_t i = 0; i < cit->size(); ++i) {
+                const std::string path = "scene.children[" + std::to_string(i) + "]";
+                std::unique_ptr<Node> child = deserializeNodeHeadless((*cit)[i], path, detail);
+                if (!child) return fail(detail);
+                out.addChild(std::move(child));
+            }
+        }
 
-    out.readConnections(root);
-    Node::g_hierarchyVersion++;
-    Node::g_transformVersion++;
-    return true;
+        out.readConnections(root);
+        Node::g_hierarchyVersion++;
+        Node::g_transformVersion++;
+        return true;
+    } catch (const std::exception& e) {
+        return fail(std::string("invalid snapshot data: ") + e.what());
+    }
 }
 
 bool deserializeSceneSnapshot(const std::string& text, Scene& out, std::string* error) {

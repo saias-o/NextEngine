@@ -501,8 +501,14 @@ int cmdApplyOps(const std::vector<std::string>& args) {
             n.assignSerializedId(nextId++);
     });
 
-    const std::string snapshot =
-        saida::authoring::serializeSceneSnapshot(scene, nullptr);
+    std::string snapshot;
+    try {
+        snapshot = saida::authoring::serializeSceneSnapshot(scene, nullptr);
+    } catch (const std::exception& e) {
+        json report{{"ok", false}, {"error", std::string("snapshot serialization failed: ") + e.what()}};
+        std::cerr << report.dump() << "\n";
+        return kExitInvalid;
+    }
 
     if (outPath.empty() || outPath == "-") {
         std::cout << snapshot << "\n";

@@ -36,6 +36,64 @@ bool isModelPath(const std::string& path) {
     return ext == ".gltf" || ext == ".glb";
 }
 
+bool rejectTypeContract(const std::string& message, std::string* error) {
+    if (error) *error = message;
+    return false;
+}
+
+bool validateTypeContract(const json& node, const std::string& path,
+                          std::string* error) {
+    if (!node.is_object())
+        return rejectTypeContract(path + " must be an object", error);
+
+    std::string type = "Node";
+    if (auto it = node.find("type"); it != node.end()) {
+        if (!it->is_string())
+            return rejectTypeContract(path + ".type must be a string", error);
+        type = it->get<std::string>();
+    }
+    if (NodeRegistry::instance().factories().find(type) ==
+        NodeRegistry::instance().factories().end()) {
+        return rejectTypeContract(path + ": unsupported node type '" + type + "'", error);
+    }
+
+    if (auto it = node.find("behaviours"); it != node.end()) {
+        if (!it->is_array())
+            return rejectTypeContract(path + ".behaviours must be an array", error);
+        for (std::size_t i = 0; i < it->size(); ++i) {
+            const json& behaviour = (*it)[i];
+            const std::string behaviourPath =
+                path + ".behaviours[" + std::to_string(i) + "]";
+            if (!behaviour.is_object() || !behaviour.contains("type") ||
+                !behaviour["type"].is_string()) {
+                return rejectTypeContract(behaviourPath + ".type must be a string", error);
+            }
+            const std::string behaviourType = behaviour["type"].get<std::string>();
+            // Legacy scene settings are migrated by loadIntoScene and are not
+            // instantiated as a runtime Behaviour.
+            if (behaviourType != "SceneSettings" &&
+                BehaviourRegistry::instance().factories().find(behaviourType) ==
+                    BehaviourRegistry::instance().factories().end()) {
+                return rejectTypeContract(behaviourPath + ": unsupported behaviour type '" +
+                                              behaviourType + "'",
+                                          error);
+            }
+        }
+    }
+
+    if (auto it = node.find("children"); it != node.end()) {
+        if (!it->is_array())
+            return rejectTypeContract(path + ".children must be an array", error);
+        for (std::size_t i = 0; i < it->size(); ++i) {
+            if (!validateTypeContract((*it)[i],
+                                      path + ".children[" + std::to_string(i) + "]",
+                                      error))
+                return false;
+        }
+    }
+    return true;
+}
+
 bool reloadImportedModel(Node& target, const std::string& path, ResourceManager& resources) {
     if (!isModelPath(path)) return false;
 
@@ -92,8 +150,8 @@ std::unique_ptr<Node> deserializeNode(const json& j, ResourceManager& resources,
 
     std::unique_ptr<Node> node = NodeRegistry::instance().create(type);
     if (!node) {
-        Log::warn("SceneSerializer: Unknown node type '", type, "', falling back to generic Node.");
-        node = std::make_unique<Node>();
+        Log::error("SceneSerializer: unsupported node type '", type, "'.");
+        return nullptr;
     }
 
     node->deserialize(j, resources);
@@ -188,7 +246,13 @@ std::unique_ptr<Node> SceneSerializer::nodeFromJson(const std::string& text,
                                                     ResourceManager& resources,
                                                     NodeIdPolicy idPolicy) {
     try {
-        auto node = deserializeNode(json::parse(text), resources, idPolicy);
+        const json document = json::parse(text);
+        std::string contractError;
+        if (!validateTypeContract(document, "node", &contractError)) {
+            Log::error("nodeFromJson: ", contractError);
+            return nullptr;
+        }
+        auto node = deserializeNode(document, resources, idPolicy);
         if (node) ensureUniqueIds(*node);
         return node;
     } catch (const std::exception& e) {
@@ -211,6 +275,11 @@ std::unique_ptr<Node> SceneSerializer::loadNodeFromSceneFile(const std::string& 
             return nullptr;
         json root = doc.at("scene");
         root["type"] = "Scene"; // Force the root node to be instantiated as a Scene
+        std::string contractError;
+        if (!validateTypeContract(root, "scene", &contractError)) {
+            Log::error("loadNodeFromSceneFile: ", contractError, ": ", path);
+            return nullptr;
+        }
         auto node = deserializeNode(root, resources, idPolicy);
         if (node) ensureUniqueIds(*node);
         return node;
@@ -237,6 +306,16 @@ bool SceneSerializer::validateSceneDocumentFile(const std::string& path) {
         return true;
     } catch (const std::exception& e) {
         Log::error("validateSceneDocumentFile: ", e.what());
+        return false;
+    }
+}
+
+bool SceneSerializer::validateTypeContractJson(const std::string& text,
+                                               std::string* error) {
+    try {
+        return validateTypeContract(json::parse(text), "node", error);
+    } catch (const std::exception& e) {
+        if (error) *error = e.what();
         return false;
     }
 }
@@ -270,6 +349,12 @@ bool SceneSerializer::loadIntoScene(Scene& scene, ResourceManager& resources,
         if (!acceptSceneDocumentVersion(doc, "loadIntoScene", path))
             return false;
         const json& root = doc.at("scene");
+
+        std::string contractError;
+        if (!validateTypeContract(root, "scene", &contractError)) {
+            Log::error("loadIntoScene: ", contractError, ": ", path);
+            return false;
+        }
 
         scene.clearChildren();
         if (root.contains("id")) scene.assignSerializedId(root["id"].get<NodeId>());
@@ -339,7 +424,12 @@ bool SceneSerializer::loadIntoScene(Scene& scene, ResourceManager& resources,
                     }
                     continue; // Skip creating the legacy node
                 }
-                scene.addChild(deserializeNode(cj, resources, NodeIdPolicy::Preserve));
+                auto child = deserializeNode(cj, resources, NodeIdPolicy::Preserve);
+                if (!child) {
+                    Log::error("loadIntoScene: failed to deserialize a validated child: ", path);
+                    return false;
+                }
+                scene.addChild(std::move(child));
             }
         }
 

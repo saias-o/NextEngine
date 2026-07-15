@@ -6,7 +6,7 @@ les limites connues du candidat V1, pas une release V1 déjà publiée.
 - Le player Web cible WebGPU. Un navigateur sans WebGPU ne peut pas lancer le
   jeu et affiche un diagnostic au démarrage.
 - Le player Web n'a pas encore les nœuds UI (`UICanvasNode`/`UITextNode`…) :
-  ils se dégradent en Node générique et `node.setText` y est un no-op signalé.
+  une scène qui en contient est désormais refusée explicitement au chargement.
   Jolt, Web Audio, scripts et sauvegardes IndexedDB sont intégrés, mais la
   parité gameplay complète avec desktop n'est pas déclarée tant que le jeu
   témoin entier, UI incluse, ne passe pas sur les artefacts de release.
@@ -31,12 +31,18 @@ les limites connues du candidat V1, pas une release V1 déjà publiée.
   deadline d'exécution ; une boucle infinie ou une chaîne de jobs peut figer le
   runtime. La résolution de modules doit être confinée au package avant contenu
   tiers.
-- Le snapshot/fold d'authoring ne préserve pas encore tous les types et
-  behaviours. Les types non enregistrés peuvent retomber en `Node` ou être
-  ignorés ; Mesh requiert un `ResourceManager` absent d'un chemin headless.
-- Les registres de types natif, authoring web et loader web ne sont pas encore
-  identiques. Un manifest natif ne prouve donc pas qu'un type est applicable et
-  rechargeable dans le navigateur.
+- Le snapshot/fold d'authoring est maintenant fail-closed : les types et
+  behaviours supportés round-trippent, les refs Mesh restent opaques et un type
+  inconnu fait échouer le batch sans publier de snapshot. Le contrat headless ne
+  couvre toutefois pas encore UI et tous les nœuds physiques ; ces
+  scènes sont refusées explicitement jusqu'à l'alignement des registres.
+- Le runtime d'authoring Web charge atomiquement et refuse désormais tout type
+  absent de son manifeste (`Node`, `MeshNode`, `Camera`, `LightNode`, `Water`,
+  `ParticleSystem`) ainsi que tout behaviour. Les registres natif, authoring Web
+  et player Web ne sont cependant pas identiques. Le player publie son registre
+  exact dans `saida_player_status`, refuse les types/behaviours absents et ne
+  passe à `ready` qu'après la validation des autoloads ; un manifeste natif ne
+  prouve toujours pas qu'un type est exécutable sur une autre plateforme.
 - L'AssetLoader asynchrone charge désormais les textures et les meshes `.obj`
   de scène (décodage worker, création GPU différée, fallbacks visibles) et
   décharge réellement le GPU au changement de scène (`trimUnused`,
@@ -56,5 +62,6 @@ Les limites de plateforme sont annoncées par `PlatformCaps` au boot. Une scène
 qui requiert une capacité absente doit échouer explicitement ou utiliser un
 fallback visible ; elle ne doit pas perdre silencieusement du contenu.
 
-Cet invariant n'est pas encore respecté partout ; les fallbacks génériques du
-snapshot/loader sont précisément des blocages de publication.
+Cet invariant est maintenant respecté aux frontières snapshot headless,
+authoring Web et player Web. La couverture incomplète de types (notamment UI)
+reste une limitation fonctionnelle et une scène incompatible est bloquée.

@@ -18,10 +18,13 @@
 #include "render/Renderer.hpp"
 #include "render/RenderFeatureRegistry.hpp"
 #include "core/Camera.hpp"
+#include "core/FormatVersions.hpp"
+#include "core/Reflection.hpp"
 #include "core/Time.hpp"
 #include "scene/CameraNode.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
+#include "scene/ParticleSystemNode.hpp"
 #include "scene/WaterNode.hpp"
 #include "scene/Scene.hpp"
 
@@ -41,6 +44,7 @@
 #include <cmath>
 #include <fstream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -68,6 +72,8 @@ struct App {
     // MEMFS, ids unknown to the registry). Reported by saida_load_snapshot so
     // the editor can surface them instead of silently rendering placeholders.
     std::vector<std::string> missingAssets;
+    bool ready = false;
+    std::string startupError;
     double time = 0.0;
     // Editor graphics settings (saida_set_render_settings): a frame-skip cap on
     // top of the rAF loop. 0 = uncapped (every rAF tick renders).
@@ -77,7 +83,8 @@ struct App {
 
 App gApp;
 
-void loadNode(const json& node, Node& parent);
+void loadNode(const json& node, Node& parent, const std::string& path);
+bool loadSceneDoc(const json& doc, std::string& error);
 
 // ---- JSON readers (arrays → glm) ----
 
@@ -189,7 +196,7 @@ Material* materialFromNode(const json& node) {
     return gApp.resources->getMaterial(d);
 }
 
-void loadWater(const json& node, Node& parent) {
+void loadWater(const json& node, Node& parent, const std::string& path) {
     auto w = std::make_unique<WaterNode>();
     applyCommonNodeFields(*w, node);
     w->size = readF(node, "size", w->size);
@@ -230,10 +237,14 @@ void loadWater(const json& node, Node& parent) {
     w->swashSpeed = readF(node, "swashSpeed", w->swashSpeed);
     w->swashAmount = readF(node, "swashAmount", w->swashAmount);
     w->waveFlatten = readF(node, "waveFlatten", w->waveFlatten);
+    Node& ref = *w;
     parent.addChild(std::move(w));
+    const json& children = node.value("children", json::array());
+    for (std::size_t i = 0; i < children.size(); ++i)
+        loadNode(children[i], ref, path + ".children[" + std::to_string(i) + "]");
 }
 
-void loadLight(const json& node, Node& parent) {
+void loadLight(const json& node, Node& parent, const std::string& path) {
     const auto type = static_cast<LightType>(node.value("lightType", 0));
     auto l = std::make_unique<LightNode>(node.value("name", std::string("Light")), type);
     applyCommonNodeFields(*l, node);
@@ -245,7 +256,11 @@ void loadLight(const json& node, Node& parent) {
     l->spotOuterAngle = readF(node, "spotOuterAngle", l->spotOuterAngle);
     l->castShadows = node.value("castShadows", false);
     l->bakeMode = static_cast<LightBakeMode>(node.value("bakeMode", 0));
+    Node& ref = *l;
     parent.addChild(std::move(l));
+    const json& children = node.value("children", json::array());
+    for (std::size_t i = 0; i < children.size(); ++i)
+        loadNode(children[i], ref, path + ".children[" + std::to_string(i) + "]");
 }
 
 void applyCamera(const json& node) {
@@ -264,7 +279,7 @@ void applyCamera(const json& node) {
     gApp.camera.farZ = readF(node, "farZ", 600.0f);
 }
 
-void loadCamera(const json& node, Node& parent) {
+void loadCamera(const json& node, Node& parent, const std::string& path) {
     auto c = std::make_unique<CameraNode>(node.value("name", std::string("Camera")));
     applyCommonNodeFields(*c, node);
     c->fovDegrees = readF(node, "fovDegrees", c->fovDegrees);
@@ -275,10 +290,23 @@ void loadCamera(const json& node, Node& parent) {
     Node& ref = *c;
     parent.addChild(std::move(c));
     applyCamera(node);
-    for (const json& child : node.value("children", json::array())) loadNode(child, ref);
+    const json& children = node.value("children", json::array());
+    for (std::size_t i = 0; i < children.size(); ++i)
+        loadNode(children[i], ref, path + ".children[" + std::to_string(i) + "]");
 }
 
-void loadNode(const json& node, Node& parent) {
+void loadParticle(const json& node, Node& parent, const std::string& path) {
+    auto particle = std::make_unique<ParticleSystemNode>();
+    applyCommonNodeFields(*particle, node);
+    reflect::localDesc<ParticleSystemNode>().loadFrom(particle.get(), node);
+    Node& ref = *particle;
+    parent.addChild(std::move(particle));
+    const json& children = node.value("children", json::array());
+    for (std::size_t i = 0; i < children.size(); ++i)
+        loadNode(children[i], ref, path + ".children[" + std::to_string(i) + "]");
+}
+
+void loadNode(const json& node, Node& parent, const std::string& path) {
     const std::string type = node.value("type", "");
 
     if (type == "MeshNode") {
@@ -300,19 +328,26 @@ void loadNode(const json& node, Node& parent) {
         if (node.contains("outlineWidth")) m->outlineWidth() = node["outlineWidth"].get<float>();
         Node& ref = *m;
         parent.addChild(std::move(m));
-        for (const json& c : node.value("children", json::array())) loadNode(c, ref);
+        const json& children = node.value("children", json::array());
+        for (std::size_t i = 0; i < children.size(); ++i)
+            loadNode(children[i], ref, path + ".children[" + std::to_string(i) + "]");
         return;
     }
-    if (type == "Water")  { loadWater(node, parent); return; }
-    if (type == "LightNode") { loadLight(node, parent); return; }
-    if (type == "Camera")  { loadCamera(node, parent); return; }
+    if (type == "Water")  { loadWater(node, parent, path); return; }
+    if (type == "LightNode") { loadLight(node, parent, path); return; }
+    if (type == "Camera")  { loadCamera(node, parent, path); return; }
+    if (type == "ParticleSystem") { loadParticle(node, parent, path); return; }
 
-    // Unknown/plain node: keep the hierarchy, recurse into children.
+    if (type != "Node")
+        throw std::runtime_error(path + ": unsupported web node type '" + type + "'");
+
     auto generic = std::make_unique<Node>(node.value("name", std::string("Node")));
     applyCommonNodeFields(*generic, node);
     Node& ref = *generic;
     parent.addChild(std::move(generic));
-    for (const json& c : node.value("children", json::array())) loadNode(c, ref);
+    const json& children = node.value("children", json::array());
+    for (std::size_t i = 0; i < children.size(); ++i)
+        loadNode(children[i], ref, path + ".children[" + std::to_string(i) + "]");
 }
 
 void applySettings(const json& s) {
@@ -449,7 +484,7 @@ bool firstJsonDiff(const json& actual, const json& expected,
 
 std::string compareSnapshotWithPreloadedScene() {
     json result;
-    if (!gApp.scene || !gApp.resources) {
+    if (!gApp.ready || !gApp.scene || !gApp.resources) {
         result["ok"] = false;
         result["error"] = "runtime not ready";
         return result.dump();
@@ -504,26 +539,17 @@ void initRuntime() {
     const uint8_t white[4] = {255, 255, 255, 255};
     gApp.whiteTex = gApp.resources->registerGeneratedTexture(white, 1, 1, rhi::Format::RGBA8Srgb, false);
 
-    gApp.scene = std::make_unique<Scene>();
-
     std::ifstream in("/project/beach.scene");
     if (!in) { std::printf("saida-web: beach.scene missing\n"); return; }
     json doc;
     in >> doc;
-    const json& root = doc["scene"];
-    applyCommonNodeFields(*gApp.scene, root);
-
-    if (root.contains("settings")) {
-        applySettings(root["settings"]);
-        gApp.durableSkyboxTexture = root["settings"].value("skyboxTexture", kAssetInvalid);
+    std::string loadError;
+    if (!loadSceneDoc(doc, loadError)) {
+        std::printf("saida-web: beach.scene rejected: %s\n", loadError.c_str());
+        return;
     }
     const AssetID skyId = loadSkyTexture();
     if (skyId != kAssetInvalid) gApp.scene->settings().skyboxTexture = skyId;
-    gApp.scene->readConnections(root);
-
-    for (const json& c : root.value("children", json::array())) loadNode(c, *gApp.scene);
-
-    gApp.scene->update(0.0f);
     gApp.renderer = std::make_unique<Renderer>(device, *gApp.surface, *gApp.resources);
     std::printf("saida-web: BeachDemo loaded — %zu meshes, %zu waters, %zu lights\n",
                 gApp.scene->meshes().size(), gApp.scene->waterNodes().size(),
@@ -561,30 +587,148 @@ void frame() {
 // and this loader resolves them — .obj meshes + textures load from the project
 // files mounted at /project; unresolved refs render as placeholder cubes and are
 // reported in the saida_load_snapshot result (missingAssets).
-bool loadSceneDoc(const json& doc) {
-    if (!doc.is_object() || !doc.contains("scene") || !doc["scene"].is_object())
+bool isSupportedWebNodeType(const std::string& type) {
+    return type == "Node" || type == "MeshNode" || type == "LightNode" ||
+           type == "Water" || type == "Camera" || type == "ParticleSystem";
+}
+
+bool validateWebNode(const json& node, const std::string& path, std::string& error) {
+    if (!node.is_object() || !node.contains("type") || !node["type"].is_string()) {
+        error = path + ": node needs a string 'type'";
         return false;
+    }
+    const std::string type = node["type"].get<std::string>();
+    if (!isSupportedWebNodeType(type)) {
+        error = path + ": unsupported web node type '" + type + "'";
+        return false;
+    }
+    if (auto behaviours = node.find("behaviours"); behaviours != node.end()) {
+        if (!behaviours->is_array()) {
+            error = path + ".behaviours: expected an array";
+            return false;
+        }
+        if (!behaviours->empty()) {
+            const json& first = (*behaviours)[0];
+            const std::string typeName = first.is_object() && first.contains("type") &&
+                                                 first["type"].is_string()
+                                             ? first["type"].get<std::string>()
+                                             : "<invalid>";
+            error = path + ".behaviours[0]: unsupported web behaviour type '" +
+                    typeName + "'";
+            return false;
+        }
+    }
+    if (auto children = node.find("children"); children != node.end()) {
+        if (!children->is_array()) {
+            error = path + ".children: expected an array";
+            return false;
+        }
+        for (std::size_t i = 0; i < children->size(); ++i) {
+            if (!validateWebNode((*children)[i],
+                                 path + ".children[" + std::to_string(i) + "]", error))
+                return false;
+        }
+    }
+    return true;
+}
 
-    gApp.missingAssets.clear();
-    gApp.scene = std::make_unique<Scene>();
-    const json& root = doc["scene"];
-    applyCommonNodeFields(*gApp.scene, root);
-
-    if (root.contains("settings")) {
-        applySettings(root["settings"]);
-        gApp.durableSkyboxTexture = root["settings"].value("skyboxTexture", kAssetInvalid);
-        // Re-resolve the durable skybox id to the live texture already loaded at
-        // boot; an empty Manual scene has no settings and simply stays black.
-        if (gApp.durableSkyboxTexture != kAssetInvalid && gApp.whiteTex != kAssetInvalid)
-            gApp.scene->settings().skyboxTexture = gApp.durableSkyboxTexture;
+bool validateWebSceneDoc(const json& doc, std::string& error) {
+    if (!doc.is_object() || !doc.contains("scene") || !doc["scene"].is_object()) {
+        error = "invalid scene document: missing scene root";
+        return false;
+    }
+    if (doc.contains("schema") && !doc["schema"].is_number_integer()) {
+        error = "snapshot schema must be an integer";
+        return false;
+    }
+    if (doc.contains("version") && !doc["version"].is_number_integer()) {
+        error = "snapshot version must be an integer";
+        return false;
+    }
+    if (doc.contains("schema") && doc.contains("version") &&
+        doc["schema"] != doc["version"]) {
+        error = "snapshot schema/version mismatch";
+        return false;
+    }
+    const int schema = format::readSchema(doc, format::kLegacyVersion);
+    if (schema > format::kSceneVersion) {
+        error = "unsupported snapshot schema v" + std::to_string(schema) +
+                " (supported through v" + std::to_string(format::kSceneVersion) + ")";
+        return false;
     }
 
-    gApp.scene->readConnections(root);
-    for (const json& c : root.value("children", json::array()))
-        loadNode(c, *gApp.scene);
-
-    gApp.scene->update(0.0f);
+    const json& root = doc["scene"];
+    if (!root.contains("type") || !root["type"].is_string() ||
+        root["type"].get<std::string>() != "Scene") {
+        error = "scene: root node type must be 'Scene'";
+        return false;
+    }
+    if (root.contains("settings") && !root["settings"].is_object()) {
+        error = "scene.settings: expected an object";
+        return false;
+    }
+    if (root.contains("connections") && !root["connections"].is_array()) {
+        error = "scene.connections: expected an array";
+        return false;
+    }
+    if (auto behaviours = root.find("behaviours"); behaviours != root.end() &&
+        (!behaviours->is_array() || !behaviours->empty())) {
+        error = "scene.behaviours: web runtime does not support behaviours";
+        return false;
+    }
+    if (auto children = root.find("children"); children != root.end()) {
+        if (!children->is_array()) {
+            error = "scene.children: expected an array";
+            return false;
+        }
+        for (std::size_t i = 0; i < children->size(); ++i) {
+            if (!validateWebNode((*children)[i],
+                                 "scene.children[" + std::to_string(i) + "]", error))
+                return false;
+        }
+    }
     return true;
+}
+
+bool loadSceneDoc(const json& doc, std::string& error) {
+    if (!validateWebSceneDoc(doc, error)) return false;
+
+    std::unique_ptr<Scene> previousScene = std::move(gApp.scene);
+    const Camera previousCamera = gApp.camera;
+    const AssetID previousSkyboxTexture = gApp.durableSkyboxTexture;
+    std::vector<std::string> previousMissingAssets = std::move(gApp.missingAssets);
+
+    try {
+        gApp.scene = std::make_unique<Scene>();
+        gApp.camera = Camera{};
+        gApp.durableSkyboxTexture = kAssetInvalid;
+        gApp.missingAssets.clear();
+
+        const json& root = doc["scene"];
+        applyCommonNodeFields(*gApp.scene, root);
+        if (root.contains("settings")) {
+            applySettings(root["settings"]);
+            gApp.durableSkyboxTexture =
+                root["settings"].value("skyboxTexture", kAssetInvalid);
+            if (gApp.durableSkyboxTexture != kAssetInvalid && gApp.whiteTex != kAssetInvalid)
+                gApp.scene->settings().skyboxTexture = gApp.durableSkyboxTexture;
+        }
+
+        gApp.scene->readConnections(root);
+        const json& children = root.value("children", json::array());
+        for (std::size_t i = 0; i < children.size(); ++i)
+            loadNode(children[i], *gApp.scene,
+                     "scene.children[" + std::to_string(i) + "]");
+        gApp.scene->update(0.0f);
+        return true;
+    } catch (const std::exception& e) {
+        gApp.scene = std::move(previousScene);
+        gApp.camera = previousCamera;
+        gApp.durableSkyboxTexture = previousSkyboxTexture;
+        gApp.missingAssets = std::move(previousMissingAssets);
+        error = e.what();
+        return false;
+    }
 }
 
 // D9 (Track 1-C): viewport picking. No physics/Jolt in the web build, so we ray-
@@ -666,9 +810,21 @@ std::string pickNode(float ndcX, float ndcY) {
 extern "C" {
 
 EMSCRIPTEN_KEEPALIVE
+const char* saida_runtime_status() {
+    static std::string out;
+    json status;
+    status["ready"] = gApp.ready;
+    status["state"] = gApp.ready ? "ready" :
+        (gApp.startupError.empty() ? "initializing" : "error");
+    if (!gApp.startupError.empty()) status["error"] = gApp.startupError;
+    out = status.dump();
+    return out.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE
 const char* saida_apply_op(const char* opJson) {
     static std::string out;
-    if (!gApp.scene || !gApp.resources) {
+    if (!gApp.ready || !gApp.scene || !gApp.resources) {
         out = R"({"ok":false,"error":"runtime not ready"})";
         return out.c_str();
     }
@@ -690,7 +846,11 @@ const char* saida_scene_snapshot() {
         out = R"({"ok":false,"error":"runtime not ready"})";
         return out.c_str();
     }
-    out = durableSceneSnapshotJson();
+    try {
+        out = durableSceneSnapshotJson();
+    } catch (const std::exception& e) {
+        out = json{{"ok", false}, {"error", e.what()}}.dump();
+    }
     return out.c_str();
 }
 
@@ -706,14 +866,15 @@ const char* saida_scene_snapshot_compare() {
 EMSCRIPTEN_KEEPALIVE
 const char* saida_load_snapshot(const char* docJson) {
     static std::string out;
-    if (!gApp.device || !gApp.resources) {
+    if (!gApp.ready || !gApp.device || !gApp.resources) {
         out = R"({"ok":false,"error":"runtime not ready"})";
         return out.c_str();
     }
     try {
         json doc = json::parse(docJson ? docJson : "");
-        if (!loadSceneDoc(doc)) {
-            out = R"J({"ok":false,"error":"invalid scene document: missing scene root"})J";
+        std::string error;
+        if (!loadSceneDoc(doc, error)) {
+            out = json{{"ok", false}, {"error", error}}.dump();
             return out.c_str();
         }
         json r;
@@ -797,13 +958,25 @@ int main() {
 
     rhi::Device::requestAsync([](std::unique_ptr<rhi::Device> device) {
         if (!device) {
+            gApp.startupError = "WebGPU unavailable";
             std::printf("saida-web: WebGPU unavailable\n");
             return;
         }
-        gApp.device = std::move(device);
-        gApp.surface = std::make_unique<rhi::Surface>(*gApp.device, "#canvas", kWidth, kHeight);
-        initRuntime();
-        emscripten_set_main_loop(frame, 0, false);
+        try {
+            gApp.device = std::move(device);
+            gApp.surface =
+                std::make_unique<rhi::Surface>(*gApp.device, "#canvas", kWidth, kHeight);
+            initRuntime();
+            if (!gApp.scene || !gApp.renderer) {
+                gApp.startupError = "initial scene failed to load";
+                return;
+            }
+            gApp.ready = true;
+            emscripten_set_main_loop(frame, 0, false);
+        } catch (const std::exception& e) {
+            gApp.startupError = e.what();
+            std::printf("saida-web: startup failed: %s\n", e.what());
+        }
     });
 
     emscripten_exit_with_live_runtime();

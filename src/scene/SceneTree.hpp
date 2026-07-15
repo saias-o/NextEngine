@@ -68,8 +68,8 @@ public:
             return node;
         });
     }
-    void registerAutoloadType(const std::string& name, const std::string& behaviourType);
-    void registerAutoloadScene(const std::string& name, const std::string& scenePath);
+    bool registerAutoloadType(const std::string& name, const std::string& behaviourType);
+    bool registerAutoloadScene(const std::string& name, const std::string& scenePath);
     // Autoload JS : un Node portant un ScriptBehaviour sur ce script (.js/.mjs).
     void registerAutoloadScript(const std::string& name, const std::string& scriptPath);
 

@@ -240,27 +240,35 @@ void SceneTree::setAutoloadDef(const std::string& name, AutoloadFactory factory)
     autoloadDefs_.push_back({name, std::move(factory)});
 }
 
-void SceneTree::registerAutoloadType(const std::string& name, const std::string& behaviourType) {
+bool SceneTree::registerAutoloadType(const std::string& name, const std::string& behaviourType) {
+    if (BehaviourRegistry::instance().factories().find(behaviourType) ==
+        BehaviourRegistry::instance().factories().end()) {
+        Log::error("autoload '", name, "': unsupported behaviour type '", behaviourType, "'");
+        return false;
+    }
     setAutoloadDef(name, [name, behaviourType] {
         auto node = std::make_unique<Node>(name);
         if (auto b = BehaviourRegistry::instance().create(behaviourType))
             node->addBehaviour(std::move(b));
-        else
-            Log::warn("autoload '", name, "': unknown behaviour type '", behaviourType, "'");
         return node;
     });
+    return true;
 }
 
-void SceneTree::registerAutoloadScene(const std::string& name, const std::string& scenePath) {
+bool SceneTree::registerAutoloadScene(const std::string& name, const std::string& scenePath) {
+    // Validate eagerly so a required singleton cannot disappear while the
+    // player still reports a successful boot.
+    if (!SceneSerializer::loadNodeFromSceneFile(scenePath, resources_)) {
+        Log::error("autoload '", name, "': failed compatibility preflight for '", scenePath, "'");
+        return false;
+    }
     setAutoloadDef(name, [this, name, scenePath] {
         auto node = SceneSerializer::loadNodeFromSceneFile(scenePath, resources_);
         if (node) node->setName(name);
-        else {
-            Log::warn("autoload '", name, "': failed to load scene '", scenePath, "'");
-            node = std::make_unique<Node>(name);
-        }
+        else Log::error("autoload '", name, "': failed to load scene '", scenePath, "'");
         return node;
     });
+    return true;
 }
 
 void SceneTree::registerAutoloadScript(const std::string& name,

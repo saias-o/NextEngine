@@ -7,12 +7,12 @@
 // SceneTree (autoloads) puis exécute le cycle de jeu — update des behaviours,
 // CameraDirector, opérations différées, timers — et rend via le backend WebGPU.
 //
-// Physique, audio et UI RmlUi restent déclarés absents via PlatformCaps
-// (dégradation explicite, §2.5). Input clavier/souris et scripts QuickJS
-// utilisent désormais les mêmes API gameplay que le player desktop.
+// Physique et audio sont actifs. L'UI RmlUi reste explicitement absente via
+// PlatformCaps ; une scène qui contient un type UI est refusée au chargement.
 
 #include "audio/AudioManager.hpp"
 #include "core/Camera.hpp"
+#include "core/FormatVersions.hpp"
 #include "core/Input.hpp"
 #include "core/Log.hpp"
 #include "core/PlatformCaps.hpp"
@@ -25,6 +25,7 @@
 #include "render/Renderer.hpp"
 #include "rhi/webgpu/RhiWeb.hpp"
 #include "runtime/BootManifest.hpp"
+#include "scene/BehaviourRegistry.hpp"
 #include "scene/CameraNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/NodeRegistry.hpp"
@@ -36,12 +37,15 @@
 
 #include <GLFW/glfw3.h>
 #include <emscripten.h>
+#include <nlohmann/json.hpp>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 using namespace saida;
 
@@ -62,9 +66,19 @@ struct PlayerApp {
     CameraDirector cameraDirector;
     double lastMs = 0.0;
     bool running = false;
+    std::string state = "initializing";
+    std::string startupError;
 };
 
 PlayerApp gApp;
+
+bool failBoot(const std::string& error) {
+    gApp.running = false;
+    gApp.state = "error";
+    gApp.startupError = error;
+    Log::error("saida-player: ", error);
+    return false;
+}
 
 bool bootGame() {
     // Le package du jeu est monté dans MEMFS sous /project (même contrat que le
@@ -75,14 +89,12 @@ bool bootGame() {
 
     const auto boot = loadBootManifest("/project/game.saida");
     if (!boot.ok) {
-        Log::error("saida-player: ", boot.error);
-        return false;
+        return failBoot(boot.error);
     }
 
     gApp.project = std::make_unique<Project>();
     if (!gApp.project->load("/project/" + boot.manifest.project)) {
-        Log::error("saida-player: cannot load project ", boot.manifest.project);
-        return false;
+        return failBoot("cannot load project " + boot.manifest.project);
     }
 
     // Types réfléchis + types de base — même liste que le player desktop, moins
@@ -98,8 +110,7 @@ bool bootGame() {
     auto scene = std::make_unique<Scene>();
     const std::string scenePath = "/project/" + boot.manifest.mainScene;
     if (!SceneSerializer::loadIntoScene(*scene, *gApp.resources, scenePath)) {
-        Log::error("saida-player: failed to load main scene ", scenePath);
-        return false;
+        return failBoot("failed compatibility preflight for main scene " + scenePath);
     }
 
     // Monte le World persistant — même séquence que Engine::mountWorld().
@@ -110,12 +121,16 @@ bool bootGame() {
             const size_t n = std::char_traits<char>::length(suffix);
             return value.size() > n && value.compare(value.size() - n, n, suffix) == 0;
         };
-        if (endsWith(".scene"))
-            gApp.tree->registerAutoloadScene(name, gApp.project->rootPath() + "/" + value);
+        if (endsWith(".scene")) {
+            if (!gApp.tree->registerAutoloadScene(
+                    name, gApp.project->rootPath() + "/" + value))
+                return failBoot("autoload '" + name + "' is incompatible");
+        }
         else if (endsWith(".js") || endsWith(".mjs"))
             gApp.tree->registerAutoloadScript(name, value);
-        else
-            gApp.tree->registerAutoloadType(name, value);
+        else if (!gApp.tree->registerAutoloadType(name, value))
+            return failBoot("autoload '" + name + "' requires unsupported behaviour '" +
+                            value + "'");
     }
     gApp.world = gApp.tree->mountWorld(std::move(scene));
 
@@ -161,8 +176,41 @@ void frame() {
 
 } // namespace
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char* saida_player_status() {
+    static std::string encoded;
+    auto registeredNames = [](const auto& factories) {
+        std::vector<std::string> names;
+        names.reserve(factories.size());
+        for (const auto& [name, factory] : factories) {
+            (void)factory;
+            names.push_back(name);
+        }
+        std::sort(names.begin(), names.end());
+        return names;
+    };
+
+    nlohmann::json status = {
+        {"schema", 1},
+        {"runtime", "player-web"},
+        {"state", gApp.state},
+        {"ready", gApp.running && gApp.state == "ready"},
+        {"scene", {
+            {"schema", format::kSceneVersion},
+            {"unsupportedTypePolicy", "reject"},
+        }},
+        {"supportedNodes", registeredNames(NodeRegistry::instance().factories())},
+        {"supportedBehaviours",
+         registeredNames(BehaviourRegistry::instance().factories())},
+    };
+    if (!gApp.startupError.empty()) status["error"] = gApp.startupError;
+    encoded = status.dump();
+    return encoded.c_str();
+}
+
 int main() {
     if (!glfwInit()) {
+        gApp.state = "error";
+        gApp.startupError = "GLFW initialization failed";
         std::printf("saida-player: GLFW initialization failed\n");
         return 1;
     }
@@ -170,6 +218,8 @@ int main() {
     GLFWwindow* window =
         glfwCreateWindow(int(kWidth), int(kHeight), "Saida player", nullptr, nullptr);
     if (!window) {
+        gApp.state = "error";
+        gApp.startupError = "window creation failed";
         std::printf("saida-player: window creation failed\n");
         glfwTerminate();
         return 1;
@@ -189,20 +239,28 @@ int main() {
 
     rhi::Device::requestAsync([](std::unique_ptr<rhi::Device> device) {
         if (!device) {
+            gApp.state = "error";
+            gApp.startupError = "WebGPU unavailable";
             std::printf("saida-player: WebGPU unavailable\n");
             return;
         }
-        gApp.device = std::move(device);
-        gApp.surface = std::make_unique<rhi::Surface>(*gApp.device, "#canvas", kWidth, kHeight);
-        registerBuiltinRenderFeatures();
-        if (!bootGame()) return;
-        gApp.running = true;
-        // ?smoke : boucle sur timer (30 fps) au lieu de rAF, pour que les
-        // harnais E2E tournent dans un onglet caché (rAF y est suspendu).
-        const int fps = EM_ASM_INT({
-            return location.search.indexOf('smoke') >= 0 ? 30 : 0;
-        });
-        emscripten_set_main_loop(frame, fps, false);
+        try {
+            gApp.device = std::move(device);
+            gApp.surface =
+                std::make_unique<rhi::Surface>(*gApp.device, "#canvas", kWidth, kHeight);
+            registerBuiltinRenderFeatures();
+            if (!bootGame()) return;
+            gApp.running = true;
+            gApp.state = "ready";
+            // ?smoke : boucle sur timer (30 fps) au lieu de rAF, pour que les
+            // harnais E2E tournent dans un onglet caché (rAF y est suspendu).
+            const int fps = EM_ASM_INT({
+                return location.search.indexOf('smoke') >= 0 ? 30 : 0;
+            });
+            emscripten_set_main_loop(frame, fps, false);
+        } catch (const std::exception& e) {
+            failBoot(std::string("uncaught boot error: ") + e.what());
+        }
     });
 
     emscripten_exit_with_live_runtime();

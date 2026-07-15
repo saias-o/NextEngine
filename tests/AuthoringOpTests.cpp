@@ -3,17 +3,25 @@
 #include "authoring/SceneSnapshot.hpp"
 #include "authoring/SaidaOpApplier.hpp"
 #include "core/FormatVersions.hpp"
+#include "physics/AreaNode.hpp"
+#include "scene/CameraNode.hpp"
+#include "scene/BehaviourRegistry.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/MeshNode.hpp"
+#include "scene/NodeRegistry.hpp"
 #include "scene/ParticleSystemNode.hpp"
+#include "scene/RotatorBehaviour.hpp"
 #include "scene/Scene.hpp"
+#include "scene/SceneSerializer.hpp"
 #include "scene/WaterNode.hpp"
+#include "scripting/ScriptBehaviour.hpp"
 
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>
 
 #include <cmath>
 #include <cstdlib>
+#include <exception>
 #include <memory>
 #include <string>
 
@@ -394,6 +402,11 @@ void testManifestContainsReflectedProperties() {
     require(manifest["properties"]["LightNode"].is_array());
     require(manifest["properties"]["Water"].is_array());
     require(manifest["properties"]["ParticleSystem"].is_array());
+    require(manifest["sceneSnapshot"]["schema"] == saida::format::kSceneVersion);
+    require(manifest["sceneSnapshot"]["version"] == saida::format::kSceneVersion);
+    require(!manifest["sceneSnapshot"]["atomicLoad"].get<bool>());
+    require(manifest["sceneSnapshot"]["failureState"] == "empty-scene");
+    require(manifest["sceneSnapshot"]["unsupportedTypePolicy"] == "reject");
 
     bool hasLightIntensity = false;
     for (const auto& prop : manifest["properties"]["LightNode"]) {
@@ -460,6 +473,7 @@ void testSnapshotReflectsAppliedOps() {
     require(res["ok"].get<bool>());
 
     json snapshot = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
+    require(snapshot["schema"].get<int>() == saida::format::kSceneVersion);
     require(snapshot["version"].get<int>() == saida::format::kSceneVersion);
     require(snapshot["snapshotMode"] == "authoring-headless");
     require(snapshot["scene"]["type"] == "Scene");
@@ -490,7 +504,19 @@ void testHeadlessSnapshotRoundTrip() {
 
     auto* group = scene.createChild<saida::Node>("Group");
     group->assignSerializedId(3);
+    group->addBehaviour(std::make_unique<saida::RotatorBehaviour>());
+    auto script = std::make_unique<saida::ScriptBehaviour>();
+    script->setScriptPath("scripts/contract.mjs");
+    script->exportNumberProperty("speed", 3.5);
+    group->addBehaviour(std::move(script));
     group->createChild<saida::ParticleSystemNode>()->assignSerializedId(4);
+
+    auto* area = scene.createChild<saida::AreaNode>();
+    area->assignSerializedId(5);
+    area->setName("Trigger");
+    area->friction = 0.25f;
+    area->restitution = 0.75f;
+    area->moving = true;
 
     const std::string s1 = saida::authoring::serializeSceneSnapshot(scene, nullptr);
 
@@ -502,7 +528,7 @@ void testHeadlessSnapshotRoundTrip() {
     // Structure + ids + reflected props restaures.
     require(reloaded.name() == "Root");
     require(reloaded.id() == 1);
-    require(reloaded.children().size() == 2);
+    require(reloaded.children().size() == 3);
     saida::Node* sun = findChildByName(reloaded, "Sun");
     require(sun != nullptr);
     require(sun->id() == 2);
@@ -512,6 +538,12 @@ void testHeadlessSnapshotRoundTrip() {
     require(sunLight != nullptr);
     require(close(sunLight->intensity, 2.25f));
     require(sunLight->type == saida::LightType::Directional);
+
+    auto* trigger = dynamic_cast<saida::AreaNode*>(findChildByName(reloaded, "Trigger"));
+    require(trigger != nullptr);
+    require(close(trigger->friction, 0.25f));
+    require(close(trigger->restitution, 0.75f));
+    require(trigger->moving);
 
     // Round-trip stable au bit pres.
     const std::string s2 = saida::authoring::serializeSceneSnapshot(reloaded, nullptr);
@@ -528,6 +560,98 @@ void testHeadlessSnapshotRoundTrip() {
     require(!error.empty());
     require(bad.children().empty());
     require(!saida::authoring::deserializeSceneSnapshot(std::string("not json"), bad, &error));
+}
+
+void testHeadlessSnapshotFailsClosed() {
+    saida::Scene source;
+    source.setName("Root");
+    source.createChild<saida::LightNode>()->setName("Known");
+    const json valid = json::parse(saida::authoring::serializeSceneSnapshot(source, nullptr));
+
+    // A misspelled node type must never be downgraded to Node.
+    json unknownNode = valid;
+    unknownNode["scene"]["children"].push_back({
+        {"type", "MissingNode"},
+        {"id", 999},
+        {"name", "Unsupported"},
+        {"enabled", true},
+        {"transform", {{"position", {0, 0, 0}},
+                       {"rotation", {0, 0, 0, 1}},
+                       {"scale", {1, 1, 1}}}},
+        {"behaviours", json::array()},
+        {"children", json::array()},
+    });
+    saida::Scene out;
+    std::string error;
+    require(!saida::authoring::deserializeSceneSnapshot(unknownNode, out, &error));
+    require(error.find("scene.children[1]") != std::string::npos);
+    require(error.find("unsupported node type 'MissingNode'") != std::string::npos);
+    require(out.children().empty());
+
+    // Unknown behaviours are equally destructive if ignored, so reject them.
+    json unknownBehaviour = valid;
+    unknownBehaviour["scene"]["children"][0]["behaviours"] = json::array({
+        {{"type", "MissingBehaviour"}, {"enabled", true}}
+    });
+    require(!saida::authoring::deserializeSceneSnapshot(unknownBehaviour, out, &error));
+    require(error.find("behaviours[0]") != std::string::npos);
+    require(error.find("unsupported behaviour type") != std::string::npos);
+    require(out.children().empty());
+
+    // The compatibility boundary is explicit: old version-only documents still
+    // load, while contradictory or future contracts are refused.
+    json legacyShape = valid;
+    legacyShape.erase("schema");
+    require(saida::authoring::deserializeSceneSnapshot(legacyShape, out, &error));
+
+    json mismatch = valid;
+    mismatch["version"] = saida::format::kSceneVersion - 1;
+    require(!saida::authoring::deserializeSceneSnapshot(mismatch, out, &error));
+    require(error.find("schema/version mismatch") != std::string::npos);
+
+    json future = valid;
+    future["schema"] = saida::format::kSceneVersion + 1;
+    future["version"] = saida::format::kSceneVersion + 1;
+    require(!saida::authoring::deserializeSceneSnapshot(future, out, &error));
+    require(error.find("unsupported snapshot schema") != std::string::npos);
+
+    // Camera is part of the shared durable contract (native headless + web).
+    saida::Scene cameraSource;
+    auto* camera = cameraSource.createChild<saida::CameraNode>();
+    camera->setName("AuthoringCamera");
+    camera->fovDegrees = 72.0f;
+    camera->nearZ = 0.25f;
+    camera->farZ = 900.0f;
+    camera->priority = 4;
+    camera->active = false;
+    const json cameraDoc = json::parse(
+        saida::authoring::serializeSceneSnapshot(cameraSource, nullptr));
+    saida::Scene cameraReloaded;
+    require(saida::authoring::deserializeSceneSnapshot(cameraDoc, cameraReloaded, &error));
+    auto* reloadedCamera = dynamic_cast<saida::CameraNode*>(cameraReloaded.children()[0].get());
+    require(reloadedCamera != nullptr);
+    require(close(reloadedCamera->fovDegrees, 72.0f));
+    require(close(reloadedCamera->nearZ, 0.25f));
+    require(close(reloadedCamera->farZ, 900.0f));
+    require(reloadedCamera->priority == 4);
+    require(!reloadedCamera->active);
+
+    // Fail before emitting a lossy document when a live scene contains a type
+    // outside the headless contract.
+    struct UnsupportedNode final : saida::Node {
+        UnsupportedNode() : Node("Unsupported") {}
+        const char* typeName() const override { return "UnsupportedNode"; }
+    };
+    saida::Scene unsupportedSource;
+    unsupportedSource.createChild<UnsupportedNode>();
+    bool serializationRejected = false;
+    try {
+        (void)saida::authoring::serializeSceneSnapshot(unsupportedSource, nullptr);
+    } catch (const std::exception& e) {
+        serializationRejected = std::string(e.what()).find("scene.children[0]") !=
+                                std::string::npos;
+    }
+    require(serializationRejected);
 }
 
 // Track 1-F : le snapshot headless transporte les refs mesh/matériau d'un
@@ -771,6 +895,38 @@ void testSignalConnectionOps() {
     require(!res["ok"].get<bool>());
 }
 
+void testRuntimeSceneTypeContractFailsClosed() {
+    saida::NodeRegistry::instance().registerType<saida::Node>("Node");
+    saida::BehaviourRegistry::instance().registerType<saida::RotatorBehaviour>("Rotator");
+
+    std::string error;
+    const json supported = {
+        {"type", "Node"},
+        {"children", json::array({
+            json{{"type", "Node"},
+                 {"behaviours", json::array({json{{"type", "Rotator"}}})}},
+        })},
+    };
+    require(saida::SceneSerializer::validateTypeContractJson(supported.dump(), &error));
+
+    json unsupportedNode = supported;
+    unsupportedNode["children"][0]["type"] = "DesktopOnlyNode";
+    require(!saida::SceneSerializer::validateTypeContractJson(unsupportedNode.dump(), &error));
+    require(error.find("unsupported node type 'DesktopOnlyNode'") != std::string::npos);
+
+    json unsupportedBehaviour = supported;
+    unsupportedBehaviour["children"][0]["behaviours"][0]["type"] = "EditorOnlyBehaviour";
+    require(!saida::SceneSerializer::validateTypeContractJson(
+        unsupportedBehaviour.dump(), &error));
+    require(error.find("unsupported behaviour type 'EditorOnlyBehaviour'") !=
+            std::string::npos);
+
+    json malformed = supported;
+    malformed["children"][0]["type"] = 42;
+    require(!saida::SceneSerializer::validateTypeContractJson(malformed.dump(), &error));
+    require(error.find("type must be a string") != std::string::npos);
+}
+
 } // namespace
 
 int main() {
@@ -788,9 +944,11 @@ int main() {
     testManifestContainsBehavioursSignalsAndScenario();
     testSnapshotReflectsAppliedOps();
     testHeadlessSnapshotRoundTrip();
+    testHeadlessSnapshotFailsClosed();
     testMeshResourceRefsRoundTrip();
     testSceneSettingOp();
     testBehaviourOps();
     testSignalConnectionOps();
+    testRuntimeSceneTypeContractFailsClosed();
     return 0;
 }

@@ -37,8 +37,30 @@
     // Les logs moteur restent lisibles depuis la page (dernière ligne) et la
     // console ; le boot du jeu s'annonce par « saida-player: … started ».
     window.__saidaLog = [];
+    window.__saidaPlayerStatus = {
+      schema: 1, runtime: 'player-web', state: 'loading', ready: false
+    };
+    var statusPoll = 0;
+    function refreshPlayerStatus() {
+      try {
+        window.__saidaPlayerStatus = JSON.parse(
+          Module.ccall('saida_player_status', 'string', [], []));
+        if (window.__saidaPlayerStatus.state === 'ready' ||
+            window.__saidaPlayerStatus.state === 'error') {
+          clearInterval(statusPoll);
+          if (window.__saidaPlayerStatus.state === 'error')
+            statusEl.textContent = 'Player boot failed: ' + window.__saidaPlayerStatus.error;
+        }
+      } catch (error) {
+        window.__saidaErrors.push('player status: ' + error.message);
+      }
+    }
     var Module = {
       canvas: document.getElementById('canvas'),
+      onRuntimeInitialized: function() {
+        refreshPlayerStatus();
+        statusPoll = setInterval(refreshPlayerStatus, 50);
+      },
       preRun: [function() {
         // Sauvegardes persistantes : /project/saves vit sur IDBFS (IndexedDB).
         // Chargées avant le boot ; storage.save déclenche un syncfs côté moteur.

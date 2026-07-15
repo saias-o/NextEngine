@@ -86,9 +86,10 @@ le sweep, identité assets glTF ; le cœur async + déchargement GPU est livré)
 - [ ] Certaines mutations éditeur marquent seulement le document dirty sans être undoables (scripts WebCanvas, changements de `CollisionShape` avec `resetAuto`) ; les raccorder au système de commandes.
 - [ ] Renommage de projet dans le Hub : vérifier la synchronisation entre le dossier, l'entrée Hub et le fichier `.neproj`.
 - [ ] Finir la migration des behaviours built-in restants vers la réflexion/registry unifiée.
-- [ ] Aligner les registres de types natif, authoring web, loader web et fold headless ; générer le manifest depuis le bundle réellement livré.
-- [ ] Corriger `SceneSnapshot` pour préserver tous les types, propriétés et behaviours supportés ; faire échouer le fold au lieu d'ignorer du contenu.
-- [ ] Fournir un `ResourceManager` au fold Mesh ou interdire l'opération ; supprimer `--skip-invalid` de tout chemin durable.
+- [ ] Finir l'alignement des registres natif, authoring web, player web et fold headless. L'authoring Web et le player Web annoncent désormais leur sous-ensemble réel et refusent strictement les types absents ; restent l'implémentation UI Web et l'élargissement explicite du contrat headless aux types physiques/UI.
+- [x] `SceneSnapshot` headless est fail-closed : round-trip canonique des types/behaviours enregistrés, refs Mesh préservées, Area/ScriptBehaviour couverts, rejet des types inconnus et des schémas futurs/contradictoires.
+- [ ] Étendre explicitement le contrat headless aux types desktop encore exclus (UI, corps/shapes physiques), puis prouver la même sémantique dans authoring WASM et le player. `Camera` round-trippe désormais en natif et authoring WASM.
+- [x] Fold Mesh sans `ResourceManager` interdit explicitement ; les folds persistants Saida sont atomiques par défaut et `--skip-invalid` reste réservé au diagnostic non durable.
 - [ ] Ajouter un interrupt/deadline QuickJS et confiner strictement la résolution de modules au package projet.
 - [ ] Implémenter réellement les axes gamepad avant d'annoncer `GamepadInput` dans les capacités desktop.
 - [ ] Clarifier/appliquer les notices GPL-3.0 et produire un inventaire de licences des dépendances/assets avant release stable.

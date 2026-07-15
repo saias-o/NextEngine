@@ -1,6 +1,7 @@
 #include "authoring/EngineManifest.hpp"
 
 #include "authoring/SaidaOp.hpp"
+#include "core/FormatVersions.hpp"
 #include "core/Reflection.hpp"
 #include "scenario/ScenarioRegistry.hpp"
 #include "scene/LightNode.hpp"
@@ -58,6 +59,18 @@ nlohmann::json buildEngineManifest() {
     nlohmann::json m;
     m["engineVersion"] = kEngineVersion;
     m["opVersion"] = kOpVersion;
+    m["sceneSnapshot"] = {
+        {"schema", format::kSceneVersion},
+        {"version", format::kSceneVersion},
+        {"unsupportedTypePolicy", "reject"},
+    };
+#ifdef __EMSCRIPTEN__
+    m["sceneSnapshot"]["atomicLoad"] = true;
+    m["sceneSnapshot"]["failureState"] = "previous-scene-preserved";
+#else
+    m["sceneSnapshot"]["atomicLoad"] = false;
+    m["sceneSnapshot"]["failureState"] = "empty-scene";
+#endif
 
 #ifndef __EMSCRIPTEN__
     registerReflectedTypes();
@@ -65,6 +78,7 @@ nlohmann::json buildEngineManifest() {
     nlohmann::json nodes = nlohmann::json::array({
         nlohmann::json{{"name", "Node"}, {"category", "node"}},
         nlohmann::json{{"name", "MeshNode"}, {"category", "node"}},
+        nlohmann::json{{"name", "Camera"}, {"category", "node"}},
     });
     for (const auto& node : reflected.value("nodes", nlohmann::json::array()))
         nodes.push_back(node);
@@ -74,6 +88,7 @@ nlohmann::json buildEngineManifest() {
     m["nodes"] = nlohmann::json::array({
         nlohmann::json{{"name", "Node"}, {"category", "node"}},
         nlohmann::json{{"name", "MeshNode"}, {"category", "node"}},
+        nlohmann::json{{"name", "Camera"}, {"category", "node"}},
         reflectedNodeManifest<LightNode>(),
         reflectedNodeManifest<ParticleSystemNode>(),
         reflectedNodeManifest<WaterNode>(),

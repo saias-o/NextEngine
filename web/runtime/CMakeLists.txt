@@ -47,6 +47,7 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/fx/ParticleQuality.cpp
     ${SAIDA_ROOT}/src/fx/ParticleRuntime.cpp
     ${SAIDA_ROOT}/src/project/AssetRegistry.cpp
+    ${SAIDA_ROOT}/src/project/AssetLoader.cpp
     ${SAIDA_ROOT}/src/render/GIVolume.cpp
     ${SAIDA_ROOT}/src/render/RenderFeatureRegistry.cpp
     ${SAIDA_ROOT}/src/render/features/ParticleFeature.cpp
@@ -112,7 +113,7 @@ target_include_directories(saida_web PRIVATE
 target_compile_definitions(saida_web PRIVATE SAIDA_RHI_WEBGPU SAIDA_NO_PHYSICS SAIDA_NO_AUDIO GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
 # Size-conscious flags (16.6): -Oz in release, plus link-time stripping.
-target_compile_options(saida_web PRIVATE $<$<CONFIG:Release>:-Oz>)
+target_compile_options(saida_web PRIVATE -fexceptions $<$<CONFIG:Release>:-Oz>)
 
 target_link_options(saida_web PRIVATE
     --use-port=emdawnwebgpu
@@ -123,11 +124,15 @@ target_link_options(saida_web PRIVATE
     # 512 Mo couvrent largement les scènes d'édition web actuelles.
     -sINITIAL_MEMORY=512MB
     -sEXIT_RUNTIME=0
+    # The JSON authoring boundary reports malformed snapshots as structured
+    # errors. Without exception catching, nlohmann/type conversion throws abort
+    # the entire WASM instance before saida_load_snapshot can roll back.
+    -sDISABLE_EXCEPTION_CATCHING=0
     # Spike S0: exposer ccall/cwrap pour piloter saida_apply_op depuis le JS.
     # FS (Track 1-F): la plateforme écrit les fichiers projet (obj/textures/
     # asset_registry.json) dans MEMFS sous /project avant saida_load_snapshot.
     -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,FS
-    -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_saida_apply_op,_saida_engine_manifest,_saida_scene_snapshot,_saida_scene_snapshot_compare,_saida_load_snapshot,_saida_pick,_saida_set_render_settings,_saida_camera_state
+    -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_saida_runtime_status,_saida_apply_op,_saida_engine_manifest,_saida_scene_snapshot,_saida_scene_snapshot_compare,_saida_load_snapshot,_saida_pick,_saida_set_render_settings,_saida_camera_state
     $<$<CONFIG:Release>:-Oz>
     # WGSL shaders packaged into MEMFS at /shaders (16.1 web FS: preload).
     # Paths are quoted so a checkout under a directory with spaces still links.

@@ -884,6 +884,22 @@ if (BUILD_TESTING)
     set_tests_properties(saida_tool_apply_ops_invalid PROPERTIES WILL_FAIL TRUE)
 
     add_test(
+        NAME saida_tool_apply_ops_rejects_unknown_snapshot_type
+        COMMAND $<TARGET_FILE:saida_tool> apply-ops
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot-unknown-node.json
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ops-empty.json
+    )
+    set_tests_properties(saida_tool_apply_ops_rejects_unknown_snapshot_type PROPERTIES WILL_FAIL TRUE)
+
+    add_test(
+        NAME saida_tool_apply_ops_rejects_future_snapshot_schema
+        COMMAND $<TARGET_FILE:saida_tool> apply-ops
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot-future-schema.json
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ops-empty.json
+    )
+    set_tests_properties(saida_tool_apply_ops_rejects_future_snapshot_schema PROPERTIES WILL_FAIL TRUE)
+
+    add_test(
         NAME saida_tool_apply_ops_skip_invalid
         COMMAND $<TARGET_FILE:saida_tool> apply-ops --skip-invalid
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot.json

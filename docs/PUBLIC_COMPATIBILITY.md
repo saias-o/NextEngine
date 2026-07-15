@@ -41,9 +41,19 @@ vérifie qu'un chargement ne modifie pas les octets du document source.
 
 Cette preuve couvre la lecture/migration des fixtures, pas encore l'équivalence
 sémantique de toutes les scènes entre éditeur desktop, player, authoring web et
-fold headless. Le `SceneSnapshot` headless et les registres de types divergents
-peuvent encore perdre ou dégrader des types/behaviours ; ce P0 doit être fermé
-avant de remplacer « candidat » par « stable ».
+fold headless. Le `SceneSnapshot` headless est désormais fail-closed : il écrit
+`schema` + `version`, refuse les schémas futurs/contradictoires, préserve les
+types et behaviours de son registre supporté et rejette tout type non couvert au
+lieu de le dégrader. Les registres cross-runtime restent divergents et plusieurs
+types desktop (UI et physique notamment) ne sont donc pas encore acceptés par le
+fold. `Camera` fait partie du contrat durable partagé. Le runtime d'authoring Web
+annonce le schéma et sa politique fail-closed dans `sceneSnapshot`, charge dans
+une scène candidate puis ne publie celle-ci qu'après validation complète. Le
+player Web valide lui aussi récursivement les types de nœuds, behaviours et
+autoloads avant d'annoncer `ready`; son état exporté publie le registre exact et
+la politique `reject`. Les sous-ensembles restent différents par plateforme :
+un contenu hors registre est refusé explicitement, jamais dégradé. L'alignement
+des types restants et la preuve de release sont requis avant « stable ».
 
 ## Assets média
 

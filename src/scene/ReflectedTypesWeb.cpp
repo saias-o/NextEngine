@@ -9,7 +9,8 @@
 // SaidaOpApplier (linked into the web runtime) still calls registerReflectedTypes()
 // + NodeRegistry::create() for the create_node op, so the web build needs *a*
 // definition. Here we register only the node types the web Renderer can actually
-// build: LightNode / Water / ParticleSystem. No behaviours are registered — the
+// build: Node / Camera / LightNode / Water / ParticleSystem. No behaviours are
+// registered — the
 // add_behaviour / set_behaviour_property ops simply report the type as unknown on
 // web, which is the correct MVP behavior (no behaviours on the web runtime yet).
 //
@@ -22,7 +23,9 @@
 #include "core/Reflection.hpp"
 #include "scene/NodeRegistry.hpp"
 
+#include "scene/CameraNode.hpp"
 #include "scene/LightNode.hpp"
+#include "scene/Node.hpp"
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/WaterNode.hpp"
 
@@ -47,6 +50,8 @@ void registerReflectedTypes() {
     if (registered) return;
     registered = true;
 
+    NodeRegistry::instance().registerType<Node>("Node");
+    NodeRegistry::instance().registerType<CameraNode>("Camera");
     registerNode<LightNode>();
     registerNode<WaterNode>();
     registerNode<ParticleSystemNode>();
