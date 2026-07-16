@@ -29,6 +29,7 @@
 #include "scene/CameraNode.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/NodeRegistry.hpp"
+#include "scene/RuntimeTypeMatrix.hpp"
 #include "scene/ReflectedTypes.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SceneSerializer.hpp"
@@ -116,6 +117,10 @@ bool bootGame() {
     NodeRegistry::instance().registerType<UINode>("UINode");
     NodeRegistry::instance().registerType<UICanvasNode>("UICanvasNode");
     NodeRegistry::instance().registerType<UITextNode>("UITextNode");
+
+    std::string typeMatrixError;
+    if (!verifyRegisteredRuntimeTypes(RuntimeTypeTarget::PlayerWeb, typeMatrixError))
+        return failBoot("runtime type matrix mismatch: " + typeMatrixError);
 
     gApp.resources = std::make_unique<ResourceManager>(*gApp.device, gApp.registry.get());
 

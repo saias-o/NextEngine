@@ -6,6 +6,7 @@
 #include "scenario/ScenarioRegistry.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/ParticleSystemNode.hpp"
+#include "scene/RuntimeTypeMatrix.hpp"
 #include "scene/WaterNode.hpp"
 
 #ifndef __EMSCRIPTEN__
@@ -99,6 +100,7 @@ nlohmann::json buildEngineManifest() {
     m["ops"] = knownOpTypes();
     m["properties"] = nodePropertiesByType(m["nodes"]);
     m["scenario"] = scenarioManifest();
+    m["runtimeTypeMatrix"] = buildRuntimeTypeMatrixManifest();
 
     return m;
 }

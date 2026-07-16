@@ -8,9 +8,9 @@
 //
 // SaidaOpApplier (linked into the web runtime) still calls registerReflectedTypes()
 // + NodeRegistry::create() for the create_node op, so the web build needs *a*
-// definition. Here we register only the node types the web Renderer can actually
-// build: Node / Camera / LightNode / Water / ParticleSystem. No behaviours are
-// registered — the
+// definition. Here we register the reflected render nodes; SceneSnapshot adds
+// the base, Mesh and durable HUD factories before verifying the canonical
+// authoringWasm matrix. No behaviours are registered — the
 // add_behaviour / set_behaviour_property ops simply report the type as unknown on
 // web, which is the correct MVP behavior (no behaviours on the web runtime yet).
 //

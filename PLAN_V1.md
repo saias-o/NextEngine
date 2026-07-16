@@ -8,7 +8,7 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 ## Preuves acquises
 
 - [x] Build natif complet Windows UCRT64.
-- [x] Suite native : 53/53 tests le 2026-07-16.
+- [x] Suite native : 54/54 tests le 2026-07-17.
 - [x] Player Web Release et authoring WASM Release compilés.
 - [x] WitnessGame éditeur/desktop : Play éditeur automatisé via `--play`, export
   et runtime autonome, HUD vérifié, `E2E PASS` puis `RESTART PASS`.
@@ -40,6 +40,9 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 - [x] Recette P0.1 unique : Build éditeur Windows/Web, archives exactes,
   inventaire fichier par fichier, SHA-256, vérificateur machine Windows et
   vérificateur Chrome/Edge avec contrôle COOP/COEP + MIME WASM.
+- [x] Matrice V1 canonique des factories natif/headless/authoring WASM/player
+  Web, publiée dans `EngineManifest` et vérifiée au démarrage; round-trip
+  headless exact du HUD et des cinq types physiques V1.
 
 ## P0.1 - Jeu témoin et chemin de livraison
 
@@ -66,9 +69,9 @@ par hash, avec WitnessGame PASS sur les deux.
 
 ## P0.2 - Parité des contrats et données durables
 
-- [ ] Construire une matrice unique des types/behaviours enregistrés dans natif,
+- [x] Construire une matrice unique des types/behaviours enregistrés dans natif,
   headless, authoring WASM et player Web.
-- [ ] Ajouter explicitement UI et nœuds physiques requis au fold headless.
+- [x] Ajouter explicitement UI et nœuds physiques requis au fold headless.
 - [ ] Prouver un round-trip sémantique de chaque type/propriété/behaviour sur les
   quatre runtimes; aucun fallback générique.
 - [ ] Décider et migrer l'adressage des SaidaOps du nom mutable vers NodeId, ou

@@ -2,8 +2,8 @@
 //
 // Le player web (web/player) exécute le vrai cycle de jeu — SceneTree,
 // behaviours, signaux, scripts QuickJS, physique Jolt (job system mono-thread)
-// et audio miniaudio (backend Web Audio). Seule l'UI reste absente (PlatformCaps
-// la déclare absente ; les scènes qui l'exigent sont refusées au chargement).
+// et audio miniaudio (backend Web Audio). Le HUD UICanvas/UIText est porté;
+// les autres types UI restent absents et sont refusés au preflight.
 //
 // Emscripten-only : ne collisionne jamais avec ReflectedTypes.cpp (desktop) ni
 // ReflectedTypesWeb.cpp (viewer d'authoring, autre exécutable).
@@ -30,6 +30,7 @@
 #include "scene/SpawnerBehaviour.hpp"
 #include "scene/StateMachineBehaviour.hpp"
 #include "scene/WaterNode.hpp"
+#include "scene/animation/Animator.hpp"
 #include "scene/animation/SequenceDirectorBehaviour.hpp"
 #include "scripting/ScriptBehaviour.hpp"
 
@@ -69,6 +70,7 @@ void registerReflectedTypes() {
     registerBehaviour<CharacterBehaviour>();
     registerBehaviour<CameraFollowBehaviour>();
     registerBehaviour<AudioSourceBehaviour>();
+    BehaviourRegistry::instance().registerType<Animator>("Animator");
     BehaviourRegistry::instance().registerType<ScriptBehaviour>("ScriptBehaviour");
 
     registerNode<LightNode>();

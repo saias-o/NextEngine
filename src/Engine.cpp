@@ -41,6 +41,7 @@
 #include "scene/SpawnerBehaviour.hpp"
 #include "scene/RotatorBehaviour.hpp"
 #include "scene/ReflectedTypes.hpp"
+#include "scene/RuntimeTypeMatrix.hpp"
 #include "render/RenderFeatureRegistry.hpp"
 #include "scene/LODGroupBehaviour.hpp"
 #include "scene/animation/Animator.hpp"
@@ -197,6 +198,9 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     // "Area" est enregistré par registerReflectedTypes() (signaux réfléchis).
     NodeRegistry::instance().registerType<CharacterBodyNode>("CharacterBody");
     // XR Toolkit nodes/behaviours are registered by xr::registerTypes() above.
+    std::string typeMatrixError;
+    if (!verifyRegisteredRuntimeTypes(RuntimeTypeTarget::Native, typeMatrixError))
+        throw std::runtime_error("runtime type matrix mismatch: " + typeMatrixError);
     if (project_->isLoaded()) {
         AudioManager::get().setProjectRoot(project_->rootPath());
         AudioManager::get().setDefaultSettings(project_->defaultAudioSettings());

@@ -152,16 +152,23 @@ Règles :
 `SceneSnapshot` écrit `schema` et `version`, refuse les futurs schémas et les
 valeurs contradictoires. Le fold headless round-trippe son sous-ensemble
 enregistré, dont `Node`, `MeshNode` existant, `Camera`, `Area` et
-`ScriptBehaviour`. Les références mesh restent opaques sans GPU.
+`ScriptBehaviour`, ainsi que le HUD `UINode`/`UICanvasNode`/`UITextNode`. Les
+types `CollisionShape`, `StaticBody`, `RigidBody` et `CharacterBody` conservent
+également toutes leurs propriétés durables sans démarrer Jolt. Les références
+mesh restent opaques sans GPU.
 
 Créer un `MeshNode` pendant un fold sans `ResourceManager` est refusé. Les types
-UI et plusieurs nœuds physiques desktop ne sont pas encore dans le registre
-headless. Le player et l'authoring Web publient leur registre effectif et
-refusent les types/behaviours absents avant de passer à `ready`.
+UI avancés restent hors du registre headless tant qu'ils ne font pas partie du
+contrat player V1. Le player et l'authoring Web refusent les types/behaviours
+absents avant de passer à `ready`.
 
-Les registres natif, headless, authoring Web et player Web ne sont donc pas
-encore équivalents. Cette divergence est une limite fonctionnelle explicite,
-pas une permission de perdre du contenu.
+`RuntimeTypeMatrix.hpp` est l'inventaire V1 unique des factories des quatre
+runtimes. Il distingue `required`, `optional` (XR natif conditionnel) et
+`absent`, est publié dans `EngineManifest`, puis comparé aux registres effectifs
+au boot/snapshot. Toute factory requise manquante ou non déclarée fait échouer le
+runtime avec diagnostic. Les registres ne sont pas encore équivalents : la
+matrice rend chaque divergence explicite, elle ne donne pas la permission de
+perdre du contenu.
 
 ## 4. Rendu et ressources GPU
 
@@ -637,7 +644,8 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
   MSAA absent et contenu glTF corrompu encore dangereux.
 - Audio Web soumis au geste utilisateur.
 - Un runtime/canvas Emscripten par page; build non modularisé.
-- Registres natif/headless/Web divergents; UI/physique hors de certains folds.
+- Registres natif/headless/Web explicitement matricés; l'UI avancée reste hors
+  de certains folds.
 - Nœuds adressés par noms mutables, pas NodeId stable.
 - Bindings physique, animation, séquences et blackboard encore incomplets.
 - Sauvegardes encore locales au projet et sans migrations/metadata/quota.

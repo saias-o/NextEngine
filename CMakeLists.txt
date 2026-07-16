@@ -738,6 +738,13 @@ if (BUILD_TESTING)
     target_compile_options(saida_test_autoload_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_test_autoload_tests COMMAND $<TARGET_FILE:saida_test_autoload_tests>)
 
+    add_executable(saida_runtime_type_matrix_tests tests/RuntimeTypeMatrixTests.cpp)
+    saida_test_target(saida_runtime_type_matrix_tests)
+    target_link_libraries(saida_runtime_type_matrix_tests PRIVATE saida_engine)
+    target_compile_options(saida_runtime_type_matrix_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_runtime_type_matrix_tests
+             COMMAND $<TARGET_FILE:saida_runtime_type_matrix_tests>)
+
     add_executable(saida_gameplay_primitive_tests tests/GameplayPrimitiveTests.cpp)
     saida_test_target(saida_gameplay_primitive_tests)
     target_link_libraries(saida_gameplay_primitive_tests PRIVATE saida_engine)

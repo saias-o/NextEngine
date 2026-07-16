@@ -12,12 +12,21 @@
 #include "scene/NodeRegistry.hpp"
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/ReflectedTypes.hpp"
+#include "scene/RuntimeTypeMatrix.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SerializationHelpers.hpp"
+#include "scene/UICanvasNode.hpp"
+#include "scene/UINode.hpp"
+#include "scene/UITextNode.hpp"
 #include "scene/WaterNode.hpp"
 
 #ifndef __EMSCRIPTEN__
 #include "physics/AreaNode.hpp"
+#include "physics/CharacterBodyNode.hpp"
+#include "physics/CollisionObjectNode.hpp"
+#include "physics/CollisionShapeNode.hpp"
+#include "physics/RigidBodyNode.hpp"
+#include "physics/StaticBodyNode.hpp"
 #include "scene/LODGroupBehaviour.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scripting/ScriptBehaviour.hpp"
@@ -54,8 +63,23 @@ void ensureHeadlessRegistries() {
         nodes.registerType<MeshNode>("MeshNode");
     if (nodes.factories().find("Camera") == nodes.factories().end())
         nodes.registerType<CameraNode>("Camera");
+    if (nodes.factories().find("UINode") == nodes.factories().end())
+        nodes.registerType<UINode>("UINode");
+    if (nodes.factories().find("UICanvasNode") == nodes.factories().end())
+        nodes.registerType<UICanvasNode>("UICanvasNode");
+    if (nodes.factories().find("UITextNode") == nodes.factories().end())
+        nodes.registerType<UITextNode>("UITextNode");
 
 #ifndef __EMSCRIPTEN__
+    if (nodes.factories().find("CollisionShape") == nodes.factories().end())
+        nodes.registerType<CollisionShapeNode>("CollisionShape");
+    if (nodes.factories().find("StaticBody") == nodes.factories().end())
+        nodes.registerType<StaticBodyNode>("StaticBody");
+    if (nodes.factories().find("RigidBody") == nodes.factories().end())
+        nodes.registerType<RigidBodyNode>("RigidBody");
+    if (nodes.factories().find("CharacterBody") == nodes.factories().end())
+        nodes.registerType<CharacterBodyNode>("CharacterBody");
+
     // These behaviours have hand-written serializers rather than reflected
     // descriptors. Registering them here only reconstructs their durable data;
     // no script, animation or GPU runtime is started by load().
@@ -67,6 +91,21 @@ void ensureHeadlessRegistries() {
     if (behaviours.factories().find("LOD Group") == behaviours.factories().end())
         behaviours.registerType<LODGroupBehaviour>("LOD Group");
 #endif
+
+    std::string typeMatrixError;
+#ifdef __EMSCRIPTEN__
+    constexpr RuntimeTypeTarget matrixTarget = RuntimeTypeTarget::AuthoringWasm;
+    constexpr bool allowAdditional = false;
+#else
+    // The desktop editor may call the headless codec after registering its
+    // larger native catalog in the same process. Dedicated headless tests use
+    // strict mode to reject extras as well as omissions.
+    constexpr RuntimeTypeTarget matrixTarget = RuntimeTypeTarget::Headless;
+    constexpr bool allowAdditional = true;
+#endif
+    if (!verifyRegisteredRuntimeTypes(matrixTarget, typeMatrixError, allowAdditional)) {
+        throw std::runtime_error("runtime type matrix mismatch: " + typeMatrixError);
+    }
 }
 
 const reflect::TypeDesc* reflectedNodeDesc(const Node& node) {
@@ -77,7 +116,14 @@ const reflect::TypeDesc* reflectedNodeDesc(const Node& node) {
 }
 
 bool isSupportedHeadlessNodeType(const std::string& type) {
-    if (type == "Node" || type == "MeshNode" || type == "Camera") return true;
+    if (type == "Node" || type == "MeshNode" || type == "Camera" ||
+        type == "UINode" || type == "UICanvasNode" || type == "UITextNode")
+        return true;
+#ifndef __EMSCRIPTEN__
+    if (type == "CollisionShape" || type == "StaticBody" ||
+        type == "RigidBody" || type == "CharacterBody")
+        return true;
+#endif
     const reflect::TypeDesc* desc = reflect::TypeRegistry::instance().find(type);
     return desc && desc->category == "node";
 }
@@ -136,13 +182,31 @@ json serializeNodeWithoutResources(const Node& node, const std::string& path,
         desc->saveTo(&node, out);
 
 #ifndef __EMSCRIPTEN__
-    // Area uses hand-written physics serialization because its reflection
-    // descriptor intentionally contains signals only.
-    if (std::string(node.typeName() ? node.typeName() : "") == "Area") {
-        const auto& area = static_cast<const AreaNode&>(node);
-        out["friction"] = area.friction;
-        out["restitution"] = area.restitution;
-        out["moving"] = area.moving;
+    if (const auto* body = dynamic_cast<const CollisionObjectNode*>(&node)) {
+        out["friction"] = body->friction;
+        out["restitution"] = body->restitution;
+    }
+    if (const auto* area = dynamic_cast<const AreaNode*>(&node)) {
+        out["moving"] = area->moving;
+    }
+    if (const auto* shape = dynamic_cast<const CollisionShapeNode*>(&node)) {
+        out["shapeType"] = static_cast<int>(shape->shapeType);
+        out["halfExtents"] = vec3ToJson(shape->halfExtents);
+        out["radius"] = shape->radius;
+        out["height"] = shape->height;
+        out["axis"] = shape->axis;
+        out["offset"] = vec3ToJson(shape->offset);
+    }
+    if (const auto* rigid = dynamic_cast<const RigidBodyNode*>(&node)) {
+        out["kinematic"] = rigid->kinematic;
+        out["mass"] = rigid->mass;
+        out["gravityFactor"] = rigid->gravityFactor;
+        out["linearDamping"] = rigid->linearDamping;
+        out["angularDamping"] = rigid->angularDamping;
+    }
+    if (const auto* character = dynamic_cast<const CharacterBodyNode*>(&node)) {
+        out["mass"] = character->mass;
+        out["maxSlopeAngle"] = character->maxSlopeAngle;
     }
 #endif
 
@@ -175,6 +239,27 @@ json serializeNodeWithoutResources(const Node& node, const std::string& path,
         out["farZ"] = camera.farZ;
         out["priority"] = camera.priority;
         out["active"] = camera.active;
+    }
+
+    if (const auto* ui = dynamic_cast<const UINode*>(&node)) {
+        out["x"] = ui->x();
+        out["y"] = ui->y();
+        out["width"] = ui->width();
+        out["height"] = ui->height();
+        out["anchorX"] = ui->anchorX();
+        out["anchorY"] = ui->anchorY();
+        out["pivotX"] = ui->pivotX();
+        out["pivotY"] = ui->pivotY();
+    }
+    if (const auto* canvas = dynamic_cast<const UICanvasNode*>(&node)) {
+        out["width"] = canvas->width();
+        out["height"] = canvas->height();
+    }
+    if (const auto* text = dynamic_cast<const UITextNode*>(&node)) {
+        out["text"] = text->text();
+        out["fontSize"] = text->fontSize();
+        const glm::vec4 color = text->color();
+        out["color"] = json::array({color.r, color.g, color.b, color.a});
     }
 
     json children = json::array();
@@ -281,11 +366,36 @@ bool loadNodeFields(Node& node, const json& j, const std::string& path,
         desc->loadFrom(&node, j);
 
 #ifndef __EMSCRIPTEN__
-    if (std::string(node.typeName() ? node.typeName() : "") == "Area") {
-        auto& area = static_cast<AreaNode&>(node);
-        if (auto it = j.find("friction"); it != j.end()) area.friction = it->get<float>();
-        if (auto it = j.find("restitution"); it != j.end()) area.restitution = it->get<float>();
-        if (auto it = j.find("moving"); it != j.end()) area.moving = it->get<bool>();
+    if (auto* body = dynamic_cast<CollisionObjectNode*>(&node)) {
+        if (auto it = j.find("friction"); it != j.end()) body->friction = it->get<float>();
+        if (auto it = j.find("restitution"); it != j.end()) body->restitution = it->get<float>();
+    }
+    if (auto* area = dynamic_cast<AreaNode*>(&node)) {
+        if (auto it = j.find("moving"); it != j.end()) area->moving = it->get<bool>();
+    }
+    if (auto* shape = dynamic_cast<CollisionShapeNode*>(&node)) {
+        if (auto it = j.find("shapeType"); it != j.end())
+            shape->shapeType = static_cast<CollisionShapeType>(it->get<int>());
+        shape->halfExtents = jsonToVec3(j.value("halfExtents", json()), shape->halfExtents);
+        if (auto it = j.find("radius"); it != j.end()) shape->radius = it->get<float>();
+        if (auto it = j.find("height"); it != j.end()) shape->height = it->get<float>();
+        if (auto it = j.find("axis"); it != j.end()) shape->axis = it->get<int>();
+        shape->offset = jsonToVec3(j.value("offset", json()), shape->offset);
+    }
+    if (auto* rigid = dynamic_cast<RigidBodyNode*>(&node)) {
+        if (auto it = j.find("kinematic"); it != j.end()) rigid->kinematic = it->get<bool>();
+        if (auto it = j.find("mass"); it != j.end()) rigid->mass = it->get<float>();
+        if (auto it = j.find("gravityFactor"); it != j.end())
+            rigid->gravityFactor = it->get<float>();
+        if (auto it = j.find("linearDamping"); it != j.end())
+            rigid->linearDamping = it->get<float>();
+        if (auto it = j.find("angularDamping"); it != j.end())
+            rigid->angularDamping = it->get<float>();
+    }
+    if (auto* character = dynamic_cast<CharacterBodyNode*>(&node)) {
+        if (auto it = j.find("mass"); it != j.end()) character->mass = it->get<float>();
+        if (auto it = j.find("maxSlopeAngle"); it != j.end())
+            character->maxSlopeAngle = it->get<float>();
     }
 #endif
 
@@ -320,6 +430,25 @@ bool loadNodeFields(Node& node, const json& j, const std::string& path,
             camera.priority = it->get<int>();
         if (auto it = j.find("active"); it != j.end() && it->is_boolean())
             camera.active = it->get<bool>();
+    }
+
+    if (auto* ui = dynamic_cast<UINode*>(&node)) {
+        ui->setPosition(j.value("x", 0.0f), j.value("y", 0.0f));
+        ui->setSize(j.value("width", 100.0f), j.value("height", 100.0f));
+        ui->setAnchor(j.value("anchorX", 0.5f), j.value("anchorY", 0.5f));
+        ui->setPivot(j.value("pivotX", 0.5f), j.value("pivotY", 0.5f));
+    }
+    if (auto* canvas = dynamic_cast<UICanvasNode*>(&node)) {
+        canvas->setSize(j.value("width", 1920.0f), j.value("height", 1080.0f));
+    }
+    if (auto* text = dynamic_cast<UITextNode*>(&node)) {
+        text->setText(j.value("text", std::string("Text")));
+        text->setFontSize(j.value("fontSize", 16.0f));
+        if (auto color = j.find("color"); color != j.end() &&
+            color->is_array() && color->size() == 4) {
+            text->setColor(glm::vec4((*color)[0].get<float>(), (*color)[1].get<float>(),
+                                     (*color)[2].get<float>(), (*color)[3].get<float>()));
+        }
     }
 
     // Behaviours: rebuild by type from the registry, then load reflected props.

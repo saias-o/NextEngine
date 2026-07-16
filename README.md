@@ -59,6 +59,12 @@ l'éditeur, `SaidaEngineHub` le gestionnaire de projets,
 `SaidaEngineRuntime` le player desktop sans éditeur et `saida_tool` la CLI
 headless utilisée par la CI et la plateforme.
 
+`saida_tool describe-engine` publie aussi `runtimeTypeMatrix`, l'inventaire V1
+unique des factories natif, headless, authoring WASM et player Web. Chaque
+runtime vérifie son registre effectif contre cette matrice avant de devenir
+utilisable; le headless round-trippe actuellement le HUD
+`UINode`/`UICanvasNode`/`UITextNode` et les corps/colliders V1 sans GPU.
+
 ## Prérequis Windows
 
 Toolchain supportée : **MSYS2 UCRT64, GCC, CMake et Ninja**. Ne pas mélanger
