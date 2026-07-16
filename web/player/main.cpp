@@ -24,6 +24,7 @@
 #include "render/Renderer.hpp"
 #include "rhi/webgpu/RhiWeb.hpp"
 #include "runtime/BootManifest.hpp"
+#include "runtime/TestAutoload.hpp"
 #include "scene/BehaviourRegistry.hpp"
 #include "scene/CameraNode.hpp"
 #include "scene/MeshNode.hpp"
@@ -73,6 +74,7 @@ struct PlayerApp {
 };
 
 PlayerApp gApp;
+std::vector<std::string> gTestAutoloads;
 
 bool failBoot(const std::string& error) {
     gApp.running = false;
@@ -97,6 +99,11 @@ bool bootGame() {
     gApp.project = std::make_unique<Project>();
     if (!gApp.project->load("/project/" + boot.manifest.project)) {
         return failBoot("cannot load project " + boot.manifest.project);
+    }
+    for (const std::string& spec : gTestAutoloads) {
+        std::string error;
+        if (!runtime::applyTestAutoload(*gApp.project, spec, error))
+            return failBoot(error);
     }
 
     // Types réfléchis + types de base. Le registre reste volontairement
@@ -212,7 +219,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char* saida_player_status() {
     return encoded.c_str();
 }
 
-int main() {
+int main(int argc, char** argv) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--test-autoload" && i + 1 < argc)
+            gTestAutoloads.emplace_back(argv[++i]);
+    }
+
     if (!glfwInit()) {
         gApp.state = "error";
         gApp.startupError = "GLFW initialization failed";

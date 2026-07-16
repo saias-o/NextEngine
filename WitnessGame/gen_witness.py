@@ -142,6 +142,7 @@ def hud(prefix, label):
     return node(f"{prefix}/hud", "UICanvasNode", "HUD",
                 width=1920.0, height=1080.0, children=[
                     node(f"{prefix}/hud/score", "UITextNode", "ScoreText",
+                         groups=["witness_hud"],
                          text=label, fontSize=28.0,
                          color=[1.0, 1.0, 1.0, 1.0],
                          x=24.0, y=24.0, width=600.0, height=48.0,

@@ -162,9 +162,35 @@ les validation layers MSYS2. Sans ce script, une layer peut charger un runtime
 
 ```sh
 ./tools/witness_e2e.sh
+./tools/witness_editor_play.sh
 ./tools/witness_editor_build.sh
 ./tools/witness_web_stage.sh
 ```
+
+La recette P0.1 complète construit les deux artefacts par le chemin du bouton
+Build, crée les archives, inventorie chaque fichier et écrit leurs SHA-256 :
+
+```powershell
+.\tools\witness_release_candidate.ps1
+```
+
+Elle exige un worktree Git propre par défaut et produit
+`build/release/witness-v1/` avec `release-manifest.json`, les archives Windows
+et Web, ainsi que leurs vérificateurs autonomes. `-AllowDirty` est réservé aux
+preuves de développement et inscrit explicitement `dirty: true` dans le
+manifest. Sur une autre machine Windows, aucun checkout moteur, MSYS2 ou SDK
+n'est requis : extraire/copier ce dossier puis lancer :
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\verify_witness_windows.ps1
+powershell -ExecutionPolicy Bypass -File .\verify_witness_web.ps1 -Browser Chrome
+powershell -ExecutionPolicy Bypass -File .\verify_witness_web.ps1 -Browser Edge -Port 18081
+```
+
+Le premier script exige seulement PowerShell et un pilote Vulkan fonctionnel.
+Les preuves Web exigent Python 3 et le navigateur indiqué. Elles vérifient
+automatiquement SHA-256, COOP/COEP, MIME WASM, gameplay/UI et save+HUD après
+redémarrage; aucune lecture manuelle de console n'est nécessaire.
 
 AutoLOD se compile séparément :
 

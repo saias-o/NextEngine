@@ -1,0 +1,142 @@
+[CmdletBinding()]
+param(
+    [string]$OutputDir = 'build/release/witness-v1',
+    [switch]$AllowDirty,
+    [switch]$SkipBuild,
+    [switch]$SkipLocalWindowsVerification
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+$root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$buildRoot = [System.IO.Path]::GetFullPath((Join-Path $root 'build')).TrimEnd('\', '/')
+$out = if ([System.IO.Path]::IsPathRooted($OutputDir)) {
+    [System.IO.Path]::GetFullPath($OutputDir)
+} else {
+    [System.IO.Path]::GetFullPath((Join-Path $root $OutputDir))
+}
+if (-not $out.StartsWith($buildRoot + [System.IO.Path]::DirectorySeparatorChar,
+                         [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "OutputDir must stay under $buildRoot"
+}
+
+Push-Location $root
+try {
+    $status = (& git status --porcelain) -join "`n"
+    $dirty = -not [string]::IsNullOrWhiteSpace($status)
+    if ($dirty -and -not $AllowDirty) {
+        throw "Release candidate requires a clean Git worktree (use -AllowDirty only for development proofs)"
+    }
+
+    if (-not $SkipBuild) {
+        New-Item -ItemType Directory -Force -Path build/tmp, build/msys_home | Out-Null
+        $env:PATH = 'C:\Python313;C:\msys64\usr\bin;C:\msys64\ucrt64\bin;' + $env:PATH
+        $env:HOME = (Resolve-Path build/msys_home).Path
+        $env:TMPDIR = (Resolve-Path build/tmp).Path
+        $env:TMP = $env:TMPDIR
+        $env:TEMP = $env:TMPDIR
+        & cmake --build build --parallel 4
+        if ($LASTEXITCODE -ne 0) { throw "Native build failed" }
+        & ctest --test-dir build --output-on-failure
+        if ($LASTEXITCODE -ne 0) { throw "Native tests failed" }
+        & 'C:\msys64\usr\bin\bash.exe' web/build_web_player.sh Release
+        if ($LASTEXITCODE -ne 0) { throw "Web player build failed" }
+    }
+
+    if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
+    New-Item -ItemType Directory -Path $out | Out-Null
+    $stage = Join-Path $out '.stage'
+    $windowsDir = Join-Path $stage 'windows'
+    $webExportDir = Join-Path $stage 'web-export'
+    New-Item -ItemType Directory -Path $windowsDir, $webExportDir | Out-Null
+
+    & build/bin/SaidaEngine.exe --project WitnessGame/WitnessGame.saidaproj `
+        --build $windowsDir
+    if ($LASTEXITCODE -ne 0) { throw "Editor Windows Build failed" }
+    & build/bin/SaidaEngine.exe --project WitnessGame/WitnessGame.saidaproj `
+        --build $webExportDir --build-platform web
+    if ($LASTEXITCODE -ne 0) { throw "Editor Web Build failed" }
+    $webDir = Join-Path $webExportDir 'web'
+
+    if (Test-Path -LiteralPath (Join-Path $windowsDir 'saves')) {
+        throw "Windows package unexpectedly contains saves"
+    }
+    if (Test-Path -LiteralPath (Join-Path $webDir 'project/saves')) {
+        throw "Web package unexpectedly contains saves"
+    }
+
+    $windowsArchive = Join-Path $out 'WitnessGame-Windows.zip'
+    $webArchive = Join-Path $out 'WitnessGame-Web.zip'
+    Compress-Archive -Path (Join-Path $windowsDir '*') -DestinationPath $windowsArchive
+    Compress-Archive -Path (Join-Path $webDir '*') -DestinationPath $webArchive
+
+    function File-Inventory([string]$Directory) {
+        $prefix = ([System.IO.Path]::GetFullPath($Directory).TrimEnd('\', '/') +
+                   [System.IO.Path]::DirectorySeparatorChar)
+        @((Get-ChildItem -LiteralPath $Directory -Recurse -File | Sort-Object FullName | ForEach-Object {
+            [ordered]@{
+                path = $_.FullName.Substring($prefix.Length).Replace('\', '/')
+                bytes = $_.Length
+                sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            }
+        }))
+    }
+    function Archive-Record([string]$Archive, [string]$EntryPoint, [string]$SourceDir) {
+        $file = Get-Item -LiteralPath $Archive
+        [ordered]@{
+            archive = $file.Name
+            entryPoint = $EntryPoint
+            bytes = $file.Length
+            sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+            files = File-Inventory $SourceDir
+        }
+    }
+
+    $manifest = [ordered]@{
+        schema = 1
+        engineCommit = (& git rev-parse HEAD).Trim()
+        dirty = $dirty
+        version = '0.1.0'
+        generatedAtUtc = [DateTime]::UtcNow.ToString('o')
+        project = 'WitnessGame/WitnessGame.saidaproj'
+        artifacts = [ordered]@{
+            windows = Archive-Record $windowsArchive 'Witness Game.exe' $windowsDir
+            web = Archive-Record $webArchive 'index.html' $webDir
+        }
+    }
+    $manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 `
+        -LiteralPath (Join-Path $out 'release-manifest.json')
+
+    Copy-Item -LiteralPath tools/verify_witness_windows.ps1 -Destination $out
+    Copy-Item -LiteralPath tools/verify_witness_web.ps1 -Destination $out
+    @"
+SaidaEngine WitnessGame release candidate
+
+Windows clean-machine proof (PowerShell only; GPU driver/Vulkan runtime required):
+  powershell -ExecutionPolicy Bypass -File .\verify_witness_windows.ps1
+
+Web browser proofs (Python 3 + recent browser required):
+  powershell -ExecutionPolicy Bypass -File .\verify_witness_web.ps1 -Browser Chrome
+  powershell -ExecutionPolicy Bypass -File .\verify_witness_web.ps1 -Browser Edge -Port 18081
+
+Both scripts verify the archive SHA-256 before execution. The Windows verifier
+runs the exact extracted archive twice. The Web verifier checks COOP/COEP and
+WASM MIME headers, then requires gameplay/UI PASS and save/UI RESTART PASS.
+"@ | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $out 'README.txt')
+
+    Remove-Item -LiteralPath $stage -Recurse -Force
+
+    if (-not $SkipLocalWindowsVerification) {
+        & (Join-Path $out 'verify_witness_windows.ps1') -BundleDir $out
+        if ($LASTEXITCODE -ne 0) { throw "Local Windows archive verification failed" }
+    }
+
+    Write-Host "WITNESS RELEASE CANDIDATE READY: $out"
+    Write-Host "  commit: $($manifest.engineCommit)"
+    Write-Host "  dirty: $dirty"
+    Write-Host "  Windows: $($manifest.artifacts.windows.sha256)"
+    Write-Host "  Web:     $($manifest.artifacts.web.sha256)"
+} finally {
+    Pop-Location
+}

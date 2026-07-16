@@ -41,6 +41,19 @@
       schema: 1, runtime: 'player-web', state: 'loading', ready: false
     };
     var statusPoll = 0;
+    var reportE2E = new URLSearchParams(location.search).has('report');
+    function publishE2E(text) {
+      document.documentElement.dataset.saidaE2e = text;
+      if (reportE2E) {
+        fetch('/__saida_e2e', {
+          method: 'POST',
+          headers: {'Content-Type': 'text/plain; charset=utf-8'},
+          body: text
+        }).catch(function(error) {
+          window.__saidaErrors.push('e2e report: ' + error.message);
+        });
+      }
+    }
     function refreshPlayerStatus() {
       try {
         window.__saidaPlayerStatus = JSON.parse(
@@ -57,6 +70,8 @@
     }
     var Module = {
       canvas: document.getElementById('canvas'),
+      arguments: new URLSearchParams(location.search).getAll('test-autoload')
+        .flatMap(function(spec) { return ['--test-autoload', spec]; }),
       onRuntimeInitialized: function() {
         refreshPlayerStatus();
         statusPoll = setInterval(refreshPlayerStatus, 50);
@@ -110,14 +125,14 @@
       print: function(text) {
         window.__saidaLog.push(text);
         if (text.indexOf('[E2E]') >= 0)
-          document.documentElement.dataset.saidaE2e = text;
+          publishE2E(text);
         console.log(text);
         statusEl.textContent = text;
       },
       printErr: function(text) {
         window.__saidaLog.push(text);
         if (text.indexOf('[E2E]') >= 0)
-          document.documentElement.dataset.saidaE2e = text;
+          publishE2E(text);
         console.error(text);
         statusEl.textContent = text;
       },

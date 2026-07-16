@@ -1,6 +1,6 @@
 # SaidaEngine - Plan unique vers la V1
 
-Mise à jour : 2026-07-16.
+Mise à jour : 2026-07-17.
 
 **Verdict : NO-GO pour une V1 publique.** Ce fichier est l'unique todolist du
 moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
@@ -8,11 +8,13 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 ## Preuves acquises
 
 - [x] Build natif complet Windows UCRT64.
-- [x] Suite native : 52/52 tests le 2026-07-16.
+- [x] Suite native : 53/53 tests le 2026-07-16.
 - [x] Player Web Release et authoring WASM Release compilés.
-- [x] WitnessGame desktop : validation, export et runtime, `E2E PASS`.
+- [x] WitnessGame éditeur/desktop : Play éditeur automatisé via `--play`, export
+  et runtime autonome, HUD vérifié, `E2E PASS` puis `RESTART PASS`.
 - [x] WitnessGame Web : package exécuté, HUD `UICanvasNode`/`UITextNode`
-  visible via RmlUi/WebGPU et harnais `[E2E] PASS` sur 16 cycles.
+  visible via RmlUi/WebGPU et harnais `[E2E] PASS` sur 16 cycles, puis
+  `RESTART PASS` avec le HUD restauré après reload.
 - [x] QuickJS : deadline 100 ms, 1024 jobs, microtasks interrompues, callbacks
   protégés et scripts/imports confinés à la racine canonique.
 - [x] Export Windows : copie robuste du contenu, symlinks/spéciaux refusés.
@@ -35,12 +37,15 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 - [x] Save/load après redémarrage : progression restaurée au boot par un
   second lancement desktop (`saves/`) et un reload navigateur (IDBFS),
   verdict `RESTART PASS` dans les deux harnais.
+- [x] Recette P0.1 unique : Build éditeur Windows/Web, archives exactes,
+  inventaire fichier par fichier, SHA-256, vérificateur machine Windows et
+  vérificateur Chrome/Edge avec contrôle COOP/COEP + MIME WASM.
 
 ## P0.1 - Jeu témoin et chemin de livraison
 
 - [x] Porter `UICanvasNode`, `UITextNode` et le rendu RmlUi nécessaire dans le
   player WebGPU.
-- [ ] Obtenir WitnessGame complet, UI incluse, avec le même gameplay et les
+- [x] Obtenir WitnessGame complet, UI incluse, avec le même gameplay et les
   mêmes saves en éditeur, desktop autonome et Web.
 - [x] Ajouter et traverser une séquence `.sseq` dans WitnessGame.
 - [x] Remplacer le contournement storage par une vraie API JS
@@ -50,7 +55,11 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
   checkout moteur.
 - [ ] Exécuter l'artefact Web servi avec les bons headers sur Chrome et Edge.
 - [x] Vérifier save/load après redémarrage sur desktop et navigateur.
-- [ ] Éliminer toute étape manuelle non documentée entre projet et artefact.
+- [x] Éliminer toute étape manuelle non documentée entre projet et artefact.
+
+Preuves externes machine vierge et navigateurs réels planifiées pour le
+week-end des 18–19 juillet 2026; les cases restent ouvertes jusqu'aux verdicts
+des vérificateurs archivés.
 
 Gate : un commit propre produit des artefacts desktop/Web jouables et identifiés
 par hash, avec WitnessGame PASS sur les deux.

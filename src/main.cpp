@@ -2,6 +2,7 @@
 #include "core/Log.hpp"
 #include "editor/EditorApp.hpp"
 #include "core/Time.hpp"
+#include "runtime/TestAutoload.hpp"
 #include "scene/SceneSerializer.hpp"
 
 #include <cstdlib>
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 int main(int argc, char** argv) {
     try {
@@ -20,6 +22,8 @@ int main(int argc, char** argv) {
         bool readXrPreviewManifest = false;
         bool buildRequested = false;
         bool buildWeb = false;
+        bool playRequested = false;
+        std::vector<std::string> testAutoloads;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
             if (arg == "--project" && i + 1 < argc)
@@ -31,6 +35,10 @@ int main(int argc, char** argv) {
                 buildOutputDir = argv[++i];
             } else if (arg == "--build-platform" && i + 1 < argc)
                 buildWeb = (std::string(argv[++i]) == "web");
+            else if (arg == "--play")
+                playRequested = true;
+            else if (arg == "--test-autoload" && i + 1 < argc)
+                testAutoloads.emplace_back(argv[++i]);
             else if (arg == "--xr")
                 xrPreview = true;
             else if (arg == "--xr-preview") {
@@ -57,6 +65,11 @@ int main(int argc, char** argv) {
         // No SceneSetup: launched directly (no --project), the editor opens on an
         // empty scene. The Hub passes a project via --project to load real content.
         saida::Engine engine(nullptr, initialProject, xrPreview);
+        for (const std::string& spec : testAutoloads) {
+            std::string error;
+            if (!saida::runtime::applyTestAutoload(engine.project(), spec, error))
+                throw std::runtime_error(error);
+        }
         if (xrPreview) {
             if (runtimeScene.empty())
                 throw std::runtime_error("--xr requires --scene <path>");
@@ -77,6 +90,11 @@ int main(int argc, char** argv) {
         // --build <out> : clic Build automatisé — même code que le bouton du
         // dialogue Build, puis sortie immédiate avec le verdict en code retour.
         if (buildRequested) return editor.runAutomatedBuild(buildWeb, buildOutputDir);
+
+        // --play : ouvre le projet puis déclenche le même passage en Play que le
+        // bouton de l'éditeur. Utile aux recettes automatisées avec un pilote de
+        // jeu qui termine lui-même le processus via tree.quit().
+        if (playRequested) editor.setPlayMode(true);
 
         engine.setOnFrame([&editor](float dt) { editor.update(dt); });
         engine.run();

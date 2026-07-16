@@ -1,8 +1,9 @@
 // Pilote E2E (jamais référencé par le jeu : le harnais l'ajoute comme
 // autoload dans la copie packagée).
 //
-// Phase 1 — gameplay : marche tout droit, traverse la porte du hub puis
-// Relic2 alignée dans l'arène ; validé dès qu'une relique est sauvegardée.
+// Phase 1 — UI/gameplay : vérifie le HUD initial, marche tout droit, traverse
+// la porte du hub puis Relic2 alignée dans l'arène, et vérifie le HUD mis à
+// jour dès qu'une relique est sauvegardée.
 // La cinématique hub (anim/intro.sseq via SequenceDirector, 1,5 s) doit avoir
 // été traversée : événement `intro_beat` reçu et `sequenceFinished` émis
 // avant la fin de la phase 1 — le binding est fail-closed côté moteur, donc
@@ -32,6 +33,15 @@ let relicSignalSeen = false;
 let seqArmed = false;
 let seqEventSeen = false;
 let seqFinishedSeen = false;
+let initialHudSeen = false;
+let updatedHudSeen = false;
+let restartMode = false;
+let restartRelics = 0;
+
+function hudText() {
+    const hud = tree.firstInGroup("witness_hud");
+    return hud === null ? null : String(hud.getText());
+}
 
 function finish(verdict) {
     finished = true;
@@ -47,12 +57,12 @@ function onReady() {
     // Redémarrage : si une progression sauvegardée par un run précédent existe
     // déjà au boot, GameState doit l'avoir restaurée depuis le stockage
     // (fichier saves/ sur desktop, IDBFS dans le navigateur). Verdict dédié,
-    // sans rejouer : c'est le test « save/load après redémarrage ».
+    // sans rejouer. Le verdict attend aussi que le HUD reflète la progression :
+    // c'est le test « save/load + UI après redémarrage ».
     if (storage.has("witness") && Number(gameState.call("getRelics")) >= 1) {
-        finished = true;
-        console.log("[E2E] RESTART PASS (relics=" +
-                    Number(gameState.call("getRelics")) + ")");
-        tree.quit();
+        restartMode = true;
+        restartRelics = Number(gameState.call("getRelics"));
+        console.log("[E2E] restart validation armed (relics=" + restartRelics + ")");
         return;
     }
 
@@ -107,19 +117,42 @@ function onUpdate(dt) {
     if (finished) return;
     t += dt;
 
+    if (restartMode) {
+        if (hudText() === "Relics: " + restartRelics) {
+            finished = true;
+            console.log("[E2E] RESTART PASS (relics=" + restartRelics + ", hud=ok)");
+            tree.quit();
+        } else if (t > 5) {
+            finish("FAIL: restored save not reflected by HUD (expected Relics: " +
+                   restartRelics + ", got " + hudText() + ")");
+        }
+        return;
+    }
+
     if (phase === 1) {
+        if (!initialHudSeen) {
+            initialHudSeen = hudText() === "Relics: 0";
+            if (!initialHudSeen && t > 3)
+                return finish("FAIL: initial HUD missing or stale (got " + hudText() + ")");
+        }
         if (!armRelicSignal()) return;
         if (!armSequenceSignals()) return;
-        if (t > 1.0) input.inject("MoveForward", 1);
+        if (initialHudSeen && t > 1.0) input.inject("MoveForward", 1);
         if (relicsCollected() >= 1) {
             if (!relicSignalSeen)
                 return finish("FAIL: relic collected without cross-node signal");
             if (!seqEventSeen || !seqFinishedSeen)
                 return finish("FAIL: intro sequence not traversed (event=" +
                               seqEventSeen + ", finished=" + seqFinishedSeen + ")");
+            updatedHudSeen = hudText() === "Relics: 1";
+            if (!updatedHudSeen) {
+                if (t > TIMEOUT)
+                    return finish("FAIL: updated HUD missing or stale (got " + hudText() + ")");
+                return;
+            }
             input.inject("MoveForward", 0);
             phase = 2;
-            console.log("[E2E] phase 1 ok — relic collected, starting scene cycles");
+            console.log("[E2E] phase 1 ok — UI updated, relic collected, starting scene cycles");
             return;
         }
         if (t > TIMEOUT) finish("FAIL: no relic collected within " + TIMEOUT + "s");
@@ -138,6 +171,8 @@ function onUpdate(dt) {
     }
     if (cycles >= CYCLES) {
         const s = assets.stats();
+        if (hudText() !== "Relics: 1")
+            return finish("FAIL: HUD lost across scene cycles (got " + hudText() + ")");
         if (s.residentBytes > s.budgetBytes)
             return finish("FAIL: resident " + s.residentBytes + " over budget " + s.budgetBytes);
         if (residentAtStart >= 0 && s.residentBytes > residentAtStart)
@@ -146,7 +181,7 @@ function onUpdate(dt) {
         if (gpuAtStart >= 0 && s.gpuResidentBytes > gpuAtStart)
             return finish("FAIL: GPU resident memory grew across cycles (" +
                           gpuAtStart + " -> " + s.gpuResidentBytes + ")");
-        return finish("PASS (cycles=" + CYCLES + ", resident=" + s.residentBytes +
+        return finish("PASS (ui=ok, cycles=" + CYCLES + ", resident=" + s.residentBytes +
                       "/" + s.budgetBytes + ", gpu=" + s.gpuResidentBytes + ")");
     }
     cycles++;

@@ -522,14 +522,39 @@ logge `[BUILD] PASS/FAIL` et retourne le verdict en code de sortie.
 `tools/witness_editor_build.sh` construit WitnessGame par ce chemin et exige le
 E2E complet sur l'artefact produit.
 
+Le mode Play de l'éditeur est également automatisable avec `SaidaEngine
+--project <p> --play`. Il déclenche la même transition différée que le bouton
+Play; `tools/witness_editor_play.sh` l'utilise sur une copie vierge de
+WitnessGame et exige gameplay, HUD et restauration save+HUD au second lancement.
+
+Les recettes peuvent ajouter `--test-autoload NAME=script.js` sans réécrire le
+`.saidaproj` ni l'artefact. Cet autoload reste éphémère, limité à un nom simple,
+à un fichier `.js/.mjs` existant et à la racine canonique du projet. Le player
+Web reçoit le même argument via le paramètre URL `test-autoload`. Ainsi les
+harnais exécutent exactement les octets archivés, et non un package modifié
+après export.
+
+`tools/witness_release_candidate.ps1` est la recette P0.1 unique. Depuis un
+worktree propre, elle compile/vérifie natif et player Web, appelle le vrai Build
+éditeur pour Windows et Web, refuse les saves dans les packages, archive les
+sorties et produit `release-manifest.json` : SHA moteur, état dirty, SHA-256 et
+taille des archives, plus l'inventaire hashé de chaque fichier. Les scripts
+`verify_witness_windows.ps1` et `verify_witness_web.ps1` revérifient l'archive
+avant extraction. Le premier exécute gameplay/UI puis save/UI au redémarrage;
+le second contrôle COOP/COEP et MIME WASM, lance Chrome ou Edge et collecte un
+verdict automatique via le serveur local. Aucun checkout moteur, MSYS2 ou SDK
+n'est requis par la preuve Windows sur machine vierge.
+
 Le package Web embarque player, projet et shaders sous MEMFS. Les gros jeux
 nécessitent encore fetch/IDBFS streaming et compression/manifest de release.
 
 WitnessGame est le corpus vertical : scènes, scripts, signaux, physique,
 animation, audio, UI, save/load et changement de scène. Le harnais desktop
 injecte les actions via un autoload et exige `[E2E] PASS`. Le 2026-07-16,
-desktop export/runtime est PASS. Le package Web charge et rend le HUD RmlUi;
-son harnais atteint aussi `[E2E] PASS` sur 16 cycles.
+le Play éditeur et le desktop export/runtime sont PASS, redémarrage inclus. Le
+package Web charge et rend le HUD RmlUi; son harnais atteint aussi `[E2E] PASS`
+sur 16 cycles puis `RESTART PASS` après reload. Les trois parcours vérifient le
+texte du HUD avant/après collecte et après restauration de la sauvegarde.
 
 Le projet contient `hub.scene` (joueur CharacterBody, CameraFollow, savepoint,
 porte et totem `SeqStatue` piloté par un `SequenceDirector` qui joue
@@ -552,7 +577,8 @@ le viewport docké, timer `?smoke` pour onglet caché, pile WASM 4 MiB/QuickJS
 (événement + fin, desktop et Web), ré-import d'un même glTF dans une scène
 sans invalider rigs/clips des Animators déjà attachés, clic Build éditeur
 automatisé (`--build`) et progression restaurée après redémarrage (second
-process desktop sur `saves/`, reload navigateur sur IDBFS). À surveiller : halos de viewport non
+process éditeur/desktop sur `saves/`, reload navigateur sur IDBFS), ainsi que
+Play éditeur automatisé (`--play`). À surveiller : halos de viewport non
 reproduits et dispatch autoload encore dupliqué entre `Engine::mountWorld` et le
 player Web.
 
@@ -642,8 +668,10 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ./build/bin/saida_tool.exe describe-engine
 ./tools/witness_e2e.sh
+./tools/witness_editor_play.sh
 ./tools/witness_editor_build.sh
 ./tools/witness_web_stage.sh
+.\tools\witness_release_candidate.ps1
 ```
 
 `witness_e2e.sh` lance l'artefact deux fois : le second lancement doit

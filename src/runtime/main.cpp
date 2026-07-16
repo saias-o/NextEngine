@@ -14,11 +14,13 @@
 #include "core/PlatformCaps.hpp"
 #include "core/Time.hpp"
 #include "runtime/BootManifest.hpp"
+#include "runtime/TestAutoload.hpp"
 #include "scene/SceneSerializer.hpp"
 
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -42,9 +44,13 @@ fs::path executableDir() {
 } // namespace
 
 int main(int argc, char** argv) {
-    (void)argc;
-    (void)argv;
     try {
+        std::vector<std::string> testAutoloads;
+        for (int i = 1; i < argc; ++i) {
+            if (std::string(argv[i]) == "--test-autoload" && i + 1 < argc)
+                testAutoloads.emplace_back(argv[++i]);
+        }
+
         const fs::path root = executableDir();
 
         // Every asset/shader lookup now resolves under the exe directory.
@@ -67,6 +73,11 @@ int main(int argc, char** argv) {
         // Same standalone path as the XR preview: load project + scene, mount the
         // persistent World (autoloads), run unscaled (Play).
         saida::Engine engine(nullptr, projectAbs, false);
+        for (const std::string& spec : testAutoloads) {
+            std::string error;
+            if (!saida::runtime::applyTestAutoload(engine.project(), spec, error))
+                throw std::runtime_error(error);
+        }
         if (!saida::SceneSerializer::loadIntoScene(
                 engine.scene(), engine.resources(), sceneAbs))
             throw std::runtime_error("failed to load main scene: " + sceneAbs);

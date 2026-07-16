@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Stage web du jeu témoin via le VRAI BuildExporter (saida_tool export-game
-# --platform web, le même code que le bouton Build) + pilote E2E en autoload.
-# Servir ensuite : python web/serve.py build/witness-web  →  http://localhost:8081/?smoke
+# Stage web exact du jeu témoin via le VRAI BuildExporter (saida_tool
+# export-game --platform web, le même code que le bouton Build). Le pilote E2E
+# est passé au runtime par l'URL et ne modifie aucun fichier du package.
 set -e
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
@@ -17,12 +17,6 @@ rm -rf "$EXPORT" "$OUT"
 mv "$EXPORT/web" "$OUT"
 rm -rf "$EXPORT"
 
-# Pilote E2E en autoload (comme tools/witness_e2e.sh côté desktop).
-python - "$OUT/project/WitnessGame.saidaproj" <<'EOF'
-import json, sys
-p = json.load(open(sys.argv[1]))
-p.setdefault("autoloads", {})["E2EDriver"] = "scripts/e2e_driver.js"
-json.dump(p, open(sys.argv[1], "w"), indent=2)
-EOF
-
-echo "staged: $OUT (servir: python web/serve.py $OUT)"
+echo "staged: $OUT"
+echo "serve: python web/serve.py $OUT 8080"
+echo "test:  http://localhost:8080/?smoke&test-autoload=E2EDriver%3Dscripts%2Fe2e_driver.js"
