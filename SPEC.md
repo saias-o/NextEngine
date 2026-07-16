@@ -196,6 +196,10 @@ le chargement, un fallback est visible; un échec utilise un damier magenta.
 Les proxies mesh restent stables et la physique reconstruit le body quand le
 mesh devient disponible.
 
+Les enregistrements mémoire `registerMemoryRig`/`registerMemoryAnimation` sont
+idempotents : ré-importer le même glTF conserve les instances existantes, les
+Animators déjà attachés gardent donc des pointeurs valides.
+
 Au `changeScene`, `trimUnused` effectue un mark-and-sweep. La destruction GPU
 est différée quatre frames; index bindless et slots matériaux sont recyclés.
 `gpuResidentBytes` est exposé à `assets.stats()` et au profiler. Un E2E desktop
@@ -355,8 +359,17 @@ blackboard, clip views, timelines et séquences `.sseq`. Les propriétés de
 timeline utilisent la réflexion et interpolent float, int, vec3, vec4 et quat.
 
 Formats : `.sclip`, `.sgraph`, `.sretarget`, `.srig`, `.sseq`; le cache `.sanimc`
-est interne. WitnessGame traverse un personnage riggé avec Idle/Walk et un
-graphe locomotion. Il ne traverse pas encore une séquence `.sseq` complète.
+est interne. Le behaviour réfléchi `SequenceDirector` joue un `.sseq` au
+runtime : les cibles sont résolues par nom dans la scène du nœud porteur
+(piste d'animation vers l'Animator du nœud visé ou d'un descendant, piste de
+propriété `Nœud.propriete` vers une propriété réfléchie du nœud ou d'un de ses
+behaviours), la piste d'événements est relayée par le signal `sequenceEvent`
+puis `sequenceFinished` en fin de lecture. La liaison est fail-closed : une
+séquence invalide ou une cible toujours absente après le délai de résolution
+désactive la lecture avec diagnostics loggés, sans émettre aucun signal.
+WitnessGame traverse un personnage riggé avec Idle/Walk, un graphe locomotion
+et la séquence `anim/intro.sseq` (clips du totem, événement `intro_beat`,
+intensité du Sun) en desktop et Web.
 
 SIMD généralisé, pose sharing massif et GPU crowds sont différés jusqu'à des
 mesures qui les justifient.
@@ -510,9 +523,10 @@ injecte les actions via un autoload et exige `[E2E] PASS`. Le 2026-07-16,
 desktop export/runtime est PASS. Le package Web charge et rend le HUD RmlUi;
 son harnais atteint aussi `[E2E] PASS` sur 16 cycles.
 
-Le projet contient `hub.scene` (joueur CharacterBody, CameraFollow, savepoint et
-porte) et `arena.scene` (trois reliques Area/Rotator/particules, caisses
-RigidBody et porte retour). `GameState` possède l'état vivant et persiste
+Le projet contient `hub.scene` (joueur CharacterBody, CameraFollow, savepoint,
+porte et totem `SeqStatue` piloté par un `SequenceDirector` qui joue
+`anim/intro.sseq` en autoplay) et `arena.scene` (trois reliques
+Area/Rotator/particules, caisses RigidBody et porte retour). `GameState` possède l'état vivant et persiste
 `saves/witness.json`; pickups, HUD, savepoint et harnais l'appellent par
 `tree.autoload`/`NodeRef.call`, sans utiliser le fichier comme bus. Le totem
 glTF a trois os, clips Idle/Walk et graphe `anim/locomotion.sgraph`. Les sons
@@ -526,7 +540,9 @@ shaders export, `setText/getText`, animation/audio, injection
 headless, résolution scripts depuis la racine projet, inner body Character pour
 triggers, refresh des caches après `changeScene/queueFree`, gizmos colliders sur
 le viewport docké, timer `?smoke` pour onglet caché, pile WASM 4 MiB/QuickJS
-256 KiB, copie Windows et sandbox QuickJS. À surveiller : halos de viewport non
+256 KiB, copie Windows, sandbox QuickJS, traversée de séquence `.sseq`
+(événement + fin, desktop et Web) et ré-import d'un même glTF dans une scène
+sans invalider rigs/clips des Animators déjà attachés. À surveiller : halos de viewport non
 reproduits et dispatch autoload encore dupliqué entre `Engine::mountWorld` et le
 player Web.
 

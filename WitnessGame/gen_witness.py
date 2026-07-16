@@ -111,6 +111,16 @@ def player(prefix, pos):
                              "graph": "anim/locomotion.sgraph"}])
 
 
+def statue(prefix, pos):
+    """Totem de cinématique : cible de anim/intro.sseq (SequenceDirector)."""
+    body = node(f"{prefix}/statue/body", "Node", "Body", pos=(0, -0.9, 0))
+    body["importedFrom"] = "assets/models/totem.gltf"
+    return node(f"{prefix}/statue", "Node", "SeqStatue", pos=pos,
+                groups=["sequence"], children=[body],
+                behaviours=[{"type": "SequenceDirector", "enabled": True,
+                             "sequence": "anim/intro.sseq", "autoplay": True}])
+
+
 def camera(prefix):
     return node(f"{prefix}/camera", "Camera", "MainCamera", pos=(0, 4, 8),
                 groups=["camera"], fovDegrees=60.0, nearZ=0.1, farZ=300.0,
@@ -183,6 +193,7 @@ def hub():
     children += floor_and_walls(p)
     children += [
         player(p, (0, 1.5, 4)),
+        statue(p, (-6, 0.9, -2)),
         camera(p),
         door(p, "DoorToArena", (0, 1.1, -13.4), "scenes/arena.scene",
              (0.2, 0.7, 1.0, 1.0)),

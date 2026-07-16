@@ -769,13 +769,17 @@ const AnimGraphAsset* ResourceManager::getAnimGraph(AssetID id) const {
 
 AssetID ResourceManager::registerMemoryRig(const std::string& path, std::unique_ptr<Rig> rig) {
     AssetID id = registry_ ? registry_->registerAsset(path, AssetType::Rig) : reinterpret_cast<AssetID>(rig.get());
-    rigs_[id] = std::move(rig);
+    // Idempotent : ré-importer le même asset garde l'instance existante — les
+    // Animators déjà attachés en détiennent des pointeurs bruts, remplacer
+    // l'instance les laisserait pendre (use-after-free au premier update).
+    if (rigs_.find(id) == rigs_.end()) rigs_[id] = std::move(rig);
     return id;
 }
 
 AssetID ResourceManager::registerMemoryAnimation(const std::string& subPath, std::unique_ptr<AnimationClip> clip) {
     AssetID id = registry_ ? registry_->registerAsset(subPath, AssetType::Animation) : reinterpret_cast<AssetID>(clip.get());
-    animations_[id] = std::move(clip);
+    // Même règle d'idempotence que registerMemoryRig (bibliothèques de clips).
+    if (animations_.find(id) == animations_.end()) animations_[id] = std::move(clip);
     return id;
 }
 

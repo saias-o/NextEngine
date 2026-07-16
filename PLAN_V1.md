@@ -25,6 +25,10 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 - [x] Schémas, migrations et corpus de compatibilité de base.
 - [x] API JS cross-node : autoloads, groupes, résolution NodeId, signaux et
   appels JSON entre contextes, traversés par Witness desktop/Web.
+- [x] Séquences `.sseq` au runtime : `SequenceDirector` fail-closed (animation,
+  événements relayés en signaux, propriétés réfléchies), traversé par
+  WitnessGame desktop et Web; ré-import d'un même glTF idempotent (rigs/clips
+  des Animators jamais invalidés).
 
 ## P0.1 - Jeu témoin et chemin de livraison
 
@@ -32,7 +36,7 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
   player WebGPU.
 - [ ] Obtenir WitnessGame complet, UI incluse, avec le même gameplay et les
   mêmes saves en éditeur, desktop autonome et Web.
-- [ ] Ajouter et traverser une séquence `.sseq` dans WitnessGame.
+- [x] Ajouter et traverser une séquence `.sseq` dans WitnessGame.
 - [x] Remplacer le contournement storage par une vraie API JS
   autoload/cross-node/groupes/signaux.
 - [ ] Automatiser le clic Build de l'éditeur, pas seulement `saida_tool`.

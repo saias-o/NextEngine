@@ -1,18 +1,28 @@
 // Tests des séquences .sseq : roundtrip et validation du schéma, lecture
 // déterministe (seek), crossfade entre deux clips qui se chevauchent,
-// événements émis en lecture seulement, piste de propriété réfléchie.
+// événements émis en lecture seulement, piste de propriété réfléchie, et
+// SequenceDirectorBehaviour (résolution des cibles par nom dans la scène,
+// relais des signaux, fail-closed sur séquence invalide ou cible manquante).
 
+#include "core/Paths.hpp"
+#include "scene/LightNode.hpp"
+#include "scene/Node.hpp"
+#include "scene/ReflectedTypes.hpp"
 #include "scene/RotatorBehaviour.hpp"
 #include "scene/animation/AnimationClip.hpp"
 #include "scene/animation/AnimationSequence.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/Rig.hpp"
+#include "scene/animation/SequenceDirectorBehaviour.hpp"
 
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -161,11 +171,131 @@ void testDeterministicPlayback() {
     assert(near(rotator.speed, 6.0f, 1e-3f));
 }
 
+// Projet temporaire minimal pour SequenceDirectorBehaviour : la racine active
+// pointe sur un dossier contenant le .sseq écrit par le test.
+struct TempProject {
+    std::filesystem::path root;
+
+    explicit TempProject(const char* name) {
+        root = std::filesystem::temp_directory_path() / name;
+        std::filesystem::create_directories(root);
+        saida::setActiveProjectRoot(root.string());
+    }
+    ~TempProject() {
+        saida::setActiveProjectRoot("");
+        std::error_code ec;
+        std::filesystem::remove_all(root, ec);
+    }
+    void write(const char* file, const nlohmann::json& j) const {
+        std::ofstream out(root / file, std::ios::trunc);
+        out << j.dump(1) << "\n";
+    }
+};
+
+nlohmann::json directorSequenceJson(const char* animTarget) {
+    return {
+        {"schema", saida::kAnimationSequenceSchema},
+        {"name", "Intro"},
+        {"duration", 2.0f},
+        {"tracks", nlohmann::json::array({
+            {{"type", "animation"}, {"target", animTarget}, {"clips", nlohmann::json::array({
+                {{"start", 0.0f}, {"duration", 2.0f}, {"clip", "synthetic#walk"}}})}},
+            {{"type", "event"}, {"events", nlohmann::json::array({
+                {{"time", 0.75f}, {"name", "beat"}}})}},
+            {{"type", "property"}, {"target", "Sun.intensity"}, {"keys", nlohmann::json::array({
+                {{"time", 0.0f}, {"value", 3.0f}}, {{"time", 2.0f}, {"value", 1.0f}}})}}})}};
+}
+
+void testDirectorPlaysSceneSequence() {
+    TempProject project("saida_seq_director_test");
+    project.write("intro.sseq", directorSequenceJson("Hero"));
+
+    saida::Rig rig = makeRig();
+    auto walk = makeClip("walk", 0.0f, 2.0f);
+
+    saida::Node root("Root");
+    saida::Node* hero = root.addChild(std::make_unique<saida::Node>("Hero"));
+    auto* animator = hero->addBehaviour<saida::Animator>();
+    animator->setRig(&rig);
+    animator->addClip("walk", walk.get());
+
+    auto* sun = static_cast<saida::LightNode*>(
+        root.addChild(std::make_unique<saida::LightNode>()));
+    sun->setName("Sun");
+    sun->intensity = 3.0f;
+
+    saida::Node* stage = root.addChild(std::make_unique<saida::Node>("Stage"));
+    auto* director = stage->addBehaviour<saida::SequenceDirectorBehaviour>();
+    director->sequence = "intro.sseq";
+    director->autoplay = true;
+
+    std::vector<std::string> fired;
+    int finishedCount = 0;
+    saida::Connection onEvent = director->sequenceEvent.connect(
+        [&](std::string name) { fired.push_back(std::move(name)); });
+    saida::Connection onFinished =
+        director->sequenceFinished.connect([&]() { ++finishedCount; });
+
+    for (int i = 0; i < 4; ++i) director->onUpdate(0.5f);
+
+    assert(fired.size() == 1 && fired[0] == "beat");
+    assert(finishedCount == 1);
+    assert(near(sun->intensity, 1.0f, 1e-3f));  // rampe 3→1 sur la durée
+    animator->onUpdate(0.0f);
+    assert(near(animator->globalPose().globalMatrices[0][3].x, 2.0f, 1e-3f));
+
+    // La lecture terminée n'émet plus rien ; play() rejoue depuis le début.
+    director->onUpdate(0.5f);
+    assert(finishedCount == 1);
+    director->play();
+    for (int i = 0; i < 4; ++i) director->onUpdate(0.5f);
+    assert(fired.size() == 2 && finishedCount == 2);
+}
+
+void testDirectorFailsClosed() {
+    TempProject project("saida_seq_director_fail_test");
+    project.write("intro.sseq", directorSequenceJson("Ghost"));
+
+    saida::Rig rig = makeRig();
+    auto walk = makeClip("walk", 0.0f, 2.0f);
+
+    saida::Node root("Root");
+    saida::Node* hero = root.addChild(std::make_unique<saida::Node>("Hero"));
+    auto* animator = hero->addBehaviour<saida::Animator>();
+    animator->setRig(&rig);
+    animator->addClip("walk", walk.get());
+
+    auto* director = root.addBehaviour<saida::SequenceDirectorBehaviour>();
+    director->sequence = "intro.sseq";
+
+    std::vector<std::string> fired;
+    int finishedCount = 0;
+    saida::Connection onEvent = director->sequenceEvent.connect(
+        [&](std::string name) { fired.push_back(std::move(name)); });
+    saida::Connection onFinished =
+        director->sequenceFinished.connect([&]() { ++finishedCount; });
+
+    // Cible "Ghost" absente : réessaie pendant le délai puis échoue fermé,
+    // sans jamais émettre d'événement ni de fin.
+    for (int i = 0; i < 16; ++i) director->onUpdate(0.5f);
+    assert(fired.empty() && finishedCount == 0);
+
+    // Séquence introuvable : échec immédiat, silencieux côté signaux.
+    auto* missing = root.addBehaviour<saida::SequenceDirectorBehaviour>();
+    missing->sequence = "absent.sseq";
+    saida::Connection onMissing = missing->sequenceFinished.connect([&]() { ++finishedCount; });
+    for (int i = 0; i < 8; ++i) missing->onUpdate(0.5f);
+    assert(finishedCount == 0);
+}
+
 } // namespace
 
 int main() {
+    saida::registerReflectedTypes();
     testRoundtripAndValidation();
     testDeterministicPlayback();
+    testDirectorPlaysSceneSequence();
+    testDirectorFailsClosed();
     std::puts("saida_animation_sequence_tests: OK");
     return 0;
 }

@@ -136,6 +136,7 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/scene/animation/AnimGraphParser.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimStateMachine.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimationClip.cpp
+    ${SAIDA_ROOT}/src/scene/animation/AnimationSequence.cpp
     ${SAIDA_ROOT}/src/scene/animation/Animator.cpp
     ${SAIDA_ROOT}/src/scene/animation/BlendNode.cpp
     ${SAIDA_ROOT}/src/scene/animation/ClipNode.cpp
@@ -144,6 +145,7 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/scene/animation/Retarget.cpp
     ${SAIDA_ROOT}/src/scene/animation/RetargetProfile.cpp
     ${SAIDA_ROOT}/src/scene/animation/Rig.cpp
+    ${SAIDA_ROOT}/src/scene/animation/SequenceDirectorBehaviour.cpp
     ${SAIDA_ROOT}/src/tools/AutoLODBridge.cpp
     # --- rendu (mêmes sources que le viewer web) ---
     ${SAIDA_ROOT}/src/graphics/GeometryRegistry.cpp

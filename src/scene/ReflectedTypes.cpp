@@ -16,6 +16,7 @@
 #include "scene/RotatorBehaviour.hpp"
 #include "scene/SpawnerBehaviour.hpp"
 #include "scene/StateMachineBehaviour.hpp"
+#include "scene/animation/SequenceDirectorBehaviour.hpp"
 #include "physics/AreaNode.hpp"
 #include "scenario/ScenarioAnchor.hpp"
 #include "scenario/ScenarioDirector.hpp"
@@ -63,6 +64,7 @@ void registerReflectedTypes() {
     registerBehaviour<SpawnerBehaviour>();
     registerBehaviour<Blackboard>();
     registerBehaviour<StateMachineBehaviour>();
+    registerBehaviour<SequenceDirectorBehaviour>();
     registerBehaviour<ScenarioAnchor>();
     registerBehaviour<ScenarioDirector>();
     registerBehaviour<ScenarioRunnerBehaviour>();

@@ -3,6 +3,10 @@
 //
 // Phase 1 — gameplay : marche tout droit, traverse la porte du hub puis
 // Relic2 alignée dans l'arène ; validé dès qu'une relique est sauvegardée.
+// La cinématique hub (anim/intro.sseq via SequenceDirector, 1,5 s) doit avoir
+// été traversée : événement `intro_beat` reçu et `sequenceFinished` émis
+// avant la fin de la phase 1 — le binding est fail-closed côté moteur, donc
+// ces signaux prouvent que pistes animation/événement/propriété sont liées.
 // Phase 2 — chantier 3 : N cycles hub↔arena par tree.changeScene, puis
 // vérifie que la mémoire résidente de l'AssetLoader est stable (pas de
 // croissance entre le début et la fin des cycles) et sous le budget, et que
@@ -25,6 +29,9 @@ let gpuAtStart = -1;
 let gameState = null;
 let relicSignalArmed = false;
 let relicSignalSeen = false;
+let seqArmed = false;
+let seqEventSeen = false;
+let seqFinishedSeen = false;
 
 function finish(verdict) {
     finished = true;
@@ -67,16 +74,36 @@ function armRelicSignal() {
     return true;
 }
 
+function armSequenceSignals() {
+    if (seqArmed) return true;
+    const statue = tree.firstInGroup("sequence");
+    if (statue === null) return true;  // pas (encore) de directeur dans la scène
+    if (!statue.on("sequenceEvent", function (name) {
+        if (name === "intro_beat") seqEventSeen = true;
+    }) || !statue.on("sequenceFinished", function () {
+        seqFinishedSeen = true;
+    })) {
+        finish("FAIL: sequence signal subscription rejected");
+        return false;
+    }
+    seqArmed = true;
+    return true;
+}
+
 function onUpdate(dt) {
     if (finished) return;
     t += dt;
 
     if (phase === 1) {
         if (!armRelicSignal()) return;
+        if (!armSequenceSignals()) return;
         if (t > 1.0) input.inject("MoveForward", 1);
         if (relicsCollected() >= 1) {
             if (!relicSignalSeen)
                 return finish("FAIL: relic collected without cross-node signal");
+            if (!seqEventSeen || !seqFinishedSeen)
+                return finish("FAIL: intro sequence not traversed (event=" +
+                              seqEventSeen + ", finished=" + seqFinishedSeen + ")");
             input.inject("MoveForward", 0);
             phase = 2;
             console.log("[E2E] phase 1 ok — relic collected, starting scene cycles");

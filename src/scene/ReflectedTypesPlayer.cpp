@@ -30,6 +30,7 @@
 #include "scene/SpawnerBehaviour.hpp"
 #include "scene/StateMachineBehaviour.hpp"
 #include "scene/WaterNode.hpp"
+#include "scene/animation/SequenceDirectorBehaviour.hpp"
 #include "scripting/ScriptBehaviour.hpp"
 
 namespace saida {
@@ -64,6 +65,7 @@ void registerReflectedTypes() {
     registerBehaviour<SpawnerBehaviour>();
     registerBehaviour<Blackboard>();
     registerBehaviour<StateMachineBehaviour>();
+    registerBehaviour<SequenceDirectorBehaviour>();
     registerBehaviour<CharacterBehaviour>();
     registerBehaviour<CameraFollowBehaviour>();
     registerBehaviour<AudioSourceBehaviour>();

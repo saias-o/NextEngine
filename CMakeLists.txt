@@ -373,6 +373,7 @@ add_library(saida_engine STATIC
     src/scene/animation/AnimationProgram.cpp
     src/scene/animation/AnimationSequence.cpp
     src/scene/animation/CookedClip.cpp
+    src/scene/animation/SequenceDirectorBehaviour.cpp
     src/scene/animation/PlayableDirector.cpp
     src/scene/animation/Retarget.cpp
     src/ui/UIInteractionSystem.cpp
