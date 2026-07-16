@@ -888,7 +888,10 @@
       1,
       1
      ]
-    }
+    },
+    "groups": [
+     "relic"
+    ]
    },
    {
     "type": "Area",
@@ -1064,7 +1067,10 @@
       1,
       1
      ]
-    }
+    },
+    "groups": [
+     "relic"
+    ]
    },
    {
     "type": "Area",
@@ -1240,7 +1246,10 @@
       1,
       1
      ]
-    }
+    },
+    "groups": [
+     "relic"
+    ]
    },
    {
     "type": "RigidBody",

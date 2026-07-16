@@ -29,9 +29,10 @@ Scene* SceneTree::mountWorld(std::unique_ptr<Scene> startScene) {
     world_->setName("World");
     world_->setTree(this);
 
-    if (startScene) loadCurrentScene(std::move(startScene));
-
+    // Autoloads must become ready before level behaviours: gameplay scripts may
+    // resolve and call them from their first onReady callback.
     startAutoloads();
+    if (startScene) loadCurrentScene(std::move(startScene));
     return world_.get();
 }
 
@@ -303,6 +304,14 @@ Node* SceneTree::autoloadNode(const std::string& name) const {
 
 
 namespace {
+Node* findNodeById(Node& node, NodeId id) {
+    if (node.id() == id) return &node;
+    for (const auto& child : node.children()) {
+        if (Node* found = findNodeById(*child, id)) return found;
+    }
+    return nullptr;
+}
+
 void collectGroup(Node& n, const std::string& g, std::vector<Node*>& out) {
     if (n.isInGroup(g)) out.push_back(&n);
     for (const auto& c : n.children()) collectGroup(*c, g, out);
@@ -318,6 +327,10 @@ Node* firstInGroupRec(Node& n, const std::string& g) {
     return nullptr;
 }
 } // namespace
+
+Node* SceneTree::nodeById(NodeId id) const {
+    return world_ && id != kNodeInvalid ? findNodeById(*world_, id) : nullptr;
+}
 
 const std::vector<Node*>& SceneTree::group(const std::string& name) {
     groupBuffer_.clear();

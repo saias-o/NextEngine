@@ -28,6 +28,12 @@ struct ScriptProperty {
     bool exportedThisLoad = false;
 };
 
+enum class ScriptCallStatus {
+    Missing,
+    Succeeded,
+    Failed
+};
+
 class ScriptBehaviour : public Behaviour {
 public:
     ~ScriptBehaviour() override;
@@ -47,6 +53,13 @@ public:
     void setHotReloadEnabled(bool enabled) { hotReloadEnabled_ = enabled; }
     std::vector<ScriptProperty>& properties() { return properties_; }
     void applyProperty(const ScriptProperty& property) { applyPropertyToJs(property); }
+
+    // Invoke a JSON-compatible function exported by this script. This is the
+    // cross-context bridge used by NodeRef.call(); JS values never leak between
+    // QuickJS contexts.
+    ScriptCallStatus callExport(const std::string& name,
+                                const nlohmann::json& args,
+                                nlohmann::json& result);
 
     void onReady() override;
     void onUpdate(float dt) override;

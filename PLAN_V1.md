@@ -8,7 +8,7 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 ## Preuves acquises
 
 - [x] Build natif complet Windows UCRT64.
-- [x] Suite native : 51/51 tests le 2026-07-16.
+- [x] Suite native : 52/52 tests le 2026-07-16.
 - [x] Player Web Release et authoring WASM Release compilés.
 - [x] WitnessGame desktop : validation, export et runtime, `E2E PASS`.
 - [x] WitnessGame Web : package exécuté, HUD `UICanvasNode`/`UITextNode`
@@ -23,6 +23,8 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 - [x] AssetLoader async texture/OBJ et déchargement GPU sur changement de scène;
   mémoire GPU stable sur 16 cycles desktop/Web dans le harnais.
 - [x] Schémas, migrations et corpus de compatibilité de base.
+- [x] API JS cross-node : autoloads, groupes, résolution NodeId, signaux et
+  appels JSON entre contextes, traversés par Witness desktop/Web.
 
 ## P0.1 - Jeu témoin et chemin de livraison
 
@@ -31,7 +33,7 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 - [ ] Obtenir WitnessGame complet, UI incluse, avec le même gameplay et les
   mêmes saves en éditeur, desktop autonome et Web.
 - [ ] Ajouter et traverser une séquence `.sseq` dans WitnessGame.
-- [ ] Remplacer le contournement storage par une vraie API JS
+- [x] Remplacer le contournement storage par une vraie API JS
   autoload/cross-node/groupes/signaux.
 - [ ] Automatiser le clic Build de l'éditeur, pas seulement `saida_tool`.
 - [ ] Exécuter l'artefact Windows sur une machine vierge sans MSYS2, SDK ou
@@ -84,7 +86,7 @@ desktop et Web; l'absence XR éventuelle est un fallback déclaré.
 
 ## P0.4 - API gameplay et stockage
 
-- [ ] Exposer en JS l'accès aux autoloads, nœuds/groupes et signaux cross-node.
+- [x] Exposer en JS l'accès aux autoloads, nœuds/groupes et signaux cross-node.
 - [ ] Ajouter les queries/contraintes physiques indispensables et leur parité JS.
 - [ ] Compléter les bindings animation, graph, sequence et blackboard.
 - [x] Émettre un warning quand un module JS ne fournit aucun hook reconnu.

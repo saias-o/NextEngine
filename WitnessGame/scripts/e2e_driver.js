@@ -22,6 +22,9 @@ let cycles = 0;
 let sinceSwap = 0;
 let residentAtStart = -1;
 let gpuAtStart = -1;
+let gameState = null;
+let relicSignalArmed = false;
+let relicSignalSeen = false;
 
 function finish(verdict) {
     finished = true;
@@ -31,14 +34,37 @@ function finish(verdict) {
 }
 
 function onReady() {
-    storage.remove("witness");
+    gameState = tree.autoload("GameState");
+    if (gameState === null) return finish("FAIL: GameState autoload missing");
+    gameState.call("reset");
     console.log("[E2E] driver armed");
 }
 
 function relicsCollected() {
-    const raw = storage.load("witness");
-    if (raw === null) return 0;
-    try { return Number(JSON.parse(raw).relics) || 0; } catch (_) { return 0; }
+    return Number(gameState.call("getRelics")) || 0;
+}
+
+function armRelicSignal() {
+    if (relicSignalArmed) return true;
+    const relic = tree.firstInGroup("relic");
+    if (relic === null) return true;
+    const relics = tree.nodesInGroup("relic");
+    const sameRelic = tree.nodeById(relic.id);
+    if (relics.length !== 3 || sameRelic === null ||
+        sameRelic.getName() !== relic.getName()) {
+        finish("FAIL: cross-node group/id lookup mismatch");
+        return false;
+    }
+    for (const candidate of relics) {
+        if (!candidate.on("bodyEntered", function (who) {
+            if (who === "Player") relicSignalSeen = true;
+        })) {
+            finish("FAIL: cross-node signal subscription rejected");
+            return false;
+        }
+    }
+    relicSignalArmed = true;
+    return true;
 }
 
 function onUpdate(dt) {
@@ -46,8 +72,11 @@ function onUpdate(dt) {
     t += dt;
 
     if (phase === 1) {
+        if (!armRelicSignal()) return;
         if (t > 1.0) input.inject("MoveForward", 1);
         if (relicsCollected() >= 1) {
+            if (!relicSignalSeen)
+                return finish("FAIL: relic collected without cross-node signal");
             input.inject("MoveForward", 0);
             phase = 2;
             console.log("[E2E] phase 1 ok — relic collected, starting scene cycles");

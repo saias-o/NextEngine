@@ -2,6 +2,7 @@
 
 #include "core/Signal.hpp"
 
+#include <nlohmann/json_fwd.hpp>
 #include <quickjs.h>
 
 #include <string>
@@ -39,6 +40,10 @@ public:
     bool callGlobal(const char* functionName, double arg);
     bool callModuleExport(const char* functionName);
     bool callModuleExport(const char* functionName, double arg);
+    bool callGlobalJson(const char* functionName, const nlohmann::json& args,
+                        nlohmann::json& result);
+    bool callModuleExportJson(const char* functionName, const nlohmann::json& args,
+                              nlohmann::json& result);
     JsFunctionStatus globalFunctionStatus(const char* functionName) const;
     JsFunctionStatus moduleExportFunctionStatus(const char* functionName) const;
 
@@ -69,6 +74,9 @@ private:
     void clearSignalSubscriptions();
     bool callGlobalImpl(const char* functionName, int argc, JSValue* argv);
     bool callModuleExportImpl(const char* functionName, int argc, JSValue* argv);
+    bool callJsonImpl(JSValueConst owner, const char* functionName,
+                      const nlohmann::json& args, nlohmann::json& result,
+                      const char* diagnosticKind);
 
     struct SignalSubscription {
         Connection connection;

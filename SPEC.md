@@ -330,15 +330,19 @@ pas retenu afin d'éviter runtime, marshalling et second écosystème de binding
 - `time` : `delta`, `elapsed`, `wait`, `every`, `tween`, `cancel`.
 - `input` : actions, forces, axes, vecteurs, souris et injection de test.
 - `audio` : `play(alias)`.
-- `tree` : changement/reload de scène, quit et pause.
+- `tree` : changement/reload de scène, quit, pause, `autoload`, `firstInGroup`,
+  `nodesInGroup` et `nodeById`.
+- `NodeRef` : référence faible résolue par NodeId, opérations nœud usuelles,
+  signaux `on/emit` cross-node et `call(exportName, ...args)` JSON-compatible
+  vers un `ScriptBehaviour` dans un autre contexte QuickJS.
 - `assets` : `load(path, priority)` et `stats()`; jamais de promesse de
   chargement bloquant.
 - `storage` : slots opaques décrits plus haut.
 
-Il manque encore l'accès propre aux autoloads et autres nœuds, les requêtes de
-groupe, les signaux cross-node, davantage de physique/gameplay et les bindings
-complets animation/séquences. Le contournement par fichier de sauvegarde pour
-communiquer entre nœuds n'est pas un contrat acceptable.
+Il manque encore davantage de physique/gameplay et les bindings complets
+animation/séquences/blackboard. Les références cross-node deviennent invalides
+explicitement lorsque leur NodeId disparaît; aucun pointeur JS ne survit à la
+destruction d'une scène.
 
 Une API stable supprimée doit vivre au moins une version en dépréciation avec
 warning avant retrait.
@@ -508,14 +512,17 @@ son harnais atteint aussi `[E2E] PASS` sur 16 cycles.
 
 Le projet contient `hub.scene` (joueur CharacterBody, CameraFollow, savepoint et
 porte) et `arena.scene` (trois reliques Area/Rotator/particules, caisses
-RigidBody et porte retour). `GameState` persiste `saves/witness.json`. Le totem
+RigidBody et porte retour). `GameState` possède l'état vivant et persiste
+`saves/witness.json`; pickups, HUD, savepoint et harnais l'appellent par
+`tree.autoload`/`NodeRef.call`, sans utiliser le fichier comme bus. Le totem
 glTF a trois os, clips Idle/Walk et graphe `anim/locomotion.sgraph`. Les sons
 `pickup.ogg` et `save.ogg` sont des aliases projet. Les scènes se régénèrent par
 `gen_witness.py`, le personnage par `gen_character.py`; modifier les générateurs,
 pas leurs sorties.
 
 Régressions désormais couvertes : signaux Area réfléchis, storage JS, autoloads
-scripts, chemin shaders export, `setText/getText`, animation/audio, injection
+scripts, appels JSON inter-contextes, groupes/NodeId/signaux cross-node, chemin
+shaders export, `setText/getText`, animation/audio, injection
 headless, résolution scripts depuis la racine projet, inner body Character pour
 triggers, refresh des caches après `changeScene/queueFree`, gizmos colliders sur
 le viewport docké, timer `?smoke` pour onglet caché, pile WASM 4 MiB/QuickJS
@@ -580,7 +587,7 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
 - Un runtime/canvas Emscripten par page; build non modularisé.
 - Registres natif/headless/Web divergents; UI/physique hors de certains folds.
 - Nœuds adressés par noms mutables, pas NodeId stable.
-- API JS cross-node/autoload et plusieurs services gameplay incomplets.
+- Bindings physique, animation, séquences et blackboard encore incomplets.
 - Sauvegardes encore locales au projet et sans migrations/metadata/quota.
 - Asset LRU en cours de scène, streaming Web et sweep rigs/anims absents.
 - Point-light shadows cubemap et lightmaps persistantes absentes.

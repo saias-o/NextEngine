@@ -142,7 +142,8 @@ def hud(prefix, label):
 
 def relic(prefix, index, pos):
     name = f"Relic{index}"
-    return node(f"{prefix}/{name}", "Area", name, pos=pos, children=[
+    return node(f"{prefix}/{name}", "Area", name, pos=pos,
+                groups=["relic"], children=[
         box_shape(f"{prefix}/{name}/shape", (0.6, 0.6, 0.6)),
         cube(f"{prefix}/{name}/mesh", name + "Mesh", (0, 0, 0), (0.7, 0.7, 0.7),
              (0.95, 0.8, 0.2, 1.0), emissive=(1.0, 0.85, 0.2, 3.0)),

@@ -707,6 +707,12 @@ if (BUILD_TESTING)
     target_compile_options(saida_js_signal_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_js_signal_tests COMMAND $<TARGET_FILE:saida_js_signal_tests>)
 
+    add_executable(saida_js_cross_context_tests tests/JsCrossContextTests.cpp)
+    saida_test_target(saida_js_cross_context_tests)
+    target_link_libraries(saida_js_cross_context_tests PRIVATE saida_engine)
+    target_compile_options(saida_js_cross_context_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_js_cross_context_tests COMMAND $<TARGET_FILE:saida_js_cross_context_tests>)
+
     add_executable(saida_js_timer_tests tests/JsTimerBindingTests.cpp)
     saida_test_target(saida_js_timer_tests)
     target_link_libraries(saida_js_timer_tests PRIVATE saida_engine)

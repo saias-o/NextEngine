@@ -222,6 +222,25 @@ bool ScriptBehaviour::reload() {
     return ok;
 }
 
+ScriptCallStatus ScriptBehaviour::callExport(const std::string& name,
+                                             const nlohmann::json& args,
+                                             nlohmann::json& result) {
+    if (name.empty()) return ScriptCallStatus::Missing;
+    if ((!loaded_ || !context_) && !reloadContext(false))
+        return ScriptCallStatus::Failed;
+
+    const JsFunctionStatus status = moduleMode_
+        ? context_->moduleExportFunctionStatus(name.c_str())
+        : context_->globalFunctionStatus(name.c_str());
+    if (status == JsFunctionStatus::Missing) return ScriptCallStatus::Missing;
+    if (status != JsFunctionStatus::Callable) return ScriptCallStatus::Failed;
+
+    const bool ok = moduleMode_
+        ? context_->callModuleExportJson(name.c_str(), args, result)
+        : context_->callGlobalJson(name.c_str(), args, result);
+    return ok ? ScriptCallStatus::Succeeded : ScriptCallStatus::Failed;
+}
+
 bool ScriptBehaviour::reloadContext(bool lifecycleReload) {
     auto previousContext = std::move(context_);
     bool previousLoaded = loaded_;

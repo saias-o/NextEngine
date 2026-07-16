@@ -13,6 +13,7 @@
 #include "scene/SceneTree.hpp"
 #include "scene/UITextNode.hpp"
 #include "scripting/JsContext.hpp"
+#include "scripting/ScriptBehaviour.hpp"
 #include "scripting/JsTimerBindings.hpp"
 
 #include <quickjs.h>
@@ -34,6 +35,7 @@ namespace {
 
 JSClassID gAssetHandleClassId = 0;
 SceneTree* treeFromJs(JSContext* ctx);
+JSValue makeNodeRef(JSContext* ctx, Node* target);
 
 AssetHandle* assetHandleFromJs(JSContext* ctx, JSValueConst value) {
     return static_cast<AssetHandle*>(JS_GetOpaque2(ctx, value, gAssetHandleClassId));
@@ -559,6 +561,52 @@ JSValue jsTreePaused(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     return JS_NewBool(ctx, tree && tree->paused());
 }
 
+JSValue jsTreeAutoload(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    SceneTree* tree = treeFromJs(ctx);
+    if (!tree) return JS_ThrowInternalError(ctx, "tree.autoload requires a mounted SceneTree");
+    if (argc < 1) return JS_ThrowTypeError(ctx, "tree.autoload(name)");
+    const char* raw = JS_ToCString(ctx, argv[0]);
+    if (!raw) return JS_EXCEPTION;
+    Node* target = tree->autoloadNode(raw);
+    JS_FreeCString(ctx, raw);
+    return target ? makeNodeRef(ctx, target) : JS_NULL;
+}
+
+JSValue jsTreeFirstInGroup(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    SceneTree* tree = treeFromJs(ctx);
+    if (!tree) return JS_ThrowInternalError(ctx, "tree.firstInGroup requires a mounted SceneTree");
+    if (argc < 1) return JS_ThrowTypeError(ctx, "tree.firstInGroup(name)");
+    const char* raw = JS_ToCString(ctx, argv[0]);
+    if (!raw) return JS_EXCEPTION;
+    Node* target = tree->firstInGroup(raw);
+    JS_FreeCString(ctx, raw);
+    return target ? makeNodeRef(ctx, target) : JS_NULL;
+}
+
+JSValue jsTreeNodesInGroup(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    SceneTree* tree = treeFromJs(ctx);
+    if (!tree) return JS_ThrowInternalError(ctx, "tree.nodesInGroup requires a mounted SceneTree");
+    if (argc < 1) return JS_ThrowTypeError(ctx, "tree.nodesInGroup(name)");
+    const char* raw = JS_ToCString(ctx, argv[0]);
+    if (!raw) return JS_EXCEPTION;
+    const std::vector<Node*>& nodes = tree->group(raw);
+    JS_FreeCString(ctx, raw);
+    JSValue result = JS_NewArray(ctx);
+    for (uint32_t i = 0; i < nodes.size(); ++i)
+        JS_SetPropertyUint32(ctx, result, i, makeNodeRef(ctx, nodes[i]));
+    return result;
+}
+
+JSValue jsTreeNodeById(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    SceneTree* tree = treeFromJs(ctx);
+    if (!tree) return JS_ThrowInternalError(ctx, "tree.nodeById requires a mounted SceneTree");
+    if (argc < 1) return JS_ThrowTypeError(ctx, "tree.nodeById(id)");
+    uint64_t id = 0;
+    if (JS_ToBigUint64(ctx, &id, argv[0]) != 0) return JS_EXCEPTION;
+    Node* target = tree->nodeById(id);
+    return target ? makeNodeRef(ctx, target) : JS_NULL;
+}
+
 struct SignalHit { void* obj = nullptr; const reflect::SignalDesc* desc = nullptr; };
 
 SignalHit findSignalOnNode(Node* node, const std::string& name) {
@@ -573,27 +621,67 @@ SignalHit findSignalOnNode(Node* node, const std::string& name) {
 }
 
 JSValue jsonToJs(JSContext* ctx, const nlohmann::json& v) {
+    if (v.is_null()) return JS_NULL;
     if (v.is_boolean()) return JS_NewBool(ctx, v.get<bool>());
     if (v.is_number_integer()) return JS_NewInt64(ctx, v.get<int64_t>());
+    if (v.is_number_unsigned()) return JS_NewFloat64(ctx, static_cast<double>(v.get<uint64_t>()));
     if (v.is_number()) return JS_NewFloat64(ctx, v.get<double>());
     if (v.is_string()) return JS_NewString(ctx, v.get<std::string>().c_str());
-    return JS_NULL;
+    if (v.is_array()) {
+        JSValue array = JS_NewArray(ctx);
+        uint32_t index = 0;
+        for (const auto& item : v)
+            JS_SetPropertyUint32(ctx, array, index++, jsonToJs(ctx, item));
+        return array;
+    }
+    JSValue object = JS_NewObject(ctx);
+    for (auto it = v.begin(); it != v.end(); ++it)
+        JS_SetPropertyStr(ctx, object, it.key().c_str(), jsonToJs(ctx, it.value()));
+    return object;
 }
 
-nlohmann::json jsToJson(JSContext* ctx, JSValueConst v) {
-    if (JS_IsBool(v)) return JS_ToBool(ctx, v) != 0;
-    if (JS_IsNumber(v)) { double d = 0.0; JS_ToFloat64(ctx, &d, v); return d; }
+bool jsToJson(JSContext* ctx, JSValueConst v, nlohmann::json& out) {
+    if (JS_IsUndefined(v) || JS_IsNull(v)) {
+        out = nullptr;
+        return true;
+    }
+    if (JS_IsBool(v)) {
+        out = JS_ToBool(ctx, v) != 0;
+        return true;
+    }
+    if (JS_IsNumber(v)) {
+        double d = 0.0;
+        if (JS_ToFloat64(ctx, &d, v) != 0) return false;
+        out = d;
+        return true;
+    }
     if (JS_IsString(v)) {
         const char* s = JS_ToCString(ctx, v);
-        nlohmann::json j = s ? std::string(s) : std::string();
+        if (!s) return false;
+        out = std::string(s);
         JS_FreeCString(ctx, s);
-        return j;
+        return true;
     }
-    return nullptr;
+
+    JSValue encoded = JS_JSONStringify(ctx, v, JS_UNDEFINED, JS_UNDEFINED);
+    if (JS_IsException(encoded)) {
+        JS_FreeValue(ctx, encoded);
+        JSValue exception = JS_GetException(ctx);
+        JS_FreeValue(ctx, exception);
+        return false;
+    }
+    const char* text = JS_ToCString(ctx, encoded);
+    if (!text) {
+        JS_FreeValue(ctx, encoded);
+        return false;
+    }
+    out = nlohmann::json::parse(text, nullptr, false);
+    JS_FreeCString(ctx, text);
+    JS_FreeValue(ctx, encoded);
+    return !out.is_discarded();
 }
 
-JSValue jsNodeOn(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    Node* node = nodeFromJs(ctx);
+JSValue subscribeNodeSignal(JSContext* ctx, Node* node, int argc, JSValueConst* argv) {
     JsContext* self = JsContext::fromRaw(ctx);
     if (!node || !self || argc < 2 || !JS_IsFunction(ctx, argv[1])) return JS_NewBool(ctx, false);
 
@@ -631,8 +719,7 @@ JSValue jsNodeOn(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     return JS_NewBool(ctx, true);
 }
 
-JSValue jsNodeEmit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    Node* node = nodeFromJs(ctx);
+JSValue emitNodeSignal(JSContext* ctx, Node* node, int argc, JSValueConst* argv) {
     if (!node || argc < 1) return JS_NewBool(ctx, false);
 
     const char* name = JS_ToCString(ctx, argv[0]);
@@ -647,9 +734,195 @@ JSValue jsNodeEmit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     }
 
     nlohmann::json arr = nlohmann::json::array();
-    for (int i = 1; i < argc; ++i) arr.push_back(jsToJson(ctx, argv[i]));
+    for (int i = 1; i < argc; ++i) {
+        nlohmann::json value;
+        if (!jsToJson(ctx, argv[i], value))
+            return JS_ThrowTypeError(ctx, "signal arguments must be JSON-compatible");
+        arr.push_back(std::move(value));
+    }
     hit.desc->emit(hit.obj, arr);
     return JS_NewBool(ctx, true);
+}
+
+JSValue jsNodeOn(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return subscribeNodeSignal(ctx, nodeFromJs(ctx), argc, argv);
+}
+
+JSValue jsNodeEmit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return emitNodeSignal(ctx, nodeFromJs(ctx), argc, argv);
+}
+
+Node* nodeRefTarget(JSContext* ctx, JSValueConst* data) {
+    SceneTree* tree = treeFromJs(ctx);
+    if (!tree) return nullptr;
+    uint64_t id = 0;
+    if (JS_ToBigUint64(ctx, &id, data[0]) != 0) return nullptr;
+    return tree->nodeById(id);
+}
+
+enum NodeRefMethod {
+    NodeRefValid,
+    NodeRefGetName,
+    NodeRefSetName,
+    NodeRefGetPosition,
+    NodeRefSetPosition,
+    NodeRefTranslate,
+    NodeRefSetEnabled,
+    NodeRefQueueFree,
+    NodeRefSetText,
+    NodeRefGetText,
+    NodeRefAddToGroup,
+    NodeRefRemoveFromGroup,
+    NodeRefIsInGroup,
+};
+
+JSValue jsNodeRefMethod(JSContext* ctx, JSValueConst, int argc,
+                        JSValueConst* argv, int magic, JSValueConst* data) {
+    Node* target = nodeRefTarget(ctx, data);
+    if (magic == NodeRefValid) return JS_NewBool(ctx, target != nullptr);
+    if (!target) return JS_ThrowReferenceError(ctx, "NodeRef target no longer exists");
+
+    switch (magic) {
+    case NodeRefGetName:
+        return JS_NewString(ctx, target->name().c_str());
+    case NodeRefSetName: {
+        if (argc < 1) return JS_ThrowTypeError(ctx, "NodeRef.setName(name)");
+        const char* value = JS_ToCString(ctx, argv[0]);
+        if (!value) return JS_EXCEPTION;
+        target->setName(value);
+        JS_FreeCString(ctx, value);
+        return JS_NewBool(ctx, true);
+    }
+    case NodeRefGetPosition:
+        return makeVec3(ctx, target->transform().position);
+    case NodeRefSetPosition:
+    case NodeRefTranslate: {
+        glm::vec3 value(0.0f);
+        if (!readVec3Args(ctx, argc, argv, value))
+            return JS_ThrowTypeError(ctx, "expected ({x,y,z}) or (x,y,z)");
+        if (magic == NodeRefSetPosition) target->transform().position = value;
+        else target->transform().position += value;
+        return JS_NewBool(ctx, true);
+    }
+    case NodeRefSetEnabled: {
+        if (argc < 1) return JS_ThrowTypeError(ctx, "NodeRef.setEnabled(enabled)");
+        const int enabled = JS_ToBool(ctx, argv[0]);
+        if (enabled < 0) return JS_EXCEPTION;
+        target->setEnabled(enabled != 0);
+        return JS_NewBool(ctx, true);
+    }
+    case NodeRefQueueFree:
+        target->queueFree();
+        return JS_UNDEFINED;
+    case NodeRefSetText: {
+        auto* text = dynamic_cast<UITextNode*>(target);
+        if (!text) return JS_ThrowTypeError(ctx, "NodeRef target is not a UITextNode");
+        if (argc < 1) return JS_ThrowTypeError(ctx, "NodeRef.setText(text)");
+        const char* value = JS_ToCString(ctx, argv[0]);
+        if (!value) return JS_EXCEPTION;
+        text->setText(value);
+        JS_FreeCString(ctx, value);
+        return JS_UNDEFINED;
+    }
+    case NodeRefGetText: {
+        auto* text = dynamic_cast<UITextNode*>(target);
+        if (!text) return JS_ThrowTypeError(ctx, "NodeRef target is not a UITextNode");
+        return JS_NewString(ctx, text->text().c_str());
+    }
+    case NodeRefAddToGroup:
+    case NodeRefRemoveFromGroup:
+    case NodeRefIsInGroup: {
+        if (argc < 1) return JS_ThrowTypeError(ctx, "NodeRef group method requires a name");
+        const char* group = JS_ToCString(ctx, argv[0]);
+        if (!group) return JS_EXCEPTION;
+        bool result = true;
+        if (magic == NodeRefAddToGroup) target->addToGroup(group);
+        else if (magic == NodeRefRemoveFromGroup) target->removeFromGroup(group);
+        else result = target->isInGroup(group);
+        JS_FreeCString(ctx, group);
+        return JS_NewBool(ctx, result);
+    }
+    default:
+        return JS_ThrowInternalError(ctx, "unknown NodeRef method");
+    }
+}
+
+JSValue jsNodeRefOn(JSContext* ctx, JSValueConst, int argc,
+                    JSValueConst* argv, int, JSValueConst* data) {
+    Node* target = nodeRefTarget(ctx, data);
+    if (!target) return JS_ThrowReferenceError(ctx, "NodeRef target no longer exists");
+    return subscribeNodeSignal(ctx, target, argc, argv);
+}
+
+JSValue jsNodeRefEmit(JSContext* ctx, JSValueConst, int argc,
+                      JSValueConst* argv, int, JSValueConst* data) {
+    Node* target = nodeRefTarget(ctx, data);
+    if (!target) return JS_ThrowReferenceError(ctx, "NodeRef target no longer exists");
+    return emitNodeSignal(ctx, target, argc, argv);
+}
+
+JSValue jsNodeRefCall(JSContext* ctx, JSValueConst, int argc,
+                      JSValueConst* argv, int, JSValueConst* data) {
+    Node* target = nodeRefTarget(ctx, data);
+    if (!target) return JS_ThrowReferenceError(ctx, "NodeRef target no longer exists");
+    if (argc < 1) return JS_ThrowTypeError(ctx, "NodeRef.call(exportName, ...args)");
+
+    const char* rawName = JS_ToCString(ctx, argv[0]);
+    if (!rawName) return JS_EXCEPTION;
+    const std::string exportName(rawName);
+    JS_FreeCString(ctx, rawName);
+
+    nlohmann::json args = nlohmann::json::array();
+    for (int i = 1; i < argc; ++i) {
+        nlohmann::json value;
+        if (!jsToJson(ctx, argv[i], value))
+            return JS_ThrowTypeError(ctx, "NodeRef.call arguments must be JSON-compatible");
+        args.push_back(std::move(value));
+    }
+
+    for (const auto& behaviour : target->behaviours()) {
+        auto* script = dynamic_cast<ScriptBehaviour*>(behaviour.get());
+        if (!script) continue;
+        nlohmann::json result;
+        const ScriptCallStatus status = script->callExport(exportName, args, result);
+        if (status == ScriptCallStatus::Succeeded) return jsonToJs(ctx, result);
+        if (status == ScriptCallStatus::Failed)
+            return JS_ThrowInternalError(ctx, "NodeRef.call('%s') failed", exportName.c_str());
+    }
+    return JS_ThrowTypeError(ctx, "NodeRef target has no callable export '%s'",
+                             exportName.c_str());
+}
+
+void setNodeRefMethod(JSContext* ctx, JSValue object, NodeId id,
+                      const char* name, JSCFunctionData* fn, int length,
+                      int magic = 0) {
+    JSValue data = JS_NewBigUint64(ctx, id);
+    JSValue method = JS_NewCFunctionData(ctx, fn, length, magic, 1, &data);
+    JS_FreeValue(ctx, data);
+    JS_SetPropertyStr(ctx, object, name, method);
+}
+
+JSValue makeNodeRef(JSContext* ctx, Node* target) {
+    if (!target) return JS_NULL;
+    JSValue object = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, object, "id", JS_NewBigUint64(ctx, target->id()));
+    setNodeRefMethod(ctx, object, target->id(), "valid", jsNodeRefMethod, 0, NodeRefValid);
+    setNodeRefMethod(ctx, object, target->id(), "getName", jsNodeRefMethod, 0, NodeRefGetName);
+    setNodeRefMethod(ctx, object, target->id(), "setName", jsNodeRefMethod, 1, NodeRefSetName);
+    setNodeRefMethod(ctx, object, target->id(), "getPosition", jsNodeRefMethod, 0, NodeRefGetPosition);
+    setNodeRefMethod(ctx, object, target->id(), "setPosition", jsNodeRefMethod, 3, NodeRefSetPosition);
+    setNodeRefMethod(ctx, object, target->id(), "translate", jsNodeRefMethod, 3, NodeRefTranslate);
+    setNodeRefMethod(ctx, object, target->id(), "setEnabled", jsNodeRefMethod, 1, NodeRefSetEnabled);
+    setNodeRefMethod(ctx, object, target->id(), "queueFree", jsNodeRefMethod, 0, NodeRefQueueFree);
+    setNodeRefMethod(ctx, object, target->id(), "setText", jsNodeRefMethod, 1, NodeRefSetText);
+    setNodeRefMethod(ctx, object, target->id(), "getText", jsNodeRefMethod, 0, NodeRefGetText);
+    setNodeRefMethod(ctx, object, target->id(), "addToGroup", jsNodeRefMethod, 1, NodeRefAddToGroup);
+    setNodeRefMethod(ctx, object, target->id(), "removeFromGroup", jsNodeRefMethod, 1, NodeRefRemoveFromGroup);
+    setNodeRefMethod(ctx, object, target->id(), "isInGroup", jsNodeRefMethod, 1, NodeRefIsInGroup);
+    setNodeRefMethod(ctx, object, target->id(), "on", jsNodeRefOn, 2);
+    setNodeRefMethod(ctx, object, target->id(), "emit", jsNodeRefEmit, 1);
+    setNodeRefMethod(ctx, object, target->id(), "call", jsNodeRefCall, 1);
+    return object;
 }
 
 } // namespace
@@ -702,6 +975,10 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JS_SetPropertyStr(ctx, tree, "quit", JS_NewCFunction(ctx, jsTreeQuit, "quit", 0));
     JS_SetPropertyStr(ctx, tree, "setPaused", JS_NewCFunction(ctx, jsTreeSetPaused, "setPaused", 1));
     JS_SetPropertyStr(ctx, tree, "paused", JS_NewCFunction(ctx, jsTreePaused, "paused", 0));
+    JS_SetPropertyStr(ctx, tree, "autoload", JS_NewCFunction(ctx, jsTreeAutoload, "autoload", 1));
+    JS_SetPropertyStr(ctx, tree, "firstInGroup", JS_NewCFunction(ctx, jsTreeFirstInGroup, "firstInGroup", 1));
+    JS_SetPropertyStr(ctx, tree, "nodesInGroup", JS_NewCFunction(ctx, jsTreeNodesInGroup, "nodesInGroup", 1));
+    JS_SetPropertyStr(ctx, tree, "nodeById", JS_NewCFunction(ctx, jsTreeNodeById, "nodeById", 1));
     JS_SetPropertyStr(ctx, global, "tree", tree);
 
     JSValue assets = JS_NewObject(ctx);

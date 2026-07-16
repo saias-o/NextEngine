@@ -81,6 +81,7 @@ public:
         return nullptr;
     }
     Node* autoloadNode(const std::string& name) const;
+    Node* nodeById(NodeId id) const;
 
     const std::vector<Node*>& group(const std::string& name);
     Node* firstInGroup(const std::string& name);

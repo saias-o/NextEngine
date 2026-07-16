@@ -109,11 +109,15 @@
       }],
       print: function(text) {
         window.__saidaLog.push(text);
+        if (text.indexOf('[E2E]') >= 0)
+          document.documentElement.dataset.saidaE2e = text;
         console.log(text);
         statusEl.textContent = text;
       },
       printErr: function(text) {
         window.__saidaLog.push(text);
+        if (text.indexOf('[E2E]') >= 0)
+          document.documentElement.dataset.saidaE2e = text;
         console.error(text);
         statusEl.textContent = text;
       },

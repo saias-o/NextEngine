@@ -1,21 +1,19 @@
-// HUD : attaché au UITextNode "ScoreText". Rafraîchit le compteur de reliques
-// depuis storage (pas encore de comms inter-nœuds en JS — friction n°6).
+// HUD attaché à ScoreText. Il lit l'autoload GameState dans un autre contexte
+// QuickJS; seul l'autoload connaît le stockage durable.
 
-const SLOT = "witness";
 let last = null;
+let gameState = null;
 
 function refresh() {
-    const raw = storage.load(SLOT);
-    if (raw === last) return;
-    last = raw;
-    let relics = 0;
-    if (raw !== null) {
-        try { relics = Number(JSON.parse(raw).relics) || 0; } catch (_) {}
-    }
+    const relics = Number(gameState.call("getRelics")) || 0;
+    if (relics === last) return;
+    last = relics;
     node.setText("Relics: " + relics);
 }
 
 function onReady() {
+    gameState = tree.autoload("GameState");
+    if (gameState === null) throw new Error("GameState autoload is missing");
     refresh();
     time.every(0.25, refresh);
 }

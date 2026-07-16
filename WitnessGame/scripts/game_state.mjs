@@ -1,10 +1,6 @@
-// GameState — autoload du jeu témoin (déclaré dans WitnessGame.saidaproj).
-//
-// Il possède l'état persistant : reliques ramassées + meilleure série,
-// sauvegardé via l'API `storage` (saves/witness.json). Les autres scripts ne
-// peuvent pas l'atteindre directement car chaque ScriptBehaviour a son propre
-// contexte JS : l'état
-// partagé transite donc lui aussi par `storage`, sous le slot "witness".
+// GameState — autoload persistant du jeu témoin.
+// Les autres scripts l'atteignent via tree.autoload("GameState") puis
+// NodeRef.call(); eux-mêmes ne touchent jamais au slot de sauvegarde.
 
 const SLOT = "witness";
 
@@ -22,13 +18,41 @@ function readState() {
     }
 }
 
+let state = readState();
+
+function persist() {
+    return storage.save(SLOT, JSON.stringify(state));
+}
+
+export function getState() {
+    return { relics: state.relics, saves: state.saves };
+}
+
+export function getRelics() {
+    return state.relics;
+}
+
+export function addRelics(amount) {
+    state.relics += Number(amount) || 0;
+    persist();
+    return state.relics;
+}
+
+export function saveProgress() {
+    state.saves += 1;
+    persist();
+    return getState();
+}
+
+export function reset() {
+    state = { relics: 0, saves: 0 };
+    storage.remove(SLOT);
+    persist();
+    return getState();
+}
+
 export function onReady() {
-    // Matérialise le slot au premier lancement pour que HUD/pickups aient
-    // toujours un état lisible.
-    if (!storage.has(SLOT)) {
-        storage.save(SLOT, JSON.stringify({ relics: 0, saves: 0 }));
-    }
-    const state = readState();
+    if (!storage.has(SLOT)) persist();
     console.log(
         "[GameState] ready — relics=" + state.relics + " saves=" + state.saves);
 }

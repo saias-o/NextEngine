@@ -4,6 +4,7 @@
 #include "core/Paths.hpp"
 #include "scripting/JsRuntime.hpp"
 
+#include <nlohmann/json.hpp>
 #include <quickjs.h>
 
 #include <unordered_map>
@@ -46,6 +47,53 @@ JSValue jsConsoleLog(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv,
     else if (magic == 2) Log::error("[JS] ", out);
     else Log::info("[JS] ", out);
     return JS_UNDEFINED;
+}
+
+JSValue jsonToJsValue(JSContext* ctx, const nlohmann::json& value) {
+    if (value.is_null()) return JS_NULL;
+    if (value.is_boolean()) return JS_NewBool(ctx, value.get<bool>());
+    if (value.is_number_integer()) return JS_NewInt64(ctx, value.get<int64_t>());
+    if (value.is_number_unsigned())
+        return JS_NewBigUint64(ctx, value.get<uint64_t>());
+    if (value.is_number_float()) return JS_NewFloat64(ctx, value.get<double>());
+    if (value.is_string()) return JS_NewString(ctx, value.get_ref<const std::string&>().c_str());
+    if (value.is_array()) {
+        JSValue array = JS_NewArray(ctx);
+        uint32_t index = 0;
+        for (const auto& item : value)
+            JS_SetPropertyUint32(ctx, array, index++, jsonToJsValue(ctx, item));
+        return array;
+    }
+    JSValue object = JS_NewObject(ctx);
+    for (auto it = value.begin(); it != value.end(); ++it)
+        JS_SetPropertyStr(ctx, object, it.key().c_str(), jsonToJsValue(ctx, it.value()));
+    return object;
+}
+
+bool jsValueToJson(JSContext* ctx, JSValueConst value, nlohmann::json& out) {
+    if (JS_IsUndefined(value)) {
+        out = nullptr;
+        return true;
+    }
+    JSValue encoded = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED);
+    if (JS_IsException(encoded)) {
+        JS_FreeValue(ctx, encoded);
+        return false;
+    }
+    if (JS_IsUndefined(encoded)) {
+        JS_FreeValue(ctx, encoded);
+        out = nullptr;
+        return true;
+    }
+    const char* text = JS_ToCString(ctx, encoded);
+    if (!text) {
+        JS_FreeValue(ctx, encoded);
+        return false;
+    }
+    out = nlohmann::json::parse(text, nullptr, false);
+    JS_FreeCString(ctx, text);
+    JS_FreeValue(ctx, encoded);
+    return !out.is_discarded();
 }
 } // namespace
 
@@ -203,6 +251,21 @@ bool JsContext::callModuleExport(const char* functionName, double arg) {
     return ok;
 }
 
+bool JsContext::callGlobalJson(const char* functionName, const nlohmann::json& args,
+                               nlohmann::json& result) {
+    JSValue global = JS_GetGlobalObject(ctx_);
+    const bool ok = callJsonImpl(global, functionName, args, result, "global");
+    JS_FreeValue(ctx_, global);
+    return ok;
+}
+
+bool JsContext::callModuleExportJson(const char* functionName,
+                                     const nlohmann::json& args,
+                                     nlohmann::json& result) {
+    if (JS_IsUndefined(moduleNamespace_) || JS_IsNull(moduleNamespace_)) return false;
+    return callJsonImpl(moduleNamespace_, functionName, args, result, "module export");
+}
+
 JsFunctionStatus JsContext::globalFunctionStatus(const char* functionName) const {
     JSValue global = JS_GetGlobalObject(ctx_);
     JSValue value = JS_GetPropertyStr(ctx_, global, functionName);
@@ -299,6 +362,48 @@ bool JsContext::callModuleExportImpl(const char* functionName, int argc, JSValue
         return false;
     }
     JS_FreeValue(ctx_, result);
+    return runtime_.executePendingJobs();
+}
+
+bool JsContext::callJsonImpl(JSValueConst owner, const char* functionName,
+                             const nlohmann::json& args, nlohmann::json& result,
+                             const char* diagnosticKind) {
+    JSValue fn = JS_GetPropertyStr(ctx_, owner, functionName);
+    if (!JS_IsFunction(ctx_, fn)) {
+        Log::warn("[JS] ", diagnosticKind, " '", functionName,
+                  "' is missing or is not a function");
+        JS_FreeValue(ctx_, fn);
+        return false;
+    }
+    if (!args.is_array()) {
+        JS_FreeValue(ctx_, fn);
+        Log::error("[JS] cross-context arguments must be a JSON array");
+        return false;
+    }
+
+    std::vector<JSValue> jsArgs;
+    jsArgs.reserve(args.size());
+    for (const auto& arg : args) jsArgs.push_back(jsonToJsValue(ctx_, arg));
+
+    JSValue value;
+    {
+        JsExecutionScope execution(runtime_);
+        value = JS_Call(ctx_, fn, owner, static_cast<int>(jsArgs.size()), jsArgs.data());
+    }
+    JS_FreeValue(ctx_, fn);
+    for (JSValue arg : jsArgs) JS_FreeValue(ctx_, arg);
+
+    if (JS_IsException(value)) {
+        JS_FreeValue(ctx_, value);
+        reportException(functionName);
+        return false;
+    }
+    const bool converted = jsValueToJson(ctx_, value, result);
+    JS_FreeValue(ctx_, value);
+    if (!converted) {
+        reportException(std::string(functionName) + " result serialization");
+        return false;
+    }
     return runtime_.executePendingJobs();
 }
 
