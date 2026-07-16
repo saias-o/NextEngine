@@ -514,6 +514,14 @@ version, société, nom et icône patchent VERSIONINFO et RT_GROUP_ICON. La copi
 Windows parcourt explicitement les arbres, écrase les fichiers réguliers et
 refuse symlinks/fichiers spéciaux.
 
+Le clic Build de l'éditeur est automatisable : `SaidaEngine --project <p>
+--build <out> [--build-platform web]` exécute exactement le code du bouton du
+dialogue Build (`EditorUI::executeBuild`, mêmes défauts d'état que l'ouverture
+du dialogue — la scène principale par défaut est la `mainScene` du projet),
+logge `[BUILD] PASS/FAIL` et retourne le verdict en code de sortie.
+`tools/witness_editor_build.sh` construit WitnessGame par ce chemin et exige le
+E2E complet sur l'artefact produit.
+
 Le package Web embarque player, projet et shaders sous MEMFS. Les gros jeux
 nécessitent encore fetch/IDBFS streaming et compression/manifest de release.
 
@@ -541,14 +549,16 @@ headless, résolution scripts depuis la racine projet, inner body Character pour
 triggers, refresh des caches après `changeScene/queueFree`, gizmos colliders sur
 le viewport docké, timer `?smoke` pour onglet caché, pile WASM 4 MiB/QuickJS
 256 KiB, copie Windows, sandbox QuickJS, traversée de séquence `.sseq`
-(événement + fin, desktop et Web) et ré-import d'un même glTF dans une scène
-sans invalider rigs/clips des Animators déjà attachés. À surveiller : halos de viewport non
+(événement + fin, desktop et Web), ré-import d'un même glTF dans une scène
+sans invalider rigs/clips des Animators déjà attachés, clic Build éditeur
+automatisé (`--build`) et progression restaurée après redémarrage (second
+process desktop sur `saves/`, reload navigateur sur IDBFS). À surveiller : halos de viewport non
 reproduits et dispatch autoload encore dupliqué entre `Engine::mountWorld` et le
 player Web.
 
-Une release exige encore le clic Build automatisé, une machine vierge sans
-MSYS2/SDK, archive ou installateur signé, DLL vérifiées, crash logs, rollback,
-SBOM et hashes de tous les artefacts.
+Une release exige encore une machine vierge sans MSYS2/SDK, archive ou
+installateur signé, DLL vérifiées, crash logs, rollback, SBOM et hashes de
+tous les artefacts.
 
 ## 13. Compatibilité persistante
 
@@ -632,8 +642,14 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ./build/bin/saida_tool.exe describe-engine
 ./tools/witness_e2e.sh
+./tools/witness_editor_build.sh
 ./tools/witness_web_stage.sh
 ```
+
+`witness_e2e.sh` lance l'artefact deux fois : le second lancement doit
+produire `[E2E] RESTART PASS` (progression restaurée depuis `saves/`). Côté
+Web, recharger la page après un `[E2E] PASS` doit produire le même verdict
+depuis IDBFS.
 
 Après modification de snapshot, SaidaOp, manifeste, registre, scripting ou
 input partagé : reconstruire également `build-authoring-wasm` et

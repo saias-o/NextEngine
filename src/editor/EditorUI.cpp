@@ -869,14 +869,67 @@ void EditorUI::refreshBuildScenes_(Project* project) {
         }
         std::sort(buildScenes_.begin(), buildScenes_.end());
     }
-    // Default selection: prefer scenes/main.scene, else first scene.
+    // Default selection: the project's main scene, else scenes/main.scene,
+    // else the first scene.
     buildMainSceneIndex_ = 0;
-    for (size_t i = 0; i < buildScenes_.size(); ++i) {
-        if (buildScenes_[i] == "scenes/main.scene") {
-            buildMainSceneIndex_ = static_cast<int>(i);
-            break;
+    const std::string preferred[] = {project->mainScene(), "scenes/main.scene"};
+    for (const std::string& want : preferred) {
+        if (want.empty()) continue;
+        bool found = false;
+        for (size_t i = 0; i < buildScenes_.size(); ++i) {
+            if (buildScenes_[i] == want) {
+                buildMainSceneIndex_ = static_cast<int>(i);
+                found = true;
+                break;
+            }
         }
+        if (found) break;
     }
+}
+
+// Chemin unique du bouton Build : construit les Options depuis l'état du
+// dialogue et exécute l'export. Utilisé par le clic ET par --build (CLI).
+void EditorUI::executeBuild(Project* project, bool web, bool launchAfter) {
+    BuildExporter::Options opt;
+    opt.outputDir = buildOutputPath_;
+    opt.mainScene = buildScenes_.empty()
+        ? std::string("scenes/main.scene")
+        : buildScenes_[buildMainSceneIndex_];
+    opt.launchAfterBuild = launchAfter && !web;
+    opt.productVersion = buildVersion_;
+    opt.companyName = buildCompany_;
+    opt.iconPath = buildIconPath_;
+    BuildExporter::Result res = web
+        ? BuildExporter::exportWebBuild(*project, opt)
+        : BuildExporter::exportWindowsBuild(*project, opt);
+    buildHasResult_      = true;
+    buildLastSuccess_    = res.success;
+    buildLastError_      = res.error;
+    buildLastLog_        = res.log;
+    buildLastOutputDir_  = res.outputDir;
+    buildLastExe_        = res.gameExe;
+}
+
+// Clic Build automatisé (--build) : même initialisation que l'ouverture du
+// dialogue, puis exactement executeBuild(). outputDir vide = défaut du dialogue.
+bool EditorUI::runAutomatedBuild(Project* project, bool web,
+                                 const std::string& outputDir, std::string* message) {
+    if (!project || !project->isLoaded()) {
+        if (message) *message = "no loaded project";
+        return false;
+    }
+    buildHasResult_ = false;
+    refreshBuildScenes_(project);
+    if (buildScenes_.empty()) {
+        if (message) *message = "no .scene files under scenes/";
+        return false;
+    }
+    if (!outputDir.empty())
+        std::snprintf(buildOutputPath_, sizeof(buildOutputPath_), "%s", outputDir.c_str());
+    selectedBuildPlatform_ = web ? BuildPlatform::WebGL : BuildPlatform::Windows;
+    executeBuild(project, web, /*launchAfter=*/false);
+    if (message) *message = buildLastSuccess_ ? buildLastOutputDir_ : buildLastError_;
+    return buildLastSuccess_;
 }
 
 void EditorUI::drawBuildWindow(Project* project) {
@@ -1103,29 +1156,9 @@ void EditorUI::drawBuildWindow(Project* project) {
         }
 
         ImGui::BeginDisabled(!canBuild);
-        auto runBuild = [&](bool andRun) {
-            BuildExporter::Options opt;
-            opt.outputDir = buildOutputPath_;
-            opt.mainScene = buildScenes_.empty()
-                ? std::string("scenes/main.scene")
-                : buildScenes_[buildMainSceneIndex_];
-            opt.launchAfterBuild = andRun && !isWeb;
-            opt.productVersion = buildVersion_;
-            opt.companyName = buildCompany_;
-            opt.iconPath = buildIconPath_;
-            BuildExporter::Result res = isWeb
-                ? BuildExporter::exportWebBuild(*project, opt)
-                : BuildExporter::exportWindowsBuild(*project, opt);
-            buildHasResult_      = true;
-            buildLastSuccess_    = res.success;
-            buildLastError_      = res.error;
-            buildLastLog_        = res.log;
-            buildLastOutputDir_  = res.outputDir;
-            buildLastExe_        = res.gameExe;
-        };
-        if (ImGui::Button("Build", ImVec2(100, 0))) runBuild(false);
+        if (ImGui::Button("Build", ImVec2(100, 0))) executeBuild(project, isWeb, false);
         ImGui::SameLine();
-        if (ImGui::Button("Build & Run", ImVec2(120, 0))) runBuild(true);
+        if (ImGui::Button("Build & Run", ImVec2(120, 0))) executeBuild(project, isWeb, true);
         ImGui::EndDisabled();
 
         ImGui::SameLine();

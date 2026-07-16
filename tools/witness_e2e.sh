@@ -23,10 +23,21 @@ EOF
 cd "$OUT"
 "./Witness Game.exe" > e2e.log 2>&1 || true
 
-if grep -q "\[E2E\] PASS" e2e.log; then
-    echo "WITNESS E2E: PASS"
-    exit 0
+if ! grep -q "\[E2E\] PASS" e2e.log; then
+    echo "WITNESS E2E: FAIL"
+    grep -E "\[E2E\]|\[JS\]|error" e2e.log | tail -20
+    exit 1
 fi
-echo "WITNESS E2E: FAIL"
-grep -E "\[E2E\]|\[JS\]|error" e2e.log | tail -20
-exit 1
+
+# Second lancement, même dossier : la progression sauvegardée par le run 1
+# doit être restaurée depuis saves/ au boot (save/load après redémarrage).
+"./Witness Game.exe" > e2e_restart.log 2>&1 || true
+
+if ! grep -q "\[E2E\] RESTART PASS" e2e_restart.log; then
+    echo "WITNESS E2E: FAIL (redémarrage : progression non restaurée)"
+    grep -E "\[E2E\]|\[JS\]|error" e2e_restart.log | tail -20
+    exit 1
+fi
+
+echo "WITNESS E2E: PASS (run + restart)"
+exit 0

@@ -29,6 +29,12 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
   événements relayés en signaux, propriétés réfléchies), traversé par
   WitnessGame desktop et Web; ré-import d'un même glTF idempotent (rigs/clips
   des Animators jamais invalidés).
+- [x] Clic Build éditeur automatisé : `SaidaEngine --build <out>` exécute le
+  code exact du bouton; l'artefact produit passe le E2E complet
+  (`tools/witness_editor_build.sh`).
+- [x] Save/load après redémarrage : progression restaurée au boot par un
+  second lancement desktop (`saves/`) et un reload navigateur (IDBFS),
+  verdict `RESTART PASS` dans les deux harnais.
 
 ## P0.1 - Jeu témoin et chemin de livraison
 
@@ -39,11 +45,11 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 - [x] Ajouter et traverser une séquence `.sseq` dans WitnessGame.
 - [x] Remplacer le contournement storage par une vraie API JS
   autoload/cross-node/groupes/signaux.
-- [ ] Automatiser le clic Build de l'éditeur, pas seulement `saida_tool`.
+- [x] Automatiser le clic Build de l'éditeur, pas seulement `saida_tool`.
 - [ ] Exécuter l'artefact Windows sur une machine vierge sans MSYS2, SDK ou
   checkout moteur.
 - [ ] Exécuter l'artefact Web servi avec les bons headers sur Chrome et Edge.
-- [ ] Vérifier save/load après redémarrage sur desktop et navigateur.
+- [x] Vérifier save/load après redémarrage sur desktop et navigateur.
 - [ ] Éliminer toute étape manuelle non documentée entre projet et artefact.
 
 Gate : un commit propre produit des artefacts desktop/Web jouables et identifiés

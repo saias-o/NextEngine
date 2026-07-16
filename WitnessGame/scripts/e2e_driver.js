@@ -43,6 +43,19 @@ function finish(verdict) {
 function onReady() {
     gameState = tree.autoload("GameState");
     if (gameState === null) return finish("FAIL: GameState autoload missing");
+
+    // Redémarrage : si une progression sauvegardée par un run précédent existe
+    // déjà au boot, GameState doit l'avoir restaurée depuis le stockage
+    // (fichier saves/ sur desktop, IDBFS dans le navigateur). Verdict dédié,
+    // sans rejouer : c'est le test « save/load après redémarrage ».
+    if (storage.has("witness") && Number(gameState.call("getRelics")) >= 1) {
+        finished = true;
+        console.log("[E2E] RESTART PASS (relics=" +
+                    Number(gameState.call("getRelics")) + ")");
+        tree.quit();
+        return;
+    }
+
     gameState.call("reset");
     console.log("[E2E] driver armed");
 }

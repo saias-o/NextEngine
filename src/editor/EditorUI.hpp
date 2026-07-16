@@ -59,6 +59,11 @@ public:
 
     bool quitRequested() const { return quitRequested_; }
 
+    // Clic Build automatisé (flag --build) : même code que le bouton du
+    // dialogue Build. `message` reçoit le dossier de sortie ou l'erreur.
+    bool runAutomatedBuild(Project* project, bool web, const std::string& outputDir,
+                           std::string* message);
+
     bool isViewportHovered(float mx, float my) const {
         return mx >= viewportPos_.x && mx <= viewportPos_.x + viewportSize_.x &&
                my >= viewportPos_.y && my <= viewportPos_.y + viewportSize_.y;
@@ -99,6 +104,7 @@ private:
     
     void drawAboutWindow();
     void drawBuildWindow(Project* project);
+    void executeBuild(Project* project, bool web, bool launchAfter);
     void drawSettingsWindow(Project* project);
     void drawNewProjectDialog(Project* project);
     void drawOpenProjectDialog(Project* project);

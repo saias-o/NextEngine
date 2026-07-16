@@ -162,6 +162,7 @@ les validation layers MSYS2. Sans ce script, une layer peut charger un runtime
 
 ```sh
 ./tools/witness_e2e.sh
+./tools/witness_editor_build.sh
 ./tools/witness_web_stage.sh
 ```
 

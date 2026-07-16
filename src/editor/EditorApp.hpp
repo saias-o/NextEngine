@@ -16,6 +16,11 @@ public:
 
     void update(float dt);  // input + UI; call from the engine's onFrame hook
 
+    // Clic Build automatisé (flag --build) : exécute le même code que le bouton
+    // du dialogue Build sur le projet chargé, logge [BUILD] PASS/FAIL et
+    // retourne le code de sortie du process. Aucune frame UI nécessaire.
+    int runAutomatedBuild(bool web, const std::string& outputDir);
+
     bool isPlayMode() const { return playMode_; }
     // Requests a Play/Stop transition. The actual world mount/unmount is DEFERRED
     // to the end of update(): tearing down the world mid-UI-frame would free the

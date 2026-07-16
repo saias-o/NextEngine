@@ -3,6 +3,7 @@
 
 #include "core/Camera.hpp"
 #include "core/Input.hpp"
+#include "core/Log.hpp"
 #include "core/Time.hpp"
 #include "core/Window.hpp"
 #include "scene/Scene.hpp"
@@ -14,11 +15,22 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace saida {
 
 EditorApp::EditorApp(Engine& engine) : engine_(engine) {
     Time::setScale(0.0f); // Default to editor (paused) mode
+}
+
+int EditorApp::runAutomatedBuild(bool web, const std::string& outputDir) {
+    std::string message;
+    const bool ok = ui_.runAutomatedBuild(&engine_.project(), web, outputDir, &message);
+    if (ok)
+        Log::info("[BUILD] PASS ", message);
+    else
+        Log::error("[BUILD] FAIL: ", message);
+    return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 void EditorApp::setPlayMode(bool play) {

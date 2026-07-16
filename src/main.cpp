@@ -15,14 +15,22 @@ int main(int argc, char** argv) {
     try {
         std::string initialProject;
         std::string runtimeScene;
+        std::string buildOutputDir;
         bool xrPreview = false;
         bool readXrPreviewManifest = false;
+        bool buildRequested = false;
+        bool buildWeb = false;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
             if (arg == "--project" && i + 1 < argc)
                 initialProject = argv[++i];
             else if (arg == "--scene" && i + 1 < argc)
                 runtimeScene = argv[++i];
+            else if (arg == "--build" && i + 1 < argc) {
+                buildRequested = true;
+                buildOutputDir = argv[++i];
+            } else if (arg == "--build-platform" && i + 1 < argc)
+                buildWeb = (std::string(argv[++i]) == "web");
             else if (arg == "--xr")
                 xrPreview = true;
             else if (arg == "--xr-preview") {
@@ -65,6 +73,11 @@ int main(int argc, char** argv) {
 
         // Normal desktop editor.
         saida::EditorApp editor(engine);
+
+        // --build <out> : clic Build automatisé — même code que le bouton du
+        // dialogue Build, puis sortie immédiate avec le verdict en code retour.
+        if (buildRequested) return editor.runAutomatedBuild(buildWeb, buildOutputDir);
+
         engine.setOnFrame([&editor](float dt) { editor.update(dt); });
         engine.run();
     } catch (const std::exception& e) {
