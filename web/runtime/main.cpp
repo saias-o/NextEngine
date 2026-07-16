@@ -16,6 +16,7 @@
 #include "graphics/ResourceManager.hpp"
 #include "project/AssetRegistry.hpp"
 #include "render/Renderer.hpp"
+#include "runtime/RuntimeRoundTripContract.hpp"
 #include "render/RenderFeatureRegistry.hpp"
 #include "core/Camera.hpp"
 #include "core/FormatVersions.hpp"
@@ -971,6 +972,18 @@ int main() {
                 gApp.startupError = "initial scene failed to load";
                 return;
             }
+            runtime::RoundTripContractReport contractReport;
+            std::string contractError;
+            if (!runtime::verifySnapshotRoundTripContract(
+                    RuntimeTypeTarget::AuthoringWasm, *gApp.resources,
+                    contractReport, contractError))
+                throw std::runtime_error("authoring Web runtime contract: " + contractError);
+            std::printf("[CONTRACT] PASS authoringWasm nodes=%zu behaviours=%zu properties=%zu\n",
+                        contractReport.nodes, contractReport.behaviours,
+                        contractReport.reflectedProperties);
+            // Also prove the concrete loaded scene is accepted by the durable
+            // codec before the runtime publishes ready.
+            (void)durableSceneSnapshotJson();
             gApp.ready = true;
             emscripten_set_main_loop(frame, 0, false);
         } catch (const std::exception& e) {

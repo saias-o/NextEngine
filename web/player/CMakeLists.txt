@@ -86,6 +86,7 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/core/Profiler.cpp
     ${SAIDA_ROOT}/src/core/Camera.cpp
     ${SAIDA_ROOT}/src/runtime/BootManifest.cpp
+    ${SAIDA_ROOT}/src/runtime/RuntimeRoundTripContract.cpp
     ${SAIDA_ROOT}/src/project/AssetRegistry.cpp
     ${SAIDA_ROOT}/src/project/AssetLoader.cpp
     ${SAIDA_ROOT}/src/project/Project.cpp

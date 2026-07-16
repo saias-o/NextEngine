@@ -170,6 +170,21 @@ runtime avec diagnostic. Les registres ne sont pas encore équivalents : la
 matrice rend chaque divergence explicite, elle ne donne pas la permission de
 perdre du contenu.
 
+Le test `saida_runtime_type_matrix_tests` construit le corpus headless depuis la
+matrice : 14 types de nœuds, 18 behaviours et les 157 propriétés réfléchies
+reçoivent des valeurs non triviales, puis un cycle serialize/load/serialize doit
+rester sémantiquement identique. Il couvre aussi les données manuscrites du HUD,
+des corps/colliders, de `Blackboard`, de la FSM et de `ScriptBehaviour`.
+L'authoring Web exécute son snapshot contractuel avant de publier `ready`.
+
+`RuntimeRoundTripContract` construit de la même manière un corpus en mémoire.
+Le serializer complet couvre le natif (26 nœuds, 22 behaviours, 151 propriétés
+dans le build XR courant) via `SaidaEngine --verify-runtime-contract`, et le
+player Web (15/10/120) via le paramètre `verify-runtime-contract`. Le codec
+snapshot couvre l'authoring Web (9/0/90) avant son passage à `ready`. Tous
+exigent une identité JSON sémantique après reconstruction et exposent le verdict
+`[CONTRACT] PASS`.
+
 ## 4. Rendu et ressources GPU
 
 ### 4.1 Renderer

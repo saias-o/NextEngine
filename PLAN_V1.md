@@ -72,8 +72,12 @@ par hash, avec WitnessGame PASS sur les deux.
 - [x] Construire une matrice unique des types/behaviours enregistrés dans natif,
   headless, authoring WASM et player Web.
 - [x] Ajouter explicitement UI et nœuds physiques requis au fold headless.
-- [ ] Prouver un round-trip sémantique de chaque type/propriété/behaviour sur les
+- [x] Prouver un round-trip sémantique de chaque type/propriété/behaviour sur les
   quatre runtimes; aucun fallback générique.
+  Preuves : headless exhaustif sur 14 types de nœuds, 18 behaviours et 157
+  propriétés réfléchies; serializer complet natif sur 26/22/151; snapshot
+  Authoring Web sur 9/0/90; player Web sur 15/10/120. Chaque corpus utilise des
+  valeurs non triviales et exige l'identité JSON après reconstruction.
 - [ ] Décider et migrer l'adressage des SaidaOps du nom mutable vers NodeId, ou
   geler explicitement la limite pour V1.
 - [ ] Générer le manifeste depuis le bundle réellement livré et vérifier que

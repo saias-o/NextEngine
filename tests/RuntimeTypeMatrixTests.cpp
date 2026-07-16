@@ -1,5 +1,6 @@
 #include "authoring/EngineManifest.hpp"
 #include "authoring/SceneSnapshot.hpp"
+#include "core/Reflection.hpp"
 #include "physics/CharacterBodyNode.hpp"
 #include "physics/CollisionShapeNode.hpp"
 #include "physics/RigidBodyNode.hpp"
@@ -8,13 +9,88 @@
 #include "scene/NodeRegistry.hpp"
 #include "scene/RuntimeTypeMatrix.hpp"
 #include "scene/Scene.hpp"
+#include "scene/Blackboard.hpp"
+#include "scene/StateMachineBehaviour.hpp"
 #include "scene/UICanvasNode.hpp"
 #include "scene/UITextNode.hpp"
+#include "scripting/ScriptBehaviour.hpp"
 
 #include <cassert>
 #include <memory>
 #include <set>
 #include <string>
+
+namespace {
+
+nlohmann::json changedValue(const saida::reflect::PropertyDesc& property,
+                            const nlohmann::json& current) {
+    if (property.kind == "bool") return !current.get<bool>();
+    if (property.kind == "float") {
+        const double value = current.get<double>();
+        if (property.hasRange)
+            return value != property.min ? property.min : property.max;
+        return value + 1.25;
+    }
+    if (property.kind == "int") {
+        const int value = current.get<int>();
+        if (property.hasRange)
+            return value != static_cast<int>(property.min)
+                ? static_cast<int>(property.min) : static_cast<int>(property.max);
+        return value + 3;
+    }
+    if (property.kind == "enum") {
+        const int value = current.get<int>();
+        const int count = static_cast<int>(property.enumLabels.size());
+        return count > 1 ? (value + 1) % count : value + 1;
+    }
+    if (property.kind == "string" || property.kind == "asset")
+        return "roundtrip/" + property.name;
+    if (property.kind == "vec3")
+        return nlohmann::json::array({1.25f, -2.5f, 3.75f});
+    if (property.kind == "vec4")
+        return nlohmann::json::array({0.125f, 0.375f, 0.625f, 0.875f});
+    assert(false && "unhandled reflected property kind");
+    return nullptr;
+}
+
+void seedReflectedProperties(const std::string& type, void* object) {
+    const saida::reflect::TypeDesc* desc =
+        saida::reflect::TypeRegistry::instance().find(type);
+    if (!desc) return;
+    for (const saida::reflect::PropertyDesc& property : desc->properties) {
+        nlohmann::json before;
+        property.get(object, before);
+        property.set(object, changedValue(property, before));
+        nlohmann::json after;
+        property.get(object, after);
+        assert(after != before);
+    }
+}
+
+void seedHandwrittenBehaviour(saida::Behaviour& behaviour) {
+    if (auto* blackboard = dynamic_cast<saida::Blackboard*>(&behaviour)) {
+        blackboard->setNumber("score", 42.5);
+        blackboard->setBool("doorOpen", true);
+        blackboard->setString("chapter", "contract");
+    } else if (auto* stateMachine =
+                   dynamic_cast<saida::StateMachineBehaviour*>(&behaviour)) {
+        stateMachine->load({
+            {"initialState", "Idle"},
+            {"states", {"Idle", "Active"}},
+            {"transitions", {{{"from", "Idle"}, {"to", "Active"},
+                               {"trigger", "go"}, {"after", 1.5f}}}},
+        });
+    } else if (auto* script = dynamic_cast<saida::ScriptBehaviour*>(&behaviour)) {
+        script->load({
+            {"script", "scripts/contract.js"},
+            {"hotReload", false},
+            {"properties", {{"speed", 3.5}, {"enabled", true},
+                              {"label", "contract"}}},
+        });
+    }
+}
+
+} // namespace
 
 int main() {
     using namespace saida;
@@ -127,6 +203,48 @@ int main() {
     auto* reloadedStatic = dynamic_cast<StaticBodyNode*>(reloaded.children()[3].get());
     assert(reloadedStatic && reloadedStatic->friction == 0.9f);
     assert(authoring::serializeSceneSnapshot(reloaded, nullptr) == snapshot);
+
+    // Exhaust the headless rows with non-default common/reflected data. This
+    // catches a property codec that is registered but silently disappears.
+    Scene contractScene;
+    std::size_t nodeIndex = 0;
+    for (const RuntimeTypeRow& row : kRuntimeTypeMatrix) {
+        if (row.category != RuntimeTypeCategory::Node ||
+            row.availability[static_cast<std::size_t>(RuntimeTypeTarget::Headless)] !=
+                RuntimeTypeAvailability::Required)
+            continue;
+        std::unique_ptr<Node> node = NodeRegistry::instance().create(row.name);
+        assert(node && std::string(node->typeName()) == row.name);
+        node->setName("ContractNode" + std::to_string(nodeIndex++));
+        node->setEnabled(false);
+        node->transform().position = {1.0f + static_cast<float>(nodeIndex), 2.0f, -3.0f};
+        node->transform().scale = {1.25f, 0.75f, 1.5f};
+        node->addToGroup("roundtrip");
+        seedReflectedProperties(row.name, node.get());
+        contractScene.addChild(std::move(node));
+    }
+
+    auto behaviourHost = std::make_unique<Node>("BehaviourContract");
+    for (const RuntimeTypeRow& row : kRuntimeTypeMatrix) {
+        if (row.category != RuntimeTypeCategory::Behaviour ||
+            row.availability[static_cast<std::size_t>(RuntimeTypeTarget::Headless)] !=
+                RuntimeTypeAvailability::Required)
+            continue;
+        std::unique_ptr<Behaviour> behaviour = BehaviourRegistry::instance().create(row.name);
+        assert(behaviour && std::string(behaviour->typeName()) == row.name);
+        behaviour->setEnabled(false);
+        seedReflectedProperties(row.name, behaviour.get());
+        seedHandwrittenBehaviour(*behaviour);
+        behaviourHost->addBehaviour(std::move(behaviour));
+    }
+    contractScene.addChild(std::move(behaviourHost));
+
+    const std::string contractSnapshot =
+        authoring::serializeSceneSnapshot(contractScene, nullptr);
+    Scene contractReloaded;
+    error.clear();
+    assert(authoring::deserializeSceneSnapshot(contractSnapshot, contractReloaded, &error));
+    assert(authoring::serializeSceneSnapshot(contractReloaded, nullptr) == contractSnapshot);
 
     // Unknown additions are also contract drift, not only missing factories.
     NodeRegistry::instance().registerType<Node>("UnexpectedTestNode");

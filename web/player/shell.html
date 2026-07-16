@@ -70,8 +70,14 @@
     }
     var Module = {
       canvas: document.getElementById('canvas'),
-      arguments: new URLSearchParams(location.search).getAll('test-autoload')
-        .flatMap(function(spec) { return ['--test-autoload', spec]; }),
+      arguments: (function() {
+        var query = new URLSearchParams(location.search);
+        var args = query.getAll('test-autoload')
+          .flatMap(function(spec) { return ['--test-autoload', spec]; });
+        if (query.has('verify-runtime-contract'))
+          args.push('--verify-runtime-contract');
+        return args;
+      })(),
       onRuntimeInitialized: function() {
         refreshPlayerStatus();
         statusPoll = setInterval(refreshPlayerStatus, 50);
@@ -126,6 +132,8 @@
         window.__saidaLog.push(text);
         if (text.indexOf('[E2E]') >= 0)
           publishE2E(text);
+        if (text.indexOf('[CONTRACT]') >= 0)
+          document.documentElement.dataset.saidaContract = text;
         console.log(text);
         statusEl.textContent = text;
       },
@@ -133,6 +141,8 @@
         window.__saidaLog.push(text);
         if (text.indexOf('[E2E]') >= 0)
           publishE2E(text);
+        if (text.indexOf('[CONTRACT]') >= 0)
+          document.documentElement.dataset.saidaContract = text;
         console.error(text);
         statusEl.textContent = text;
       },

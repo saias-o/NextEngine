@@ -305,8 +305,17 @@
 
     var Module = {
       canvas: document.getElementById('canvas'),
-      print: function(t) { console.log(t); statusEl.textContent = t; },
-      printErr: function(t) { console.error(t); },
+      print: function(t) {
+        if (t.indexOf('[CONTRACT]') >= 0)
+          document.documentElement.dataset.saidaContract = t;
+        console.log(t);
+        statusEl.textContent = t;
+      },
+      printErr: function(t) {
+        if (t.indexOf('[CONTRACT]') >= 0)
+          document.documentElement.dataset.saidaContract = t;
+        console.error(t);
+      },
       locateFile: function(path, prefix) { return prefix + path + '?v=s4-snapshot'; },
       setStatus: function(t) { if (t) statusEl.textContent = t; },
       onRuntimeInitialized: function() {

@@ -314,6 +314,7 @@ add_library(saida_engine STATIC
     src/fx/ParticleQuality.cpp
     src/core/PlatformCaps.cpp
     src/runtime/BootManifest.cpp
+    src/runtime/RuntimeRoundTripContract.cpp
     src/scene/NodeId.cpp
     src/scene/Node.cpp
     src/scene/Transform.cpp

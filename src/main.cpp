@@ -3,6 +3,7 @@
 #include "editor/EditorApp.hpp"
 #include "core/Time.hpp"
 #include "runtime/TestAutoload.hpp"
+#include "runtime/RuntimeRoundTripContract.hpp"
 #include "scene/SceneSerializer.hpp"
 
 #include <cstdlib>
@@ -23,6 +24,7 @@ int main(int argc, char** argv) {
         bool buildRequested = false;
         bool buildWeb = false;
         bool playRequested = false;
+        bool verifyRuntimeContract = false;
         std::vector<std::string> testAutoloads;
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
@@ -39,6 +41,8 @@ int main(int argc, char** argv) {
                 playRequested = true;
             else if (arg == "--test-autoload" && i + 1 < argc)
                 testAutoloads.emplace_back(argv[++i]);
+            else if (arg == "--verify-runtime-contract")
+                verifyRuntimeContract = true;
             else if (arg == "--xr")
                 xrPreview = true;
             else if (arg == "--xr-preview") {
@@ -69,6 +73,17 @@ int main(int argc, char** argv) {
             std::string error;
             if (!saida::runtime::applyTestAutoload(engine.project(), spec, error))
                 throw std::runtime_error(error);
+        }
+        if (verifyRuntimeContract) {
+            saida::runtime::RoundTripContractReport report;
+            std::string error;
+            if (!saida::runtime::verifyRuntimeRoundTripContract(
+                    saida::RuntimeTypeTarget::Native, engine.resources(), report, error))
+                throw std::runtime_error("native runtime contract: " + error);
+            saida::Log::info("[CONTRACT] PASS native nodes=", report.nodes,
+                             " behaviours=", report.behaviours,
+                             " properties=", report.reflectedProperties);
+            return EXIT_SUCCESS;
         }
         if (xrPreview) {
             if (runtimeScene.empty())

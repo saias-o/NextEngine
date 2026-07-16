@@ -25,6 +25,7 @@
 #include "rhi/webgpu/RhiWeb.hpp"
 #include "runtime/BootManifest.hpp"
 #include "runtime/TestAutoload.hpp"
+#include "runtime/RuntimeRoundTripContract.hpp"
 #include "scene/BehaviourRegistry.hpp"
 #include "scene/CameraNode.hpp"
 #include "scene/MeshNode.hpp"
@@ -76,6 +77,7 @@ struct PlayerApp {
 
 PlayerApp gApp;
 std::vector<std::string> gTestAutoloads;
+bool gVerifyRuntimeContract = false;
 
 bool failBoot(const std::string& error) {
     gApp.running = false;
@@ -123,6 +125,16 @@ bool bootGame() {
         return failBoot("runtime type matrix mismatch: " + typeMatrixError);
 
     gApp.resources = std::make_unique<ResourceManager>(*gApp.device, gApp.registry.get());
+    if (gVerifyRuntimeContract) {
+        runtime::RoundTripContractReport report;
+        std::string error;
+        if (!runtime::verifyRuntimeRoundTripContract(
+                RuntimeTypeTarget::PlayerWeb, *gApp.resources, report, error))
+            return failBoot("player Web runtime contract: " + error);
+        Log::info("[CONTRACT] PASS playerWeb nodes=", report.nodes,
+                  " behaviours=", report.behaviours,
+                  " properties=", report.reflectedProperties);
+    }
 
     auto scene = std::make_unique<Scene>();
     const std::string scenePath = "/project/" + boot.manifest.mainScene;
@@ -228,6 +240,8 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--test-autoload" && i + 1 < argc)
             gTestAutoloads.emplace_back(argv[++i]);
+        else if (std::string(argv[i]) == "--verify-runtime-contract")
+            gVerifyRuntimeContract = true;
     }
 
     if (!glfwInit()) {

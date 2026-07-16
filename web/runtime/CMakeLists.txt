@@ -83,6 +83,7 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/render/features/WaterFeature.cpp
     ${SAIDA_ROOT}/src/render/PostProcessor.cpp
     ${SAIDA_ROOT}/src/render/Renderer.cpp
+    ${SAIDA_ROOT}/src/runtime/RuntimeRoundTripContract.cpp
     ${SAIDA_ROOT}/src/scenario/ScenarioRegistry.cpp
     ${SAIDA_ROOT}/src/scene/Behaviour.cpp
     ${SAIDA_ROOT}/src/scene/BehaviourRegistry.cpp
@@ -143,7 +144,8 @@ target_include_directories(saida_web PRIVATE
 )
 # SAIDA_NO_PHYSICS / SAIDA_NO_AUDIO : le viewer d'authoring ne compile ni Jolt
 # ni miniaudio (le player de jeu, si).
-target_compile_definitions(saida_web PRIVATE SAIDA_RHI_WEBGPU SAIDA_NO_PHYSICS SAIDA_NO_AUDIO GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE)
+target_compile_definitions(saida_web PRIVATE SAIDA_RHI_WEBGPU SAIDA_NO_PHYSICS SAIDA_NO_AUDIO
+    SAIDA_AUTHORING_WEB GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
 # Size-conscious flags (16.6): -Oz in release, plus link-time stripping.
 target_compile_options(saida_web PRIVATE -fexceptions $<$<CONFIG:Release>:-Oz>)

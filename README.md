@@ -166,6 +166,17 @@ les tests, `saida_tool` et les harnais plutôt que de laisser l'exécutable ouve
 les validation layers MSYS2. Sans ce script, une layer peut charger un runtime
 `libstdc++` incompatible.
 
+Le corpus sémantique complet natif se lance sans projet :
+
+```sh
+./build/bin/SaidaEngine.exe --verify-runtime-contract
+```
+
+Le player Web active le même contrôle avec le paramètre URL
+`?verify-runtime-contract`; il publie le décompte dans `[CONTRACT] PASS`.
+L'authoring Web exécute systématiquement son corpus snapshot avant de publier
+`ready` et expose le même verdict dans la console.
+
 ```sh
 ./tools/witness_e2e.sh
 ./tools/witness_editor_play.sh
