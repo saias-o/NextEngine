@@ -1,6 +1,7 @@
 #include "scripting/JsEngineBindings.hpp"
 
 #include "audio/AudioManager.hpp"
+#include "core/AtomicFile.hpp"
 #include "core/Input.hpp"
 #include "core/Log.hpp"
 #include "core/Reflection.hpp"
@@ -10,9 +11,7 @@
 #include "scene/Behaviour.hpp"
 #include "scene/Node.hpp"
 #include "scene/SceneTree.hpp"
-#ifndef SAIDA_RHI_WEBGPU
 #include "scene/UITextNode.hpp"
-#endif
 #include "scripting/JsContext.hpp"
 #include "scripting/JsTimerBindings.hpp"
 
@@ -174,18 +173,16 @@ JSValue jsStorageSave(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
     if (!value) return JS_EXCEPTION;
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
-    bool ok;
-    {
-        std::ofstream file(path, std::ios::binary | std::ios::trunc);
-        ok = static_cast<bool>(file << value);
-    }
+    const AtomicWriteResult writeResult = writeFileAtomically(path, value);
     JS_FreeCString(ctx, value);
-    if (!ok) Log::warn("[JS] storage.save: cannot write ", path.string());
+    if (!writeResult)
+        Log::warn("[JS] storage.save: cannot write ", path.string(), ": ",
+                  writeResult.error);
 #ifdef __EMSCRIPTEN__
     // saves/ vit sur IDBFS (monté par le shell) : flush vers IndexedDB.
-    if (ok) EM_ASM({ FS.syncfs(false, function() {}); });
+    if (writeResult) EM_ASM({ FS.syncfs(false, function() {}); });
 #endif
-    return JS_NewBool(ctx, ok);
+    return JS_NewBool(ctx, writeResult.ok);
 }
 
 JSValue jsStorageLoad(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -220,7 +217,6 @@ JSValue jsStorageRemove(JSContext* ctx, JSValueConst, int argc, JSValueConst* ar
     return JS_NewBool(ctx, removed);
 }
 
-// Compteurs du loader (diagnostics de fuite, PLAN_V1_ENGINE chantier 3).
 JSValue jsAssetsStats(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     SceneTree* tree = treeFromJs(ctx);
     if (!tree) return JS_ThrowInternalError(ctx, "assets.stats requires a mounted SceneTree");
@@ -396,19 +392,7 @@ JSValue jsNodeQueueFree(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     return JS_UNDEFINED;
 }
 
-// Les nœuds UI ne sont pas encore portés sur le player web : là-bas ils se
-// dégradent en Node générique et setText/getText deviennent des no-ops
-// (warning unique), pour que le même script tourne sur les deux plateformes.
 JSValue jsNodeSetText(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-#ifdef SAIDA_RHI_WEBGPU
-    (void)argc; (void)argv;
-    static bool warned = false;
-    if (!warned) {
-        warned = true;
-        Log::warn("[JS] node.setText: UI nodes are not ported to the web player yet (no-op)");
-    }
-    return JS_UNDEFINED;
-#else
     Node* node = nodeFromJs(ctx);
     auto* text = dynamic_cast<UITextNode*>(node);
     if (!text)
@@ -419,18 +403,13 @@ JSValue jsNodeSetText(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
     text->setText(value);
     JS_FreeCString(ctx, value);
     return JS_UNDEFINED;
-#endif
 }
 
 JSValue jsNodeGetText(JSContext* ctx, JSValueConst, int, JSValueConst*) {
-#ifdef SAIDA_RHI_WEBGPU
-    return JS_NewString(ctx, "");
-#else
     auto* text = dynamic_cast<UITextNode*>(nodeFromJs(ctx));
     if (!text)
         return JS_ThrowTypeError(ctx, "node.getText: script is not attached to a UITextNode");
     return JS_NewString(ctx, text->text().c_str());
-#endif
 }
 
 JSValue jsNodeAddToGroup(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {

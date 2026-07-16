@@ -1,4 +1,4 @@
-# SaidaEngine web PLAYER (PLAN_SAIDA_ENGINE_UPDATE §3 — Phase A.1).
+# SaidaEngine web player.
 #
 # Distinct du runtime d'authoring (web/runtime) : ce target compile le vrai
 # cycle de jeu — SceneTree, SceneSerializer complet, behaviours gameplay,
@@ -47,9 +47,37 @@ add_library(quickjs STATIC
 target_include_directories(quickjs PUBLIC ${SAIDA_ROOT}/third_party/quickjs)
 target_compile_definitions(quickjs PRIVATE _GNU_SOURCE)
 
+# RmlUi reste l'unique backend UI sur toutes les plateformes. Le player Web
+# utilise le même rasterizer CPU déterministe que WebCanvas, puis compose la
+# texture produite dans le pass WebGPU.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_HVF ON CACHE BOOL "" FORCE)
+add_subdirectory(${SAIDA_ROOT}/third_party/freetype ${CMAKE_BINARY_DIR}/freetype)
+if(NOT TARGET Freetype::Freetype)
+    add_library(Freetype::Freetype ALIAS freetype)
+endif()
+
+set(RMLUI_SAMPLES OFF CACHE BOOL "" FORCE)
+set(RMLUI_TESTS OFF CACHE BOOL "" FORCE)
+set(RMLUI_BACKEND "auto" CACHE STRING "" FORCE)
+set(RMLUI_FONT_ENGINE "freetype" CACHE STRING "" FORCE)
+set(RMLUI_LUA_BINDINGS OFF CACHE BOOL "" FORCE)
+set(RMLUI_LOTTIE_PLUGIN OFF CACHE BOOL "" FORCE)
+set(RMLUI_SVG_PLUGIN OFF CACHE BOOL "" FORCE)
+set(RMLUI_HARFBUZZ_SAMPLE OFF CACHE BOOL "" FORCE)
+set(RMLUI_PRECOMPILED_HEADERS OFF CACHE BOOL "" FORCE)
+set(RMLUI_COMPILER_OPTIONS OFF CACHE BOOL "" FORCE)
+add_subdirectory(${SAIDA_ROOT}/third_party/rmlui ${CMAKE_BINARY_DIR}/rmlui)
+
 add_executable(saida_player
     main.cpp
     # --- game core (le même moteur de jeu que le desktop, §2.1) ---
+    ${SAIDA_ROOT}/src/core/AtomicFile.cpp
     ${SAIDA_ROOT}/src/core/FileWatcher.cpp
     ${SAIDA_ROOT}/src/core/Input.cpp
     ${SAIDA_ROOT}/src/core/Paths.cpp
@@ -86,6 +114,9 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/scene/SpawnerBehaviour.cpp
     ${SAIDA_ROOT}/src/scene/StateMachineBehaviour.cpp
     ${SAIDA_ROOT}/src/scene/Transform.cpp
+    ${SAIDA_ROOT}/src/scene/UINode.cpp
+    ${SAIDA_ROOT}/src/scene/UICanvasNode.cpp
+    ${SAIDA_ROOT}/src/scene/UITextNode.cpp
     ${SAIDA_ROOT}/src/scene/WaterNode.cpp
     ${SAIDA_ROOT}/src/physics/CollisionObjectNode.cpp
     ${SAIDA_ROOT}/src/physics/CollisionShapeNode.cpp
@@ -123,7 +154,10 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/graphics/ShadowMap.cpp
     ${SAIDA_ROOT}/src/graphics/StbImageUsage.cpp
     ${SAIDA_ROOT}/src/graphics/TinyObjUsage.cpp
+    ${SAIDA_ROOT}/src/graphics/UIRenderer.cpp
     ${SAIDA_ROOT}/src/graphics/cgltf_impl.cpp
+    ${SAIDA_ROOT}/src/ui/RmlUiRenderInterface.cpp
+    ${SAIDA_ROOT}/src/ui/RmlUiRuntime.cpp
     ${SAIDA_ROOT}/src/fx/ParticleEffect.cpp
     ${SAIDA_ROOT}/src/fx/ParticlePresetLibrary.cpp
     ${SAIDA_ROOT}/src/fx/ParticleQuality.cpp
@@ -164,7 +198,7 @@ target_compile_definitions(saida_player PRIVATE
     SAIDA_RHI_WEBGPU SAIDA_SCENE_TREE_TIMERS
     GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE)
 target_compile_options(saida_player PRIVATE -fexceptions $<$<CONFIG:Release>:-Oz> --use-port=emdawnwebgpu)
-target_link_libraries(saida_player PRIVATE quickjs Jolt)
+target_link_libraries(saida_player PRIVATE quickjs Jolt RmlUi::RmlUi)
 
 target_link_options(saida_player PRIVATE
     --use-port=emdawnwebgpu
@@ -178,6 +212,7 @@ target_link_options(saida_player PRIVATE
     -sEXPORTED_FUNCTIONS=_main,_saida_player_status
     $<$<CONFIG:Release>:-Oz>
     "SHELL:--preload-file \"${SAIDA_ROOT}/build/shaders/wgsl@/shaders\""
+    "SHELL:--preload-file \"${SAIDA_ROOT}/third_party/rmlui/Samples/assets/LatoLatin-Regular.ttf@/assets/third_party/rmlui/Samples/assets/LatoLatin-Regular.ttf\""
     # Le package du jeu de référence, monté tel quel sous /project.
     -sFORCE_FILESYSTEM=1
     "SHELL:--shell-file \"${CMAKE_CURRENT_SOURCE_DIR}/shell.html\""

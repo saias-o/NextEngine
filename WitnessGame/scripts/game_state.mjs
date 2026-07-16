@@ -2,8 +2,8 @@
 //
 // Il possède l'état persistant : reliques ramassées + meilleure série,
 // sauvegardé via l'API `storage` (saves/witness.json). Les autres scripts ne
-// peuvent pas l'atteindre directement (chaque ScriptBehaviour a son propre
-// contexte JS — friction V1 consignée dans docs/WITNESS_GAME.md) : l'état
+// peuvent pas l'atteindre directement car chaque ScriptBehaviour a son propre
+// contexte JS : l'état
 // partagé transite donc lui aussi par `storage`, sous le slot "witness".
 
 const SLOT = "witness";

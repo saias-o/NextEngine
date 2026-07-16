@@ -14,9 +14,7 @@
 #include "graphics/ResourceManager.hpp"
 #include "render/GIVolume.hpp"
 #include "render/PostProcessor.hpp"
-#ifndef SAIDA_RHI_WEBGPU
 #include "graphics/UIRenderer.hpp"
-#endif
 #include "scene/LightNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
@@ -212,6 +210,7 @@ Renderer::Renderer(rhi::Device& device, rhi::Surface& swapchain, Window& window,
 Renderer::Renderer(rhi::Device& device, rhi::Surface& swapchain, ResourceManager& resources)
     : device_(device), swapchain_(&swapchain), resources_(resources) {
     createGlobalSetLayout();
+    uiRenderer_ = std::make_unique<UIRenderer>(device_, resources_, swapchain_->colorFormat());
     createHdrResources();
     createPipeline(resources_.materialSetLayout());
     createWebCanvasWorldPipeline();
@@ -1184,13 +1183,13 @@ void Renderer::recordTonemapPass(rhi::CommandEncoder& encoder, uint32_t imageInd
     }
     {
         SAIDA_GPU_PROFILE_SCOPE(gpuProfiler, cmd, "Post/UI");
-#ifndef SAIDA_RHI_WEBGPU
         {
             SAIDA_PROFILE_SCOPE("UI/RecordCommands");
             uiRenderer_->recordCommands(rp, fullExtent.width, fullExtent.height,
                                         {static_cast<float>(renderRect.offset.x), static_cast<float>(renderRect.offset.y)},
                                         {static_cast<float>(renderRect.extent.width), static_cast<float>(renderRect.extent.height)});
         }
+#ifndef SAIDA_RHI_WEBGPU
         {
             SAIDA_PROFILE_SCOPE("ImGui/RenderDrawData");
             imgui_->renderDrawData(rp.handle());  // editor-only overlay, permanent escape hatch
@@ -1339,9 +1338,7 @@ void Renderer::recordCommandBuffer(rhi::CommandEncoder& encoder, uint32_t imageI
 
     {
         SAIDA_PROFILE_SCOPE("UI/UpdateAsyncTextures");
-#ifndef SAIDA_RHI_WEBGPU
         uiRenderer_->updateAsyncTextures(encoder);
-#endif
     }
 
     if (giUpdateThisFrame_) {
@@ -1584,10 +1581,8 @@ void Renderer::drawFrame(Scene& scene, Camera& camera, Project* project) {
     }
     {
         SAIDA_PROFILE_SCOPE("UI/Gather");
-#ifndef SAIDA_RHI_WEBGPU
         uiRenderer_->gatherUI(scene,
             {static_cast<float>(renderRect.extent.width), static_cast<float>(renderRect.extent.height)});
-#endif
     }
 
     rhi::CommandEncoder encoder = swapchain_->beginFrameCommands(currentFrame_);

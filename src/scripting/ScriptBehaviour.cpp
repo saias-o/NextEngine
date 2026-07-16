@@ -217,7 +217,7 @@ void ScriptBehaviour::setScriptPath(std::string path) {
 bool ScriptBehaviour::reload() {
     bool ok = reloadContext(started_);
     if (ok && started_ && context_) {
-        callHook("onReady");
+        callHook(LifecycleHook::Ready);
     }
     return ok;
 }
@@ -226,6 +226,7 @@ bool ScriptBehaviour::reloadContext(bool lifecycleReload) {
     auto previousContext = std::move(context_);
     bool previousLoaded = loaded_;
     bool previousModuleMode = moduleMode_;
+    auto previousLifecycleHooks = lifecycleHooks_;
     WatchedFile previousWatcher = scriptWatcher_;
     auto previousProperties = properties_;
     auto previousModuleWatchers = moduleWatchers_;
@@ -236,6 +237,7 @@ bool ScriptBehaviour::reloadContext(bool lifecycleReload) {
         context_ = std::move(previousContext);
         loaded_ = previousLoaded;
         moduleMode_ = previousModuleMode;
+        lifecycleHooks_ = previousLifecycleHooks;
         scriptWatcher_ = previousWatcher;
         moduleWatchers_ = std::move(previousModuleWatchers);
         return false;
@@ -247,6 +249,7 @@ bool ScriptBehaviour::reloadContext(bool lifecycleReload) {
         context_ = std::move(previousContext);
         loaded_ = previousLoaded;
         moduleMode_ = previousModuleMode;
+        lifecycleHooks_ = previousLifecycleHooks;
         scriptWatcher_ = previousWatcher;
         moduleWatchers_ = std::move(previousModuleWatchers);
         return false;
@@ -274,13 +277,17 @@ bool ScriptBehaviour::reloadContext(bool lifecycleReload) {
         properties_ = std::move(previousProperties);
         loaded_ = previousLoaded;
         moduleMode_ = previousModuleMode;
+        lifecycleHooks_ = previousLifecycleHooks;
         scriptWatcher_ = previousWatcher;
         moduleWatchers_ = std::move(previousModuleWatchers);
         return false;
     }
 
+    inspectLifecycleHooks();
+
     if (previousContext) {
-        if (lifecycleReload) {
+        const auto destroyIndex = static_cast<std::size_t>(LifecycleHook::Destroy);
+        if (lifecycleReload && previousLifecycleHooks[destroyIndex]) {
             if (previousModuleMode) previousContext->callModuleExport("onDestroy");
             else previousContext->callGlobal("onDestroy");
         }
@@ -352,7 +359,7 @@ void ScriptBehaviour::exportStringProperty(const std::string& name, const std::s
 
 void ScriptBehaviour::onReady() {
     if (!loaded_ && !reloadContext(false)) return;
-    callHook("onReady");
+    callHook(LifecycleHook::Ready);
     started_ = true;
 }
 
@@ -362,23 +369,24 @@ void ScriptBehaviour::onUpdate(float dt) {
         SAIDA_PROFILE_SCOPE("Scripting/HotReloadCheck");
         checkHotReload(dt);
     }
-    callHook("onUpdate", dt);
+    callHook(LifecycleHook::Update, dt);
 }
 
 void ScriptBehaviour::onDestroy() {
-    callHook("onDestroy");
+    callHook(LifecycleHook::Destroy);
     if (context_) cancelJsTimersForContext(context_->raw());
     context_.reset();
     loaded_ = false;
     started_ = false;
+    lifecycleHooks_.fill(false);
 }
 
 void ScriptBehaviour::onEnable() {
-    callHook("onEnable");
+    callHook(LifecycleHook::Enable);
 }
 
 void ScriptBehaviour::onDisable() {
-    callHook("onDisable");
+    callHook(LifecycleHook::Disable);
 }
 
 void ScriptBehaviour::save(nlohmann::json& j) const {
@@ -431,15 +439,24 @@ std::string ScriptBehaviour::resolveScriptPath() const {
     if (scriptPath_.empty()) return {};
 
     std::filesystem::path p(scriptPath_);
-    if (p.is_absolute() && std::filesystem::exists(p)) return p.string();
-
     // Racine du projet chargé d'abord : c'est là que vivent les scripts d'un
     // jeu ("scripts/foo.js" dans le .scene est relatif au projet).
     if (!activeProjectRoot().empty()) {
-        std::filesystem::path projectRelative =
-            std::filesystem::path(activeProjectRoot()) / p;
-        if (std::filesystem::exists(projectRelative)) return projectRelative.string();
+        SandboxedPathResult resolved =
+            resolveSandboxedProjectPath(activeProjectRoot(), scriptPath_);
+        if (!resolved) {
+            Log::error("ScriptBehaviour: rejected script path '", scriptPath_,
+                       "': ", resolved.error);
+            return {};
+        }
+        if (std::filesystem::is_regular_file(resolved.absolute)) return resolved.absolute;
+        Log::error("ScriptBehaviour: project script not found: ", resolved.relative);
+        return {};
     }
+
+    // Development tools can validate a standalone script without a project.
+    // Shipped games always take the sandboxed branch above.
+    if (p.is_absolute() && std::filesystem::exists(p)) return p.string();
 
     std::filesystem::path cwdRelative = std::filesystem::current_path() / p;
     if (std::filesystem::exists(cwdRelative)) return cwdRelative.string();
@@ -455,14 +472,36 @@ bool ScriptBehaviour::shouldLoadAsModule(const std::string& resolvedPath) const 
     return path.extension() == ".mjs";
 }
 
-bool ScriptBehaviour::callHook(const char* functionName) {
-    if (!context_) return true;
-    return moduleMode_ ? context_->callModuleExport(functionName) : context_->callGlobal(functionName);
+void ScriptBehaviour::inspectLifecycleHooks() {
+    bool hasCallableHook = false;
+    for (std::size_t index = 0; index < kLifecycleHookNames.size(); ++index) {
+        const char* name = kLifecycleHookNames[index];
+        const JsFunctionStatus status = moduleMode_
+            ? context_->moduleExportFunctionStatus(name)
+            : context_->globalFunctionStatus(name);
+        lifecycleHooks_[index] = status == JsFunctionStatus::Callable;
+        hasCallableHook = hasCallableHook || lifecycleHooks_[index];
+        if (status == JsFunctionStatus::Invalid)
+            Log::warn("ScriptBehaviour: lifecycle hook '", name,
+                      "' must be a function in ", scriptPath_);
+    }
+
+    if (!hasCallableHook)
+        Log::warn("ScriptBehaviour: no recognized lifecycle hook in ", scriptPath_);
 }
 
-bool ScriptBehaviour::callHook(const char* functionName, double arg) {
-    if (!context_) return true;
-    return moduleMode_ ? context_->callModuleExport(functionName, arg) : context_->callGlobal(functionName, arg);
+bool ScriptBehaviour::callHook(LifecycleHook hook) {
+    const std::size_t index = static_cast<std::size_t>(hook);
+    if (!context_ || !lifecycleHooks_[index]) return true;
+    const char* name = kLifecycleHookNames[index];
+    return moduleMode_ ? context_->callModuleExport(name) : context_->callGlobal(name);
+}
+
+bool ScriptBehaviour::callHook(LifecycleHook hook, double arg) {
+    const std::size_t index = static_cast<std::size_t>(hook);
+    if (!context_ || !lifecycleHooks_[index]) return true;
+    const char* name = kLifecycleHookNames[index];
+    return moduleMode_ ? context_->callModuleExport(name, arg) : context_->callGlobal(name, arg);
 }
 
 void ScriptBehaviour::updateScriptWatchers(const std::string& resolvedPath, const std::vector<std::string>& moduleDependencies) {

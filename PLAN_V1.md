@@ -1,0 +1,194 @@
+# SaidaEngine - Plan unique vers la V1
+
+Mise à jour : 2026-07-16.
+
+**Verdict : NO-GO pour une V1 publique.** Ce fichier est l'unique todolist du
+moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
+
+## Preuves acquises
+
+- [x] Build natif complet Windows UCRT64.
+- [x] Suite native : 51/51 tests le 2026-07-16.
+- [x] Player Web Release et authoring WASM Release compilés.
+- [x] WitnessGame desktop : validation, export et runtime, `E2E PASS`.
+- [x] WitnessGame Web : package exécuté, HUD `UICanvasNode`/`UITextNode`
+  visible via RmlUi/WebGPU et harnais `[E2E] PASS` sur 16 cycles.
+- [x] QuickJS : deadline 100 ms, 1024 jobs, microtasks interrompues, callbacks
+  protégés et scripts/imports confinés à la racine canonique.
+- [x] Export Windows : copie robuste du contenu, symlinks/spéciaux refusés.
+- [x] Gamepad desktop : boutons, axes, triggers, deadzones, hotplug et agrégation
+  multi-binding; le Web annonce encore explicitement `NO`.
+- [x] Snapshot headless fail-closed sur son registre, Camera incluse, références
+  Mesh préservées et création Mesh sans ResourceManager refusée.
+- [x] AssetLoader async texture/OBJ et déchargement GPU sur changement de scène;
+  mémoire GPU stable sur 16 cycles desktop/Web dans le harnais.
+- [x] Schémas, migrations et corpus de compatibilité de base.
+
+## P0.1 - Jeu témoin et chemin de livraison
+
+- [x] Porter `UICanvasNode`, `UITextNode` et le rendu RmlUi nécessaire dans le
+  player WebGPU.
+- [ ] Obtenir WitnessGame complet, UI incluse, avec le même gameplay et les
+  mêmes saves en éditeur, desktop autonome et Web.
+- [ ] Ajouter et traverser une séquence `.sseq` dans WitnessGame.
+- [ ] Remplacer le contournement storage par une vraie API JS
+  autoload/cross-node/groupes/signaux.
+- [ ] Automatiser le clic Build de l'éditeur, pas seulement `saida_tool`.
+- [ ] Exécuter l'artefact Windows sur une machine vierge sans MSYS2, SDK ou
+  checkout moteur.
+- [ ] Exécuter l'artefact Web servi avec les bons headers sur Chrome et Edge.
+- [ ] Vérifier save/load après redémarrage sur desktop et navigateur.
+- [ ] Éliminer toute étape manuelle non documentée entre projet et artefact.
+
+Gate : un commit propre produit des artefacts desktop/Web jouables et identifiés
+par hash, avec WitnessGame PASS sur les deux.
+
+## P0.2 - Parité des contrats et données durables
+
+- [ ] Construire une matrice unique des types/behaviours enregistrés dans natif,
+  headless, authoring WASM et player Web.
+- [ ] Ajouter explicitement UI et nœuds physiques requis au fold headless.
+- [ ] Prouver un round-trip sémantique de chaque type/propriété/behaviour sur les
+  quatre runtimes; aucun fallback générique.
+- [ ] Décider et migrer l'adressage des SaidaOps du nom mutable vers NodeId, ou
+  geler explicitement la limite pour V1.
+- [ ] Générer le manifeste depuis le bundle réellement livré et vérifier que
+  tous les types annoncés round-trippent.
+- [ ] Étendre le corpus de compatibilité avec WitnessGame gelé et snapshots de
+  chaque version publiée.
+- [ ] Refuser partout schémas futurs/contradictoires et données inconnues avec
+  diagnostic exploitable.
+- [ ] Produire un release manifest avec versions et SHA des players, authoring
+  WASM, `saida_tool`, formats et fixtures.
+
+Gate : un projet V1 ne peut être perdu, appauvri ou interprété différemment par
+deux runtimes annoncés compatibles.
+
+## P0.3 - UI V1
+
+- [ ] Stabiliser le contrat auteur Rml/HTML, CSS et JS projet.
+- [ ] Charger fonts, images et feuilles de style depuis l'AssetRegistry avec
+  erreurs visibles.
+- [ ] Finaliser rendu RmlUi CPU desktop : géométrie, textures, clipping/scissor,
+  blend, transforms, resize et DPI.
+- [ ] Prouver Screen Space pour HUD/menu et World Space pour panneau 3D.
+- [ ] Unifier hit-test, focus, clavier, souris, scroll, touch et capture UI.
+- [ ] Brancher DOM ciblé et QuickJS sans API navigateur implicite.
+- [ ] Garantir lifecycle Play/Stop/reload et sérialisation des documents.
+- [ ] Ajouter inspector, picking et édition de chemins/modes avec undo/redo.
+- [ ] Créer un corpus UI desktop/Web/XR et des captures de référence.
+- [ ] Mesurer le backend CPU avant de décider un backend GPU RmlUi.
+
+Gate : WitnessGame et le corpus UI rendent et interagissent correctement sur
+desktop et Web; l'absence XR éventuelle est un fallback déclaré.
+
+## P0.4 - API gameplay et stockage
+
+- [ ] Exposer en JS l'accès aux autoloads, nœuds/groupes et signaux cross-node.
+- [ ] Ajouter les queries/contraintes physiques indispensables et leur parité JS.
+- [ ] Compléter les bindings animation, graph, sequence et blackboard.
+- [x] Émettre un warning quand un module JS ne fournit aucun hook reconnu.
+- [ ] Définir la politique de permissions des scripts publics au-delà du
+  confinement filesystem et du budget temps.
+- [ ] Déplacer les saves vers l'emplacement utilisateur de chaque OS.
+- [x] Rendre les écritures atomiques avec conservation de l'ancien fichier si
+  le remplacement échoue.
+- [ ] Versionner les saves, fournir migrations/rejet explicite et metadata de
+  slots.
+- [ ] Séparer préférences et progression, ajouter quotas et erreurs explicites.
+- [ ] Stabiliser le contrat asynchrone nécessaire à IDBFS/cloud save futur.
+
+Gate : WitnessGame communique sans fichier détourné et récupère une sauvegarde
+cohérente après crash/redémarrage.
+
+## P0.5 - Assets, mémoire et contenu hostile
+
+- [ ] Imposer le budget GPU pendant une scène avec LRU mesuré.
+- [ ] Faire passer rigs, clips et graphs par AssetLoader et `trimUnused`.
+- [ ] Stabiliser l'identité des meshes glTF mémoire après Play/Stop et
+  changement de scène.
+- [ ] Implémenter fetch/IDBFS streaming pour remplacer le preload MEMFS des gros
+  jeux Web.
+- [ ] Gérer un OBJ/glTF/GLB corrompu sans abort du player Web.
+- [ ] Ajouter MikkTSpace ou désactiver explicitement le normal mapping sans
+  tangentes valides.
+- [ ] Brancher l'export GLB meshopt dans l'UI d'import.
+- [ ] Décider KTX2/Basis pour textures de release Web.
+- [ ] Mesurer hitch et mémoire sur N cycles avec seuils CI.
+
+Gate : budget respecté, aucune croissance non bornée, contenu invalide refusé
+sans tuer le runtime.
+
+## P0.6 - Input et capacités
+
+- [ ] Implémenter un backend navigateur Gamepad API avant d'annoncer la capacité
+  Web, ou exclure formellement la manette Web de la V1.
+- [ ] Tester le backend desktop avec manettes physiques Xbox/PlayStation
+  reconnues par GLFW.
+- [ ] Ajouter rebinding runtime et profils sérialisés.
+- [ ] Ajouter sélection de périphérique et deux joueurs locaux si promis en V1.
+- [ ] Transformer touch brut en bindings/zones/gestes réutilisables.
+- [ ] Détecter le dernier périphérique actif et adapter les prompts UI.
+- [ ] Ajouter haptique standard lorsque disponible.
+
+Gate : la matrice publiée correspond exactement aux backends testés; aucune
+valeur neutre trompeuse.
+
+## P0.7 - Release, CI et exploitation moteur
+
+- [ ] Rendre obligatoires build natif, 50+ tests, corpus compat, fold
+  déterministe, Witness desktop et Witness Web dans la CI.
+- [ ] Publier `saida_tool`, player Web et authoring WASM comme artefacts pinnés,
+  jamais via `latest` seul.
+- [ ] Refaire la preuve Linux propre et byte-identique Windows/Linux sur les
+  fixtures de fold.
+- [ ] Produire archive/installeur Windows signé, validation DLL et rollback.
+- [ ] Ajouter crash logs exploitables et symboles associés à la version.
+- [ ] Générer SBOM, inventaire licences/assets/modèles et notices GPL/SPDX.
+- [ ] Tester le bouton Build et les packages sur runners propres.
+- [ ] Documenter support GPU/OS/navigateur et procédure de retrait d'une release.
+
+Gate : une release peut être reproduite, identifiée, diagnostiquée et retirée.
+
+## P1 - Qualité des sous-systèmes
+
+- [ ] XR : valider casques/runtimes ciblés, contrôleurs et hand tracking.
+- [ ] XR : MSAA multiview/resolve, overlay ImGui et backend d'anchors réel.
+- [ ] Éditeur : rendre undoables WebCanvas et `CollisionShape resetAuto`.
+- [ ] Hub : garantir renommage dossier, entrée Hub et `.saidaproj` atomique.
+- [ ] Finir la migration des behaviours built-in vers réflexion/registre unique.
+- [ ] Physique : compléter queries, contraintes et diagnostics.
+- [ ] Stabiliser le flag GPU-driven et benchmarker chemin classique, bindless,
+  indirect draw et compute culling sur un corpus reproductible.
+- [ ] Rendu : point-light cubemap shadows et persistance des lightmaps si
+  incluses dans la promesse V1.
+- [ ] Mesurer et optimiser LTO seulement après stabilité.
+
+## P2 - Hors V1, conservé comme décision
+
+Ces éléments ne retardent pas la V1 sauf changement explicite de promesse :
+
+- multiplayer réseau, grands terrains et frameworks de genre;
+- SIMD animation généralisé, pose sharing massif et GPU crowds;
+- Radiance Cascades et recherches GI avancées;
+- backend GPU RmlUi si le backend CPU respecte les budgets;
+- graph SaidaFX complet, trails/ribbons et collisions particules avancées;
+- world model, skills et agents autonomes;
+- store d'assets et services en ligne, portés par la plateforme Saida.
+
+## Ordre de fermeture
+
+1. Rendre WitnessGame Web jouable, UI incluse.
+2. Fermer registres, snapshots et round-trips cross-runtime.
+3. Fermer API gameplay, saves et assets hostiles/bornés.
+4. Automatiser export UI et tests sur machines propres.
+5. Publier des artefacts versionnés consommables par `saida`.
+6. Finaliser licences, support, rollback et recette de release.
+
+## Définition de V1
+
+La V1 est atteinte uniquement si toutes les gates P0 sont cochées, depuis un
+commit propre, avec artefacts exacts de release. Le même WitnessGame doit tourner
+en éditeur, desktop autonome et Web; les anciens projets doivent migrer ou être
+refusés sans corruption; la mémoire doit rester bornée; les limitations publiées
+doivent correspondre au comportement observé.

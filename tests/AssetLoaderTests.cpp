@@ -93,7 +93,7 @@ int main() {
         assert(waitForResidentZero(loader));
     }
 
-    // --- Étape de décodage (PLAN_V1_ENGINE chantier 3) ---
+    // Decoding failures must stay explicit and deterministic.
 
     // Un decoder consomme les bytes bruts et produit un payload typé ; la
     // comptabilité bascule sur la taille décodée.

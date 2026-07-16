@@ -4,8 +4,8 @@
 
 namespace saida {
 
-// Métadonnées d'exécutable écrites dans le <Game>.exe packagé par le Build
-// (PLAN_V1_ENGINE chantier 1 / Étape 15) : ressource VERSIONINFO (nom du
+// Métadonnées d'exécutable écrites dans le <Game>.exe packagé par le Build :
+// ressource VERSIONINFO (nom du
 // produit, version, éditeur) et icône principale depuis un fichier .ico.
 // Windows uniquement — no-op succès ailleurs (l'export web n'a pas d'exe).
 struct ExeMetadata {

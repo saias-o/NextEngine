@@ -4,6 +4,8 @@
 #include "scene/Behaviour.hpp"
 #include "scripting/JsContext.hpp"
 
+#include <array>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <variant>
@@ -59,6 +61,18 @@ public:
 private:
     friend class JsTimerBindings;
 
+    enum class LifecycleHook : std::size_t {
+        Ready,
+        Update,
+        Destroy,
+        Enable,
+        Disable,
+        Count
+    };
+
+    static constexpr std::array<const char*, static_cast<std::size_t>(LifecycleHook::Count)>
+        kLifecycleHookNames{"onReady", "onUpdate", "onDestroy", "onEnable", "onDisable"};
+
     enum class JsTimerKind { Wait, Every, Tween };
 
     struct JsTimerCallback {
@@ -81,8 +95,9 @@ private:
     std::string resolveScriptPath() const;
     bool reloadContext(bool lifecycleReload);
     bool shouldLoadAsModule(const std::string& resolvedPath) const;
-    bool callHook(const char* functionName);
-    bool callHook(const char* functionName, double arg);
+    void inspectLifecycleHooks();
+    bool callHook(LifecycleHook hook);
+    bool callHook(LifecycleHook hook, double arg);
     void updateScriptWatchers(const std::string& resolvedPath, const std::vector<std::string>& moduleDependencies);
     bool scriptFilesChanged();
     void checkHotReload(float dt);
@@ -109,6 +124,7 @@ private:
     bool started_ = false;
     bool moduleMode_ = false;
     bool loaded_ = false;
+    std::array<bool, kLifecycleHookNames.size()> lifecycleHooks_{};
 };
 
 } // namespace saida

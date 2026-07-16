@@ -922,8 +922,7 @@ int cmdCookAnim(const std::vector<std::string>& args) {
     return allWithinTolerance ? kExitOk : kExitInvalid;
 }
 
-// Le chemin « ship » réel (PLAN_V1_ENGINE chantier 1) : le même
-// BuildExporter que le bouton Build de l'éditeur, scriptable pour la CI.
+// Utilise le même BuildExporter que le bouton Build de l'éditeur.
 int cmdExportGame(const std::vector<std::string>& args) {
     std::string projectPath, platform = "windows";
     saida::BuildExporter::Options options;

@@ -61,7 +61,10 @@ public:
     // ---- Binding API ----
     static void bindKey(const std::string& action, KeyCode key, const InputContextID& context = kGlobalContext);
     static void bindMouse(const std::string& action, MouseButton btn, const InputContextID& context = kGlobalContext);
+    static void bindGamepadButton(const std::string& action, GamepadButton button, const InputContextID& context = kGlobalContext);
     static void bindGamepadAxis(const std::string& action, GamepadAxis axis, float scale = 1.0f, const InputContextID& context = kGlobalContext);
+    static void bindGamepadAxis(const std::string& action, GamepadAxis axis, float scale,
+                                float deadzone, const InputContextID& context = kGlobalContext);
     
     static void unmapAction(const std::string& action, const InputContextID& context = kGlobalContext);
     static void clearAllActions();
@@ -88,6 +91,9 @@ public:
     static bool isMouseButtonDown(MouseButton btn);
     static bool isMouseButtonPressed(MouseButton btn);
     static bool isMouseButtonReleased(MouseButton btn);
+    static bool isGamepadConnected();
+    static int activeGamepadId();
+    static const std::string& activeGamepadName();
 
     static glm::vec2 mouseDelta();          // movement since last frame
     static glm::vec2 mousePosition();       // cursor position in window pixels

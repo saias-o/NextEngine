@@ -1,5 +1,5 @@
-# Minimal headless WASM build of the authoring-core validation (Phase C2/C3 of
-# PLAN_INTEGRATION_SAIDA.md). Built with emscripten, loaded in-process by the
+# Minimal headless WASM build of the authoring-core validation. Built with
+# Emscripten and loaded in-process by the
 # Node Collaboration Gateway. No GPU, no scene, no reflection — just SaidaOp.
 #
 #   ./web/build_authoring_wasm.sh

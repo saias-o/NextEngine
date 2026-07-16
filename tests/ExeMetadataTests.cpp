@@ -1,5 +1,4 @@
-// Vérifie l'écriture des métadonnées d'exécutable du Build (Étape 15 /
-// PLAN_V1_ENGINE chantier 1) : le test copie son propre exe, le patche via
+// Le test copie son propre exécutable, le patche via
 // applyExeMetadata, puis relit VERSIONINFO et RT_GROUP_ICON avec l'API Windows.
 
 #include "editor/ExeMetadata.hpp"

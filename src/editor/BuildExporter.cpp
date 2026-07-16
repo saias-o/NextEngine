@@ -29,9 +29,39 @@ bool copyTree(const fs::path& src, const fs::path& dst, std::string& log) {
     std::error_code ec;
     if (!fs::exists(src)) return true;  // nothing to copy is not an error
     fs::create_directories(dst, ec);
-    fs::copy(src, dst,
-             fs::copy_options::recursive | fs::copy_options::overwrite_existing,
-             ec);
+    if (ec) {
+        log += "  ! failed to create " + dst.string() + " (" + ec.message() + ")\n";
+        return false;
+    }
+
+    fs::recursive_directory_iterator it(src, ec);
+    const fs::recursive_directory_iterator end;
+    while (!ec && it != end) {
+        const fs::directory_entry& entry = *it;
+        const fs::path relative = fs::relative(entry.path(), src, ec);
+        if (ec) break;
+        const fs::path target = dst / relative;
+
+        const fs::file_status status = entry.symlink_status(ec);
+        if (ec) break;
+        if (fs::is_symlink(status)) {
+            log += "  ! refusing symlink in package: " + entry.path().string() + "\n";
+            return false;
+        }
+        if (fs::is_directory(status)) {
+            fs::create_directories(target, ec);
+        } else if (fs::is_regular_file(status)) {
+            fs::create_directories(target.parent_path(), ec);
+            if (!ec) {
+                fs::copy_file(entry.path(), target,
+                              fs::copy_options::overwrite_existing, ec);
+            }
+        } else {
+            log += "  ! refusing special file in package: " + entry.path().string() + "\n";
+            return false;
+        }
+        if (!ec) it.increment(ec);
+    }
     if (ec) {
         log += "  ! failed to copy " + src.string() + " -> " + dst.string() +
                " (" + ec.message() + ")\n";

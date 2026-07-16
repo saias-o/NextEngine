@@ -304,6 +304,7 @@ add_library(saida_engine STATIC
     src/core/FileWatcher.cpp
     src/core/Window.cpp
     src/core/Camera.cpp
+    src/core/AtomicFile.cpp
     src/core/Input.cpp
     src/core/Paths.cpp
     src/core/Profiler.cpp
@@ -599,6 +600,12 @@ if (BUILD_TESTING)
     target_compile_options(saida_runtime_boot_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_runtime_boot_tests COMMAND $<TARGET_FILE:saida_runtime_boot_tests>)
 
+    add_executable(saida_input_gamepad_tests tests/InputGamepadTests.cpp)
+    saida_test_target(saida_input_gamepad_tests)
+    target_include_directories(saida_input_gamepad_tests PRIVATE src)
+    target_compile_options(saida_input_gamepad_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_input_gamepad_tests COMMAND $<TARGET_FILE:saida_input_gamepad_tests>)
+
     add_executable(saida_animation_core_tests tests/AnimationCoreTests.cpp)
     saida_test_target(saida_animation_core_tests)
     target_link_libraries(saida_animation_core_tests PRIVATE saida_engine)
@@ -706,6 +713,18 @@ if (BUILD_TESTING)
     target_compile_options(saida_js_timer_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_js_timer_tests COMMAND $<TARGET_FILE:saida_js_timer_tests>)
 
+    add_executable(saida_js_runtime_safety_tests tests/JsRuntimeSafetyTests.cpp)
+    saida_test_target(saida_js_runtime_safety_tests)
+    target_link_libraries(saida_js_runtime_safety_tests PRIVATE saida_engine)
+    target_compile_options(saida_js_runtime_safety_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_js_runtime_safety_tests COMMAND $<TARGET_FILE:saida_js_runtime_safety_tests>)
+
+    add_executable(saida_atomic_file_tests tests/AtomicFileTests.cpp)
+    saida_test_target(saida_atomic_file_tests)
+    target_link_libraries(saida_atomic_file_tests PRIVATE saida_engine)
+    target_compile_options(saida_atomic_file_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_atomic_file_tests COMMAND $<TARGET_FILE:saida_atomic_file_tests>)
+
     add_executable(saida_gameplay_primitive_tests tests/GameplayPrimitiveTests.cpp)
     saida_test_target(saida_gameplay_primitive_tests)
     target_link_libraries(saida_gameplay_primitive_tests PRIVATE saida_engine)
@@ -730,8 +749,8 @@ if (BUILD_TESTING)
     target_compile_options(saida_asset_loader_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_asset_loader_tests COMMAND $<TARGET_FILE:saida_asset_loader_tests>)
 
-    # Corpus de rétro-compat (PLAN_V1_ENGINE chantier 2) : fixtures figés
-    # chargés à chaque build, toute rupture de chargement fait échouer la CI.
+    # Les fixtures de rétrocompatibilité sont figées et chargées à chaque build;
+    # toute rupture de chargement fait échouer la CI.
     add_executable(saida_compat_corpus_tests tests/CompatCorpusTests.cpp)
     saida_test_target(saida_compat_corpus_tests)
     target_link_libraries(saida_compat_corpus_tests PRIVATE saida_engine)

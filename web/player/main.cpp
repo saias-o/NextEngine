@@ -1,5 +1,4 @@
-// SaidaEngine web player — le player de JEU (PLAN_SAIDA_ENGINE_UPDATE §3,
-// Phase A.1), distinct du runtime d'authoring (web/runtime).
+// SaidaEngine web player, distinct du runtime d'authoring.
 //
 // Il boote exactement comme le player desktop (src/runtime/main.cpp) : lit le
 // manifeste game.saida, charge le projet et la scène principale via le VRAI
@@ -7,8 +6,8 @@
 // SceneTree (autoloads) puis exécute le cycle de jeu — update des behaviours,
 // CameraDirector, opérations différées, timers — et rend via le backend WebGPU.
 //
-// Physique et audio sont actifs. L'UI RmlUi reste explicitement absente via
-// PlatformCaps ; une scène qui contient un type UI est refusée au chargement.
+// Physique, audio et le HUD RmlUi sont actifs. Les types UI non encore portés
+// restent refusés au chargement par le registre fail-closed.
 
 #include "audio/AudioManager.hpp"
 #include "core/Camera.hpp"
@@ -33,6 +32,9 @@
 #include "scene/Scene.hpp"
 #include "scene/SceneSerializer.hpp"
 #include "scene/SceneTree.hpp"
+#include "scene/UICanvasNode.hpp"
+#include "scene/UINode.hpp"
+#include "scene/UITextNode.hpp"
 #include "scripting/JsRuntime.hpp"
 
 #include <GLFW/glfw3.h>
@@ -97,13 +99,16 @@ bool bootGame() {
         return failBoot("cannot load project " + boot.manifest.project);
     }
 
-    // Types réfléchis + types de base — même liste que le player desktop, moins
-    // les nœuds physique/UI absents de ce build (diagnostiqués au chargement).
+    // Types réfléchis + types de base. Le registre reste volontairement
+    // explicite : un type non porté fait échouer le preflight.
     registerReflectedTypes();
     NodeRegistry::instance().registerType<Node>("Node");
     NodeRegistry::instance().registerType<Scene>("Scene");
     NodeRegistry::instance().registerType<MeshNode>("MeshNode");
     NodeRegistry::instance().registerType<CameraNode>("Camera");
+    NodeRegistry::instance().registerType<UINode>("UINode");
+    NodeRegistry::instance().registerType<UICanvasNode>("UICanvasNode");
+    NodeRegistry::instance().registerType<UITextNode>("UITextNode");
 
     gApp.resources = std::make_unique<ResourceManager>(*gApp.device, gApp.registry.get());
 
@@ -231,6 +236,7 @@ int main() {
                               uint32_t(platform::Capability::ScriptGameplay) |
                               uint32_t(platform::Capability::Physics) |
                               uint32_t(platform::Capability::Audio) |
+                              uint32_t(platform::Capability::GameUI) |
                               uint32_t(platform::Capability::UserStorage));
     AudioManager::get().init();
     Log::info(platform::report());

@@ -3,12 +3,18 @@
 #include "rhi/Rhi.hpp"
 
 #include <glm/glm.hpp>
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
+
+namespace Rml {
+class Context;
+class ElementDocument;
+}
 
 namespace saida {
 
-class VulkanDevice;
 class ResourceManager;
 class Scene;
 class UINode;
@@ -24,11 +30,14 @@ struct UIDrawCmd {
     uint32_t hasTexture;
     uint32_t useCorners = 0;
     int sortOrder = 0;
+#ifdef SAIDA_RHI_WEBGPU
+    rhi::BindGroup* textureGroup = nullptr;
+#endif
 };
 
 class UIRenderer {
 public:
-    UIRenderer(VulkanDevice& device, ResourceManager& resources, rhi::Format colorFormat);
+    UIRenderer(rhi::Device& device, ResourceManager& resources, rhi::Format colorFormat);
     ~UIRenderer();
     UIRenderer(const UIRenderer&) = delete;
     UIRenderer& operator=(const UIRenderer&) = delete;
@@ -41,8 +50,11 @@ public:
 
 private:
     void traverseUI(UINode* node);
+#ifdef SAIDA_RHI_WEBGPU
+    void gatherLegacyWebUI(UICanvasNode& canvas, glm::vec2 viewportSize);
+#endif
 
-    VulkanDevice& device_;
+    rhi::Device& device_;
     ResourceManager& resources_;
     
     std::unique_ptr<rhi::Pipeline> pipeline_;
@@ -50,6 +62,19 @@ private:
     std::vector<UIDrawCmd> drawCmds_;
     std::vector<WebCanvasNode*> webNodesToUpdate_;
     bool loggedWebCanvasGather_ = false;
+
+#ifdef SAIDA_RHI_WEBGPU
+    std::unique_ptr<rhi::BindGroupLayout> textureLayout_;
+    std::unique_ptr<rhi::Texture> legacyUiTexture_;
+    std::unique_ptr<rhi::BindGroup> legacyUiTextureGroup_;
+    std::string legacyContextName_;
+    Rml::Context* legacyContext_ = nullptr;
+    Rml::ElementDocument* legacyDocument_ = nullptr;
+    uint64_t legacyUiHash_ = 0;
+    uint32_t legacyUiWidth_ = 0;
+    uint32_t legacyUiHeight_ = 0;
+    bool loggedLegacyUiRaster_ = false;
+#endif
 };
 
 } // namespace saida

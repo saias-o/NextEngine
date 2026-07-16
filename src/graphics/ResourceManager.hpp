@@ -50,7 +50,7 @@ public:
 
     // Mesh by id: a built-in primitive or an .obj AssetID.
     Mesh* getMesh(AssetID id);
-    // Texture par id — NON BLOQUANT (PLAN_V1_ENGINE chantier 3) : retourne la
+    // Texture par id, non bloquante : retourne la
     // texture si elle est résidente, sinon lance le chargement asynchrone
     // (lecture + décodage stbi sur le worker) et retourne nullptr — l'appelant
     // retombe sur ses fallbacks et les matériaux sont rebindés quand la
@@ -133,7 +133,7 @@ public:
         std::unordered_set<const Material*> materials;
     };
 
-    // Déchargement réel (PLAN_V1_ENGINE chantier 3) : évince du cache tout ce
+    // Évince du cache tout ce
     // que `used` ne référence plus (mark-and-sweep au changement de scène).
     // Les objets GPU partent au graveyard et sont détruits kRetireFrames plus
     // tard (une frame en vol peut encore les lire) ; leurs index bindless et
@@ -207,7 +207,7 @@ private:
     std::unique_ptr<Texture> missingTexture_;
     std::unique_ptr<AssetLoader> assetLoader_;
 
-    // --- Chargement async + cycle de vie (PLAN_V1_ENGINE chantier 3) ---
+    // Chargement asynchrone et cycle de vie.
     struct PendingTexture {
         bool srgb = true;
         AssetHandle handle;

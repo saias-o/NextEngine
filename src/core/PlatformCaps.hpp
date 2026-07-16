@@ -1,7 +1,6 @@
 #pragma once
 
-// Contrat de capacités runtime (PLAN_SAIDA_ENGINE_UPDATE §2.5 : dégradation
-// explicite). Chaque player déclare au boot ce que sa plateforme/son build
+// Chaque player déclare au boot ce que sa plateforme et son build
 // supporte réellement ; un système absent doit se signaler clairement, jamais
 // échouer en silence ni retourner une valeur neutre trompeuse.
 //

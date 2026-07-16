@@ -6,8 +6,7 @@
 //   project=MyGame.saidaproj
 //   main_scene=scenes/main.scene
 //
-// Partagé par tous les runtimes (PLAN_SAIDA_ENGINE_UPDATE §2.1 : un seul
-// moteur de jeu) : le player web boote exactement le même fichier que l'exe
+// Le player web boote exactement le même fichier que l'exécutable
 // desktop.
 
 #include <istream>

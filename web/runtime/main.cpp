@@ -576,7 +576,7 @@ void frame() {
     }
 }
 
-// D2 (PLAN_INTEGRATION_SAIDA.md §12, Track 1-B): rebuild the live scene from a
+// Rebuild the live authoring scene from a
 // scene-document JSON (the `doc` returned by the platform's GET /scene). Reuses
 // the same focused loaders as boot (loadNode/applySettings) so a snapshot round-
 // trips into the exact node types the web runtime can render. Replacing the Scene

@@ -1,5 +1,5 @@
-# Build reproductible du binaire headless `saida_tool` pour Linux (P0.1 du
-# PLAN_INTEGRATION_SAIDA.md). Ce binaire est la dépendance runtime dure de la
+# Build reproductible du binaire headless `saida_tool` pour Linux. Ce binaire
+# est la dépendance runtime dure de la
 # plateforme (GET /scene, snapshots périodiques, dry-run agent) : les images
 # Docker de `apps/api` et `apps/workers` le copient depuis ce stage.
 #

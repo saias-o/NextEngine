@@ -38,8 +38,8 @@ struct SandboxedPathResult {
 
 // Resolve a user-supplied project-relative path under projectRoot. This is the
 // shared guard for tools/MCP/web workers: callers may pass "foo.js" and a
-// defaultDirectory such as "scripts", but absolute paths, drive-qualified paths
-// and parent traversal are rejected before touching the filesystem.
+// defaultDirectory such as "scripts", but absolute paths, drive-qualified paths,
+// parent traversal and symlink escapes are rejected before touching the target.
 SandboxedPathResult resolveSandboxedProjectPath(const std::string& projectRoot,
                                                 const std::string& userPath,
                                                 const std::string& defaultDirectory = {});

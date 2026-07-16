@@ -28,9 +28,7 @@ class Project;
 class Material;
 class ResourceManager;
 class ShadowMap;
-#ifndef SAIDA_RHI_WEBGPU
 class UIRenderer;
-#endif
 class GIVolume;
 class GpuProfiler;
 class PostProcessor;
@@ -172,9 +170,7 @@ private:
     std::unique_ptr<rhi::Pipeline> gpuDrivenPipeline_;
     std::unique_ptr<rhi::Pipeline> webCanvasWorldPipeline_;
     std::unique_ptr<ShadowMap> shadowMap_;
-#ifndef SAIDA_RHI_WEBGPU
     std::unique_ptr<UIRenderer> uiRenderer_;
-#endif
     std::unique_ptr<GIVolume> gi_;  // DDGI irradiance volume (the single GI primitive)
     std::unique_ptr<GpuProfiler> gpuProfiler_;
 

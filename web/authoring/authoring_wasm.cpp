@@ -1,5 +1,5 @@
-// saida_authoring — headless WASM build of the engine authoring-core validation
-// (Phase C2/C3 of PLAN_INTEGRATION_SAIDA.md). Loaded IN-PROCESS by the Node
+// Headless WASM build of the engine authoring-core validation. Loaded
+// in-process by the Node
 // Collaboration Gateway so it validates incoming SaidaOps with the *real* C++
 // contract (parseSaidaOp + validateOpShape) — no TypeScript reimplementation
 // (zero duplication) and no per-op subprocess (no latency). Extends invariant

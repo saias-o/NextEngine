@@ -179,7 +179,7 @@ void SceneTree::applyDeferred() {
         }
     }
 
-    // 3) Déchargement réel (PLAN_V1_ENGINE chantier 3) : après un changement
+    // 3) Après un changement
     // de scène, tout ce que le World (autoloads + nouvelle sous-scène) ne
     // référence plus est évincé du ResourceManager — la mémoire GPU reste
     // bornée sur N cycles hub↔arena. L'ancienne sous-scène est déjà détruite,

@@ -1,4 +1,7 @@
 #include "core/Input.hpp"
+#include "core/InputGamepad.hpp"
+#include "core/Log.hpp"
+#include "core/PlatformCaps.hpp"
 
 // Sur le web il n'existe pas de wrapper Window (il force GLFW_INCLUDE_VULKAN) :
 // seule la voie bindRaw est compilée, g_window reste toujours null.
@@ -37,6 +40,9 @@ std::vector<uint32_t> g_textInput;
 std::vector<TouchPoint> g_touches;
 std::vector<TouchPoint> g_pendingTouches;
 std::unordered_map<uint64_t, glm::vec2> g_lastTouchPositions;
+GLFWgamepadstate g_gamepadState{};
+int g_activeGamepad = -1;
+std::string g_activeGamepadName;
 
 // Actions virtuelles injectées (tests/CI) : combinées aux bindings au max.
 struct InjectedAction {
@@ -61,6 +67,28 @@ struct Subscription {
 };
 std::vector<Subscription> g_subscriptions;
 uint32_t g_nextSubscriptionId = 1;
+
+bool isContextActive(const InputContextID& context) {
+    return std::find(g_contextStack.begin(), g_contextStack.end(), context) !=
+           g_contextStack.end();
+}
+
+float aggregateActionStrength(const std::string& action, bool previous,
+                              const InputContextID* onlyContext = nullptr) {
+    float strength = 0.0f;
+    for (const auto& binding : g_bindings) {
+        if (binding.actionName != action || !isContextActive(binding.context)) continue;
+        if (onlyContext && binding.context != *onlyContext) continue;
+        strength = std::max(strength,
+                            previous ? binding.previousValue : binding.currentValue);
+    }
+    if (!onlyContext || *onlyContext == kGlobalContext) {
+        if (auto it = g_injectedActions.find(action); it != g_injectedActions.end())
+            strength = std::max(strength, previous ? it->second.previous
+                                                   : it->second.current);
+    }
+    return strength;
+}
 
 // Mappings
 int glfwKeyFromKeyCode(KeyCode key) {
@@ -149,6 +177,81 @@ int glfwMouseFromMouseButton(MouseButton btn) {
     return static_cast<int>(btn);
 }
 
+int glfwButtonFromGamepadButton(GamepadButton button) {
+    switch (button) {
+        case GamepadButton::A: return GLFW_GAMEPAD_BUTTON_A;
+        case GamepadButton::B: return GLFW_GAMEPAD_BUTTON_B;
+        case GamepadButton::X: return GLFW_GAMEPAD_BUTTON_X;
+        case GamepadButton::Y: return GLFW_GAMEPAD_BUTTON_Y;
+        case GamepadButton::LeftBumper: return GLFW_GAMEPAD_BUTTON_LEFT_BUMPER;
+        case GamepadButton::RightBumper: return GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER;
+        case GamepadButton::Back: return GLFW_GAMEPAD_BUTTON_BACK;
+        case GamepadButton::Start: return GLFW_GAMEPAD_BUTTON_START;
+        case GamepadButton::Guide: return GLFW_GAMEPAD_BUTTON_GUIDE;
+        case GamepadButton::LeftThumb: return GLFW_GAMEPAD_BUTTON_LEFT_THUMB;
+        case GamepadButton::RightThumb: return GLFW_GAMEPAD_BUTTON_RIGHT_THUMB;
+        case GamepadButton::DpadUp: return GLFW_GAMEPAD_BUTTON_DPAD_UP;
+        case GamepadButton::DpadRight: return GLFW_GAMEPAD_BUTTON_DPAD_RIGHT;
+        case GamepadButton::DpadDown: return GLFW_GAMEPAD_BUTTON_DPAD_DOWN;
+        case GamepadButton::DpadLeft: return GLFW_GAMEPAD_BUTTON_DPAD_LEFT;
+    }
+    return -1;
+}
+
+int glfwAxisFromGamepadAxis(GamepadAxis axis) {
+    switch (axis) {
+        case GamepadAxis::LeftX: return GLFW_GAMEPAD_AXIS_LEFT_X;
+        case GamepadAxis::LeftY: return GLFW_GAMEPAD_AXIS_LEFT_Y;
+        case GamepadAxis::RightX: return GLFW_GAMEPAD_AXIS_RIGHT_X;
+        case GamepadAxis::RightY: return GLFW_GAMEPAD_AXIS_RIGHT_Y;
+        case GamepadAxis::LeftTrigger: return GLFW_GAMEPAD_AXIS_LEFT_TRIGGER;
+        case GamepadAxis::RightTrigger: return GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER;
+    }
+    return -1;
+}
+
+void sampleGamepad() {
+    std::fill(std::begin(g_gamepadState.buttons), std::end(g_gamepadState.buttons),
+              GLFW_RELEASE);
+    std::fill(std::begin(g_gamepadState.axes), std::end(g_gamepadState.axes), 0.0f);
+
+#ifdef __EMSCRIPTEN__
+    // Emscripten's GLFW port exposes the declarations but does not link the
+    // standard gamepad functions. The web player advertises gamepad=NO until a
+    // browser Gamepad API backend is implemented.
+    g_activeGamepad = -1;
+    g_activeGamepadName.clear();
+    return;
+#else
+    int detected = -1;
+    if (platform::has(platform::Capability::GamepadInput)) {
+        for (int jid = GLFW_JOYSTICK_1; jid <= GLFW_JOYSTICK_LAST; ++jid) {
+            if (glfwJoystickIsGamepad(jid) == GLFW_TRUE) {
+                detected = jid;
+                break;
+            }
+        }
+    }
+
+    if (detected >= 0 && glfwGetGamepadState(detected, &g_gamepadState) != GLFW_TRUE)
+        detected = -1;
+
+    if (detected == g_activeGamepad) return;
+    if (g_activeGamepad >= 0)
+        Log::info("gamepad disconnected: ", g_activeGamepadName);
+
+    g_activeGamepad = detected;
+    g_activeGamepadName.clear();
+    if (g_activeGamepad >= 0) {
+        if (const char* name = glfwGetGamepadName(g_activeGamepad))
+            g_activeGamepadName = name;
+        if (g_activeGamepadName.empty()) g_activeGamepadName = "Standard gamepad";
+        Log::info("gamepad connected: ", g_activeGamepadName,
+                  " (id=", g_activeGamepad, ")");
+    }
+#endif
+}
+
 } // namespace
 
 namespace {
@@ -166,6 +269,15 @@ void installDefaultBindings() {
 
     Input::bindMouse("Fire", MouseButton::Left);
     Input::bindMouse("Aim", MouseButton::Right);
+
+    Input::bindGamepadAxis("MoveForward", GamepadAxis::LeftY, -1.0f);
+    Input::bindGamepadAxis("MoveBackward", GamepadAxis::LeftY, 1.0f);
+    Input::bindGamepadAxis("MoveLeft", GamepadAxis::LeftX, -1.0f);
+    Input::bindGamepadAxis("MoveRight", GamepadAxis::LeftX, 1.0f);
+    Input::bindGamepadButton("Jump", GamepadButton::A);
+    Input::bindGamepadButton("Sprint", GamepadButton::LeftThumb);
+    Input::bindGamepadAxis("Fire", GamepadAxis::RightTrigger);
+    Input::bindGamepadAxis("Aim", GamepadAxis::LeftTrigger);
 }
 
 } // namespace
@@ -228,9 +340,19 @@ float Input::evaluateBinding(const ActionBinding& binding) {
         if (glfwBtn >= 0 && glfwBtn <= GLFW_MOUSE_BUTTON_LAST) {
             return g_mouseCurr[glfwBtn] ? 1.0f : 0.0f;
         }
+    } else if (binding.isGamepadBtn) {
+        const int button = glfwButtonFromGamepadButton(binding.padBtn);
+        if (g_activeGamepad >= 0 && button >= 0 && button <= GLFW_GAMEPAD_BUTTON_LAST)
+            return g_gamepadState.buttons[button] == GLFW_PRESS ? 1.0f : 0.0f;
+    } else if (binding.isGamepadAxis) {
+        const int axis = glfwAxisFromGamepadAxis(binding.padAxis);
+        if (g_activeGamepad >= 0 && axis >= 0 && axis <= GLFW_GAMEPAD_AXIS_LAST) {
+            return input_detail::gamepadAxisActionValue(
+                binding.padAxis, g_gamepadState.axes[axis], binding.axisScale,
+                binding.deadzone);
+        }
     }
-    
-    // Gamepad axis not implemented yet
+
     return 0.0f;
 }
 
@@ -256,6 +378,7 @@ void Input::newFrame() {
         g_mousePrev[b] = g_mouseCurr[b];
         g_mouseCurr[b] = glfwGetMouseButton(w, b) == GLFW_PRESS;
     }
+    sampleGamepad();
 
 #ifndef __EMSCRIPTEN__
     if (g_window) {
@@ -309,21 +432,22 @@ void Input::newFrame() {
             binding.currentValue = 0.0f;
         }
         
-        // Dispatch callbacks
-        for (const auto& sub : g_subscriptions) {
-            if (sub.actionName == binding.actionName && sub.context == binding.context) {
-                bool isPressed = binding.currentValue > 0.5f;
-                bool wasPressed = binding.previousValue > 0.5f;
-                
-                if (sub.eventType == InputEvent::Pressed && isPressed && !wasPressed) {
-                    sub.callback(binding.currentValue);
-                } else if (sub.eventType == InputEvent::Held && isPressed) {
-                    sub.callback(binding.currentValue);
-                } else if (sub.eventType == InputEvent::Released && !isPressed && wasPressed) {
-                    sub.callback(0.0f);
-                }
-            }
-        }
+    }
+
+    // Events describe the aggregate action, not an individual binding. This
+    // prevents a keyboard release from ending an action still held by gamepad.
+    for (const auto& sub : g_subscriptions) {
+        if (!isContextActive(sub.context)) continue;
+        const float current = aggregateActionStrength(sub.actionName, false, &sub.context);
+        const float previous = aggregateActionStrength(sub.actionName, true, &sub.context);
+        const bool isPressed = current > 0.5f;
+        const bool wasPressed = previous > 0.5f;
+        if (sub.eventType == InputEvent::Pressed && isPressed && !wasPressed)
+            sub.callback(current);
+        else if (sub.eventType == InputEvent::Held && isPressed)
+            sub.callback(current);
+        else if (sub.eventType == InputEvent::Released && !isPressed && wasPressed)
+            sub.callback(0.0f);
     }
 }
 
@@ -345,13 +469,29 @@ void Input::bindMouse(const std::string& action, MouseButton btn, const InputCon
     g_bindings.push_back(b);
 }
 
+void Input::bindGamepadButton(const std::string& action, GamepadButton button,
+                              const InputContextID& context) {
+    ActionBinding b;
+    b.actionName = action;
+    b.context = context;
+    b.isGamepadBtn = true;
+    b.padBtn = button;
+    g_bindings.push_back(b);
+}
+
 void Input::bindGamepadAxis(const std::string& action, GamepadAxis axis, float scale, const InputContextID& context) {
+    bindGamepadAxis(action, axis, scale, 0.1f, context);
+}
+
+void Input::bindGamepadAxis(const std::string& action, GamepadAxis axis, float scale,
+                            float deadzone, const InputContextID& context) {
     ActionBinding b;
     b.actionName = action;
     b.context = context;
     b.isGamepadAxis = true;
     b.padAxis = axis;
     b.axisScale = scale;
+    b.deadzone = std::clamp(deadzone, 0.0f, 0.99f);
     g_bindings.push_back(b);
 }
 
@@ -366,21 +506,7 @@ void Input::clearAllActions() {
 }
 
 float Input::getActionStrength(const std::string& action) {
-    float strength = 0.0f;
-    for (const auto& b : g_bindings) {
-        if (b.actionName == action) {
-            // Check context stack
-            for (auto it = g_contextStack.rbegin(); it != g_contextStack.rend(); ++it) {
-                if (*it == b.context) {
-                    strength = std::max(strength, b.currentValue);
-                    break;
-                }
-            }
-        }
-    }
-    if (auto it = g_injectedActions.find(action); it != g_injectedActions.end())
-        strength = std::max(strength, it->second.current);
-    return strength;
+    return aggregateActionStrength(action, false);
 }
 
 bool Input::isActionHeld(const std::string& action) {
@@ -396,37 +522,13 @@ void Input::clearInjectedActions() {
 }
 
 bool Input::isActionJustPressed(const std::string& action) {
-    if (auto it = g_injectedActions.find(action); it != g_injectedActions.end() &&
-        it->second.current > 0.5f && it->second.previous <= 0.5f)
-        return true;
-    for (const auto& b : g_bindings) {
-        if (b.actionName == action && b.currentValue > 0.5f && b.previousValue <= 0.5f) {
-            // Check context stack
-            for (auto it = g_contextStack.rbegin(); it != g_contextStack.rend(); ++it) {
-                if (*it == b.context) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
+    return aggregateActionStrength(action, false) > 0.5f &&
+           aggregateActionStrength(action, true) <= 0.5f;
 }
 
 bool Input::isActionJustReleased(const std::string& action) {
-    if (auto it = g_injectedActions.find(action); it != g_injectedActions.end() &&
-        it->second.current <= 0.5f && it->second.previous > 0.5f)
-        return true;
-    for (const auto& b : g_bindings) {
-        if (b.actionName == action && b.currentValue <= 0.5f && b.previousValue > 0.5f) {
-            // Check context stack
-            for (auto it = g_contextStack.rbegin(); it != g_contextStack.rend(); ++it) {
-                if (*it == b.context) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
+    return aggregateActionStrength(action, false) <= 0.5f &&
+           aggregateActionStrength(action, true) > 0.5f;
 }
 
 float Input::getAxis(const std::string& negativeAction, const std::string& positiveAction) {
@@ -490,6 +592,10 @@ bool Input::isMouseButtonReleased(MouseButton btn) {
     }
     return false;
 }
+
+bool Input::isGamepadConnected() { return g_activeGamepad >= 0; }
+int Input::activeGamepadId() { return g_activeGamepad; }
+const std::string& Input::activeGamepadName() { return g_activeGamepadName; }
 
 glm::vec2 Input::mouseDelta() { return g_mouseDelta; }
 glm::vec2 Input::mousePosition() { return g_mousePos; }

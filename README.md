@@ -1,36 +1,68 @@
 # SaidaEngine
 
-A lightweight 3D game engine written in **C++17 + Vulkan** and LLM-native.
+SaidaEngine est le moteur 3D de Saida. Il est écrit en C++17, utilise Vulkan
+sur desktop, WebGPU via WebAssembly dans le navigateur et OpenXR pour la VR/AR.
+Le projet vise un moteur léger, lisible et pilotable par des humains comme par
+des assistants IA, sans multiplier les implémentations de gameplay.
 
-## Features
+**Statut au 2026-07-16 : Alpha, non publiable comme V1 stable.**
 
-- **Vulkan 1.3** with Dynamic Rendering, MSAA, VMA memory management
-- **Scene graph** — nodes, hierarchy, world-transform propagation (Godot-style)
-- **PBR shading** — metallic-roughness, normal maps, IBL, ACES tonemapping
-- **Real-time lighting** — Directional / Point / Spot + shadow mapping (PCF)
-- **Lightmap baking** — GPU bake with xatlas auto-unwrap and seam dilation
-- **Post-processing** — SSAO, bloom, distance fog, HDR
-- **DDGI** — dynamic diffuse global illumination (irradiance volume)
-- **Skeletal animation** — glTF/BVH, cubic-spline interpolation, retargeting, GPU skinning
-- **Physics** — Jolt Physics integration (rigid bodies, characters, areas, triggers)
-- **OpenXR / VR** — stereo multiview rendering, action sets, SaidaXRTK toolkit (grab, teleport, anchors, passthrough)
-- **Editor** — scene tree, inspector, file browser, undo/redo, ImGui
-- **JavaScript scripting** — QuickJS modules, ScriptBehaviour, autoloads,
-  signals and gameplay bindings; API coverage and execution sandboxing remain
-  incomplete for untrusted public projects
-- **Web targets** — a WASM/WebGPU authoring runtime and a separate game player;
-  the web player still lacks rendered game UI and full input/capability parity
+## Documents canoniques
 
-## Build on Windows
+Il n'existe que deux documents de vérité en plus de ce README :
 
-The supported development toolchain is **MSYS2 UCRT64 + GCC + CMake +
-Ninja**. Keep all C/C++ dependencies in the same UCRT64 environment; mixing
-MSVC, MINGW64 and UCRT64 libraries is a common source of obscure linker errors.
+- [SPEC.md](SPEC.md) : architecture, contrats publics, formats, sous-systèmes,
+  plateformes, procédures techniques et limites actuelles ;
+- [PLAN_V1.md](PLAN_V1.md) : unique checklist pour atteindre la V1.
 
-### 1. Install the toolchain
+La plateforme web, le backend et l'exploitation vivent dans
+[`saias-o/saida`](https://github.com/saias-o/saida). Son `PLAN_V1.md` porte le
+go/no-go global de production.
 
-Open the **MSYS2 UCRT64** terminal, update MSYS2, then install the required
-packages:
+## Principes
+
+- Un seul modèle de scène et de gameplay pour éditeur, desktop, Web et XR.
+- Un seul runtime JavaScript : QuickJS. RmlUi est le système UI HTML/CSS.
+- Un seul contrat d'authoring : SaidaOps validées vers des snapshots versionnés.
+- RAII, ownership explicite, composants simples et pas d'abstraction lourde
+  sans besoin mesuré.
+- Toute capacité absente est annoncée et échoue explicitement. Aucun contenu
+  durable ne doit être silencieusement appauvri.
+- Les formats publics migrent; les caches régénérables ne sont pas garantis.
+
+## Dépôt
+
+```text
+src/
+  authoring/   manifest, snapshots, SaidaOps
+  core/        fenêtre, input, temps, chemins, capacités
+  editor/      Hub et éditeur ImGui
+  graphics/    ressources GPU, meshes, matériaux
+  physics/     intégration Jolt
+  render/      renderer, GI, post-process, features
+  runtime/     player desktop autonome
+  scene/       scène, nœuds, behaviours, animation
+  scripting/   QuickJS et bindings gameplay
+  ui/          RmlUi, WebCanvas et interaction
+  xr/          OpenXR et SaidaXRTK
+web/
+  authoring/   validateur/fold WASM headless pour Saida
+  player/      player de jeu WASM/WebGPU
+  runtime/     runtime d'authoring WASM/WebGPU
+WitnessGame/   jeu témoin de la V1
+tests/         tests natifs et corpus de compatibilité
+tools/         harnais d'export et de smoke
+```
+
+`saida_engine` est la bibliothèque statique commune. `SaidaEngine` est
+l'éditeur, `SaidaEngineHub` le gestionnaire de projets,
+`SaidaEngineRuntime` le player desktop sans éditeur et `saida_tool` la CLI
+headless utilisée par la CI et la plateforme.
+
+## Prérequis Windows
+
+Toolchain supportée : **MSYS2 UCRT64, GCC, CMake et Ninja**. Ne pas mélanger
+MSVC, MINGW64 et UCRT64.
 
 ```sh
 pacman -Syu
@@ -49,195 +81,122 @@ pacman -S --needed \
 git lfs install
 ```
 
-`shaderc` provides `glslc`. A recent Vulkan-capable GPU driver is also
-required. A separate LunarG Vulkan SDK is optional when using the MSYS2
-packages above.
-
-### 2. Clone all vendored dependencies
-
-FreeType, QuickJS-NG and RmlUi are pinned Git submodules. Clone them at the
-same time as the engine:
+FreeType, QuickJS et RmlUi sont des sous-modules pinnés :
 
 ```sh
-git clone --recurse-submodules https://github.com/saias-o/SaidaEngine.git
-cd SaidaEngine
-git lfs pull
-```
-
-For an existing checkout, or when `third_party/freetype`,
-`third_party/quickjs` or `third_party/rmlui` is empty:
-
-```sh
+git clone --recurse-submodules https://github.com/saias-o/NextEngine.git
+cd NextEngine
 git submodule sync --recursive
 git submodule update --init --recursive
 git lfs pull
 ```
 
-Do not replace these dependencies with arbitrary newer revisions: their
-gitlinks pin versions known to compile together.
+Un pilote GPU Vulkan récent est requis. Le SDK LunarG est optionnel lorsque les
+paquets MSYS2 ci-dessus sont utilisés.
 
-### 3. Configure and compile
+## Compiler et vérifier
 
-Run these commands from the repository root in the UCRT64 terminal:
+Depuis un terminal MSYS2 UCRT64 :
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
+ctest --test-dir build --output-on-failure
 ```
 
-For an optimized build, use `-DCMAKE_BUILD_TYPE=Release` when configuring.
-Re-running the two commands is safe after source or CMake changes.
+Pour une Release, configurer avec `-DCMAKE_BUILD_TYPE=Release`. Les shaders
+GLSL sont générés dans `build/shaders`. Un build complet produit notamment :
 
-### Consignes build Codex
+```text
+build/bin/SaidaEngine.exe
+build/bin/SaidaEngineHub.exe
+build/bin/SaidaEngineRuntime.exe
+build/bin/saida_tool.exe
+build/tests/*.exe
+```
 
-Codex tourne souvent depuis PowerShell, mais le build doit quand meme passer
-par l'environnement **MSYS2 UCRT64**. Ne pas appeler `c++.exe` directement
-depuis PowerShell : cela peut echouer sans diagnostic utile. Utiliser
-`bash.exe` MSYS2, avec `/ucrt64/bin` en tete du `PATH`.
-
-Dans une session Codex, toujours creer des temporaires dans le workspace et
-forcer MSYS2/GCC a les utiliser avant de lancer Ninja :
+Depuis PowerShell/Codex, mettre explicitement UCRT64 en tête du `PATH` et garder
+les temporaires dans le workspace :
 
 ```powershell
 New-Item -ItemType Directory -Force -Path build\tmp, build\msys_home | Out-Null
-C:\msys64\usr\bin\bash.exe -lc 'cd /c/Users/evand/Documents/NextEngine && export HOME=/c/Users/evand/Documents/NextEngine/build/msys_home && export TMPDIR=/c/Users/evand/Documents/NextEngine/build/tmp && export TMP=/c/Users/evand/Documents/NextEngine/build/tmp && export TEMP=/c/Users/evand/Documents/NextEngine/build/tmp && export PATH=/ucrt64/bin:/usr/bin:$PATH && cmake --build build --parallel'
+$env:PATH = 'C:\msys64\usr\bin;C:\msys64\ucrt64\bin;' + $env:PATH
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
 ```
 
-Pour un target specifique :
+Les symptômes `Cannot create temporary file`, `cc1plus` silencieux ou
+`pylauncher: CreateProcess failed` indiquent généralement un `PATH`, `HOME` ou
+`TEMP` incorrect. Pour Emscripten, Python doit aussi être visible.
 
-```powershell
-New-Item -ItemType Directory -Force -Path build\tmp, build\msys_home | Out-Null
-C:\msys64\usr\bin\bash.exe -lc 'cd /c/Users/evand/Documents/NextEngine && export HOME=/c/Users/evand/Documents/NextEngine/build/msys_home && export TMPDIR=/c/Users/evand/Documents/NextEngine/build/tmp && export TMP=/c/Users/evand/Documents/NextEngine/build/tmp && export TEMP=/c/Users/evand/Documents/NextEngine/build/tmp && export PATH=/ucrt64/bin:/usr/bin:$PATH && cmake --build build --target saida_authoring_op_tests saida_tool --parallel'
-```
+## Web
 
-Pour le runtime web (`build-web`), Emscripten peut appeler `python.exe` via son
-pylauncher. Dans Codex, ajouter explicitement Python au `PATH` (sur cette
-machine : `C:\Python313`) avant `/ucrt64/bin` :
-
-```powershell
-New-Item -ItemType Directory -Force -Path build-web\tmp, build-web\msys_home | Out-Null
-C:\msys64\usr\bin\bash.exe -lc 'cd /c/Users/evand/Documents/NextEngine && export HOME=/c/Users/evand/Documents/NextEngine/build-web/msys_home && export TMPDIR=/c/Users/evand/Documents/NextEngine/build-web/tmp && export TMP=/c/Users/evand/Documents/NextEngine/build-web/tmp && export TEMP=/c/Users/evand/Documents/NextEngine/build-web/tmp && export PATH=/c/Python313:/ucrt64/bin:/usr/bin:$PATH && cmake --build build-web --parallel'
-```
-
-Symptomes typiques quand cette redirection manque :
-
-- `Cannot create temporary file in C:\msys64\tmp\: Permission denied`;
-- `c++.exe` ou Ninja sort avec un code d'erreur sans diagnostic C++ clair;
-- MSYS2 tente de creer `/home/CodexSandboxOffline` puis retombe sur `/tmp`.
-- Emscripten echoue avec `pylauncher: CreateProcess failed (2): "python.exe"`
-  pendant la regeneration de `build-web`.
-
-Successful builds produce:
-
-- `build/bin/SaidaEngine.exe` — engine and demo game;
-- `build/bin/SaidaEngineHub.exe` — project hub;
-- `build/bin/SaidaEngineRuntime.exe` — standalone runtime template;
-- `build/tests/*.exe` — test binaries;
-- `build/libne_engine.a` — static engine library.
-
-Shaders are compiled to `build/shaders/` by `glslc`. Asset and shader paths
-are baked as absolute paths by CMake, so the executable can run from any
-working directory.
-
-### 4. Run manually
-
-`SaidaEngine.exe` is a GUI application with an infinite render loop. A human can
-launch it normally:
+Activer l'environnement emsdk, puis construire séparément les deux surfaces :
 
 ```sh
-./build/bin/SaidaEngine.exe
+emcmake cmake -S web/player -B build-web-player -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-web-player
+
+emcmake cmake -S web/authoring -B build-authoring-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-authoring-wasm
 ```
 
-For a Debug build with Vulkan validation layers, launch it through:
+Le runtime d'authoring visuel utilise `web/runtime`. `naga` et `glslc` doivent
+être disponibles pour régénérer les shaders WGSL. Les builds Web se servent par
+HTTP, jamais via `file://`.
+
+## Exécuter
 
 ```sh
-./run.sh
+./build/bin/SaidaEngineHub.exe
+# ou
+./build/bin/SaidaEngine.exe --project /chemin/jeu.saidaproj
 ```
 
-Automated agents should normally stop after a successful build and verify that
-the expected artifacts exist. They must not launch the application in a
-headless job without an explicit timeout and an available desktop/GPU session.
+L'éditeur est une application GUI à boucle infinie. En automatisation, utiliser
+les tests, `saida_tool` et les harnais plutôt que de laisser l'exécutable ouvert.
 
-### Optional AutoLOD tool
+`./run.sh` lance un Debug avec le `PATH` UCRT64 et `VK_LAYER_PATH` corrects pour
+les validation layers MSYS2. Sans ce script, une layer peut charger un runtime
+`libstdc++` incompatible.
 
-AutoLOD is configured and built separately:
+```sh
+./tools/witness_e2e.sh
+./tools/witness_web_stage.sh
+```
+
+AutoLOD se compile séparément :
 
 ```sh
 cmake -S autolod -B build/autolod -G Ninja
 cmake --build build/autolod --parallel
 ```
 
-### Build troubleshooting
+## Règles de contribution
 
-- `third_party/freetype ... does not contain a CMakeLists.txt`, the equivalent
-  RmlUi error, or a missing `third_party/quickjs/dtoa.c` means the submodules
-  were not initialized. Run the existing-checkout commands from step 2.
-- Confirm that `cmake`, `ninja`, `g++` and `glslc` resolve from
-  `/ucrt64/bin` (`which cmake ninja g++ glslc`). If they do not, reopen the
-  MSYS2 UCRT64 terminal.
-- CMake may first print `Could NOT find Freetype`, followed by
-  `Found Freetype::Freetype - Freetype font engine enabled`. This is expected:
-  the project uses its vendored FreeType target.
-- OpenXR 1.1.60 references `WINAPI_PARTITION_SYSTEM`, which is absent from the
-  MinGW Windows headers. The project supplies the correct desktop-only value
-  privately to `openxr_loader`; do not patch the vendored OpenXR sources.
-- This machine/toolchain has previously made dynamic `libstdc++` linking fail
-  with `ld` exit code 116. The MinGW build intentionally links the GCC runtime
-  statically in `CMakeLists.txt`.
+- Lire [SPEC.md](SPEC.md) avant de modifier un contrat ou un format.
+- Mettre à jour [PLAN_V1.md](PLAN_V1.md) dans le même changement lorsqu'une
+  gate est fermée ou qu'un nouveau bloqueur est prouvé.
+- Donner à chaque module et chaque classe une responsabilité claire. Scinder
+  les classes omniscientes et les fichiers qui mélangent plusieurs domaines.
+- Remplacer les nombres et chaînes magiques par des constantes nommées, des
+  types ou de la configuration lorsque leur sens n'est pas intrinsèque.
+- Refuser la duplication, les dépendances cachées, l'état global injustifié et
+  les fonctions longues comme solutions permanentes.
+- Préférer du code explicite et testable aux commentaires narratifs. Un
+  commentaire de code n'est utile que pour expliquer un invariant, une
+  contrainte externe ou une décision non évidente; il ne renvoie pas vers les
+  documents Markdown.
+- Ne jamais réécrire un ancien fixture de compatibilité; ajouter une migration
+  et un nouveau fixture.
+- Après un changement de contrat d'authoring, reconstruire natif, authoring WASM
+  et player Web.
+- Ne pas modifier les sources vendues sous `third_party` pour contourner un
+  problème local de toolchain.
+- Ne pas déclarer une capacité supportée sans backend réel et test associé.
 
-For Quest testing, compiling is not enough: Meta Quest Link must be running and
-the Meta/Oculus runtime must be selected as the active OpenXR runtime. Headset
-rendering and controller input require an interactive test with the headset.
+## Licence
 
-The ready-to-test scene is `MyGame/scenes/XRSetup.scene`. Open the `MyGame`
-project, open that scene, enable hand tracking in the Quest settings, connect
-Quest Link, put the Touch controllers down so the runtime switches to bare
-hands, then press Play. XR scenes launch as a separate `--xr` preview process,
-because OpenXR must create the Vulkan device before rendering starts; the
-desktop editor remains open. Startup logs report `XR hand tracking supported` or
-`unavailable`, followed by per-hand `tracking active/lost` transitions. The
-procedural blue/orange hands need no external model.
-
-## Architecture
-
-```
-src/
-  core/        Camera, Input, Time, Log, Signal
-  graphics/    VulkanDevice, Swapchain, Pipeline, Buffer, Texture, Mesh, Material
-  render/      Renderer, ShadowMap, LightBaker, GIVolume
-  scene/        Node, Scene, Behaviour, SceneTree, GLTFLoader, animation/
-  physics/     Jolt wrapper (PhysicsWorld, RigidBodyNode, CharacterBodyNode…)
-  xr/          OpenXR session, actions, SaidaXRTK toolkit
-  editor/      Scene editor (ImGui-based)
-  game/        Demo scene content (lives in the exe, not the engine lib)
-shaders/       GLSL → SPIR-V (compiled by glslc at build time)
-third_party/   VMA, xatlas, Jolt, OpenXR, QuickJS, RmlUi, FreeType, ImGui, stb…
-```
-
-The engine compiles as a static library (`saida_engine`); game code links against it — iterating game logic never recompiles the engine.
-
-## Status
-
-**Alpha — actively developed; not a stable public engine release.**
-
-| Area | Current state |
-|---|---|
-| Desktop editor/runtime | Broad feature set and a packaged WitnessGame path exist. Final Build-button proof on a pristine machine, signing/installer/crash reporting and release operations are not complete. |
-| JavaScript gameplay | QuickJS, modules, autoloads, timers, signals, storage, audio and asset handles exist. Cross-node/autoload access and several gameplay services are incomplete; scripts have no instruction/deadline interrupt and filesystem confinement needs hardening. |
-| Web game player | Rendering, scripts, Jolt physics, Web Audio and IndexedDB storage exist. RmlUi game UI is not rendered, gamepad/touch parity is incomplete and corrupt content can still abort the player. |
-| Web authoring / Saida integration | SaidaOps, manifests, snapshots and browser runtime exist. Native/web type registries diverge; headless snapshot round-trips can lose types/behaviours and Mesh creation lacks a ResourceManager in the fold path. Do not use for irreplaceable project data yet. |
-| Asset lifecycle | Async `AssetLoader` and JS handles exist. Texture/mesh integration is currently being completed and has uncommitted work in this checkout; scene-wide memory/streaming guarantees are not closed. |
-| XR | OpenXR, controllers, multiview and skeletal hand tracking code exist. MSAA multiview, ImGui overlay, real anchor backends and a repeatable hardware validation matrix remain open. |
-| Compatibility | Schemas, migrations and a fixture corpus exist as a V1 candidate contract. Public stability is not declared until semantic cross-runtime round-trips and the V1 ship gates pass. |
-
-Read [TODO.md](TODO.md), [PLAN_V1_ENGINE.md](PLAN_V1_ENGINE.md),
-[docs/V1_KNOWN_LIMITATIONS.md](docs/V1_KNOWN_LIMITATIONS.md) and the Saida
-platform [production audit](https://github.com/saias-o/saida/blob/main/AUDIT_BEFORE_PROD.md) before using
-the engine as a release dependency.
-
-## License
-
-The repository root contains the GNU GPL version 3 license text and the project
-is documented as **GPL-3.0**. Third-party code and assets keep their respective
-licenses. Before a stable distribution, add explicit project copyright/SPDX
-notices where needed and complete a dependency/asset/model license review.
+Le projet est sous GPL-3.0. Les dépendances et assets gardent leurs licences.
+L'inventaire final, les notices/SPDX et la SBOM restent une gate de distribution
+stable dans [PLAN_V1.md](PLAN_V1.md).

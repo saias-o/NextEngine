@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds the headless authoring-core validation WASM (Phase C2/C3 of
-# PLAN_INTEGRATION_SAIDA.md). Loaded in-process by the Node Collaboration Gateway
+# Builds the headless authoring-core validation WASM. Loaded in-process by the
+# Node Collaboration Gateway
 # to validate SaidaOps with the real C++ contract (zero duplication, no latency).
 #
 #   ./web/build_authoring_wasm.sh [Release|Debug]

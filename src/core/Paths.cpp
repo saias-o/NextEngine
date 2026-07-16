@@ -99,8 +99,17 @@ SandboxedPathResult resolveSandboxedProjectPath(const std::string& projectRoot,
     if (containsParentTraversal(relative))
         return reject("path must not contain parent traversal");
 
-    const fs::path root = fs::absolute(fs::path(projectRoot)).lexically_normal();
-    const fs::path absolute = (root / relative).lexically_normal();
+    std::error_code ec;
+    const fs::path rootAbsolute =
+        fs::absolute(fs::path(projectRoot), ec).lexically_normal();
+    if (ec) return reject("could not resolve project root");
+    const fs::path root = fs::weakly_canonical(rootAbsolute, ec);
+    if (ec) return reject("could not canonicalize project root");
+
+    // weakly_canonical resolves symlinks in the existing prefix while keeping
+    // a not-yet-created leaf usable for authoring writes.
+    const fs::path absolute = fs::weakly_canonical(root / relative, ec);
+    if (ec) return reject("could not canonicalize project path");
     if (!isInsideRoot(root, absolute))
         return reject("path escapes project root");
 

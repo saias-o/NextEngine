@@ -13,6 +13,12 @@ namespace saida {
 
 class JsRuntime;
 
+enum class JsFunctionStatus {
+    Missing,
+    Callable,
+    Invalid
+};
+
 class JsContext {
 public:
     explicit JsContext(JsRuntime& runtime);
@@ -33,6 +39,8 @@ public:
     bool callGlobal(const char* functionName, double arg);
     bool callModuleExport(const char* functionName);
     bool callModuleExport(const char* functionName, double arg);
+    JsFunctionStatus globalFunctionStatus(const char* functionName) const;
+    JsFunctionStatus moduleExportFunctionStatus(const char* functionName) const;
 
     JSContext* raw() const { return ctx_; }
     void setOpaque(void* opaque);
@@ -50,7 +58,11 @@ public:
     // Log and consume the exception currently pending on this context.
     // Native asynchronous callbacks use this after JS_Call returns an exception.
     void reportException(const std::string& source);
-    void executePendingJobs();
+    bool executePendingJobs();
+
+    // Absolute project/package root captured when the context is created.
+    // Module imports are never allowed to escape it.
+    const std::string& moduleRoot() const { return moduleRoot_; }
 
 private:
     void installConsole();
@@ -67,6 +79,7 @@ private:
     JSContext* ctx_ = nullptr;
     JSValue moduleNamespace_ = JS_UNDEFINED;
     std::vector<SignalSubscription> signalSubs_;
+    std::string moduleRoot_;
 };
 
 } // namespace saida

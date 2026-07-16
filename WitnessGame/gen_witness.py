@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Génère les scènes du jeu témoin (greybox, cube builtin uniquement).
 
-Le jeu témoin est l'instrument de mesure de la V1 (PLAN_V1_ENGINE chantier 1) :
+Le jeu témoin est l'instrument de mesure de la V1 :
 il traverse scènes, physique, scripts JS, particules, UI, save/load et
 changement de scène. Relancer ce script réécrit scenes/*.scene de façon
 déterministe (ids stables dérivés des noms).

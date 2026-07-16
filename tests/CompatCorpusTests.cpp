@@ -1,4 +1,4 @@
-// Corpus de rétro-compatibilité (PLAN_V1_ENGINE, chantier 2).
+// Corpus de rétrocompatibilité.
 //
 // Charge à chaque build les fixtures *figés* de tests/fixtures/compat/ avec les
 // vrais chargeurs du moteur. Deux garanties : un ancien document se charge

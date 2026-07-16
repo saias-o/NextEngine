@@ -1,6 +1,7 @@
 #include "scripting/JsContext.hpp"
 
 #include "core/Log.hpp"
+#include "core/Paths.hpp"
 #include "scripting/JsRuntime.hpp"
 
 #include <quickjs.h>
@@ -18,6 +19,20 @@ std::unordered_map<JSContext*, JsContext*>& contextRegistry() {
     return registry;
 }
 
+class JsExecutionScope {
+public:
+    explicit JsExecutionScope(JsRuntime& runtime) : runtime_(runtime) {
+        runtime_.beginExecution();
+    }
+    ~JsExecutionScope() { runtime_.endExecution(); }
+
+    JsExecutionScope(const JsExecutionScope&) = delete;
+    JsExecutionScope& operator=(const JsExecutionScope&) = delete;
+
+private:
+    JsRuntime& runtime_;
+};
+
 JSValue jsConsoleLog(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int magic) {
     std::string out;
     for (int i = 0; i < argc; ++i) {
@@ -34,7 +49,8 @@ JSValue jsConsoleLog(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv,
 }
 } // namespace
 
-JsContext::JsContext(JsRuntime& runtime) : runtime_(runtime) {
+JsContext::JsContext(JsRuntime& runtime)
+    : runtime_(runtime), moduleRoot_(activeProjectRoot()) {
     ctx_ = JS_NewContext(runtime_.raw());
     contextRegistry()[ctx_] = this;
     installConsole();
@@ -70,26 +86,34 @@ void JsContext::clearSignalSubscriptions() {
     signalSubs_.clear();
 }
 
-void JsContext::executePendingJobs() { runtime_.executePendingJobs(); }
+bool JsContext::executePendingJobs() { return runtime_.executePendingJobs(); }
 
 bool JsContext::eval(const std::string& source, const std::string& filename) {
-    JSValue value = JS_Eval(ctx_, source.c_str(), source.size(), filename.c_str(), JS_EVAL_TYPE_GLOBAL);
+    JSValue value;
+    {
+        JsExecutionScope execution(runtime_);
+        value = JS_Eval(ctx_, source.c_str(), source.size(), filename.c_str(),
+                        JS_EVAL_TYPE_GLOBAL);
+    }
     if (JS_IsException(value)) {
         JS_FreeValue(ctx_, value);
         reportException(filename);
         return false;
     }
     JS_FreeValue(ctx_, value);
-    runtime_.executePendingJobs();
-    return true;
+    return runtime_.executePendingJobs();
 }
 
 bool JsContext::evalModule(const std::string& source, const std::string& filename) {
     JS_FreeValue(ctx_, moduleNamespace_);
     moduleNamespace_ = JS_UNDEFINED;
 
-    JSValue compiled = JS_Eval(ctx_, source.c_str(), source.size(), filename.c_str(),
-                               JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    JSValue compiled;
+    {
+        JsExecutionScope execution(runtime_);
+        compiled = JS_Eval(ctx_, source.c_str(), source.size(), filename.c_str(),
+                           JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    }
     if (JS_IsException(compiled)) {
         JS_FreeValue(ctx_, compiled);
         reportException(filename);
@@ -103,13 +127,22 @@ bool JsContext::evalModule(const std::string& source, const std::string& filenam
     }
 
     auto* module = static_cast<JSModuleDef*>(JS_VALUE_GET_PTR(compiled));
-    if (JS_ResolveModule(ctx_, compiled) < 0) {
+    int resolveResult = 0;
+    {
+        JsExecutionScope execution(runtime_);
+        resolveResult = JS_ResolveModule(ctx_, compiled);
+    }
+    if (resolveResult < 0) {
         JS_FreeValue(ctx_, compiled);
         reportException(filename);
         return false;
     }
 
-    JSValue result = JS_EvalFunction(ctx_, compiled);
+    JSValue result;
+    {
+        JsExecutionScope execution(runtime_);
+        result = JS_EvalFunction(ctx_, compiled);
+    }
     if (JS_IsException(result)) {
         JS_FreeValue(ctx_, result);
         reportException(filename);
@@ -125,14 +158,17 @@ bool JsContext::evalModule(const std::string& source, const std::string& filenam
         return false;
     }
 
-    runtime_.executePendingJobs();
-    return true;
+    return runtime_.executePendingJobs();
 }
 
 bool JsContext::compileCheck(const std::string& source, const std::string& filename,
                              bool asModule, std::string& errorOut) {
     int flags = JS_EVAL_FLAG_COMPILE_ONLY | (asModule ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL);
-    JSValue compiled = JS_Eval(ctx_, source.c_str(), source.size(), filename.c_str(), flags);
+    JSValue compiled;
+    {
+        JsExecutionScope execution(runtime_);
+        compiled = JS_Eval(ctx_, source.c_str(), source.size(), filename.c_str(), flags);
+    }
     bool ok = !JS_IsException(compiled);
     if (!ok) {
         JSValue exc = JS_GetException(ctx_);
@@ -167,6 +203,29 @@ bool JsContext::callModuleExport(const char* functionName, double arg) {
     return ok;
 }
 
+JsFunctionStatus JsContext::globalFunctionStatus(const char* functionName) const {
+    JSValue global = JS_GetGlobalObject(ctx_);
+    JSValue value = JS_GetPropertyStr(ctx_, global, functionName);
+    JsFunctionStatus status = JsFunctionStatus::Invalid;
+    if (JS_IsUndefined(value) || JS_IsNull(value)) status = JsFunctionStatus::Missing;
+    else if (JS_IsFunction(ctx_, value)) status = JsFunctionStatus::Callable;
+    JS_FreeValue(ctx_, value);
+    JS_FreeValue(ctx_, global);
+    return status;
+}
+
+JsFunctionStatus JsContext::moduleExportFunctionStatus(const char* functionName) const {
+    if (JS_IsUndefined(moduleNamespace_) || JS_IsNull(moduleNamespace_))
+        return JsFunctionStatus::Missing;
+
+    JSValue value = JS_GetPropertyStr(ctx_, moduleNamespace_, functionName);
+    JsFunctionStatus status = JsFunctionStatus::Invalid;
+    if (JS_IsUndefined(value) || JS_IsNull(value)) status = JsFunctionStatus::Missing;
+    else if (JS_IsFunction(ctx_, value)) status = JsFunctionStatus::Callable;
+    JS_FreeValue(ctx_, value);
+    return status;
+}
+
 void JsContext::setOpaque(void* opaque) {
     JS_SetContextOpaque(ctx_, opaque);
 }
@@ -196,7 +255,11 @@ bool JsContext::callGlobalImpl(const char* functionName, int argc, JSValue* argv
         return false;
     }
 
-    JSValue result = JS_Call(ctx_, fn, global, argc, argv);
+    JSValue result;
+    {
+        JsExecutionScope execution(runtime_);
+        result = JS_Call(ctx_, fn, global, argc, argv);
+    }
     JS_FreeValue(ctx_, fn);
     JS_FreeValue(ctx_, global);
     if (JS_IsException(result)) {
@@ -205,8 +268,7 @@ bool JsContext::callGlobalImpl(const char* functionName, int argc, JSValue* argv
         return false;
     }
     JS_FreeValue(ctx_, result);
-    runtime_.executePendingJobs();
-    return true;
+    return runtime_.executePendingJobs();
 }
 
 bool JsContext::callModuleExportImpl(const char* functionName, int argc, JSValue* argv) {
@@ -225,7 +287,11 @@ bool JsContext::callModuleExportImpl(const char* functionName, int argc, JSValue
         return false;
     }
 
-    JSValue result = JS_Call(ctx_, fn, moduleNamespace_, argc, argv);
+    JSValue result;
+    {
+        JsExecutionScope execution(runtime_);
+        result = JS_Call(ctx_, fn, moduleNamespace_, argc, argv);
+    }
     JS_FreeValue(ctx_, fn);
     if (JS_IsException(result)) {
         JS_FreeValue(ctx_, result);
@@ -233,8 +299,7 @@ bool JsContext::callModuleExportImpl(const char* functionName, int argc, JSValue
         return false;
     }
     JS_FreeValue(ctx_, result);
-    runtime_.executePendingJobs();
-    return true;
+    return runtime_.executePendingJobs();
 }
 
 void JsContext::reportException(const std::string& source) {
