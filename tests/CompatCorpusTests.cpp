@@ -138,6 +138,58 @@ void testBootManifests() {
     }
 }
 
+// WitnessGame gelé : les artefacts durables réels du jeu témoin V1. Toute
+// dérive de format qui empêcherait de recharger le jeu livré est capturée ici,
+// à côté des fixtures synthétiques v0/v1.
+void testWitnessGame() {
+    const fs::path tmp = fs::temp_directory_path() / "SaidaCompatCorpusTests";
+
+    // Projet : Project::load initialise un asset_registry dans la racine, on
+    // charge une copie temporaire pour ne jamais toucher au corpus.
+    {
+        FrozenFile frozen(corpusDir() / "witness_v1.saidaproj");
+        const fs::path root = tmp / "witness_project";
+        fs::remove_all(root);
+        fs::create_directories(root);
+        fs::copy_file(frozen.path(), root / "witness_v1.saidaproj");
+
+        saida::Project project;
+        require(project.load((root / "witness_v1.saidaproj").string()),
+                "witness_v1.saidaproj");
+        require(project.name() == "Witness Game", "witness project name must survive");
+        require(project.mainScene() == "scenes/hub.scene",
+                "witness main scene must survive");
+        require(project.autoloads().at("GameState") == "scripts/game_state.mjs",
+                "witness autoloads must survive");
+        require(project.audioAliases().at("pickup") == "assets/audio/pickup.ogg",
+                "witness audio aliases must survive");
+    }
+
+    // Registre d'assets : copié en asset_registry.json dans un dossier temporaire.
+    {
+        FrozenFile frozen(corpusDir() / "witness_v1_asset_registry.json");
+        const fs::path root = tmp / "witness_registry";
+        fs::remove_all(root);
+        fs::create_directories(root);
+        fs::copy_file(frozen.path(), root / "asset_registry.json");
+
+        saida::AssetRegistry registry;
+        require(registry.load(root.string()), "witness_v1_asset_registry.json");
+        require(registry.getID("scenes/hub.scene") != saida::kAssetInvalid,
+                "witness hub scene id must survive");
+        require(registry.getID("assets/models/totem.gltf") != saida::kAssetInvalid,
+                "witness totem mesh id must survive");
+    }
+    fs::remove_all(tmp);
+
+    // Scènes : validation headless du HUD UI, de la physique et des types V1.
+    for (const char* name : {"witness_v1_hub.scene", "witness_v1_arena.scene"}) {
+        FrozenFile frozen(corpusDir() / name);
+        require(saida::SceneSerializer::validateSceneDocumentFile(frozen.path().string()),
+                name);
+    }
+}
+
 } // namespace
 
 int main() {
@@ -146,5 +198,6 @@ int main() {
     testScenes();
     testScenarios();
     testBootManifests();
+    testWitnessGame();
     return 0;
 }

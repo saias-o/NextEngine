@@ -85,8 +85,13 @@ par hash, avec WitnessGame PASS sur les deux.
   ambigus.
 - [ ] Générer le manifeste depuis le bundle réellement livré et vérifier que
   tous les types annoncés round-trippent.
-- [ ] Étendre le corpus de compatibilité avec WitnessGame gelé et snapshots de
-  chaque version publiée.
+- [x] Étendre le corpus de compatibilité avec WitnessGame gelé et snapshots de
+  chaque version publiée. `tests/fixtures/compat/witness_v1.*` sont des copies
+  exactes des artefacts durables de WitnessGame (projet, registre, scènes hub et
+  arena), chargées par leurs vrais loaders dans `saida_compat_corpus_tests` avec
+  garde anti-réécriture; les scènes valident headless le HUD UI, la physique et
+  les 18 types de nœuds/behaviours V1. Chaque version publiée suivante ajoute un
+  jeu `witness_vN_*` immuable selon la même convention.
 - [x] Refuser partout schémas futurs/contradictoires et données inconnues avec
   diagnostic exploitable. Le garde unique `format::schemaEnvelopeError` refuse,
   sur snapshot/scène/projet/registre/scénario, un `schema`/`version` non entier,

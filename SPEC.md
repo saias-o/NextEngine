@@ -650,10 +650,13 @@ manifest liant hashes du player Web, authoring WASM, binaire headless et formats
 
 Inventaire immuable actuel : `project_v0/v1.saidaproj`,
 `asset_registry_v0/v1.json`, `scene_v0/scene_v2.scene`,
-`scenario_v0/v1.saidascenario` et `game_v0/v1.saida`. Ne jamais modifier ou
-régénérer ces fichiers; ajouter `*_vN`. Le test vérifie aussi que le chargement
-ne change aucun octet source. WitnessGame publié sera ajouté comme nouveau
-fixture gelé.
+`scenario_v0/v1.saidascenario`, `game_v0/v1.saida` et le jeu témoin gelé
+`witness_v1.saidaproj`, `witness_v1_asset_registry.json`,
+`witness_v1_hub.scene`, `witness_v1_arena.scene` — copies exactes des artefacts
+durables de WitnessGame chargées par leurs vrais loaders (le HUD UI, la physique
+et les types V1 des scènes validés headless). Ne jamais modifier ou régénérer
+ces fichiers; une version publiée suivante ajoute `witness_v2_*`. Le test
+vérifie aussi que le chargement ne change aucun octet source.
 
 Le corpus `fold-determinism` contient `base.json`, `ops.json` et
 `expected.json` produit sous Windows. Il couvre set_property, create_node,
