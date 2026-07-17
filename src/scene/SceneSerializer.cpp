@@ -215,17 +215,14 @@ bool acceptSceneDocumentVersion(const json& doc, const std::string& context,
         Log::error(context, ": scene document root must be an object: ", path);
         return false;
     }
-    if (doc.contains("schema") && !doc["schema"].is_number_integer()) {
-        Log::error(context, ": scene document schema must be an integer: ", path);
+    if (const std::string envelope =
+            format::schemaEnvelopeError(doc, format::kSceneVersion, "scene");
+        !envelope.empty()) {
+        Log::error(context, ": ", envelope, ": ", path);
         return false;
     }
 
     const int version = format::readSchema(doc, format::kLegacyVersion);
-    if (version > format::kSceneVersion) {
-        Log::error(context, ": unsupported scene format v", version,
-                   " (supported v", format::kSceneVersion, "): ", path);
-        return false;
-    }
     if (!format::hasIntegerSchema(doc)) {
         Log::info(context, ": migrated legacy scene schema v", version, " -> v",
                   format::kSceneVersion, " in memory: ", path);

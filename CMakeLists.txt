@@ -940,6 +940,14 @@ if (BUILD_TESTING)
     set_tests_properties(saida_tool_apply_ops_rejects_future_snapshot_schema PROPERTIES WILL_FAIL TRUE)
 
     add_test(
+        NAME saida_tool_apply_ops_rejects_schema_version_conflict
+        COMMAND $<TARGET_FILE:saida_tool> apply-ops
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot-schema-conflict.json
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ops-empty.json
+    )
+    set_tests_properties(saida_tool_apply_ops_rejects_schema_version_conflict PROPERTIES WILL_FAIL TRUE)
+
+    add_test(
         NAME saida_tool_apply_ops_skip_invalid
         COMMAND $<TARGET_FILE:saida_tool> apply-ops --skip-invalid
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/scene-snapshot.json

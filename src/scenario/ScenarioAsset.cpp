@@ -148,8 +148,10 @@ bool ScenarioAsset::parse(const json& doc, ScenarioAsset& out, std::vector<Scena
         issue(local, "$", "scenario root must be an object");
     } else {
         out = ScenarioAsset{};
-        if (doc.contains("schema") && !doc["schema"].is_number_integer()) {
-            issue(local, "$.schema", "scenario schema must be an integer");
+        if (const std::string envelope =
+                format::schemaEnvelopeError(doc, format::kScenarioVersion, "scenario");
+            !envelope.empty()) {
+            issue(local, "$.schema", envelope);
             out.version = format::kScenarioVersion;
         } else {
             out.version = format::readSchema(doc, format::kLegacyVersion);

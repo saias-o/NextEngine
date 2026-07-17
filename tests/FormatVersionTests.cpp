@@ -165,6 +165,68 @@ void testScenarioVersioning() {
     require(!issues.empty());
 }
 
+// The shared envelope helper is the single fail-closed gate every durable
+// format delegates to. Prove each rule directly, including the contradictory
+// schema/version divergence that writeSchema never emits.
+void testSchemaEnvelopeHelper() {
+    using saida::format::schemaEnvelopeError;
+    const int current = 2;
+
+    require(schemaEnvelopeError(json{{"schema", 2}, {"version", 2}}, current, "scene").empty());
+    require(schemaEnvelopeError(json{{"version", 1}}, current, "scene").empty());  // legacy
+    require(schemaEnvelopeError(json{{"schema", 1}}, current, "scene").empty());
+    require(schemaEnvelopeError(json::object(), current, "scene").empty());  // schema-less
+
+    require(schemaEnvelopeError(json::array(), current, "scene")
+                .find("must be a JSON object") != std::string::npos);
+    require(schemaEnvelopeError(json{{"schema", "2"}}, current, "scene")
+                .find("schema must be an integer") != std::string::npos);
+    require(schemaEnvelopeError(json{{"version", 2.5}}, current, "scene")
+                .find("version must be an integer") != std::string::npos);
+    require(schemaEnvelopeError(json{{"schema", 2}, {"version", 1}}, current, "scene")
+                .find("schema/version mismatch") != std::string::npos);
+    require(schemaEnvelopeError(json{{"schema", 3}, {"version", 3}}, current, "scene")
+                .find("unsupported scene schema v3") != std::string::npos);
+}
+
+void testProjectSchemaVersionConflictIsRejected() {
+    const auto root = testRoot() / "ConflictProject";
+    std::filesystem::create_directories(root);
+    const auto path = root / "ConflictProject.saidaproj";
+    writeText(path, json{
+        {"schema", saida::format::kProjectVersion},
+        {"version", saida::format::kProjectVersion + 1},
+        {"name", "ConflictProject"}
+    }.dump(2));
+
+    saida::Project project;
+    require(!project.load(path.string()));
+}
+
+void testAssetRegistrySchemaVersionConflictIsRejected() {
+    const auto root = testRoot() / "ConflictRegistry";
+    std::filesystem::create_directories(root);
+    writeText(root / "asset_registry.json", json{
+        {"schema", saida::format::kAssetRegistryVersion},
+        {"version", saida::format::kAssetRegistryVersion + 1},
+        {"assets", json::object()}
+    }.dump(2));
+
+    saida::AssetRegistry registry;
+    require(!registry.load(root.string()));
+}
+
+void testScenarioSchemaVersionConflictIsRejected() {
+    saida::ScenarioAsset asset;
+    std::vector<saida::ScenarioIssue> issues;
+
+    json conflict = baseScenario();
+    conflict["schema"] = saida::format::kScenarioVersion;
+    conflict["version"] = saida::format::kScenarioVersion + 1;
+    require(!saida::ScenarioAsset::parse(conflict, asset, &issues));
+    require(!issues.empty());
+}
+
 } // namespace
 
 int main() {
@@ -173,5 +235,9 @@ int main() {
     testAssetRegistryMigratesToEnvelope();
     testFutureAssetRegistryIsRejected();
     testScenarioVersioning();
+    testSchemaEnvelopeHelper();
+    testProjectSchemaVersionConflictIsRejected();
+    testAssetRegistrySchemaVersionConflictIsRejected();
+    testScenarioSchemaVersionConflictIsRejected();
     return 0;
 }

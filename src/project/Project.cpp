@@ -116,20 +116,16 @@ bool Project::load(const std::string& neprojPath) {
 
         if (!trimmed.empty() && trimmed.front() == '{') {
             json doc = json::parse(trimmed);
-            if (doc.contains("schema") && !doc["schema"].is_number_integer()) {
-                Log::error("Project::load: project schema must be an integer: ", neprojPath);
+            if (const std::string envelope =
+                    format::schemaEnvelopeError(doc, format::kProjectVersion, "project");
+                !envelope.empty()) {
+                Log::error("Project::load: ", envelope, ": ", neprojPath);
                 return false;
             }
             const int version = format::readSchema(doc, format::kLegacyVersion);
             if (!format::hasIntegerSchema(doc)) {
                 Log::warn("Project::load: project has no integer schema, treating as legacy v",
                           version, ": ", neprojPath);
-            }
-            if (version > format::kProjectVersion) {
-                Log::error("Project::load: project schema v", version,
-                           " is newer than supported v", format::kProjectVersion,
-                           ": ", neprojPath);
-                return false;
             }
             if (version < format::kProjectVersion) {
                 Log::info("Project::load: migrated project schema v", version,

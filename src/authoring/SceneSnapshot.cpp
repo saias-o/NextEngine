@@ -581,20 +581,10 @@ bool deserializeSceneSnapshot(const json& doc, Scene& out, std::string* error) {
     out.connections().clear();
     out.settings() = SceneSettings{};
 
-    if (!doc.is_object()) return fail("snapshot document must be a JSON object");
-    if (doc.contains("schema") && !doc["schema"].is_number_integer())
-        return fail("snapshot schema must be an integer");
-    if (doc.contains("version") && !doc["version"].is_number_integer())
-        return fail("snapshot version must be an integer");
-    if (doc.contains("schema") && doc.contains("version") &&
-        doc["schema"].is_number_integer() && doc["version"].is_number_integer() &&
-        doc["schema"] != doc["version"])
-        return fail("snapshot schema/version mismatch");
-    const int schema = format::readSchema(doc, format::kLegacyVersion);
-    if (schema > format::kSceneVersion) {
-        return fail("unsupported snapshot schema v" + std::to_string(schema) +
-                    " (supported through v" + std::to_string(format::kSceneVersion) + ")");
-    }
+    if (const std::string envelope =
+            format::schemaEnvelopeError(doc, format::kSceneVersion, "snapshot");
+        !envelope.empty())
+        return fail(envelope);
 
     auto it = doc.find("scene");
     if (it == doc.end() || !it->is_object())

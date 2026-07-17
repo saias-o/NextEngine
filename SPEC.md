@@ -154,8 +154,13 @@ Règles :
 
 ### 3.3 Snapshots et registres
 
-`SceneSnapshot` écrit `schema` et `version`, refuse les futurs schémas et les
-valeurs contradictoires. Le fold headless round-trippe son sous-ensemble
+Tout format durable écrit `schema` et `version` égaux et délègue leur contrôle
+au garde unique `format::schemaEnvelopeError` : `schema`/`version` doivent être
+entiers, concorder — une divergence signale un document falsifié ou non
+conforme — et ne pas dépasser la version supportée. Snapshot, scène, projet,
+registre d'assets et scénario partagent ce refus fail-closed avec un diagnostic
+nommant le format; les versions antérieures sont migrées en mémoire. Le fold
+headless round-trippe son sous-ensemble
 enregistré, dont `Node`, `MeshNode` existant, `Camera`, `Area` et
 `ScriptBehaviour`, ainsi que le HUD `UINode`/`UICanvasNode`/`UITextNode`. Les
 types `CollisionShape`, `StaticBody`, `RigidBody` et `CharacterBody` conservent
