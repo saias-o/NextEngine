@@ -11,6 +11,11 @@
 
 #ifndef __EMSCRIPTEN__
 #include "scene/ReflectedTypes.hpp"
+#include "scene/animation/AnimGraphAsset.hpp"
+#include "scene/animation/AnimationSequence.hpp"
+#include "scene/animation/ClipView.hpp"
+#include "scene/animation/RetargetProfile.hpp"
+#include "scene/animation/RigAsset.hpp"
 #endif
 
 #include <utility>
@@ -60,6 +65,26 @@ nlohmann::json buildEngineManifest() {
     nlohmann::json m;
     m["engineVersion"] = kEngineVersion;
     m["opVersion"] = kOpVersion;
+
+    // Single source of truth for every durable format's schema version. A
+    // release manifest pins these so the platform refuses a bundle whose tool,
+    // players and fixtures do not share one contract. Animation asset formats
+    // are native-only; the web authoring surface does not link them.
+    m["formats"] = {
+        {"opVersion", kOpVersion},
+        {"scene", format::kSceneVersion},
+        {"project", format::kProjectVersion},
+        {"assetRegistry", format::kAssetRegistryVersion},
+        {"scenario", format::kScenarioVersion},
+        {"bootManifest", format::kBootManifestVersion},
+    };
+#ifndef __EMSCRIPTEN__
+    m["formats"]["rig"] = kRigAssetSchema;
+    m["formats"]["clipView"] = kClipViewSchema;
+    m["formats"]["animGraph"] = kAnimGraphSchema;
+    m["formats"]["sequence"] = kAnimationSequenceSchema;
+    m["formats"]["retargetProfile"] = kRetargetProfileSchema;
+#endif
     m["sceneSnapshot"] = {
         {"schema", format::kSceneVersion},
         {"version", format::kSceneVersion},

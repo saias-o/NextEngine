@@ -106,8 +106,15 @@ par hash, avec WitnessGame PASS sur les deux.
   nommant le format; les types de nœuds et behaviours inconnus étaient déjà
   refusés au chargement. Prouvé par `saida_format_version_tests` (helper + les
   trois formats-enveloppe) et le CTest headless `apply_ops_rejects_schema_version_conflict`.
-- [ ] Produire un release manifest avec versions et SHA des players, authoring
-  WASM, `saida_tool`, formats et fixtures.
+- [x] Produire un release manifest avec versions et SHA des players, authoring
+  WASM, `saida_tool`, formats et fixtures. `tools/engine_release_manifest.ps1`
+  écrit `build/release/engine/release-manifest.json` (schéma 1) : commit moteur,
+  versions de formats lues depuis `saida_tool describe-engine` (nouvelle section
+  `formats` = source unique des 11 versions), et SHA-256 de `saida_tool`, du
+  runtime desktop, du player Web, de l'authoring WASM, du runtime d'authoring et
+  des 14 fixtures immuables. `tools/verify_engine_release.ps1` recalcule chaque
+  hash et recompare les versions à l'outil, échec au moindre écart (prouvé
+  positif et négatif). Section `formats` couverte par `saida_authoring_op_tests`.
 
 Gate : un projet V1 ne peut être perdu, appauvri ou interprété différemment par
 deux runtimes annoncés compatibles.

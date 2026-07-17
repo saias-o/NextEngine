@@ -655,6 +655,16 @@ fixture ancien, test de chargement/refus futur et note de version. La stabilité
 publique exige aussi un corpus de round-trip cross-runtime et un release
 manifest liant hashes du player Web, authoring WASM, binaire headless et formats.
 
+`tools/engine_release_manifest.ps1` produit ce release manifest
+(`build/release/engine/release-manifest.json`, schéma 1) : le commit moteur, les
+versions de formats lues depuis `saida_tool describe-engine` (la section
+`formats` en est la source unique), et le SHA-256 de `saida_tool`, du runtime
+desktop, du player Web, de l'authoring WASM, du runtime d'authoring et de chaque
+fixture immuable. `tools/verify_engine_release.ps1` recalcule chaque hash et
+recompare les versions à l'outil; il échoue au moindre écart d'octet ou de
+version. La plateforme Saida épingle ce manifeste pour interdire toute
+divergence entre son outil Docker, son bundle Web servi et ses fixtures.
+
 Inventaire immuable actuel : `project_v0/v1.saidaproj`,
 `asset_registry_v0/v1.json`, `scene_v0/scene_v2.scene`,
 `scenario_v0/v1.saidascenario`, `game_v0/v1.saida` et le jeu témoin gelé

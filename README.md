@@ -217,6 +217,20 @@ Les preuves Web exigent Python 3 et le navigateur indiqué. Elles vérifient
 automatiquement SHA-256, COOP/COEP, MIME WASM, gameplay/UI et save+HUD après
 redémarrage; aucune lecture manuelle de console n'est nécessaire.
 
+Le release manifest du moteur — l'identité immuable d'un bundle consommé par la
+plateforme — se produit une fois les artefacts natif et Web construits :
+
+```powershell
+.\tools\engine_release_manifest.ps1
+```
+
+Il écrit `build/release/engine/release-manifest.json` : commit, versions de
+formats lues depuis `saida_tool describe-engine`, et SHA-256 de `saida_tool`, du
+runtime desktop, du player Web, de l'authoring WASM, du runtime d'authoring et de
+chaque fixture immuable. `-AllowDirty` marque `dirty: true`. La plateforme épingle
+ce manifeste et le rejoue via `tools/verify_engine_release.ps1`, qui échoue au
+moindre écart d'octet ou de version.
+
 AutoLOD se compile séparément :
 
 ```sh

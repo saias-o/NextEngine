@@ -467,6 +467,20 @@ void testManifestContainsReflectedProperties() {
     require(manifest["sceneSnapshot"]["failureState"] == "empty-scene");
     require(manifest["sceneSnapshot"]["unsupportedTypePolicy"] == "reject");
 
+    // The formats block is the release manifest's single source of version truth.
+    const json& formats = manifest["formats"];
+    require(formats["opVersion"] == saida::authoring::kOpVersion);
+    require(formats["scene"] == saida::format::kSceneVersion);
+    require(formats["project"] == saida::format::kProjectVersion);
+    require(formats["assetRegistry"] == saida::format::kAssetRegistryVersion);
+    require(formats["scenario"] == saida::format::kScenarioVersion);
+    require(formats["bootManifest"] == saida::format::kBootManifestVersion);
+    for (const char* animFormat : {"rig", "clipView", "animGraph", "sequence",
+                                   "retargetProfile"}) {
+        require(formats[animFormat].is_number_integer());
+        require(formats[animFormat].get<int>() > 0);
+    }
+
     bool hasLightIntensity = false;
     for (const auto& prop : manifest["properties"]["LightNode"]) {
         if (prop["name"] == "intensity" && prop["kind"] == "float") {
