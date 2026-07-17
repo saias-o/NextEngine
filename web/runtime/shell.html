@@ -110,14 +110,27 @@
     }
 
     // Barre de démo : prouve qu'une op reçue mute la scène vivante et re-render,
-    // sans re-export. Cibles issues de BeachDemo (noms uniques, valeurs de base
-    // connues → réversible).
+    // sans re-export. Les noms BeachDemo sont résolus une fois depuis le
+    // snapshot; les opérations durables ne transportent que les NodeId.
     function buildEditBar(saida) {
       var bar = document.getElementById('editbar');
       var out = document.createElement('code');
 
       var palmHome = true;   // Palm_A base x = -14
       var sunBright = true;
+      var findNodeId = function(node, name) {
+        if (!node) return null;
+        if (node.name === name) return node.id;
+        var children = Array.isArray(node.children) ? node.children : [];
+        for (var i = 0; i < children.length; ++i) {
+          var found = findNodeId(children[i], name);
+          if (found !== null) return found;
+        }
+        return null;
+      };
+      var liveSnapshot = saida.snapshot();
+      var palmNodeId = findNodeId(liveSnapshot.scene, 'Palm_A');
+      var sunNodeId = findNodeId(liveSnapshot.scene, 'Sun');
       var wsStatus = document.createElement('code');
       wsStatus.textContent = 'ws: ' + saida.wsState;
 
@@ -135,22 +148,22 @@
         ['Slide palm', function() {
           palmHome = !palmHome;
           return saida.applyOp({ type: 'set_transform', payload: {
-            nodeId: 'Palm_A', position: [palmHome ? -14 : 4, 0.6, 12] } });
+            nodeId: palmNodeId, position: [palmHome ? -14 : 4, 0.6, 12] } });
         }],
         ['Sun dim/bright', function() {
           sunBright = !sunBright;
           return saida.applyOp({ type: 'set_property', payload: {
-            nodeId: 'Sun', property: 'intensity', value: sunBright ? 8 : 1.5 } });
+            nodeId: sunNodeId, property: 'intensity', value: sunBright ? 8 : 1.5 } });
         }],
         ['WS palm', function() {
           palmHome = !palmHome;
           return saida.sendOp({ type: 'set_transform', payload: {
-            nodeId: 'Palm_A', position: [palmHome ? -14 : 4, 0.6, 12] } });
+            nodeId: palmNodeId, position: [palmHome ? -14 : 4, 0.6, 12] } });
         }],
         ['WS sun', function() {
           sunBright = !sunBright;
           return saida.sendOp({ type: 'set_property', payload: {
-            nodeId: 'Sun', property: 'intensity', value: sunBright ? 8 : 1.5 } });
+            nodeId: sunNodeId, property: 'intensity', value: sunBright ? 8 : 1.5 } });
         }],
         ['S4 compare', function() {
           if (typeof Module._saida_scene_snapshot_compare !== 'function') {
@@ -221,14 +234,20 @@
       };
       var accepted = saida.loadSnapshot(base);
       var createdNode = saida.applyOp({
-        type: 'create_node', opVersion: 1,
+        type: 'create_node', opVersion: 2,
         payload: {nodeType: 'Node', name: 'CreatedNode'}
       });
       var createdCamera = saida.applyOp({
-        type: 'create_node', opVersion: 1,
+        type: 'create_node', opVersion: 2,
         payload: {nodeType: 'Camera', name: 'CreatedCamera'}
       });
+      var mutatedCreatedNode = createdNode.ok === true ? saida.applyOp({
+        type: 'set_transform', opVersion: 2,
+        payload: {nodeId: createdNode.diff.nodeId, position: [11, 12, 13]}
+      }) : {ok: false, error: 'create_node failed'};
       var acceptedSnapshot = saida.snapshot();
+      var reloadedStringIds = saida.loadSnapshot(acceptedSnapshot);
+      var afterStringReload = saida.snapshot();
       var unknown = JSON.parse(JSON.stringify(base));
       unknown.scene.children[0].type = 'DesktopOnly';
       var rejectedUnknown = saida.loadSnapshot(unknown);
@@ -248,9 +267,22 @@
           Array.isArray(acceptedSnapshot.scene.children)
         ? acceptedSnapshot.scene.children.map(function(node) { return node.type; })
         : [];
+      var createdSnapshotNode = acceptedSnapshot.scene &&
+          Array.isArray(acceptedSnapshot.scene.children)
+        ? acceptedSnapshot.scene.children.find(function(node) {
+            return node.id === createdNode.diff.nodeId;
+          })
+        : null;
       var passed = accepted.ok === true &&
         types.indexOf('Camera') !== -1 && types.indexOf('ParticleSystem') !== -1 &&
         createdNode.ok === true && createdCamera.ok === true &&
+        typeof createdNode.diff.nodeId === 'string' &&
+        typeof createdCamera.diff.nodeId === 'string' &&
+        createdNode.diff.nodeId !== createdCamera.diff.nodeId &&
+        mutatedCreatedNode.ok === true && createdSnapshotNode !== null &&
+        createdSnapshotNode.transform.position[0] === 11 &&
+        reloadedStringIds.ok === true &&
+        JSON.stringify(acceptedSnapshot) === JSON.stringify(afterStringReload) &&
         rejectedUnknown.ok === false && rejectedMalformed.ok === false &&
         rejectedFuture.ok === false &&
         rejectedBehaviour.ok === false &&
@@ -264,6 +296,8 @@
         accepted: accepted,
         createdNode: createdNode,
         createdCamera: createdCamera,
+        mutatedCreatedNode: mutatedCreatedNode,
+        reloadedStringIds: reloadedStringIds,
         types: types,
         rejectedUnknown: rejectedUnknown,
         rejectedMalformed: rejectedMalformed,

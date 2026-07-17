@@ -25,12 +25,21 @@ namespace {
 
 using json = nlohmann::json;
 
-// Recherche locale : le moteur ne fournit pas de find-by-name global.
-Node* findByName(Node& n, const std::string& name) {
-    if (n.name() == name) return &n;
+Node* findById(Node& n, NodeId id) {
+    if (n.id() == id) return &n;
     for (const auto& c : n.children())
-        if (Node* r = findByName(*c, name)) return r;
+        if (Node* r = findById(*c, id)) return r;
     return nullptr;
+}
+
+NodeId nodeId(const json& payload, const char* key) {
+    return static_cast<NodeId>(std::stoull(payload.at(key).get<std::string>()));
+}
+
+std::string nodeIdText(NodeId id) { return std::to_string(id); }
+
+std::string unknownNode(NodeId id) {
+    return "unknown nodeId " + std::to_string(id);
 }
 
 glm::vec3 readVec3(const json& a, glm::vec3 fallback) {
@@ -115,11 +124,11 @@ bool valueMatchesKind(const reflect::PropertyDesc& prop, const json& v, std::str
 }
 
 std::string opSetTransform(Scene& scene, const json& p) {
-    const std::string target = p.value("nodeId", std::string());
-    Node* n = findByName(scene, target);
-    if (!n) return err("unknown node '" + target + "'");
+    const NodeId target = nodeId(p, "nodeId");
+    Node* n = findById(scene, target);
+    if (!n) return err(unknownNode(target));
     json diff;
-    json invPayload{{"nodeId", target}};  // ne restaure que les champs touches
+    json invPayload{{"nodeId", nodeIdText(target)}};  // ne restaure que les champs touches
     if (p.contains("position")) {
         invPayload["position"] = vec3Json(n->transform().position);
         n->transform().position = readVec3(p["position"], n->transform().position);
@@ -142,99 +151,122 @@ std::string opSetTransform(Scene& scene, const json& p) {
 std::string opCreateNode(Scene& scene, ResourceManager* resources, const json& p) {
     const std::string type = p.value("nodeType", std::string("MeshNode"));
     const std::string name = p.value("name", std::string("Node"));
-    const std::string parentName = p.value("parent", std::string());
+    const NodeId parentId = p.contains("parentId") ? nodeId(p, "parentId") : scene.id();
 
-    Node* parent = parentName.empty() ? &scene : findByName(scene, parentName);
-    if (!parent) return err("unknown parent '" + parentName + "'");
+    Node* parent = findById(scene, parentId);
+    if (!parent) return err("unknown parentId " + std::to_string(parentId));
+
+    std::unique_ptr<Node> createdNode;
 
     if (type == "MeshNode") {
         // MeshNode needs resources unavailable to headless callers.
         if (!resources) return err("create_node MeshNode needs ResourceManager");
         Mesh* mesh = resources->getMesh(kAssetBuiltinCube);
         Material* mat = resources->getMaterial(MaterialDesc{});
-        parent->addChild(std::make_unique<MeshNode>(name, mesh, mat));
+        createdNode = std::make_unique<MeshNode>(name, mesh, mat);
     } else {
         registerReflectedTypes();  // idempotent: ensure the registry is populated
         std::unique_ptr<Node> node = NodeRegistry::instance().create(type);
         if (!node) return err("unsupported nodeType '" + type + "'");
         node->setName(name);
-        parent->addChild(std::move(node));
+        createdNode = std::move(node);
     }
+    if (p.contains("nodeId")) {
+        const NodeId requestedId = nodeId(p, "nodeId");
+        if (findById(scene, requestedId))
+            return err("duplicate nodeId " + std::to_string(requestedId));
+        createdNode->assignSerializedId(requestedId);
+    }
+    Node* created = parent->addChild(std::move(createdNode));
+    if (!created) return err("failed to create node");
     Node::g_hierarchyVersion++;
-    json inv = inverseOp("delete_node", json{{"nodeId", name}});
-    return ok("create_node", json{{"created", name}, {"nodeType", type}}, std::move(inv));
+    json inv = inverseOp("delete_node", json{{"nodeId", nodeIdText(created->id())}});
+    return ok("create_node",
+              json{{"nodeId", nodeIdText(created->id())}, {"name", created->name()},
+                   {"nodeType", type}, {"parentId", nodeIdText(parent->id())}},
+              std::move(inv));
 }
 
 std::string opDeleteNode(Scene& scene, const json& p) {
-    const std::string target = p.value("nodeId", std::string());
-    Node* n = findByName(scene, target);
-    if (!n) return err("unknown node '" + target + "'");
+    const NodeId target = nodeId(p, "nodeId");
+    Node* n = findById(scene, target);
+    if (!n) return err(unknownNode(target));
     if (n == &scene) return err("cannot delete scene root");
     Node* parent = n->parent();
-    if (!parent) return err("node '" + target + "' has no parent");
+    if (!parent) return err("nodeId " + std::to_string(target) + " has no parent");
     parent->removeChild(n);
     Node::g_hierarchyVersion++;
     // Restoring a deleted subtree requires a snapshot.
-    return ok("delete_node", json{{"deleted", target}, {"invertible", false}});
+    return ok("delete_node",
+              json{{"deletedNodeId", nodeIdText(target)}, {"invertible", false}});
 }
 
 std::string opRenameNode(Scene& scene, const json& p) {
-    const std::string target = p.value("nodeId", std::string());
+    const NodeId target = nodeId(p, "nodeId");
     const std::string newName = p.value("name", std::string());
     if (newName.empty()) return err("rename_node needs a non-empty name");
-    Node* n = findByName(scene, target);
-    if (!n) return err("unknown node '" + target + "'");
+    Node* n = findById(scene, target);
+    if (!n) return err(unknownNode(target));
+    const std::string oldName = n->name();
     n->setName(newName);
-    json inv = inverseOp("rename_node", json{{"nodeId", newName}, {"name", target}});
-    return ok("rename_node", json{{"from", target}, {"to", newName}}, std::move(inv));
+    json inv = inverseOp("rename_node",
+                         json{{"nodeId", nodeIdText(target)}, {"name", oldName}});
+    return ok("rename_node",
+              json{{"nodeId", nodeIdText(target)}, {"from", oldName}, {"to", newName}},
+              std::move(inv));
 }
 
 std::string opReparentNode(Scene& scene, const json& p) {
-    const std::string target = p.value("nodeId", std::string());
-    const std::string parentName = p.value("newParent", std::string());
+    const NodeId target = nodeId(p, "nodeId");
+    const NodeId parentId =
+        p.contains("newParentId") ? nodeId(p, "newParentId") : scene.id();
 
-    Node* n = findByName(scene, target);
-    if (!n) return err("unknown node '" + target + "'");
+    Node* n = findById(scene, target);
+    if (!n) return err(unknownNode(target));
     if (n == &scene) return err("cannot reparent scene root");
 
-    Node* newParent = parentName.empty() ? &scene : findByName(scene, parentName);
-    if (!newParent) return err("unknown parent '" + parentName + "'");
+    Node* newParent = findById(scene, parentId);
+    if (!newParent) return err("unknown parentId " + std::to_string(parentId));
     if (newParent == n) return err("cannot reparent node under itself");
     for (Node* a = newParent->parent(); a; a = a->parent())
         if (a == n) return err("cannot reparent under a descendant (cycle)");
 
     Node* oldParent = n->parent();
-    if (!oldParent) return err("node '" + target + "' has no parent");
+    if (!oldParent) return err("nodeId " + std::to_string(target) + " has no parent");
     if (oldParent == newParent) {
         json inv = inverseOp("reparent_node",
-                             json{{"nodeId", target}, {"newParent", newParent->name()}});
-        return ok("reparent_node", json{{"nodeId", target}, {"unchanged", true}},
+                             json{{"nodeId", nodeIdText(target)},
+                                  {"newParentId", nodeIdText(newParent->id())}});
+        return ok("reparent_node",
+                  json{{"nodeId", nodeIdText(target)}, {"unchanged", true}},
                   std::move(inv));
     }
 
-    const std::string oldParentName = (oldParent == &scene) ? std::string() : oldParent->name();
+    const NodeId oldParentId = oldParent->id();
 
     std::unique_ptr<Node> owned = oldParent->detachChild(n);
-    if (!owned) return err("failed to detach node '" + target + "'");
+    if (!owned) return err("failed to detach nodeId " + std::to_string(target));
     newParent->addChild(std::move(owned));
     Node::g_hierarchyVersion++;
     json inv = inverseOp("reparent_node",
-                         json{{"nodeId", target}, {"newParent", oldParentName}});
-    return ok("reparent_node", json{{"nodeId", target},
-                                    {"from", oldParent->name()},
-                                    {"to", newParent->name()}}, std::move(inv));
+                         json{{"nodeId", nodeIdText(target)},
+                              {"newParentId", nodeIdText(oldParentId)}});
+    return ok("reparent_node", json{{"nodeId", nodeIdText(target)},
+                                    {"fromParentId", nodeIdText(oldParentId)},
+                                    {"toParentId", nodeIdText(newParent->id())}},
+              std::move(inv));
 }
 
 std::string opSetProperty(Scene& scene, const json& p) {
-    const std::string target = p.value("nodeId", std::string());
+    const NodeId target = nodeId(p, "nodeId");
     const std::string prop = p.value("property", std::string());
-    Node* n = findByName(scene, target);
-    if (!n) return err("unknown node '" + target + "'");
+    Node* n = findById(scene, target);
+    if (!n) return err(unknownNode(target));
     if (!p.contains("value")) return err("set_property needs a 'value'");
     const json& v = p["value"];
 
-    auto setPropInverse = [&](const std::string& nodeIdAfter, const json& before) {
-        return inverseOp("set_property", json{{"nodeId", nodeIdAfter},
+    auto setPropInverse = [&](const json& before) {
+        return inverseOp("set_property", json{{"nodeId", nodeIdText(target)},
                                               {"property", prop}, {"value", before}});
     };
 
@@ -242,17 +274,17 @@ std::string opSetProperty(Scene& scene, const json& p) {
         if (!v.is_string()) return err("property 'name' expects string");
         const std::string before = n->name();
         n->setName(v.get<std::string>());
-        return ok("set_property", json{{"nodeId", target}, {"property", prop},
+        return ok("set_property", json{{"nodeId", nodeIdText(target)}, {"property", prop},
                                       {"before", before}, {"after", n->name()}},
-                  setPropInverse(n->name(), before));
+                  setPropInverse(before));
     }
     if (prop == "enabled") {
         if (!v.is_boolean()) return err("property 'enabled' expects bool");
         const bool before = n->enabled();
         n->setEnabled(v.get<bool>());
-        return ok("set_property", json{{"nodeId", target}, {"property", prop},
+        return ok("set_property", json{{"nodeId", nodeIdText(target)}, {"property", prop},
                                       {"before", before}, {"after", n->enabled()}},
-                  setPropInverse(target, before));
+                  setPropInverse(before));
     }
 
     const reflect::TypeDesc* desc = reflectedNodeDesc(*n);
@@ -279,8 +311,8 @@ std::string opSetProperty(Scene& scene, const json& p) {
     }
     json after;
     reflected->get(n, after);
-    json inv = setPropInverse(target, before);
-    return ok("set_property", json{{"nodeId", target}, {"nodeType", n->typeName()},
+    json inv = setPropInverse(before);
+    return ok("set_property", json{{"nodeId", nodeIdText(target)}, {"nodeType", n->typeName()},
                                   {"property", prop}, {"kind", reflected->kind},
                                   {"before", std::move(before)}, {"after", std::move(after)}},
               std::move(inv));
@@ -364,50 +396,55 @@ Behaviour* findBehaviourByType(Node& n, const std::string& type) {
 }
 
 std::string opAddBehaviour(Scene& scene, const json& p) {
-    const std::string target = p.value("nodeId", std::string());
+    const NodeId target = nodeId(p, "nodeId");
     const std::string btype = p.value("behaviourType", std::string());
-    Node* n = findByName(scene, target);
-    if (!n) return err("unknown node '" + target + "'");
+    Node* n = findById(scene, target);
+    if (!n) return err(unknownNode(target));
     if (btype.empty()) return err("add_behaviour needs 'behaviourType'");
 
     registerReflectedTypes();  // idempotent: ensure the factory registry is ready
     if (findBehaviourByType(*n, btype))
-        return err("node '" + target + "' already has behaviour '" + btype + "'");
+        return err("nodeId " + std::to_string(target) +
+                   " already has behaviour '" + btype + "'");
     std::unique_ptr<Behaviour> b = BehaviourRegistry::instance().create(btype);
     if (!b) return err("unknown behaviour type '" + btype + "'");
     n->addBehaviour(std::move(b));
 
     json inv = inverseOp("remove_behaviour",
-                         json{{"nodeId", target}, {"behaviourType", btype}});
-    return ok("add_behaviour", json{{"nodeId", target}, {"behaviourType", btype}},
+                         json{{"nodeId", nodeIdText(target)}, {"behaviourType", btype}});
+    return ok("add_behaviour",
+              json{{"nodeId", nodeIdText(target)}, {"behaviourType", btype}},
               std::move(inv));
 }
 
 std::string opRemoveBehaviour(Scene& scene, const json& p) {
-    const std::string target = p.value("nodeId", std::string());
+    const NodeId target = nodeId(p, "nodeId");
     const std::string btype = p.value("behaviourType", std::string());
-    Node* n = findByName(scene, target);
-    if (!n) return err("unknown node '" + target + "'");
+    Node* n = findById(scene, target);
+    if (!n) return err(unknownNode(target));
     Behaviour* b = findBehaviourByType(*n, btype);
-    if (!b) return err("node '" + target + "' has no behaviour '" + btype + "'");
+    if (!b) return err("nodeId " + std::to_string(target) +
+                       " has no behaviour '" + btype + "'");
     n->removeBehaviour(b);
     // Restoring removed behaviour properties requires a snapshot.
     return ok("remove_behaviour",
-              json{{"nodeId", target}, {"behaviourType", btype}, {"invertible", false}});
+              json{{"nodeId", nodeIdText(target)}, {"behaviourType", btype},
+                   {"invertible", false}});
 }
 
 std::string opSetBehaviourProperty(Scene& scene, const json& p) {
-    const std::string target = p.value("nodeId", std::string());
+    const NodeId target = nodeId(p, "nodeId");
     const std::string btype = p.value("behaviourType", std::string());
     const std::string prop = p.value("property", std::string());
-    Node* n = findByName(scene, target);
-    if (!n) return err("unknown node '" + target + "'");
+    Node* n = findById(scene, target);
+    if (!n) return err(unknownNode(target));
     if (!p.contains("value")) return err("set_behaviour_property needs a 'value'");
     const json& v = p["value"];
 
     registerReflectedTypes();
     Behaviour* b = findBehaviourByType(*n, btype);
-    if (!b) return err("node '" + target + "' has no behaviour '" + btype + "'");
+    if (!b) return err("nodeId " + std::to_string(target) +
+                       " has no behaviour '" + btype + "'");
     const reflect::TypeDesc* desc = reflect::TypeRegistry::instance().find(btype);
     if (!desc) return err("behaviour '" + btype + "' has no reflected contract");
     const reflect::PropertyDesc* reflected = desc->findProperty(prop);
@@ -427,25 +464,25 @@ std::string opSetBehaviourProperty(Scene& scene, const json& p) {
     json after;
     reflected->get(b, after);
     json inv = inverseOp("set_behaviour_property",
-                         json{{"nodeId", target}, {"behaviourType", btype},
+                         json{{"nodeId", nodeIdText(target)}, {"behaviourType", btype},
                               {"property", prop}, {"value", before}});
     return ok("set_behaviour_property",
-              json{{"nodeId", target}, {"behaviourType", btype}, {"property", prop},
+              json{{"nodeId", nodeIdText(target)}, {"behaviourType", btype}, {"property", prop},
                    {"kind", reflected->kind}, {"before", std::move(before)},
                    {"after", std::move(after)}},
               std::move(inv));
 }
 
 std::string opAddSignalConnection(Scene& scene, const json& p) {
-    const std::string fromName = p.value("from", std::string());
+    const NodeId fromId = nodeId(p, "fromNodeId");
     const std::string signal = p.value("signal", std::string());
-    const std::string toName = p.value("to", std::string());
+    const NodeId toId = nodeId(p, "toNodeId");
     const std::string slot = p.value("slot", std::string());
 
-    Node* from = findByName(scene, fromName);
-    if (!from) return err("unknown node '" + fromName + "'");
-    Node* to = findByName(scene, toName);
-    if (!to) return err("unknown node '" + toName + "'");
+    Node* from = findById(scene, fromId);
+    if (!from) return err(unknownNode(fromId));
+    Node* to = findById(scene, toId);
+    if (!to) return err(unknownNode(toId));
 
     for (const auto& c : scene.connections()) {
         if (c.from == from->id() && c.to == to->id() && c.signal == signal && c.slot == slot)
@@ -455,28 +492,30 @@ std::string opAddSignalConnection(Scene& scene, const json& p) {
     scene.connections().push_back(
         SignalConnectionDef{from->id(), signal, to->id(), slot});
 
-    json diff{{"from", fromName}, {"signal", signal}, {"to", toName}, {"slot", slot}};
+    json diff{{"fromNodeId", nodeIdText(fromId)}, {"signal", signal},
+              {"toNodeId", nodeIdText(toId)}, {"slot", slot}};
     return ok("add_signal_connection", diff,
               inverseOp("remove_signal_connection", diff));
 }
 
 std::string opRemoveSignalConnection(Scene& scene, const json& p) {
-    const std::string fromName = p.value("from", std::string());
+    const NodeId fromId = nodeId(p, "fromNodeId");
     const std::string signal = p.value("signal", std::string());
-    const std::string toName = p.value("to", std::string());
+    const NodeId toId = nodeId(p, "toNodeId");
     const std::string slot = p.value("slot", std::string());
 
-    Node* from = findByName(scene, fromName);
-    if (!from) return err("unknown node '" + fromName + "'");
-    Node* to = findByName(scene, toName);
-    if (!to) return err("unknown node '" + toName + "'");
+    Node* from = findById(scene, fromId);
+    if (!from) return err(unknownNode(fromId));
+    Node* to = findById(scene, toId);
+    if (!to) return err(unknownNode(toId));
 
     auto& conns = scene.connections();
     for (auto it = conns.begin(); it != conns.end(); ++it) {
         if (it->from == from->id() && it->to == to->id() &&
             it->signal == signal && it->slot == slot) {
             conns.erase(it);
-            json diff{{"from", fromName}, {"signal", signal}, {"to", toName}, {"slot", slot}};
+            json diff{{"fromNodeId", nodeIdText(fromId)}, {"signal", signal},
+                      {"toNodeId", nodeIdText(toId)}, {"slot", slot}};
             return ok("remove_signal_connection", diff,
                       inverseOp("add_signal_connection", diff));
         }
@@ -491,6 +530,8 @@ std::string applyOpJson(Scene& scene, ResourceManager* resources,
     // Validate before mutating the scene.
     const SaidaOpParseResult parsed = parseSaidaOp(opJson);
     if (!parsed.ok) return err(parsed.error);
+    const std::string shapeError = validateOpShape(parsed.op);
+    if (!shapeError.empty()) return err(shapeError);
 
     const std::string& type = parsed.op.type;
     const json& p = parsed.op.payload;

@@ -13,6 +13,6 @@ nlohmann::json buildEngineManifest();
 
 // Les snapshots assurent la compatibilite entre versions de contrat.
 constexpr const char* kEngineVersion = "0.1.0";
-constexpr int kOpVersion = 1;
+constexpr int kOpVersion = 2;
 
 } // namespace saida::authoring

@@ -144,8 +144,13 @@ Règles :
 - un batch durable est atomique par défaut;
 - `--skip-invalid` est réservé au diagnostic et ne publie pas un snapshot
   durable;
-- les nœuds sont encore adressés par nom mutable. Le passage à un NodeId stable
-  est un changement de contrat à migrer.
+- `opVersion: 2` adresse tous les nœuds par `NodeId` stable encodé en chaîne
+  décimale 64 bits, afin de ne perdre aucun bit dans JavaScript;
+  `parentId`, `newParentId`, `fromNodeId` et `toNodeId` portent les autres
+  références. Un parent omis désigne la racine. Les noms ne sont jamais acceptés
+  comme références durables. `create_node` accepte un `nodeId` fourni par le
+  client pour qu'un batch déterministe puisse cibler immédiatement le nœud;
+  sinon l'applier génère l'ID et le renvoie dans son diff.
 
 ### 3.3 Snapshots et registres
 
@@ -661,7 +666,8 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
 - Un runtime/canvas Emscripten par page; build non modularisé.
 - Registres natif/headless/Web explicitement matricés; l'UI avancée reste hors
   de certains folds.
-- Nœuds adressés par noms mutables, pas NodeId stable.
+- Les producteurs SaidaOp externes V1 doivent émettre `opVersion: 2` et les
+  `NodeId`; les opérations historiques par nom sont volontairement refusées.
 - Bindings physique, animation, séquences et blackboard encore incomplets.
 - Sauvegardes encore locales au projet et sans migrations/metadata/quota.
 - Asset LRU en cours de scène, streaming Web et sweep rigs/anims absents.

@@ -30,7 +30,7 @@ function check(label, cond) {
 }
 
 // Contract surface.
-check("op version is 1", opVersion() === 1);
+check("op version is 2", opVersion() === 2);
 const types = knownOpTypes();
 check("known op types include set_transform", types.includes("set_transform"));
 check("known op types include set_property", types.includes("set_property"));
@@ -38,21 +38,21 @@ check("known op types include set_property", types.includes("set_property"));
 // Valid ops.
 check(
   "valid set_transform accepted",
-  validateOp({ type: "set_transform", payload: { nodeId: "Sun", position: [1, 2, 3] } }).ok === true
+  validateOp({ type: "set_transform", payload: { nodeId: "2", position: [1, 2, 3] } }).ok === true
 );
 check(
   "valid set_property accepted",
-  validateOp({ type: "set_property", payload: { nodeId: "Sun", property: "intensity", value: 2 } }).ok === true
+  validateOp({ type: "set_property", payload: { nodeId: "2", property: "intensity", value: 2 } }).ok === true
 );
 
 // Invalid ops — the same rejections the native engine gives.
 const unknownType = validateOp({ type: "explode_scene", payload: {} });
 check("unknown op type rejected", unknownType.ok === false && /unknown op type/.test(unknownType.error));
 
-const missingField = validateOp({ type: "set_transform", payload: { nodeId: "Sun" } });
+const missingField = validateOp({ type: "set_transform", payload: { nodeId: "2" } });
 check("set_transform without a channel rejected", missingField.ok === false);
 
-const badVersion = validateOp({ type: "delete_node", opVersion: 999, payload: { nodeId: "X" } });
+const badVersion = validateOp({ type: "delete_node", opVersion: 999, payload: { nodeId: "2" } });
 check("unsupported opVersion rejected", badVersion.ok === false);
 
 const notJson = JSON.parse(Module.ccall("saida_validate_op", "string", ["string"], ["not json at all"]));

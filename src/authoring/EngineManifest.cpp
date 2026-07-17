@@ -98,6 +98,12 @@ nlohmann::json buildEngineManifest() {
 #endif
 
     m["ops"] = knownOpTypes();
+    m["opAddressing"] = {
+        {"kind", "stable-node-id"},
+        {"nodeIdJsonType", "decimal-string"},
+        {"rootParent", "omitted-parentId"},
+        {"createNodeId", "optional-client-supplied"},
+    };
     m["properties"] = nodePropertiesByType(m["nodes"]);
     m["scenario"] = scenarioManifest();
     m["runtimeTypeMatrix"] = buildRuntimeTypeMatrixManifest();

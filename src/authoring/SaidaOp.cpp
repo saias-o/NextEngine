@@ -3,6 +3,8 @@
 #include "authoring/EngineManifest.hpp"
 
 #include <algorithm>
+#include <charconv>
+#include <cstdint>
 
 namespace saida::authoring {
 
@@ -104,6 +106,14 @@ bool hasString(const json& p, const char* key) {
 bool hasNonEmptyString(const json& p, const char* key) {
     return hasString(p, key) && !p[key].get<std::string>().empty();
 }
+bool hasNodeId(const json& p, const char* key) {
+    if (!p.contains(key) || !p[key].is_string()) return false;
+    const std::string value = p[key].get<std::string>();
+    std::uint64_t parsed = 0;
+    const auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    return !value.empty() && result.ec == std::errc{} &&
+           result.ptr == value.data() + value.size() && parsed != 0;
+}
 // Un vecteur de N nombres (position/scale = 3, rotation = 4).
 bool isNumberArray(const json& v, std::size_t n) {
     if (!v.is_array() || v.size() != n) return false;
@@ -120,7 +130,7 @@ std::string validateOpShape(const SaidaOp& op) {
     if (!p.is_object()) return "payload must be a JSON object";
 
     if (op.type == "set_transform") {
-        if (!hasNonEmptyString(p, "nodeId")) return "set_transform needs 'nodeId'";
+        if (!hasNodeId(p, "nodeId")) return "set_transform needs a decimal string 'nodeId'";
         if (!p.contains("position") && !p.contains("rotation") && !p.contains("scale"))
             return "set_transform needs at least one of position/rotation/scale";
         if (p.contains("position") && !isNumberArray(p["position"], 3))
@@ -133,30 +143,32 @@ std::string validateOpShape(const SaidaOp& op) {
     }
     if (op.type == "create_node") {
         if (!hasNonEmptyString(p, "nodeType")) return "create_node needs 'nodeType'";
+        if (p.contains("nodeId") && !hasNodeId(p, "nodeId"))
+            return "create_node 'nodeId' must be a decimal string";
         if (p.contains("name") && !p["name"].is_string())
             return "create_node 'name' must be a string";
-        if (p.contains("parent") && !p["parent"].is_string())
-            return "create_node 'parent' must be a string";
+        if (p.contains("parentId") && !hasNodeId(p, "parentId"))
+            return "create_node 'parentId' must be a decimal string";
         return "";
     }
     if (op.type == "delete_node") {
-        if (!hasNonEmptyString(p, "nodeId")) return "delete_node needs 'nodeId'";
+        if (!hasNodeId(p, "nodeId")) return "delete_node needs a decimal string 'nodeId'";
         return "";
     }
     if (op.type == "rename_node") {
-        if (!hasNonEmptyString(p, "nodeId")) return "rename_node needs 'nodeId'";
+        if (!hasNodeId(p, "nodeId")) return "rename_node needs a decimal string 'nodeId'";
         if (!hasNonEmptyString(p, "name")) return "rename_node needs a non-empty 'name'";
         return "";
     }
     if (op.type == "reparent_node") {
-        if (!hasNonEmptyString(p, "nodeId")) return "reparent_node needs 'nodeId'";
-        // newParent optionnel (vide = racine), mais s'il est present il est string.
-        if (p.contains("newParent") && !p["newParent"].is_string())
-            return "reparent_node 'newParent' must be a string";
+        if (!hasNodeId(p, "nodeId")) return "reparent_node needs a decimal string 'nodeId'";
+        // newParentId optionnel : absent = racine de scene.
+        if (p.contains("newParentId") && !hasNodeId(p, "newParentId"))
+            return "reparent_node 'newParentId' must be a decimal string";
         return "";
     }
     if (op.type == "set_property") {
-        if (!hasNonEmptyString(p, "nodeId")) return "set_property needs 'nodeId'";
+        if (!hasNodeId(p, "nodeId")) return "set_property needs a decimal string 'nodeId'";
         if (!hasNonEmptyString(p, "property")) return "set_property needs 'property'";
         if (!p.contains("value")) return "set_property needs a 'value'";
         return "";
@@ -167,12 +179,14 @@ std::string validateOpShape(const SaidaOp& op) {
         return "";
     }
     if (op.type == "add_behaviour" || op.type == "remove_behaviour") {
-        if (!hasNonEmptyString(p, "nodeId")) return op.type + " needs 'nodeId'";
+        if (!hasNodeId(p, "nodeId"))
+            return op.type + " needs a decimal string 'nodeId'";
         if (!hasNonEmptyString(p, "behaviourType")) return op.type + " needs 'behaviourType'";
         return "";
     }
     if (op.type == "set_behaviour_property") {
-        if (!hasNonEmptyString(p, "nodeId")) return "set_behaviour_property needs 'nodeId'";
+        if (!hasNodeId(p, "nodeId"))
+            return "set_behaviour_property needs a decimal string 'nodeId'";
         if (!hasNonEmptyString(p, "behaviourType"))
             return "set_behaviour_property needs 'behaviourType'";
         if (!hasNonEmptyString(p, "property")) return "set_behaviour_property needs 'property'";
@@ -180,11 +194,11 @@ std::string validateOpShape(const SaidaOp& op) {
         return "";
     }
     if (op.type == "add_signal_connection" || op.type == "remove_signal_connection") {
-        // from/to are node names (resolved to NodeId by the applier, like every
-        // other SaidaOp node ref); signal/slot are reflected names on those nodes.
-        if (!hasNonEmptyString(p, "from")) return op.type + " needs 'from'";
+        if (!hasNodeId(p, "fromNodeId"))
+            return op.type + " needs a decimal string 'fromNodeId'";
         if (!hasNonEmptyString(p, "signal")) return op.type + " needs 'signal'";
-        if (!hasNonEmptyString(p, "to")) return op.type + " needs 'to'";
+        if (!hasNodeId(p, "toNodeId"))
+            return op.type + " needs a decimal string 'toNodeId'";
         if (!hasNonEmptyString(p, "slot")) return op.type + " needs 'slot'";
         return "";
     }

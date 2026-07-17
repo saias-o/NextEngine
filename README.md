@@ -177,6 +177,11 @@ Le player Web active le même contrôle avec le paramètre URL
 L'authoring Web exécute systématiquement son corpus snapshot avant de publier
 `ready` et expose le même verdict dans la console.
 
+Les SaidaOps V1 utilisent `opVersion: 2` et ciblent les nœuds par identifiant
+64 bits stable encodé en chaîne décimale (`nodeId`, `parentId`, `newParentId`,
+`fromNodeId`, `toNodeId`). Cet encodage évite toute perte de précision
+JavaScript; les noms de nœuds ne sont pas des références d'opération.
+
 ```sh
 ./tools/witness_e2e.sh
 ./tools/witness_editor_play.sh

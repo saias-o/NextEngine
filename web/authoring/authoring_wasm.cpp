@@ -34,8 +34,8 @@ const char* hold(std::string value) {
 extern "C" {
 
 // Statically validate one SaidaOp (JSON string). Returns a JSON report:
-//   {"ok":true,"type":"set_transform","opVersion":1}
-//   {"ok":false,"error":"set_transform needs 'nodeId'"}
+//   {"ok":true,"type":"set_transform","opVersion":2}
+//   {"ok":false,"error":"set_transform needs a decimal string 'nodeId'"}
 // Never throws; malformed JSON is reported as a normal validation failure.
 EMSCRIPTEN_KEEPALIVE
 const char* saida_validate_op(const char* opJson) {

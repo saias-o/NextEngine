@@ -404,6 +404,44 @@ std::string durableSceneSnapshotJson() {
     return doc.dump(2);
 }
 
+void mapNodeIdsForJavaScript(json& node, bool toStrings) {
+    if (auto id = node.find("id"); id != node.end()) {
+        if (toStrings && id->is_number_integer())
+            *id = std::to_string(id->get<NodeId>());
+        else if (!toStrings && id->is_string())
+            *id = static_cast<NodeId>(std::stoull(id->get<std::string>()));
+    }
+    if (auto children = node.find("children");
+        children != node.end() && children->is_array()) {
+        for (json& child : *children) mapNodeIdsForJavaScript(child, toStrings);
+    }
+}
+
+void mapSnapshotIdsForJavaScript(json& doc, bool toStrings) {
+    auto scene = doc.find("scene");
+    if (scene == doc.end() || !scene->is_object()) return;
+    mapNodeIdsForJavaScript(*scene, toStrings);
+    if (auto connections = scene->find("connections");
+        connections != scene->end() && connections->is_array()) {
+        for (json& connection : *connections) {
+            for (const char* key : {"from", "to"}) {
+                auto value = connection.find(key);
+                if (value == connection.end()) continue;
+                if (toStrings && value->is_number_integer())
+                    *value = std::to_string(value->get<NodeId>());
+                else if (!toStrings && value->is_string())
+                    *value = static_cast<NodeId>(std::stoull(value->get<std::string>()));
+            }
+        }
+    }
+}
+
+std::string javascriptSceneSnapshotJson() {
+    json doc = json::parse(durableSceneSnapshotJson());
+    mapSnapshotIdsForJavaScript(doc, true);
+    return doc.dump(2);
+}
+
 void canonicalizeReferenceNode(json& node) {
     const std::string type = node.value("type", "");
     node.erase("includeInLightBaking");
@@ -799,8 +837,8 @@ std::string pickNode(float ndcX, float ndcY) {
         return r.dump();
     }
     r["hit"] = true;
-    r["nodeId"] = best->name();  // ops resolve by name today (see SaidaOpApplier)
-    r["id"] = best->id();
+    r["nodeId"] = std::to_string(best->id());
+    r["id"] = std::to_string(best->id());
     r["distance"] = bestDist;
     return r.dump();
 }
@@ -848,7 +886,7 @@ const char* saida_scene_snapshot() {
         return out.c_str();
     }
     try {
-        out = durableSceneSnapshotJson();
+        out = javascriptSceneSnapshotJson();
     } catch (const std::exception& e) {
         out = json{{"ok", false}, {"error", e.what()}}.dump();
     }
@@ -873,6 +911,7 @@ const char* saida_load_snapshot(const char* docJson) {
     }
     try {
         json doc = json::parse(docJson ? docJson : "");
+        mapSnapshotIdsForJavaScript(doc, false);
         std::string error;
         if (!loadSceneDoc(doc, error)) {
             out = json{{"ok", false}, {"error", error}}.dump();

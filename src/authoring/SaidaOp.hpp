@@ -3,7 +3,7 @@
 // Mutation de scene versionnee, partagee par l'editeur et les outils headless.
 // Schema JSON :
 //   {
-//     "opVersion": 1,
+//     "opVersion": 2,
 //     "type": "set_transform",
 //     "sceneId": "main",
 //     "payload": { ... }

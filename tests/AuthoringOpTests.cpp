@@ -37,11 +37,13 @@ json applyOp(saida::Scene& scene, const json& op) {
     return json::parse(saida::authoring::applyOpJson(scene, nullptr, op.dump()));
 }
 
-json setProperty(const std::string& node, const std::string& property, json value) {
+std::string nodeRef(saida::NodeId id) { return std::to_string(id); }
+
+json setProperty(saida::NodeId nodeId, const std::string& property, json value) {
     return {
         {"type", "set_property"},
         {"payload", {
-            {"nodeId", node},
+            {"nodeId", nodeRef(nodeId)},
             {"property", property},
             {"value", std::move(value)},
         }},
@@ -65,19 +67,19 @@ void testReflectedLightProperty() {
     saida::LightNode* sun = light.get();
     scene.addChild(std::move(light));
 
-    json res = applyOp(scene, setProperty("Sun", "intensity", 3.5f));
+    json res = applyOp(scene, setProperty(sun->id(), "intensity", 3.5f));
     require(res["ok"].get<bool>());
     require(close(sun->intensity, 3.5f));
     require(res["diff"]["before"].get<float>() == 1.0f);
     require(res["diff"]["after"].get<float>() == 3.5f);
 
     const glm::vec3 beforeColor = sun->color;
-    res = applyOp(scene, setProperty("Sun", "color", true));
+    res = applyOp(scene, setProperty(sun->id(), "color", true));
     require(!res["ok"].get<bool>());
     require(sun->color == beforeColor);
 
     const saida::LightType beforeType = sun->type;
-    res = applyOp(scene, setProperty("Sun", "lightType", 99));
+    res = applyOp(scene, setProperty(sun->id(), "lightType", 99));
     require(!res["ok"].get<bool>());
     require(sun->type == beforeType);
 }
@@ -94,15 +96,15 @@ void testReflectedWaterAndParticleProperties() {
     saida::ParticleSystemNode* sparks = particles.get();
     scene.addChild(std::move(particles));
 
-    json res = applyOp(scene, setProperty("Sea", "amplitude", 0.75f));
+    json res = applyOp(scene, setProperty(sea->id(), "amplitude", 0.75f));
     require(res["ok"].get<bool>());
     require(close(sea->amplitude, 0.75f));
 
-    res = applyOp(scene, setProperty("Sparks", "maxParticles", 1024));
+    res = applyOp(scene, setProperty(sparks->id(), "maxParticles", 1024));
     require(res["ok"].get<bool>());
     require(sparks->maxParticles == 1024);
 
-    res = applyOp(scene, setProperty("Sparks", "maxParticles", 12.5f));
+    res = applyOp(scene, setProperty(sparks->id(), "maxParticles", 12.5f));
     require(!res["ok"].get<bool>());
     require(sparks->maxParticles == 1024);
 }
@@ -113,23 +115,23 @@ void testInvalidOpsDoNotMutate() {
     saida::LightNode* lamp = light.get();
     scene.addChild(std::move(light));
 
-    json res = applyOp(scene, setProperty("Ghost", "intensity", 4.0f));
+    json res = applyOp(scene, setProperty(999999, "intensity", 4.0f));
     require(!res["ok"].get<bool>());
     require(close(lamp->intensity, 1.0f));
 
-    res = applyOp(scene, setProperty("Lamp", "wobble", 4.0f));
+    res = applyOp(scene, setProperty(lamp->id(), "wobble", 4.0f));
     require(!res["ok"].get<bool>());
     require(close(lamp->intensity, 1.0f));
 
-    res = applyOp(scene, setProperty("Lamp", "name", false));
+    res = applyOp(scene, setProperty(lamp->id(), "name", false));
     require(!res["ok"].get<bool>());
     require(lamp->name() == "Lamp");
 
-    res = applyOp(scene, json{{"type", "rename_node"}, {"payload", {{"nodeId", "Lamp"}, {"name", ""}}}});
+    res = applyOp(scene, json{{"type", "rename_node"}, {"payload", {{"nodeId", nodeRef(lamp->id())}, {"name", ""}}}});
     require(!res["ok"].get<bool>());
     require(lamp->name() == "Lamp");
 
-    res = applyOp(scene, json{{"type", "delete_node"}, {"payload", {{"nodeId", scene.name()}}}});
+    res = applyOp(scene, json{{"type", "delete_node"}, {"payload", {{"nodeId", nodeRef(scene.id())}}}});
     require(!res["ok"].get<bool>());
     require(!scene.children().empty());
 }
@@ -160,8 +162,19 @@ void testCreateNodeResourceBoundaries() {
     require(res["ok"].get<bool>());
     require(dynamic_cast<saida::ParticleSystemNode*>(findChildByName(scene, "Sparks")) != nullptr);
 
+    // Un batch peut fournir l'ID afin que les operations suivantes le ciblent.
+    res = applyOp(scene, json{{"type", "create_node"},
+                              {"payload", {{"nodeType", "LightNode"}, {"nodeId", "4242"},
+                                           {"name", "BatchNode"}}}});
+    require(res["ok"].get<bool>());
+    require(res["diff"]["nodeId"] == "4242");
+    res = applyOp(scene, json{{"type", "create_node"},
+                              {"payload", {{"nodeType", "LightNode"}, {"nodeId", "4242"},
+                                           {"name", "DuplicateId"}}}});
+    require(!res["ok"].get<bool>());
+
     // A property set on a freshly-created reflected node applies.
-    res = applyOp(scene, setProperty("Sea", "amplitude", 0.5f));
+    res = applyOp(scene, setProperty(sea->id(), "amplitude", 0.5f));
     require(res["ok"].get<bool>());
 
     // Unknown types are still rejected.
@@ -175,7 +188,7 @@ void testSaidaOpRoundTrip() {
     const json in = {
         {"type", "set_transform"},
         {"sceneId", "main"},
-        {"payload", {{"nodeId", "Palm_A"}, {"position", {4.0f, 0.6f, 12.0f}}}},
+        {"payload", {{"nodeId", "42"}, {"position", {4.0f, 0.6f, 12.0f}}}},
     };
     auto parsed = saida::authoring::parseSaidaOp(in);
     require(parsed.ok);
@@ -215,11 +228,12 @@ void testSaidaOpParseRejections() {
 
     // L'applier refuse les memes formes sans muter la scene.
     saida::Scene scene;
-    scene.addChild(std::make_unique<saida::LightNode>("Keep", saida::LightType::Point));
+    saida::Node* keep = scene.addChild(
+        std::make_unique<saida::LightNode>("Keep", saida::LightType::Point));
     json res = applyOp(scene, json{{"type", "explode_scene"}, {"payload", json::object()}});
     require(!res["ok"].get<bool>());
     res = applyOp(scene, json{{"type", "delete_node"}, {"opVersion", 999},
-                              {"payload", {{"nodeId", "Keep"}}}});
+                              {"payload", {{"nodeId", nodeRef(keep->id())}}}});
     require(!res["ok"].get<bool>());
     require(scene.children().size() == 1);
 }
@@ -234,41 +248,49 @@ void testReparentNode() {
 
     // Deplacement valide : C passe de A a B.
     json res = applyOp(scene, json{{"type", "reparent_node"},
-                                   {"payload", {{"nodeId", "C"}, {"newParent", "B"}}}});
+                                   {"payload", {{"nodeId", nodeRef(c->id())},
+                                                {"newParentId", nodeRef(b->id())}}}});
     require(res["ok"].get<bool>());
     require(c->parent() == b);
     require(a->children().empty());
-    require(res["diff"]["from"] == "A");
-    require(res["diff"]["to"] == "B");
+    require(res["diff"]["fromParentId"] == nodeRef(a->id()));
+    require(res["diff"]["toParentId"] == nodeRef(b->id()));
 
-    // newParent absent/vide = racine de scene.
-    res = applyOp(scene, json{{"type", "reparent_node"}, {"payload", {{"nodeId", "C"}}}});
+    // newParentId absent = racine de scene.
+    res = applyOp(scene, json{{"type", "reparent_node"},
+                              {"payload", {{"nodeId", nodeRef(c->id())}}}});
     require(res["ok"].get<bool>());
     require(c->parent() == &scene);
 
     // Meme parent : accepte, marque unchanged, pas de mutation.
     res = applyOp(scene, json{{"type", "reparent_node"},
-                              {"payload", {{"nodeId", "C"}, {"newParent", scene.name()}}}});
+                              {"payload", {{"nodeId", nodeRef(c->id())},
+                                           {"newParentId", nodeRef(scene.id())}}}});
     require(res["ok"].get<bool>());
     require(res["diff"]["unchanged"].get<bool>());
 
     // Rejets : racine, self, descendant (cycle), inconnus.
     res = applyOp(scene, json{{"type", "reparent_node"},
-                              {"payload", {{"nodeId", scene.name()}, {"newParent", "B"}}}});
+                              {"payload", {{"nodeId", nodeRef(scene.id())},
+                                           {"newParentId", nodeRef(b->id())}}}});
     require(!res["ok"].get<bool>());
     res = applyOp(scene, json{{"type", "reparent_node"},
-                              {"payload", {{"nodeId", "A"}, {"newParent", "A"}}}});
+                              {"payload", {{"nodeId", nodeRef(a->id())},
+                                           {"newParentId", nodeRef(a->id())}}}});
     require(!res["ok"].get<bool>());
     auto* d = a->createChild<saida::Node>("D");
     res = applyOp(scene, json{{"type", "reparent_node"},
-                              {"payload", {{"nodeId", "A"}, {"newParent", "D"}}}});
+                              {"payload", {{"nodeId", nodeRef(a->id())},
+                                           {"newParentId", nodeRef(d->id())}}}});
     require(!res["ok"].get<bool>());
     require(d->parent() == a);
     res = applyOp(scene, json{{"type", "reparent_node"},
-                              {"payload", {{"nodeId", "Ghost"}, {"newParent", "B"}}}});
+                              {"payload", {{"nodeId", "999998"},
+                                           {"newParentId", nodeRef(b->id())}}}});
     require(!res["ok"].get<bool>());
     res = applyOp(scene, json{{"type", "reparent_node"},
-                              {"payload", {{"nodeId", "D"}, {"newParent", "Ghost"}}}});
+                              {"payload", {{"nodeId", nodeRef(d->id())},
+                                           {"newParentId", "999999"}}}});
     require(!res["ok"].get<bool>());
     require(d->parent() == a);
 }
@@ -286,23 +308,25 @@ void testValidateOpShape() {
 
     // Formes valides -> chaine vide.
     require(shapeOf(json{{"type", "set_transform"},
-                         {"payload", {{"nodeId", "A"}, {"position", {1, 2, 3}}}}}).empty());
+                         {"payload", {{"nodeId", "1"}, {"position", {1, 2, 3}}}}}).empty());
     require(shapeOf(json{{"type", "reparent_node"},
-                         {"payload", {{"nodeId", "A"}}}}).empty());  // newParent optionnel
+                         {"payload", {{"nodeId", "1"}}}}).empty());  // newParentId optionnel
     require(shapeOf(json{{"type", "set_property"},
-                         {"payload", {{"nodeId", "A"}, {"property", "intensity"}, {"value", 2}}}}).empty());
+                         {"payload", {{"nodeId", "1"}, {"property", "intensity"}, {"value", 2}}}}).empty());
     require(shapeOf(json{{"type", "create_node"},
                          {"payload", {{"nodeType", "LightNode"}}}}).empty());
 
     // Formes invalides -> message non vide.
-    require(!shapeOf(json{{"type", "set_transform"}, {"payload", {{"nodeId", "A"}}}}).empty()); // aucun champ
+    require(!shapeOf(json{{"type", "set_transform"}, {"payload", {{"nodeId", "1"}}}}).empty()); // aucun champ
     require(!shapeOf(json{{"type", "set_transform"},
-                          {"payload", {{"nodeId", "A"}, {"position", {1, 2}}}}}).empty());      // vec3 tronque
+                          {"payload", {{"nodeId", "1"}, {"position", {1, 2}}}}}).empty());      // vec3 tronque
     require(!shapeOf(json{{"type", "set_transform"},
-                          {"payload", {{"nodeId", ""}, {"position", {1, 2, 3}}}}}).empty());    // nodeId vide
-    require(!shapeOf(json{{"type", "rename_node"}, {"payload", {{"nodeId", "A"}}}}).empty());   // name manquant
+                          {"payload", {{"nodeId", "0"}, {"position", {1, 2, 3}}}}}).empty());    // nodeId invalide
+    require(!shapeOf(json{{"type", "rename_node"}, {"payload", {{"nodeId", "1"}}}}).empty());   // name manquant
     require(!shapeOf(json{{"type", "set_property"},
-                          {"payload", {{"nodeId", "A"}, {"property", "x"}}}}).empty());          // value manquante
+                          {"payload", {{"nodeId", "1"}, {"property", "x"}}}}).empty());          // value manquante
+    require(!shapeOf(json{{"type", "delete_node"},
+                          {"payload", {{"nodeId", 1}}}}).empty());  // nombres JSON interdits
     require(!shapeOf(json{{"type", "create_node"}, {"payload", json::object()}}).empty());       // nodeType manquant
     // Type inconnu : rejete des le parse.
     require(!shapeOf(json{{"type", "explode_scene"}, {"payload", json::object()}}).empty());
@@ -337,7 +361,8 @@ void testInverseOps() {
     // set_transform : position restauree apres apply + apply(inverse).
     a->transform().position = {1.0f, 2.0f, 3.0f};
     json res = applyOp(scene, json{{"type", "set_transform"},
-                                   {"payload", {{"nodeId", "A"}, {"position", {9.0f, 9.0f, 9.0f}}}}});
+                                   {"payload", {{"nodeId", nodeRef(a->id())},
+                                                {"position", {9.0f, 9.0f, 9.0f}}}}});
     require(res["ok"].get<bool>());
     require(res.contains("inverse"));
     require(close(a->transform().position.x, 9.0f));
@@ -348,23 +373,23 @@ void testInverseOps() {
     require(close(a->transform().position.z, 3.0f));
 
     // set_property reflechi : intensity restauree.
-    res = applyOp(scene, setProperty("Sun", "intensity", 5.0f));
+    res = applyOp(scene, setProperty(sun->id(), "intensity", 5.0f));
     require(res["ok"].get<bool>());
     require(close(sun->intensity, 5.0f));
     applyOp(scene, res["inverse"]);
     require(close(sun->intensity, 1.0f));
 
-    // set_property name : l'inverse reference le NOUVEAU nom, restaure l'ancien.
-    res = applyOp(scene, setProperty("Sun", "name", "Star"));
+    // set_property name : l'inverse conserve le meme NodeId stable.
+    res = applyOp(scene, setProperty(sun->id(), "name", "Star"));
     require(res["ok"].get<bool>());
     require(sun->name() == "Star");
-    require(res["inverse"]["payload"]["nodeId"] == "Star");
+    require(res["inverse"]["payload"]["nodeId"] == nodeRef(sun->id()));
     applyOp(scene, res["inverse"]);
     require(sun->name() == "Sun");
 
     // rename_node : idem, inverse restaure le nom d'origine.
     res = applyOp(scene, json{{"type", "rename_node"},
-                              {"payload", {{"nodeId", "A"}, {"name", "Alpha"}}}});
+                              {"payload", {{"nodeId", nodeRef(a->id())}, {"name", "Alpha"}}}});
     require(res["ok"].get<bool>());
     require(a->name() == "Alpha");
     applyOp(scene, res["inverse"]);
@@ -372,7 +397,8 @@ void testInverseOps() {
 
     // reparent_node : C revient sous A apres apply(inverse).
     res = applyOp(scene, json{{"type", "reparent_node"},
-                              {"payload", {{"nodeId", "C"}, {"newParent", "B"}}}});
+                              {"payload", {{"nodeId", nodeRef(c->id())},
+                                           {"newParentId", nodeRef(b->id())}}}});
     require(res["ok"].get<bool>());
     require(c->parent() == b);
     applyOp(scene, res["inverse"]);
@@ -388,16 +414,49 @@ void testInverseOps() {
     require(findChildByName(scene, "Temp") == nullptr);
 
     // delete_node : honnetement marque non op-inversible (restauration snapshot).
-    res = applyOp(scene, json{{"type", "delete_node"}, {"payload", {{"nodeId", "B"}}}});
+    res = applyOp(scene, json{{"type", "delete_node"},
+                              {"payload", {{"nodeId", nodeRef(b->id())}}}});
     require(res["ok"].get<bool>());
     require(!res.contains("inverse"));
     require(res["diff"]["invertible"].get<bool>() == false);
+}
+
+void testStableNodeIdAddressing() {
+    saida::Scene scene;
+    auto* first = scene.createChild<saida::Node>("Duplicate");
+    auto* second = scene.createChild<saida::Node>("Duplicate");
+    const saida::NodeId firstId = first->id();
+    const saida::NodeId secondId = second->id();
+
+    json res = applyOp(scene, json{{"type", "rename_node"},
+                                   {"payload", {{"nodeId", nodeRef(secondId)},
+                                                {"name", "Renamed"}}}});
+    require(res["ok"].get<bool>());
+    require(first->name() == "Duplicate");
+    require(second->name() == "Renamed");
+    require(second->id() == secondId);
+
+    res = applyOp(scene, json{{"type", "set_transform"},
+                              {"payload", {{"nodeId", nodeRef(secondId)},
+                                           {"position", {7.0f, 8.0f, 9.0f}}}}});
+    require(res["ok"].get<bool>());
+    require(close(second->transform().position.x, 7.0f));
+    require(close(first->transform().position.x, 0.0f));
+
+    // Un nom, meme unique, n'est plus une reference valide en opVersion 2.
+    res = applyOp(scene, json{{"type", "set_transform"},
+                              {"payload", {{"nodeId", "Renamed"},
+                                           {"position", {1.0f, 2.0f, 3.0f}}}}});
+    require(!res["ok"].get<bool>());
+    require(first->id() == firstId);
 }
 
 void testManifestContainsReflectedProperties() {
     json manifest = saida::authoring::buildEngineManifest();
     json manifestAgain = saida::authoring::buildEngineManifest();
     require(manifest["opVersion"].get<int>() == saida::authoring::kOpVersion);
+    require(manifest["opAddressing"]["kind"] == "stable-node-id");
+    require(manifest["opAddressing"]["nodeIdJsonType"] == "decimal-string");
     require(manifest == manifestAgain);
     require(manifest["properties"]["LightNode"].is_array());
     require(manifest["properties"]["Water"].is_array());
@@ -467,9 +526,9 @@ void testManifestContainsBehavioursSignalsAndScenario() {
 void testSnapshotReflectsAppliedOps() {
     saida::Scene scene;
     auto light = std::make_unique<saida::LightNode>("SnapshotSun", saida::LightType::Directional);
-    scene.addChild(std::move(light));
+    saida::Node* snapshotSun = scene.addChild(std::move(light));
 
-    json res = applyOp(scene, setProperty("SnapshotSun", "intensity", 2.25f));
+    json res = applyOp(scene, setProperty(snapshotSun->id(), "intensity", 2.25f));
     require(res["ok"].get<bool>());
 
     json snapshot = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
@@ -550,7 +609,7 @@ void testHeadlessSnapshotRoundTrip() {
     require(s1 == s2);
 
     // Une op s'applique sur la scene rechargee (chaine load -> apply -> save).
-    json res = applyOp(reloaded, setProperty("Sun", "intensity", 7.0f));
+    json res = applyOp(reloaded, setProperty(sun->id(), "intensity", 7.0f));
     require(res["ok"].get<bool>());
     require(close(sunLight->intensity, 7.0f));
 
@@ -716,7 +775,7 @@ void testMeshResourceRefsRoundTrip() {
 
     // Elles survivent à une op (le chemin du fold apply-ops).
     json res = applyOp(scene, json{{"type", "set_transform"},
-                                   {"payload", {{"nodeId", "Palm_A"},
+                                   {"payload", {{"nodeId", nodeRef(palm->id())},
                                                 {"position", {9.0f, 0.0f, 0.0f}}}}});
     require(res["ok"].get<bool>());
     json afterOp = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
@@ -795,23 +854,23 @@ void testBehaviourOps() {
 
     // add_behaviour → inverse is remove_behaviour
     json res = applyOp(scene, behaviourOp("add_behaviour",
-                                          {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"}}));
+                                          {{"nodeId", nodeRef(n->id())}, {"behaviourType", "Rotator"}}));
     require(res["ok"].get<bool>());
     require(res["inverse"]["type"] == "remove_behaviour");
 
     // duplicate of the same type rejected
     res = applyOp(scene, behaviourOp("add_behaviour",
-                                     {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"}}));
+                                     {{"nodeId", nodeRef(n->id())}, {"behaviourType", "Rotator"}}));
     require(!res["ok"].get<bool>());
 
     // unknown behaviour type rejected
     res = applyOp(scene, behaviourOp("add_behaviour",
-                                     {{"nodeId", "Spinner"}, {"behaviourType", "Nonesuch"}}));
+                                     {{"nodeId", nodeRef(n->id())}, {"behaviourType", "Nonesuch"}}));
     require(!res["ok"].get<bool>());
 
     // set_behaviour_property (Rotator.speed is a float)
     res = applyOp(scene, behaviourOp("set_behaviour_property",
-                                     {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"},
+                                     {{"nodeId", nodeRef(n->id())}, {"behaviourType", "Rotator"},
                                       {"property", "speed"}, {"value", 90.0f}}));
     require(res["ok"].get<bool>());
     require(close(res["diff"]["after"].get<float>(), 90.0f));
@@ -819,7 +878,7 @@ void testBehaviourOps() {
 
     // unknown behaviour property rejected
     res = applyOp(scene, behaviourOp("set_behaviour_property",
-                                     {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"},
+                                     {{"nodeId", nodeRef(n->id())}, {"behaviourType", "Rotator"},
                                       {"property", "wobble"}, {"value", 1.0f}}));
     require(!res["ok"].get<bool>());
 
@@ -839,7 +898,7 @@ void testBehaviourOps() {
 
     // remove_behaviour (marked non-op-invertible)
     res = applyOp(scene, behaviourOp("remove_behaviour",
-                                     {{"nodeId", "Spinner"}, {"behaviourType", "Rotator"}}));
+                                     {{"nodeId", nodeRef(n->id())}, {"behaviourType", "Rotator"}}));
     require(res["ok"].get<bool>());
     require(res["diff"]["invertible"].get<bool>() == false);
     snap = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
@@ -848,13 +907,15 @@ void testBehaviourOps() {
 
 void testSignalConnectionOps() {
     saida::Scene scene;
-    scene.addChild(std::make_unique<saida::LightNode>("A", saida::LightType::Point));
-    scene.addChild(std::make_unique<saida::LightNode>("B", saida::LightType::Point));
+    saida::Node* a = scene.addChild(
+        std::make_unique<saida::LightNode>("A", saida::LightType::Point));
+    saida::Node* b = scene.addChild(
+        std::make_unique<saida::LightNode>("B", saida::LightType::Point));
 
-    auto connOp = [](const std::string& type) {
+    auto connOp = [a, b](const std::string& type) {
         return json{{"type", type},
-                    {"payload", {{"from", "A"}, {"signal", "died"},
-                                 {"to", "B"}, {"slot", "onDied"}}}};
+                    {"payload", {{"fromNodeId", nodeRef(a->id())}, {"signal", "died"},
+                                 {"toNodeId", nodeRef(b->id())}, {"slot", "onDied"}}}};
     };
 
     // add: succeeds, is invertible to remove_signal_connection
@@ -870,8 +931,8 @@ void testSignalConnectionOps() {
 
     // unknown node is rejected
     res = applyOp(scene, json{{"type", "add_signal_connection"},
-                              {"payload", {{"from", "A"}, {"signal", "died"},
-                                           {"to", "Ghost"}, {"slot", "onDied"}}}});
+                              {"payload", {{"fromNodeId", nodeRef(a->id())}, {"signal", "died"},
+                                           {"toNodeId", "999999"}, {"slot", "onDied"}}}});
     require(!res["ok"].get<bool>());
 
     // the connection round-trips through the headless snapshot
@@ -938,6 +999,7 @@ int main() {
     testSaidaOpParseRejections();
     testReparentNode();
     testInverseOps();
+    testStableNodeIdAddressing();
     testValidateOpShape();
     testManifestListsRegistryOps();
     testManifestContainsReflectedProperties();

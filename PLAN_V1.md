@@ -78,8 +78,11 @@ par hash, avec WitnessGame PASS sur les deux.
   propriétés réfléchies; serializer complet natif sur 26/22/151; snapshot
   Authoring Web sur 9/0/90; player Web sur 15/10/120. Chaque corpus utilise des
   valeurs non triviales et exige l'identité JSON après reconstruction.
-- [ ] Décider et migrer l'adressage des SaidaOps du nom mutable vers NodeId, ou
-  geler explicitement la limite pour V1.
+- [x] Migrer l'adressage des SaidaOps du nom mutable vers `NodeId`.
+  `opVersion: 2` impose des identifiants 64 bits en chaînes décimales (sans perte
+  de précision JavaScript) pour toutes les cibles, parents et connexions; les
+  inverses restent valides après renommage et les noms dupliqués ne sont plus
+  ambigus.
 - [ ] Générer le manifeste depuis le bundle réellement livré et vérifier que
   tous les types annoncés round-trippent.
 - [ ] Étendre le corpus de compatibilité avec WitnessGame gelé et snapshots de
