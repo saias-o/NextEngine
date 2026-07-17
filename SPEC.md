@@ -191,9 +191,16 @@ L'authoring Web exécute son snapshot contractuel avant de publier `ready`.
 Le serializer complet couvre le natif (26 nœuds, 22 behaviours, 151 propriétés
 dans le build XR courant) via `SaidaEngine --verify-runtime-contract`, et le
 player Web (15/10/120) via le paramètre `verify-runtime-contract`. Le codec
-snapshot couvre l'authoring Web (9/0/90) avant son passage à `ready`. Tous
-exigent une identité JSON sémantique après reconstruction et exposent le verdict
-`[CONTRACT] PASS`.
+snapshot, désormais sans `ResourceManager`, couvre l'authoring Web (9/0/90) avant
+son passage à `ready` et le headless (14/18/151). Tous exigent une identité JSON
+sémantique après reconstruction et exposent le verdict `[CONTRACT] PASS`.
+
+`saida_tool verify-manifest` ferme la boucle depuis le binaire réellement livré :
+il génère le manifeste, exige que chaque nœud/behaviour annoncé soit une ligne de
+la `runtimeTypeMatrix` round-trippée, que le registre headless vivant corresponde
+à cette matrice, et exécute le round-trip snapshot headless. Aucun type annoncé
+ne peut donc échapper à la preuve de round-trip. La commande est jouée en CI sur
+l'artefact `saida_tool` produit.
 
 ## 4. Rendu et ressources GPU
 

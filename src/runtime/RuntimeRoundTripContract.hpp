@@ -26,9 +26,9 @@ bool verifyRuntimeRoundTripContract(RuntimeTypeTarget target,
                                     std::string& error);
 
 // Equivalent corpus through the resource-free SceneSnapshot codec. Used by
-// headless/authoring targets that do not link the full SceneSerializer.
+// headless/authoring targets that do not link the full SceneSerializer; seeds
+// only common and reflected data, so it needs no ResourceManager.
 bool verifySnapshotRoundTripContract(RuntimeTypeTarget target,
-                                     ResourceManager& resources,
                                      RoundTripContractReport& report,
                                      std::string& error);
 

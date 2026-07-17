@@ -64,6 +64,9 @@ unique des factories natif, headless, authoring WASM et player Web. Chaque
 runtime vérifie son registre effectif contre cette matrice avant de devenir
 utilisable; le headless round-trippe actuellement le HUD
 `UINode`/`UICanvasNode`/`UITextNode` et les corps/colliders V1 sans GPU.
+`saida_tool verify-manifest` prouve, depuis le binaire livré, que chaque type
+annoncé par le manifeste appartient à cette matrice et round-trippe par le codec
+snapshot headless.
 
 ## Prérequis Windows
 

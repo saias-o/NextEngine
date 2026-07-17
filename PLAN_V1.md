@@ -83,8 +83,15 @@ par hash, avec WitnessGame PASS sur les deux.
   de précision JavaScript) pour toutes les cibles, parents et connexions; les
   inverses restent valides après renommage et les noms dupliqués ne sont plus
   ambigus.
-- [ ] Générer le manifeste depuis le bundle réellement livré et vérifier que
-  tous les types annoncés round-trippent.
+- [x] Générer le manifeste depuis le bundle réellement livré et vérifier que
+  tous les types annoncés round-trippent. `saida_tool verify-manifest` génère le
+  manifeste, exige que chaque nœud/behaviour annoncé soit une ligne de la
+  `runtimeTypeMatrix` round-trippée, vérifie le registre headless vivant contre
+  la matrice et exécute le round-trip snapshot headless (14 nœuds, 18 behaviours,
+  151 propriétés). Joué en CI sur l'artefact `saida_tool` (`saida_tool_verify_manifest`).
+  Au passage, `verifySnapshotRoundTripContract` devient réellement resource-free
+  et `RuntimeTypeMatrixTests` réutilise ce contrat partagé au lieu d'en dupliquer
+  la boucle.
 - [x] Étendre le corpus de compatibilité avec WitnessGame gelé et snapshots de
   chaque version publiée. `tests/fixtures/compat/witness_v1.*` sont des copies
   exactes des artefacts durables de WitnessGame (projet, registre, scènes hub et

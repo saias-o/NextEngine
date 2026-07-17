@@ -6,8 +6,10 @@
 #include "authoring/SaidaOp.hpp"
 #include "authoring/SaidaOpApplier.hpp"
 #include "authoring/SceneSnapshot.hpp"
+#include "runtime/RuntimeRoundTripContract.hpp"
 #include "scene/BVHLoader.hpp"
 #include "scene/GLTFLoader.hpp"
+#include "scene/RuntimeTypeMatrix.hpp"
 #include "scene/Scene.hpp"
 #include "scene/animation/AnimGraphAsset.hpp"
 #include "scene/animation/AnimationCache.hpp"
@@ -29,6 +31,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -47,6 +50,7 @@ int usage(std::ostream& out) {
            "\n"
            "Usage:\n"
            "  saida_tool describe-engine [--pretty]\n"
+           "  saida_tool verify-manifest [--pretty]\n"
            "  saida_tool validate-ops <ops.json> [--pretty]\n"
            "  saida_tool validate-scene <scene.json> [--pretty]\n"
            "  saida_tool validate-script <script.js> [--module|--script] [--pretty]\n"
@@ -66,6 +70,12 @@ int usage(std::ostream& out) {
            "  describe-engine   Print the EngineManifest as JSON (nodes, ops,\n"
            "                    reflected properties, contract versions).\n"
            "                    --pretty indents the output.\n"
+           "  verify-manifest   Prove the emitted manifest is coherent and that\n"
+           "                    every announced type round-trips: announced\n"
+           "                    nodes/behaviours must be rows of runtimeTypeMatrix,\n"
+           "                    the live headless registry must match it, and every\n"
+           "                    headless type must reconstruct identically through\n"
+           "                    the snapshot codec. exit 0 if all hold, 1 otherwise.\n"
            "  validate-ops      Statically validate a JSON array of SaidaOps\n"
            "                    (schema + per-type shape). Prints a JSON report;\n"
            "                    exit 0 if all valid, 1 if any invalid.\n"
@@ -145,6 +155,72 @@ int cmdDescribeEngine(const std::vector<std::string>& args) {
     const json manifest = saida::authoring::buildEngineManifest();
     std::cout << (pretty ? manifest.dump(2) : manifest.dump()) << "\n";
     return kExitOk;
+}
+
+// Proves that the manifest this shipped binary emits is internally coherent and
+// that every type it announces is covered by the round-trip contract: announced
+// nodes/behaviours must be rows of the round-trip-verified runtimeTypeMatrix,
+// the live headless registry must match that matrix, and every headless-promised
+// type must reconstruct identically through the durable snapshot codec.
+int cmdVerifyManifest(const std::vector<std::string>& args) {
+    bool pretty = false;
+    for (const std::string& a : args) {
+        if (a == "--pretty") {
+            pretty = true;
+        } else {
+            std::cerr << "verify-manifest: unknown option '" << a << "'\n";
+            return kExitUsage;
+        }
+    }
+
+    const json manifest = saida::authoring::buildEngineManifest();
+
+    std::set<std::string> matrixNodes;
+    std::set<std::string> matrixBehaviours;
+    for (const auto& type : manifest["runtimeTypeMatrix"]["types"]) {
+        const std::string name = type.value("name", std::string());
+        (type.value("category", std::string()) == "node" ? matrixNodes : matrixBehaviours)
+            .insert(name);
+    }
+
+    json drift = json::array();
+    for (const auto& node : manifest["nodes"]) {
+        const std::string name = node.value("name", std::string());
+        if (!matrixNodes.count(name))
+            drift.push_back("announced node '" + name +
+                            "' is absent from runtimeTypeMatrix");
+    }
+    for (const auto& behaviour : manifest["behaviours"]) {
+        const std::string name = behaviour.value("name", std::string());
+        if (!matrixBehaviours.count(name))
+            drift.push_back("announced behaviour '" + name +
+                            "' is absent from runtimeTypeMatrix");
+    }
+
+    saida::runtime::RoundTripContractReport report;
+    std::string roundTripError;
+    const bool roundTripOk = saida::runtime::verifySnapshotRoundTripContract(
+        saida::RuntimeTypeTarget::Headless, report, roundTripError);
+
+    std::string registryError;
+    const bool registryOk = saida::verifyRegisteredRuntimeTypes(
+        saida::RuntimeTypeTarget::Headless, registryError);
+
+    const bool ok = drift.empty() && roundTripOk && registryOk;
+    json out{
+        {"ok", ok},
+        {"announcedNodes", manifest["nodes"].size()},
+        {"announcedBehaviours", manifest["behaviours"].size()},
+        {"roundTrip", {{"target", "headless"},
+                       {"nodes", report.nodes},
+                       {"behaviours", report.behaviours},
+                       {"reflectedProperties", report.reflectedProperties}}},
+    };
+    if (!drift.empty()) out["drift"] = std::move(drift);
+    if (!roundTripOk) out["roundTripError"] = roundTripError;
+    if (!registryOk) out["registryError"] = registryError;
+    std::cout << (pretty ? out.dump(2) : out.dump()) << "\n";
+    return ok ? kExitOk : kExitInvalid;
 }
 
 int cmdValidateOps(const std::vector<std::string>& args) {
@@ -994,6 +1070,9 @@ int main(int argc, char** argv) {
     }
     if (command == "describe-engine") {
         return cmdDescribeEngine(rest);
+    }
+    if (command == "verify-manifest") {
+        return cmdVerifyManifest(rest);
     }
     if (command == "validate-ops") {
         return cmdValidateOps(rest);

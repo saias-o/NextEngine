@@ -110,6 +110,17 @@ void seedNode(Node& node, ResourceManager& resources, std::size_t index) {
     node.addToGroup("roundtrip");
 }
 
+// Resource-free seeding for the snapshot codec: common fields only, with each
+// type's durable surface driven by its reflected properties. No ResourceManager
+// is touched, so headless tools can run the full contract.
+void seedNodeCommon(Node& node, std::size_t index) {
+    node.setName("ContractNode" + std::to_string(index));
+    node.setEnabled(false);
+    node.transform().position = {1.0f + static_cast<float>(index), 2.0f, -3.0f};
+    node.transform().scale = {1.25f, 0.75f, 1.5f};
+    node.addToGroup("roundtrip");
+}
+
 void seedBehaviour(Behaviour& behaviour) {
     const std::string type = behaviour.typeName() ? behaviour.typeName() : "";
     if (type == "Blackboard") {
@@ -195,7 +206,6 @@ bool verifyRuntimeRoundTripContract(RuntimeTypeTarget target,
 #endif
 
 bool verifySnapshotRoundTripContract(RuntimeTypeTarget target,
-                                     ResourceManager& resources,
                                      RoundTripContractReport& report,
                                      std::string& error) {
     try {
@@ -219,7 +229,7 @@ bool verifySnapshotRoundTripContract(RuntimeTypeTarget target,
                 throw std::runtime_error("factory for snapshot node '" +
                                          std::string(row.name) + "' created type '" +
                                          (node->typeName() ? node->typeName() : "<null>") + "'");
-            seedNode(*node, resources, nodeIndex++);
+            seedNodeCommon(*node, nodeIndex++);
             report.reflectedProperties += seedReflectedProperties(row.name, node.get());
             source.addChild(std::move(node));
         }

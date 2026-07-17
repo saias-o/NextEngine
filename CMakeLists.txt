@@ -897,6 +897,13 @@ target_link_libraries(saida_tool PRIVATE saida_engine)
 target_compile_options(saida_tool PRIVATE -Wall -Wextra)
 
 if (BUILD_TESTING)
+    # The shipped binary must prove that the manifest it emits is coherent and
+    # that every announced type round-trips through the durable snapshot codec.
+    add_test(
+        NAME saida_tool_verify_manifest
+        COMMAND $<TARGET_FILE:saida_tool> verify-manifest
+    )
+
     add_test(
         NAME saida_tool_validate_scenario_valid
         COMMAND $<TARGET_FILE:saida_tool> validate-scenario

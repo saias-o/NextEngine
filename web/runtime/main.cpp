@@ -1014,8 +1014,7 @@ int main() {
             runtime::RoundTripContractReport contractReport;
             std::string contractError;
             if (!runtime::verifySnapshotRoundTripContract(
-                    RuntimeTypeTarget::AuthoringWasm, *gApp.resources,
-                    contractReport, contractError))
+                    RuntimeTypeTarget::AuthoringWasm, contractReport, contractError))
                 throw std::runtime_error("authoring Web runtime contract: " + contractError);
             std::printf("[CONTRACT] PASS authoringWasm nodes=%zu behaviours=%zu properties=%zu\n",
                         contractReport.nodes, contractReport.behaviours,
