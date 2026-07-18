@@ -5,13 +5,17 @@
 #include "core/Input.hpp"
 #include "core/Log.hpp"
 #include "core/Paths.hpp"
+#include "core/PlatformCaps.hpp"
 #include "core/Reflection.hpp"
 #include "core/Time.hpp"
 #include "graphics/ResourceManager.hpp"
+#include "physics/CollisionObjectNode.hpp"
+#include "physics/PhysicsWorld.hpp"
 #include "project/AssetLoader.hpp"
 #include "project/PlayerStorage.hpp"
 #include "scene/Behaviour.hpp"
 #include "scene/Node.hpp"
+#include "scene/Scene.hpp"
 #include "scene/SceneTree.hpp"
 #include "scene/UITextNode.hpp"
 #include "scripting/JsContext.hpp"
@@ -1028,6 +1032,124 @@ JSValue jsNodeRefCall(JSContext* ctx, JSValueConst, int argc,
                              exportName.c_str());
 }
 
+JSValue makeNodeRef(JSContext* ctx, Node* target);  // défini plus bas
+
+// ---- physics: queries de scène (raycast / overlap) -----------------------
+// Parité desktop/web : le player web embarque le même Jolt (wasm). Le monde
+// physique n'existe qu'en Play avec au moins un corps; sans monde, les queries
+// répondent « rien » (null / liste vide) plutôt qu'une erreur — un script peut
+// interroger une scène sans physique sans se protéger.
+
+PhysicsWorld* physicsFromJs(JSContext* ctx) {
+    SceneTree* tree = treeFromJs(ctx);
+    return tree ? tree->world().physics() : nullptr;
+}
+
+// Lit un {x,y,z} à l'index donné; jette une TypeError sinon.
+bool readVec3At(JSContext* ctx, int argc, JSValueConst* argv, int index, glm::vec3& out) {
+    if (index >= argc || !JS_IsObject(argv[index])) return false;
+    return readVec3Args(ctx, 1, argv + index, out);
+}
+
+// Options communes { hitSensors?: bool, ignoreSelf?: bool } (défauts: false, true).
+struct JsQueryOptions {
+    bool hitSensors = false;
+    bool ignoreSelf = true;
+};
+
+JsQueryOptions readQueryOptions(JSContext* ctx, int argc, JSValueConst* argv, int index) {
+    JsQueryOptions out;
+    if (index >= argc || !JS_IsObject(argv[index])) return out;
+    JSValue sensors = JS_GetPropertyStr(ctx, argv[index], "hitSensors");
+    if (!JS_IsUndefined(sensors)) out.hitSensors = JS_ToBool(ctx, sensors) > 0;
+    JS_FreeValue(ctx, sensors);
+    JSValue self = JS_GetPropertyStr(ctx, argv[index], "ignoreSelf");
+    if (!JS_IsUndefined(self)) out.ignoreSelf = JS_ToBool(ctx, self) > 0;
+    JS_FreeValue(ctx, self);
+    return out;
+}
+
+// Le corps du nœud appelant (ou de son ancêtre le plus proche) — exclu par
+// défaut des queries pour qu'un script ne se touche pas lui-même.
+JPH::BodyID callerBodyId(JSContext* ctx) {
+    for (Node* n = nodeFromJs(ctx); n; n = n->parent())
+        if (CollisionObjectNode* body = n->asCollisionObject()) return body->bodyId();
+    return JPH::BodyID();
+}
+
+QueryFilter makeQueryFilter(JSContext* ctx, const JsQueryOptions& opts) {
+    QueryFilter filter;
+    filter.hitSensors = opts.hitSensors;
+    if (opts.ignoreSelf) filter.ignore = callerBodyId(ctx);
+    return filter;
+}
+
+JSValue physicsNodeRef(JSContext* ctx, PhysicsWorld& world, JPH::BodyID body) {
+    auto* node = static_cast<CollisionObjectNode*>(world.bodyUserData(body));
+    return node ? makeNodeRef(ctx, node) : JS_NULL;
+}
+
+// physics.raycast(origin, direction, maxDistance, opts?) →
+//   null | { point, normal, distance, node: NodeRef|null }
+JSValue jsPhysicsRaycast(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    glm::vec3 origin(0.0f);
+    glm::vec3 direction(0.0f);
+    double maxDistance = 0.0;
+    if (!readVec3At(ctx, argc, argv, 0, origin) ||
+        !readVec3At(ctx, argc, argv, 1, direction) ||
+        argc < 3 || !toNumber(ctx, argv[2], maxDistance)) {
+        return JS_ThrowTypeError(
+            ctx, "physics.raycast(origin{x,y,z}, direction{x,y,z}, maxDistance, opts?)");
+    }
+    if (glm::dot(direction, direction) < 1e-12f || !(maxDistance > 0.0))
+        return JS_NULL;
+
+    PhysicsWorld* world = physicsFromJs(ctx);
+    if (!world) return JS_NULL;
+
+    const QueryFilter filter = makeQueryFilter(ctx, readQueryOptions(ctx, argc, argv, 3));
+    const RaycastHit hit = world->raycast(origin, glm::normalize(direction),
+                                          static_cast<float>(maxDistance), filter);
+    if (!hit.hit) return JS_NULL;
+
+    JSValue o = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, o, "point", makeVec3(ctx, hit.point));
+    JS_SetPropertyStr(ctx, o, "normal", makeVec3(ctx, hit.normal));
+    JS_SetPropertyStr(ctx, o, "distance", JS_NewFloat64(ctx, hit.distance));
+    JS_SetPropertyStr(ctx, o, "node", physicsNodeRef(ctx, *world, hit.body));
+    return o;
+}
+
+// physics.overlapSphere(center, radius, opts?) → [NodeRef...]
+JSValue jsPhysicsOverlapSphere(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    glm::vec3 center(0.0f);
+    double radius = 0.0;
+    if (!readVec3At(ctx, argc, argv, 0, center) ||
+        argc < 2 || !toNumber(ctx, argv[1], radius)) {
+        return JS_ThrowTypeError(ctx,
+                                 "physics.overlapSphere(center{x,y,z}, radius, opts?)");
+    }
+
+    JSValue arr = JS_NewArray(ctx);
+    PhysicsWorld* world = physicsFromJs(ctx);
+    if (!world || !(radius > 0.0)) return arr;
+
+    const QueryFilter filter = makeQueryFilter(ctx, readQueryOptions(ctx, argc, argv, 2));
+    uint32_t i = 0;
+    for (JPH::BodyID body : world->overlapSphere(center, static_cast<float>(radius), filter)) {
+        JSValue ref = physicsNodeRef(ctx, *world, body);
+        if (JS_IsNull(ref)) continue;  // corps sans nœud propriétaire
+        JS_SetPropertyUint32(ctx, arr, i++, ref);
+    }
+    return arr;
+}
+
+// physics.available() → true dès que la capacité physique existe sur la
+// plateforme (le monde lui-même est créé paresseusement en Play).
+JSValue jsPhysicsAvailable(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    return JS_NewBool(ctx, platform::has(platform::Capability::Physics));
+}
+
 void setNodeRefMethod(JSContext* ctx, JSValue object, NodeId id,
                       const char* name, JSCFunctionData* fn, int length,
                       int magic = 0) {
@@ -1124,6 +1246,12 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JSValue audio = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, audio, "play", JS_NewCFunction(ctx, jsAudioPlay, "play", 1));
     JS_SetPropertyStr(ctx, global, "audio", audio);
+
+    JSValue physics = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, physics, "available", JS_NewCFunction(ctx, jsPhysicsAvailable, "available", 0));
+    JS_SetPropertyStr(ctx, physics, "raycast", JS_NewCFunction(ctx, jsPhysicsRaycast, "raycast", 4));
+    JS_SetPropertyStr(ctx, physics, "overlapSphere", JS_NewCFunction(ctx, jsPhysicsOverlapSphere, "overlapSphere", 3));
+    JS_SetPropertyStr(ctx, global, "physics", physics);
 
     JSValue storage = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, storage, "save", JS_NewCFunction(ctx, jsStorageSave, "save", 3));

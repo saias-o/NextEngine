@@ -439,6 +439,7 @@ add_library(saida_engine STATIC
     src/physics/CollisionObjectNode.cpp
     src/physics/CharacterBodyNode.cpp
     src/physics/PhysicsNodes.cpp
+    src/physics/JointNodes.cpp
     # Dear ImGui (vendored) + GLFW/Vulkan backends
     third_party/imgui/imgui.cpp
     third_party/imgui/imgui_draw.cpp
@@ -808,6 +809,12 @@ if (BUILD_TESTING)
     saida_test_target(saida_physics_character_tests)
     target_link_libraries(saida_physics_character_tests PRIVATE saida_engine)
     add_test(NAME saida_physics_character_tests COMMAND $<TARGET_FILE:saida_physics_character_tests>)
+
+    add_executable(saida_physics_query_joint_tests tests/PhysicsQueryJointTests.cpp)
+    saida_test_target(saida_physics_query_joint_tests)
+    target_link_libraries(saida_physics_query_joint_tests PRIVATE saida_engine)
+    target_compile_options(saida_physics_query_joint_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_physics_query_joint_tests COMMAND $<TARGET_FILE:saida_physics_query_joint_tests>)
 
     add_executable(saida_collision_auto_tests tests/CollisionAutoShapeTest.cpp)
     saida_test_target(saida_collision_auto_tests)

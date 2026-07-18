@@ -1570,6 +1570,141 @@
     "mass": 2.0
    },
    {
+    "type": "RigidBody",
+    "id": 8027681363485832818,
+    "name": "PendulumBob",
+    "enabled": true,
+    "behaviours": [],
+    "children": [
+     {
+      "type": "CollisionShape",
+      "id": 15941723305597540147,
+      "name": "Shape",
+      "enabled": true,
+      "behaviours": [],
+      "children": [],
+      "transform": {
+       "position": [
+        0,
+        0,
+        0
+       ],
+       "rotation": [
+        0,
+        0,
+        0,
+        1
+       ],
+       "scale": [
+        1,
+        1,
+        1
+       ]
+      },
+      "shapeType": 1,
+      "halfExtents": [
+       0.3,
+       0.3,
+       0.3
+      ],
+      "offset": [
+       0,
+       0,
+       0
+      ]
+     },
+     {
+      "type": "MeshNode",
+      "id": 656271523538918297,
+      "name": "PendulumBobMesh",
+      "enabled": true,
+      "behaviours": [],
+      "children": [],
+      "transform": {
+       "position": [
+        0,
+        0,
+        0
+       ],
+       "rotation": [
+        0,
+        0,
+        0,
+        1
+       ],
+       "scale": [
+        0.6,
+        0.6,
+        0.6
+       ]
+      },
+      "mesh": 1,
+      "baseColor": [
+       0.9,
+       0.75,
+       0.2,
+       1.0
+      ],
+      "emissive": [
+       0.6,
+       0.45,
+       0.1,
+       1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.0
+     },
+     {
+      "type": "PointJoint",
+      "id": 9806301348969250376,
+      "name": "PendulumJoint",
+      "enabled": true,
+      "behaviours": [],
+      "children": [],
+      "transform": {
+       "position": [
+        0,
+        1.5,
+        0
+       ],
+       "rotation": [
+        0,
+        0,
+        0,
+        1
+       ],
+       "scale": [
+        1,
+        1,
+        1
+       ]
+      }
+     }
+    ],
+    "transform": {
+     "position": [
+      6.0,
+      4.0,
+      6.0
+     ],
+     "rotation": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    },
+    "groups": [
+     "pendulum"
+    ],
+    "mass": 1.5
+   },
+   {
     "type": "Area",
     "id": 11139997871628700334,
     "name": "DoorToHub",

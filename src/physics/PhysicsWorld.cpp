@@ -18,8 +18,14 @@
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/CollectFacesMode.h>
+#include <Jolt/Physics/Collision/CollidePointResult.h>
+#include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
+#include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Constraints/TwoBodyConstraint.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 
 #include "core/Log.hpp"
@@ -250,6 +256,23 @@ JPH::BodyID PhysicsWorld::createBody(const BodyDesc& d) {
 
 void PhysicsWorld::removeBody(JPH::BodyID id) {
     if (id.IsInvalid()) return;
+    // Drop any constraint still attached to this body first: destroying a body
+    // referenced by a live constraint leaves Jolt with a dangling Body*. The
+    // surviving body is woken up — a sleeping body would otherwise hover where
+    // the constraint left it.
+    for (std::size_t i = constraints_.size(); i-- > 0;) {
+        const Ref<TwoBodyConstraint>& c = constraints_[i];
+        const Body* b1 = c->GetBody1();
+        const Body* b2 = c->GetBody2();
+        if ((b1 && b1->GetID() == id) || (b2 && b2->GetID() == id)) {
+            const Body* other = (b1 && b1->GetID() == id) ? b2 : b1;
+            system_->RemoveConstraint(c.GetPtr());
+            constraints_.erase(constraints_.begin() + static_cast<std::ptrdiff_t>(i));
+            if (other && !other->GetID().IsInvalid() && other->GetID() != id &&
+                !other->IsStatic())
+                system_->GetBodyInterface().ActivateBody(other->GetID());
+        }
+    }
     BodyInterface& bi = system_->GetBodyInterface();
     bi.RemoveBody(id);
     bi.DestroyBody(id);
@@ -327,12 +350,38 @@ void PhysicsWorld::updateCharacter(JPH::CharacterVirtual& character, float dt) {
                              {}, {}, *tempAllocator_);
 }
 
+namespace {
+
+// Shared body-level filter for the scene queries: skips one explicit body and,
+// unless requested, every sensor (Area trigger) body.
+class QueryBodyFilter final : public BodyFilter {
+public:
+    explicit QueryBodyFilter(const QueryFilter& filter) : filter_(filter) {}
+
+    bool ShouldCollide(const BodyID& id) const override {
+        return filter_.ignore.IsInvalid() || id != filter_.ignore;
+    }
+    bool ShouldCollideLocked(const Body& body) const override {
+        return filter_.hitSensors || !body.IsSensor();
+    }
+
+private:
+    const QueryFilter& filter_;
+};
+
+} // namespace
+
 RaycastHit PhysicsWorld::raycast(const glm::vec3& origin, const glm::vec3& direction,
-                                 float maxDistance) const {
+                                 float maxDistance, const QueryFilter& filter) const {
     RaycastHit out;
     RRayCast ray{RVec3(origin.x, origin.y, origin.z), toJolt(direction) * maxDistance};
-    RayCastResult result;
-    if (system_->GetNarrowPhaseQuery().CastRay(ray, result)) {
+    QueryBodyFilter bodyFilter(filter);
+    // ClosestHitCollisionCollector + filtre : le hit le plus proche parmi les
+    // corps admis (le CastRay simple ne prend pas de BodyFilter).
+    ClosestHitCollisionCollector<CastRayCollector> collector;
+    system_->GetNarrowPhaseQuery().CastRay(ray, {}, collector, {}, {}, bodyFilter);
+    if (collector.HadHit()) {
+        const RayCastResult& result = collector.mHit;
         out.hit = true;
         out.body = result.mBodyID;
         out.distance = result.mFraction * maxDistance;
@@ -346,6 +395,50 @@ RaycastHit PhysicsWorld::raycast(const glm::vec3& origin, const glm::vec3& direc
         }
     }
     return out;
+}
+
+std::vector<JPH::BodyID> PhysicsWorld::overlapSphere(const glm::vec3& center, float radius,
+                                                     const QueryFilter& filter) const {
+    std::vector<BodyID> out;
+    if (radius <= 0.0f) return out;
+
+    SphereShape sphere(radius);
+    sphere.SetEmbedded();  // stack-owned: opt out of ref-counted destruction
+    CollideShapeSettings settings;
+    AllHitCollisionCollector<CollideShapeCollector> collector;
+    QueryBodyFilter bodyFilter(filter);
+    system_->GetNarrowPhaseQuery().CollideShape(
+        &sphere, Vec3::sReplicate(1.0f),
+        RMat44::sTranslation(RVec3(center.x, center.y, center.z)), settings,
+        RVec3::sZero(), collector, {}, {}, bodyFilter);
+
+    out.reserve(collector.mHits.size());
+    for (const CollideShapeResult& hit : collector.mHits) {
+        if (std::find(out.begin(), out.end(), hit.mBodyID2) == out.end())
+            out.push_back(hit.mBodyID2);  // un body une seule fois (compounds)
+    }
+    return out;
+}
+
+void PhysicsWorld::addConstraint(JPH::Ref<JPH::TwoBodyConstraint> constraint) {
+    if (!constraint) return;
+    system_->AddConstraint(constraint.GetPtr());
+    constraints_.push_back(std::move(constraint));
+}
+
+void PhysicsWorld::removeConstraint(const JPH::Ref<JPH::TwoBodyConstraint>& constraint) {
+    if (!constraint) return;
+    auto it = std::find(constraints_.begin(), constraints_.end(), constraint);
+    if (it == constraints_.end()) return;
+    system_->RemoveConstraint(constraint.GetPtr());
+    constraints_.erase(it);
+    // Wake both bodies: a sleeping body would keep hovering where the
+    // constraint held it instead of resuming under gravity.
+    BodyInterface& bi = system_->GetBodyInterface();
+    for (const Body* body : {constraint->GetBody1(), constraint->GetBody2()}) {
+        if (body && !body->GetID().IsInvalid() && !body->IsStatic())
+            bi.ActivateBody(body->GetID());
+    }
 }
 
 } // namespace saida

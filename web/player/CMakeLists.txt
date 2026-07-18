@@ -124,6 +124,7 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/physics/CollisionShapeNode.cpp
     ${SAIDA_ROOT}/src/physics/CharacterBodyNode.cpp
     ${SAIDA_ROOT}/src/physics/PhysicsNodes.cpp
+    ${SAIDA_ROOT}/src/physics/JointNodes.cpp
     ${SAIDA_ROOT}/src/physics/PhysicsWorld.cpp
     ${SAIDA_ROOT}/src/audio/AudioManager.cpp
     ${SAIDA_ROOT}/src/audio/AudioSourceBehaviour.cpp

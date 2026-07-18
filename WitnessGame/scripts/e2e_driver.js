@@ -113,6 +113,49 @@ function armSequenceSignals() {
     return true;
 }
 
+// Traversée de l'API physics.* (P0.4) dans l'arène, une fois la phase 1
+// acquise : raycast filtré (capteurs exclus par défaut, inclus sur demande),
+// overlapSphere, et contrainte PointJoint qui retient le pendule au-dessus du
+// sol (sans joint, le bob spawné à y=4 serait au sol depuis longtemps).
+function checkPhysicsApi() {
+    if (!physics.available())
+        return finish("FAIL: physics.available() is false on this platform");
+
+    const down = physics.raycast({x: 0, y: 5, z: 0}, {x: 0, y: -1, z: 0}, 20);
+    if (down === null || down.node === null)
+        return finish("FAIL: physics.raycast reported no floor hit");
+    if (down.node.getName() !== "Floor")
+        return finish("FAIL: raycast hit " + down.node.getName() + ", expected Floor");
+    if (Math.abs(down.distance - 5.0) > 0.2 || down.normal.y < 0.9)
+        return finish("FAIL: raycast hit geometry off (d=" + down.distance +
+                      ", ny=" + down.normal.y + ")");
+
+    const relic = tree.firstInGroup("relic");
+    if (relic === null) return finish("FAIL: no relic left for the overlap check");
+    const rp = relic.getPosition();
+    const quiet = physics.overlapSphere(rp, 0.6);
+    for (const hit of quiet) {
+        if (hit.getName() === relic.getName())
+            return finish("FAIL: overlapSphere reported a sensor by default");
+    }
+    const sensors = physics.overlapSphere(rp, 0.6, {hitSensors: true});
+    let sawRelic = false;
+    for (const hit of sensors) {
+        if (hit.getName() === relic.getName()) sawRelic = true;
+    }
+    if (!sawRelic)
+        return finish("FAIL: overlapSphere(hitSensors) missed the relic Area");
+
+    const bob = tree.firstInGroup("pendulum");
+    if (bob === null) return finish("FAIL: pendulum bob missing from the arena");
+    if (bob.getPosition().y < 2.5)
+        return finish("FAIL: point joint did not hold the pendulum (y=" +
+                      bob.getPosition().y + ")");
+
+    console.log("[E2E] physics api ok (raycast/overlap/joint)");
+    return true;
+}
+
 function onUpdate(dt) {
     if (finished) return;
     t += dt;
@@ -151,6 +194,7 @@ function onUpdate(dt) {
                 return;
             }
             input.inject("MoveForward", 0);
+            if (checkPhysicsApi() !== true) return;  // verdict déjà posé
             phase = 2;
             console.log("[E2E] phase 1 ok — UI updated, relic collected, starting scene cycles");
             return;

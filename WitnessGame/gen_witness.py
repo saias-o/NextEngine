@@ -180,6 +180,24 @@ def crate(prefix, index, pos):
                 ])
 
 
+def pendulum(prefix, pos=(6.0, 4.0, 6.0)):
+    """Bob dynamique suspendu à un PointJoint ancré au monde (P0.4).
+
+    Le pivot est 1.5 m au-dessus du bob ; sans la contrainte il tomberait au
+    sol (y ~ 0.3). Le driver E2E atteste que le joint le retient en l'air, sur
+    desktop comme dans le player web."""
+    name = "PendulumBob"
+    return node(f"{prefix}/{name}", "RigidBody", name, pos=pos, mass=1.5,
+                groups=["pendulum"], children=[
+                    box_shape(f"{prefix}/{name}/shape", (0.3, 0.3, 0.3)),
+                    cube(f"{prefix}/{name}/mesh", name + "Mesh", (0, 0, 0),
+                         (0.6, 0.6, 0.6), (0.9, 0.75, 0.2, 1.0),
+                         emissive=(0.6, 0.45, 0.1, 1.0)),
+                    node(f"{prefix}/{name}/joint", "PointJoint", "PendulumJoint",
+                         pos=(0, 1.5, 0)),
+                ])
+
+
 def scene_doc(root_name, children):
     return {
         "schema": SCENE_SCHEMA,
@@ -222,6 +240,7 @@ def arena():
         crate(p, 0, (-3, 1.0, 0)),
         crate(p, 1, (-3, 2.2, 0)),
         crate(p, 2, (3, 1.0, 2)),
+        pendulum(p),
         door(p, "DoorToHub", (0, 1.1, 11.4), "scenes/hub.scene",
              (1.0, 0.5, 0.2, 1.0)),
         hud(p, "Relics: ?"),

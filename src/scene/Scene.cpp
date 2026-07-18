@@ -15,6 +15,7 @@
 #include "physics/PhysicsWorld.hpp"
 #include "physics/CollisionObjectNode.hpp"
 #include "physics/AreaNode.hpp"
+#include "physics/JointNodes.hpp"
 #endif
 
 #include <nlohmann/json.hpp>
@@ -82,6 +83,12 @@ void Scene::update(float dt) {
             for (auto* body : bodies_) body->syncToPhysics(*physics_);
         }
         {
+            // After body sync so both referenced bodies exist; a joint whose
+            // body was rebuilt this frame recreates its constraint here.
+            SAIDA_PROFILE_SCOPE("Physics/SyncJoints");
+            for (auto* joint : joints_) joint->syncJointToPhysics(*physics_);
+        }
+        {
             SAIDA_PROFILE_SCOPE("Physics/PreStep");
             for (auto* body : bodies_) body->prePhysicsStep(*physics_, dt);  // characters move/slide
         }
@@ -132,6 +139,7 @@ void Scene::flattenHierarchy() {
     particleSystems_.clear();
     flatBehaviours_.clear();
     bodies_.clear();
+    joints_.clear();
     activeNodeCount_ = 0;
 
     traverse([this](Node& n, const glm::mat4&) {
@@ -164,6 +172,9 @@ void Scene::flattenHierarchy() {
         }
         if (CollisionObjectNode* co = n.asCollisionObject()) {
             bodies_.push_back(co);
+        }
+        if (JointNode* joint = n.asJointNode()) {
+            joints_.push_back(joint);
         }
         for (auto& b : n.behaviours()) {
             flatBehaviours_.push_back(b.get());

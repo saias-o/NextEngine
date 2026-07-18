@@ -18,6 +18,7 @@
 #include "scene/StateMachineBehaviour.hpp"
 #include "scene/animation/SequenceDirectorBehaviour.hpp"
 #include "physics/AreaNode.hpp"
+#include "physics/JointNodes.hpp"
 #include "scenario/ScenarioAnchor.hpp"
 #include "scenario/ScenarioDirector.hpp"
 #include "scenario/ScenarioRunnerBehaviour.hpp"
@@ -77,6 +78,10 @@ void registerReflectedTypes() {
     registerNode<WaterNode>();
     registerNode<ParticleSystemNode>();
     registerNode<AreaNode>();
+    // Physics joints (V1: fixed, point, hinge) — matrix {R, R, A, R}.
+    registerNode<FixedJointNode>();
+    registerNode<PointJointNode>();
+    registerNode<HingeJointNode>();
     // <<SAIDA_MCP_REGISTER>>  (write_cpp_behaviour inserts registerBehaviour<T>() calls above this line)
 }
 

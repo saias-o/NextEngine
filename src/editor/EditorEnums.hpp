@@ -24,6 +24,9 @@ enum class CreateNodeType {
     CharacterBody,
     Area,
     CollisionShape,
+    FixedJoint,
+    PointJoint,
+    HingeJoint,
     Water,
     ParticleSystem
 };

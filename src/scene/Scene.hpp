@@ -13,6 +13,7 @@ namespace saida {
 
 class PhysicsWorld;
 class CollisionObjectNode;
+class JointNode;
 
 // Whether lighting is evaluated live every frame, or frozen from a bake.
 enum class LightingMode {
@@ -162,6 +163,7 @@ private:
     std::vector<ParticleSystemNode*> particleSystems_;
     std::vector<Behaviour*> flatBehaviours_;
     std::vector<CollisionObjectNode*> bodies_;
+    std::vector<JointNode*> joints_;
     uint32_t activeNodeCount_ = 0;
 
 #ifndef SAIDA_NO_PHYSICS

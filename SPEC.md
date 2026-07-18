@@ -181,18 +181,19 @@ matrice rend chaque divergence explicite, elle ne donne pas la permission de
 perdre du contenu.
 
 Le test `saida_runtime_type_matrix_tests` construit le corpus headless depuis la
-matrice : 14 types de nœuds, 18 behaviours et les 157 propriétés réfléchies
-reçoivent des valeurs non triviales, puis un cycle serialize/load/serialize doit
-rester sémantiquement identique. Il couvre aussi les données manuscrites du HUD,
-des corps/colliders, de `Blackboard`, de la FSM et de `ScriptBehaviour`.
-L'authoring Web exécute son snapshot contractuel avant de publier `ready`.
+matrice : 17 types de nœuds (joints physiques inclus), 18 behaviours et les 161
+propriétés réfléchies reçoivent des valeurs non triviales, puis un cycle
+serialize/load/serialize doit rester sémantiquement identique. Il couvre aussi
+les données manuscrites du HUD, des corps/colliders, de `Blackboard`, de la FSM
+et de `ScriptBehaviour`. L'authoring Web exécute son snapshot contractuel avant
+de publier `ready`.
 
 `RuntimeRoundTripContract` construit de la même manière un corpus en mémoire.
-Le serializer complet couvre le natif (26 nœuds, 22 behaviours, 151 propriétés
+Le serializer complet couvre le natif (29 nœuds, 22 behaviours, 161 propriétés
 dans le build XR courant) via `SaidaEngine --verify-runtime-contract`, et le
-player Web (15/10/120) via le paramètre `verify-runtime-contract`. Le codec
+player Web (18/10/130) via le paramètre `verify-runtime-contract`. Le codec
 snapshot, désormais sans `ResourceManager`, couvre l'authoring Web (9/0/90) avant
-son passage à `ready` et le headless (14/18/151). Tous exigent une identité JSON
+son passage à `ready` et le headless (17/18/161). Tous exigent une identité JSON
 sémantique après reconstruction et exposent le verdict `[CONTRACT] PASS`.
 
 `saida_tool verify-manifest` ferme la boucle depuis le binaire réellement livré :
@@ -300,8 +301,31 @@ des extensions. Les réglages agressifs doivent être validés visuellement.
 Jolt fournit rigid bodies, collision shapes, character body, areas/triggers,
 layers et intégration scène. Le player Web utilise un job system mono-thread.
 Le character possède un inner body pour être visible dans broadphase, capteurs
-et raycasts. Queries, contraintes avancées et parité complète C++/JS ne sont pas
-encore fermées.
+et raycasts.
+
+**Queries de scène.** `PhysicsWorld::raycast` et `overlapSphere` prennent un
+`QueryFilter` : les capteurs (Area) sont exclus par défaut — un rayon
+d'occlusion caméra ou un hitscan ne s'arrête pas sur un trigger invisible — et
+réadmis via `hitSensors`; un body explicite peut être ignoré (le lanceur).
+Exposées en JS par le global `physics` (5.4) avec la même sémantique sur
+desktop et player Web.
+
+**Joints (V1 : `FixedJoint`, `PointJoint`, `HingeJoint`).** Nœuds réfléchis
+reliant deux corps : `bodyA`/`bodyB` sont des *chemins de nœuds* résolus depuis
+le joint (`Node::findByPath` : `..`, noms, `/` = racine) — stables au spawn
+multiple là où les ids régénérés par `instantiate` ne le seraient pas. `bodyA`
+vide = corps ancêtre le plus proche (forme d'autoring naturelle : joint enfant
+du corps A); `bodyB` vide = ancrage au monde (`Body::sFixedToWorld`). Le pivot
+(et l'axe du hinge, avec limites angulaires optionnelles) vient du transform
+monde du nœud joint. La Scene synchronise les joints après les corps : la
+contrainte Jolt se crée quand les deux corps sont vivants et se reconstruit
+quand un body référencé a été recréé (`markDirty`). `PhysicsWorld` possède le
+registre des contraintes : retirer un body purge d'abord ses contraintes (pas
+de `Body*` pendant) et réveille l'autre corps; retirer une contrainte réveille
+ses deux corps. Matrice : `{R, R, A, R}` comme les autres nœuds physiques.
+
+Contraintes avancées (slider, cône, moteurs, breakables) et le reste de la
+parité C++/JS (animation/graph/sequence/blackboard) ne sont pas encore fermés.
 
 ### 5.2 Input
 
@@ -417,9 +441,17 @@ pas retenu afin d'éviter runtime, marshalling et second écosystème de binding
 - `storage` : slots opaques de progression (`save/load/has/remove/info/list`,
   `save` accepte un `dataVersion` optionnel), sous-objet `storage.prefs` pour les
   préférences et `storage.lastError()` pour le dernier échec typé; décrits en 5.4.
+- `physics` : `available()`;
+  `raycast(origin, direction, maxDistance, opts?)` → `null` ou
+  `{point, normal, distance, node: NodeRef|null}`;
+  `overlapSphere(center, radius, opts?)` → `[NodeRef...]`.
+  `opts = {hitSensors?: bool, ignoreSelf?: bool}` — capteurs exclus par défaut,
+  corps propre de l'appelant (nœud ou ancêtre) ignoré par défaut. Sans monde
+  physique (pas de Play, pas de corps), les queries répondent « rien »
+  (`null`/liste vide), jamais une erreur. Même surface desktop et player Web.
 
-Il manque encore davantage de physique/gameplay et les bindings complets
-animation/séquences/blackboard. Les références cross-node deviennent invalides
+Il manque encore les bindings complets animation/graph/séquences/blackboard.
+Les références cross-node deviennent invalides
 explicitement lorsque leur NodeId disparaît; aucun pointeur JS ne survit à la
 destruction d'une scène.
 
@@ -729,7 +761,9 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
   de certains folds.
 - Les producteurs SaidaOp externes V1 doivent émettre `opVersion: 2` et les
   `NodeId`; les opérations historiques par nom sont volontairement refusées.
-- Bindings physique, animation, séquences et blackboard encore incomplets.
+- Queries physiques (raycast filtré, overlapSphere) et joints V1
+  (Fixed/Point/Hinge) livrés avec parité JS desktop/Web; bindings animation,
+  graph, séquences et blackboard encore incomplets.
 - Sauvegardes d'un jeu packagé sous le dossier utilisateur de l'OS (keyé par
   l'identité du jeu, override `$SAIDA_SAVE_DIR`); éditeur/dev restent sous la
   racine projet. API asynchrone complète encore absente; enveloppe versionnée,

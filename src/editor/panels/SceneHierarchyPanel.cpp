@@ -12,6 +12,7 @@
 #include "physics/AreaNode.hpp"
 #include "physics/CharacterBodyNode.hpp"
 #include "physics/CollisionShapeNode.hpp"
+#include "physics/JointNodes.hpp"
 #include "scene/SceneSerializer.hpp"
 #include "editor/Command.hpp"
 #include "project/Project.hpp"
@@ -132,6 +133,12 @@ static std::unique_ptr<Node> makeNodeOfType(CreateNodeType type, Mesh* defaultMe
         }
         case CreateNodeType::CollisionShape:
             return std::make_unique<CollisionShapeNode>();
+        case CreateNodeType::FixedJoint:
+            return std::make_unique<FixedJointNode>();
+        case CreateNodeType::PointJoint:
+            return std::make_unique<PointJointNode>();
+        case CreateNodeType::HingeJoint:
+            return std::make_unique<HingeJointNode>();
         default:
             return nullptr;  // None / SceneInstance: handled by the caller
     }
@@ -359,6 +366,18 @@ void SceneHierarchyPanel::draw(EditorUI* editor, Scene* scene) {
                     if (ImGui::MenuItem("Collision Shape")) {
                         editor->nodeToCreateChildUnder_ = parent;
                         editor->createType_ = CreateNodeType::CollisionShape;
+                    }
+                    if (ImGui::MenuItem("Fixed Joint")) {
+                        editor->nodeToCreateChildUnder_ = parent;
+                        editor->createType_ = CreateNodeType::FixedJoint;
+                    }
+                    if (ImGui::MenuItem("Point Joint")) {
+                        editor->nodeToCreateChildUnder_ = parent;
+                        editor->createType_ = CreateNodeType::PointJoint;
+                    }
+                    if (ImGui::MenuItem("Hinge Joint")) {
+                        editor->nodeToCreateChildUnder_ = parent;
+                        editor->createType_ = CreateNodeType::HingeJoint;
                     }
                     ImGui::EndMenu();
                 }
@@ -720,6 +739,18 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
                     editor->nodeToCreateChildUnder_ = node;
                     editor->createType_ = CreateNodeType::CollisionShape;
                 }
+                if (ImGui::MenuItem("Fixed Joint")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::FixedJoint;
+                }
+                if (ImGui::MenuItem("Point Joint")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::PointJoint;
+                }
+                if (ImGui::MenuItem("Hinge Joint")) {
+                    editor->nodeToCreateChildUnder_ = node;
+                    editor->createType_ = CreateNodeType::HingeJoint;
+                }
                 ImGui::EndMenu();
             }
             ImGui::Separator();
@@ -750,6 +781,9 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
                 parentItem("Rigid Body", CreateNodeType::RigidBody);
                 parentItem("Character Body", CreateNodeType::CharacterBody);
                 parentItem("Area (Trigger)", CreateNodeType::Area);
+                parentItem("Fixed Joint", CreateNodeType::FixedJoint);
+                parentItem("Point Joint", CreateNodeType::PointJoint);
+                parentItem("Hinge Joint", CreateNodeType::HingeJoint);
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("UI Nodes##parent")) {

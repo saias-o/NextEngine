@@ -144,7 +144,22 @@ desktop et Web; l'absence XR éventuelle est un fallback déclaré.
 ## P0.4 - API gameplay et stockage
 
 - [x] Exposer en JS l'accès aux autoloads, nœuds/groupes et signaux cross-node.
-- [ ] Ajouter les queries/contraintes physiques indispensables et leur parité JS.
+- [x] Ajouter les queries/contraintes physiques indispensables et leur parité JS.
+  Queries : `PhysicsWorld::raycast`/`overlapSphere` avec `QueryFilter` (capteurs
+  exclus par défaut, body ignoré), exposées en JS par le global `physics`
+  (`available`/`raycast`/`overlapSphere`, résultats en `NodeRef`), même surface
+  desktop et player Web. Contraintes : nœuds réfléchis `FixedJoint`/`PointJoint`/
+  `HingeJoint` (corps par chemins de nœuds, `bodyA` = ancêtre par défaut, `bodyB`
+  vide = monde; pivot/axe depuis le transform du joint), matrice `{R, R, A, R}`
+  sur les 4 runtimes, round-trip automatique (headless 17/18/161, natif
+  29/22/161, player Web 18/10/130); `PhysicsWorld` purge les contraintes d'un
+  body retiré et réveille les corps survivants. Prouvé par
+  `saida_physics_query_joint_tests` (queries filtrées, pendule retenu vs chute
+  libre, rebuild après `markDirty`, retrait de corps sans contrainte pendante)
+  et traversé par WitnessGame (pendule PointJoint dans l'arène +
+  raycast/overlap dans le driver E2E) : PASS éditeur `--play`, desktop packagé
+  (`witness_e2e.sh`, run + restart) et navigateur (PASS 16 cycles + RESTART
+  PASS). Restent en P1 : slider/cône/moteurs/breakables et diagnostics.
 - [ ] Compléter les bindings animation, graph, sequence et blackboard.
 - [x] Émettre un warning quand un module JS ne fournit aucun hook reconnu.
 - [ ] Définir la politique de permissions des scripts publics au-delà du

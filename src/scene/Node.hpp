@@ -22,6 +22,7 @@ class Material;
 class LightNode;
 class CollisionObjectNode;
 class CharacterBodyNode;
+class JointNode;
 class ResourceManager;
 class SceneTree;
 
@@ -107,6 +108,12 @@ public:
     virtual const LightNode* asLightConst() const { return nullptr; }
     virtual CollisionObjectNode* asCollisionObject() { return nullptr; }
     virtual CharacterBodyNode* asCharacterBody() { return nullptr; }
+    virtual JointNode* asJointNode() { return nullptr; }
+
+    // Resolve a slash-separated node path from this node: "." = self, ".." =
+    // parent, a name = child with that name; a leading '/' starts at the tree
+    // root. Returns null when any segment fails to resolve.
+    Node* findByPath(const std::string& path);
 
     virtual const char* typeName() const { return "Node"; }
     virtual void serialize(nlohmann::json& j, ResourceManager& resources) const;

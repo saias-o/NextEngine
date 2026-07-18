@@ -179,6 +179,41 @@ void Node::updateTransforms(const glm::mat4& parentWorld, bool parentDirty) {
     }
 }
 
+Node* Node::findByPath(const std::string& path) {
+    if (path.empty()) return nullptr;
+
+    Node* current = this;
+    std::size_t i = 0;
+    if (path.front() == '/') {
+        while (current->parent()) current = current->parent();
+        i = 1;
+    }
+
+    while (i < path.size()) {
+        std::size_t end = path.find('/', i);
+        if (end == std::string::npos) end = path.size();
+        const std::string segment = path.substr(i, end - i);
+        i = end + 1;
+
+        if (segment.empty() || segment == ".") continue;
+        if (segment == "..") {
+            current = current->parent();
+            if (!current) return nullptr;
+            continue;
+        }
+        Node* next = nullptr;
+        for (const auto& child : current->children()) {
+            if (child->name() == segment) {
+                next = child.get();
+                break;
+            }
+        }
+        if (!next) return nullptr;
+        current = next;
+    }
+    return current;
+}
+
 void Node::traverse(const glm::mat4& parentWorld,
                     const std::function<void(Node&, const glm::mat4&)>& visit) {
     glm::mat4 world = parentWorld * localMatrix();

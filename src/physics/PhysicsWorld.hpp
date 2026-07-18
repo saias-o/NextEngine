@@ -18,6 +18,7 @@ class Shape;
 class TempAllocator;
 class JobSystem;
 class CharacterVirtual;
+class TwoBodyConstraint;
 } // namespace JPH
 
 namespace saida {
@@ -33,6 +34,14 @@ struct RaycastHit {
     glm::vec3 normal{0.0f};
     float distance = 0.0f;
     JPH::BodyID body;  // invalid when !hit
+};
+
+// Filters shared by the scene queries (raycast / overlap). Sensors (Area
+// triggers) are excluded by default: a camera occlusion ray or a hitscan must
+// not stop on an invisible trigger volume.
+struct QueryFilter {
+    JPH::BodyID ignore;       // body to skip (typically the caster's own body)
+    bool hitSensors = false;  // true → sensor bodies are reported too
 };
 
 // Everything needed to spawn a body. The shape must already be built (and is
@@ -86,7 +95,18 @@ public:
     void setAngularVelocity(JPH::BodyID id, const glm::vec3& velocity);
 
     RaycastHit raycast(const glm::vec3& origin, const glm::vec3& direction,
-                       float maxDistance) const;
+                       float maxDistance, const QueryFilter& filter = {}) const;
+
+    // All bodies whose shape intersects the sphere. Order is unspecified;
+    // each body is reported once.
+    std::vector<JPH::BodyID> overlapSphere(const glm::vec3& center, float radius,
+                                           const QueryFilter& filter = {}) const;
+
+    // Register a built Jolt constraint joining `a` and `b` (either may be
+    // invalid for a world-anchored constraint). The world owns a reference and
+    // removes the constraint automatically when one of its bodies is removed.
+    void addConstraint(JPH::Ref<JPH::TwoBodyConstraint> constraint);
+    void removeConstraint(const JPH::Ref<JPH::TwoBodyConstraint>& constraint);
 
     // Create a kinematic character controller (cf. Godot CharacterBody3D). NOT a
     // simulated body: the caller owns the ref and moves it via updateCharacter.
@@ -122,6 +142,9 @@ private:
     std::unique_ptr<JPH::JobSystem> jobSystem_;
     std::unique_ptr<JPH::PhysicsSystem> system_;
     std::unique_ptr<TriggerContactListener> contactListener_;
+    // Live constraints, so removeBody can drop any constraint still attached to
+    // a body before Jolt destroys it (a dangling constraint would crash the step).
+    std::vector<JPH::Ref<JPH::TwoBodyConstraint>> constraints_;
 
     float accumulator_ = 0.0f;
 };

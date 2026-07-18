@@ -18,6 +18,7 @@
 #include "audio/AudioSourceBehaviour.hpp"
 #include "physics/AreaNode.hpp"
 #include "physics/CharacterBodyNode.hpp"
+#include "physics/JointNodes.hpp"
 #include "physics/CollisionShapeNode.hpp"
 #include "physics/RigidBodyNode.hpp"
 #include "physics/StaticBodyNode.hpp"
@@ -77,6 +78,10 @@ void registerReflectedTypes() {
     registerNode<WaterNode>();
     registerNode<ParticleSystemNode>();
     registerNode<AreaNode>();
+    // Physics joints (V1: fixed, point, hinge) — required in the web player.
+    registerNode<FixedJointNode>();
+    registerNode<PointJointNode>();
+    registerNode<HingeJointNode>();
     NodeRegistry::instance().registerType<CollisionShapeNode>("CollisionShape");
     NodeRegistry::instance().registerType<StaticBodyNode>("StaticBody");
     NodeRegistry::instance().registerType<RigidBodyNode>("RigidBody");
