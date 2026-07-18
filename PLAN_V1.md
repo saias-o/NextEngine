@@ -148,9 +148,18 @@ desktop et Web; l'absence XR éventuelle est un fallback déclaré.
 - [ ] Déplacer les saves vers l'emplacement utilisateur de chaque OS.
 - [x] Rendre les écritures atomiques avec conservation de l'ancien fichier si
   le remplacement échoue.
-- [ ] Versionner les saves, fournir migrations/rejet explicite et metadata de
-  slots.
-- [ ] Séparer préférences et progression, ajouter quotas et erreurs explicites.
+- [x] Versionner les saves, fournir migrations/rejet explicite et metadata de
+  slots. Le service `PlayerStorage` écrit chaque slot dans une enveloppe
+  `{schema, version, __saidaStore, kind, dataVersion, savedAt, bytes, payload}`
+  (schéma 1) refusée fail-closed via `format::schemaEnvelopeError` si future ou
+  incohérente; une save V0 héritée (chaîne brute) charge verbatim puis est
+  promue en enveloppe à la réécriture; `storage.info(slot)` expose la metadata.
+- [x] Séparer préférences et progression, ajouter quotas et erreurs explicites.
+  `storage.*` = progression (`saves/`), `storage.prefs.*` = préférences
+  (`prefs/`), namespaces indépendants; quotas par slot (1 MiB), par namespace
+  (16 MiB) et nombre de slots (256); échec `false` avec statut typé consultable
+  par `storage.lastError()` (`invalid_slot`/`quota_exceeded`/`not_found`/
+  `corrupt`/`io_error`). Prouvé par `saida_player_storage_tests`.
 - [ ] Stabiliser le contrat asynchrone nécessaire à IDBFS/cloud save futur.
 
 Gate : WitnessGame communique sans fichier détourné et récupère une sauvegarde

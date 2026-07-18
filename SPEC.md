@@ -329,18 +329,43 @@ débloque au premier clic/touch.
 
 ### 5.4 Stockage joueur
 
-L'API JS `storage.save/load/has/remove` persiste des chaînes opaques par slot.
-Le nom respecte `[A-Za-z0-9_-]{1,64}`. Desktop écrit sous `saves/` dans la
-racine runtime; Web utilise IDBFS/IndexedDB.
+L'API JS `storage.*` persiste des chaînes opaques par slot : le jeu sérialise
+lui-même son état (`JSON.stringify`) et le moteur ne stocke que la chaîne. Le
+service `PlayerStorage` (pur filesystem, testé headless par
+`saida_player_storage_tests`, partagé desktop/runtime/player Web) porte la
+durabilité :
+
+- **Deux namespaces séparés.** `storage.save/load/has/remove/info/list` opèrent
+  sur la *progression* (`saves/<slot>.json`); `storage.prefs.*` sur les
+  *préférences* (`prefs/<slot>.json`). Effacer une sauvegarde ne touche pas les
+  réglages et inversement. Le nom respecte `[A-Za-z0-9_-]{1,64}`.
+- **Enveloppe versionnée.** Chaque slot est écrit dans une enveloppe JSON
+  `{schema, version, __saidaStore, kind, dataVersion, savedAt, bytes, payload}`
+  (schéma courant 1). `storage.save(slot, json, dataVersion?)` accepte une
+  version applicative optionnelle pour les migrations côté jeu. Une enveloppe de
+  schéma futur ou incohérente (`schema`≠`version`) est refusée via le garde
+  partagé `format::schemaEnvelopeError` : `load` renvoie `null` et pose
+  `storage.lastError()` au lieu de mal relire la donnée.
+- **Migration des saves V0.** Une sauvegarde héritée sans enveloppe (chaîne brute
+  écrite avant ce contrat) charge verbatim (schéma 0) puis est promue en
+  enveloppe à la prochaine écriture, sans perte de contenu.
+- **Metadata de slot.** `storage.info(slot)` renvoie `{kind, bytes, savedAt,
+  dataVersion, schema}` sans lire le payload; `storage.list()` énumère les slots
+  d'un namespace.
+- **Quotas et erreurs typées.** Budget par slot (1 MiB), par namespace (16 MiB)
+  et nombre de slots (256) sont imposés; un dépassement échoue `false` avec un
+  statut consultable (`storage.lastError()` → `{status, message}`, `status`
+  parmi `invalid_slot`/`quota_exceeded`/`not_found`/`corrupt`/`io_error`).
 
 `storage.save` écrit un fichier temporaire dans le même répertoire, force les
-données sur le stockage puis remplace la destination atomiquement. L'ancien
-fichier reste intact si l'écriture ou le remplacement échoue, et les temporaires
-en échec sont supprimés.
+données sur le stockage puis remplace la destination atomiquement
+(`writeFileAtomically`). L'ancien fichier reste intact si l'écriture ou le
+remplacement échoue, et les temporaires en échec sont supprimés. Desktop écrit
+sous la racine runtime; Web utilise IDBFS/IndexedDB (flush `syncfs` après chaque
+mutation durable).
 
-Ce MVP ne fournit pas encore schéma et migrations, préférences séparées,
-metadata de slots, quotas, emplacement OS utilisateur ni API asynchrone
-complète.
+Reste hors de ce contrat : emplacement OS utilisateur des saves (encore sous la
+racine projet) et API asynchrone complète nécessaire à IDBFS/cloud save.
 
 ## 6. JavaScript QuickJS
 
@@ -380,7 +405,9 @@ pas retenu afin d'éviter runtime, marshalling et second écosystème de binding
   vers un `ScriptBehaviour` dans un autre contexte QuickJS.
 - `assets` : `load(path, priority)` et `stats()`; jamais de promesse de
   chargement bloquant.
-- `storage` : slots opaques décrits plus haut.
+- `storage` : slots opaques de progression (`save/load/has/remove/info/list`,
+  `save` accepte un `dataVersion` optionnel), sous-objet `storage.prefs` pour les
+  préférences et `storage.lastError()` pour le dernier échec typé; décrits en 5.4.
 
 Il manque encore davantage de physique/gameplay et les bindings complets
 animation/séquences/blackboard. Les références cross-node deviennent invalides
@@ -694,7 +721,9 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
 - Les producteurs SaidaOp externes V1 doivent émettre `opVersion: 2` et les
   `NodeId`; les opérations historiques par nom sont volontairement refusées.
 - Bindings physique, animation, séquences et blackboard encore incomplets.
-- Sauvegardes encore locales au projet et sans migrations/metadata/quota.
+- Sauvegardes encore locales au projet (pas d'emplacement OS utilisateur) et
+  sans API asynchrone complète; enveloppe versionnée, metadata, namespaces
+  progression/préférences et quotas désormais en place.
 - Asset LRU en cours de scène, streaming Web et sweep rigs/anims absents.
 - Point-light shadows cubemap et lightmaps persistantes absentes.
 - XR sans MSAA multiview, overlay et matrice hardware validée.

@@ -90,6 +90,7 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/project/AssetRegistry.cpp
     ${SAIDA_ROOT}/src/project/AssetLoader.cpp
     ${SAIDA_ROOT}/src/project/Project.cpp
+    ${SAIDA_ROOT}/src/project/PlayerStorage.cpp
     ${SAIDA_ROOT}/src/scene/Behaviour.cpp
     ${SAIDA_ROOT}/src/scene/BehaviourRegistry.cpp
     ${SAIDA_ROOT}/src/scene/Blackboard.cpp

@@ -414,6 +414,7 @@ add_library(saida_engine STATIC
     src/project/Project.cpp
     src/project/AssetRegistry.cpp
     src/project/AssetLoader.cpp
+    src/project/PlayerStorage.cpp
     src/graphics/VmaUsage.cpp
     src/graphics/TinyObjUsage.cpp
     src/graphics/cgltf_impl.cpp
@@ -763,6 +764,12 @@ if (BUILD_TESTING)
     target_link_libraries(saida_format_version_tests PRIVATE saida_engine)
     target_compile_options(saida_format_version_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_format_version_tests COMMAND $<TARGET_FILE:saida_format_version_tests>)
+
+    add_executable(saida_player_storage_tests tests/PlayerStorageTests.cpp)
+    saida_test_target(saida_player_storage_tests)
+    target_link_libraries(saida_player_storage_tests PRIVATE saida_engine)
+    target_compile_options(saida_player_storage_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_player_storage_tests COMMAND $<TARGET_FILE:saida_player_storage_tests>)
 
     add_executable(saida_asset_loader_tests tests/AssetLoaderTests.cpp)
     saida_test_target(saida_asset_loader_tests)

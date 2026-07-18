@@ -8,6 +8,7 @@
 #include "core/Time.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "project/AssetLoader.hpp"
+#include "project/PlayerStorage.hpp"
 #include "scene/Behaviour.hpp"
 #include "scene/Node.hpp"
 #include "scene/SceneTree.hpp"
@@ -125,98 +126,225 @@ JSValue jsAudioPlay(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) 
     return JS_NewBool(ctx, ok);
 }
 
-// ---- storage: persistance minimale par slot (fichiers saves/<slot>.json) ----
+// ---- storage: persistance par slot déléguée à PlayerStorage --------------
 // Le JS sérialise lui-même (JSON.stringify/parse) ; le moteur ne stocke que des
-// chaînes. Chemin résolu sous la racine projet → identique dans l'éditeur, le
-// runtime packagé (racine = dossier de l'exe) et le player web (MEMFS).
+// chaînes opaques. PlayerStorage ajoute l'enveloppe versionnée, la metadata de
+// slot, la séparation progression/préférences et les quotas ; il refuse une
+// sauvegarde future ou falsifiée au lieu de la mal relire. Les répertoires sont
+// résolus sous la racine projet → identiques dans l'éditeur, le runtime packagé
+// (racine = dossier de l'exe) et le player web (IDBFS/MEMFS).
+//
+// storage.* opère sur la progression, storage.prefs.* sur les préférences.
+// Le dernier échec d'une opération non levée (quota, io, corruption) est
+// consultable via storage.lastError() ; save/remove renvoient un booléen pour
+// préserver le contrat historique.
 
-bool validStorageSlot(const std::string& slot) {
-    if (slot.empty() || slot.size() > 64) return false;
-    for (char c : slot) {
-        const unsigned char uc = static_cast<unsigned char>(c);
-        if (!std::isalnum(uc) && c != '_' && c != '-') return false;
-    }
-    return true;
+// Dernier statut/diagnostic d'une opération storage du contexte courant.
+thread_local StorageStatus gLastStorageStatus = StorageStatus::Ok;
+thread_local std::string gLastStorageError;
+
+void recordStorageResult(const StorageResult& r) {
+    gLastStorageStatus = r.status;
+    gLastStorageError = r.error;
 }
 
-std::filesystem::path storageSlotPath(JSContext* ctx, int argc, JSValueConst* argv,
-                                      JSValue& outError) {
+PlayerStorage storageFor(SceneTree& tree) {
+    return PlayerStorage(std::filesystem::path(tree.resolveProjectPath("saves")),
+                         std::filesystem::path(tree.resolveProjectPath("prefs")));
+}
+
+void syncfsAfterMutation() {
+#ifdef __EMSCRIPTEN__
+    // saves/ et prefs/ vivent sur IDBFS (monté par le shell) : flush vers
+    // IndexedDB après toute écriture durable.
+    EM_ASM({ FS.syncfs(false, function() {}); });
+#else
+    (void)0;
+#endif
+}
+
+// Lit le slot (argv[0]) en le validant ; renvoie false et pose outError si absent
+// ou vide. Ne valide pas le motif : PlayerStorage le fait et renvoie un statut.
+bool readSlotArg(JSContext* ctx, int argc, JSValueConst* argv, std::string& outSlot,
+                 JSValue& outError) {
     outError = JS_UNDEFINED;
-    SceneTree* tree = treeFromJs(ctx);
-    if (!tree) {
-        outError = JS_ThrowInternalError(ctx, "storage requires a mounted SceneTree");
-        return {};
-    }
     if (argc < 1) {
         outError = JS_ThrowTypeError(ctx, "storage: missing slot name");
-        return {};
+        return false;
     }
     const char* raw = JS_ToCString(ctx, argv[0]);
     if (!raw) {
         outError = JS_EXCEPTION;
-        return {};
+        return false;
     }
-    const std::string slot(raw);
+    outSlot.assign(raw);
     JS_FreeCString(ctx, raw);
-    if (!validStorageSlot(slot)) {
-        outError = JS_ThrowTypeError(
-            ctx, "storage: slot must match [A-Za-z0-9_-]{1,64}");
-        return {};
-    }
-    return std::filesystem::path(tree->resolveProjectPath("saves")) / (slot + ".json");
+    return true;
 }
 
-JSValue jsStorageSave(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+SceneTree* storageTree(JSContext* ctx, JSValue& outError) {
+    outError = JS_UNDEFINED;
+    SceneTree* tree = treeFromJs(ctx);
+    if (!tree)
+        outError = JS_ThrowInternalError(ctx, "storage requires a mounted SceneTree");
+    return tree;
+}
+
+JSValue metaToJs(JSContext* ctx, const StorageMeta& meta) {
+    JSValue o = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, o, "kind", JS_NewString(ctx, toString(meta.kind)));
+    JS_SetPropertyStr(ctx, o, "bytes", JS_NewInt64(ctx, meta.bytes));
+    JS_SetPropertyStr(ctx, o, "savedAt", JS_NewInt64(ctx, meta.savedAt));
+    JS_SetPropertyStr(ctx, o, "dataVersion", JS_NewInt32(ctx, meta.dataVersion));
+    JS_SetPropertyStr(ctx, o, "schema", JS_NewInt32(ctx, meta.schema));
+    return o;
+}
+
+JSValue jsStorageSaveKind(JSContext* ctx, StorageKind kind, int argc,
+                          JSValueConst* argv) {
     JSValue error;
-    const std::filesystem::path path = storageSlotPath(ctx, argc, argv, error);
-    if (path.empty()) return error;
+    SceneTree* tree = storageTree(ctx, error);
+    if (!tree) return error;
+    std::string slot;
+    if (!readSlotArg(ctx, argc, argv, slot, error)) return error;
     if (argc < 2) return JS_ThrowTypeError(ctx, "storage.save(slot, jsonString)");
     const char* value = JS_ToCString(ctx, argv[1]);
     if (!value) return JS_EXCEPTION;
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    const AtomicWriteResult writeResult = writeFileAtomically(path, value);
+    // Version applicative optionnelle (migrations côté jeu), défaut 0.
+    int dataVersion = 0;
+    if (argc >= 3 && !JS_IsUndefined(argv[2]) && !JS_IsNull(argv[2]))
+        JS_ToInt32(ctx, &dataVersion, argv[2]);
+
+    PlayerStorage store = storageFor(*tree);
+    const StorageResult r = store.save(kind, slot, value, dataVersion);
     JS_FreeCString(ctx, value);
-    if (!writeResult)
-        Log::warn("[JS] storage.save: cannot write ", path.string(), ": ",
-                  writeResult.error);
-#ifdef __EMSCRIPTEN__
-    // saves/ vit sur IDBFS (monté par le shell) : flush vers IndexedDB.
-    if (writeResult) EM_ASM({ FS.syncfs(false, function() {}); });
-#endif
-    return JS_NewBool(ctx, writeResult.ok);
+    recordStorageResult(r);
+    if (!r)
+        Log::warn("[JS] storage.save: ", toString(r.status), ": ", r.error);
+    else
+        syncfsAfterMutation();
+    return JS_NewBool(ctx, static_cast<bool>(r));
 }
 
+JSValue jsStorageLoadKind(JSContext* ctx, StorageKind kind, int argc,
+                          JSValueConst* argv) {
+    JSValue error;
+    SceneTree* tree = storageTree(ctx, error);
+    if (!tree) return error;
+    std::string slot;
+    if (!readSlotArg(ctx, argc, argv, slot, error)) return error;
+    const StorageResult r = storageFor(*tree).load(kind, slot);
+    recordStorageResult(r);
+    if (r.status == StorageStatus::NotFound) return JS_NULL;
+    if (!r) {
+        // Enveloppe corrompue/refusée ou slot invalide : diagnostic loggé, null
+        // renvoyé (consultable via storage.lastError()).
+        Log::warn("[JS] storage.load: ", toString(r.status), ": ", r.error);
+        return JS_NULL;
+    }
+    return JS_NewStringLen(ctx, r.payload.data(), r.payload.size());
+}
+
+JSValue jsStorageHasKind(JSContext* ctx, StorageKind kind, int argc,
+                         JSValueConst* argv) {
+    JSValue error;
+    SceneTree* tree = storageTree(ctx, error);
+    if (!tree) return error;
+    std::string slot;
+    if (!readSlotArg(ctx, argc, argv, slot, error)) return error;
+    return JS_NewBool(ctx, storageFor(*tree).has(kind, slot));
+}
+
+JSValue jsStorageRemoveKind(JSContext* ctx, StorageKind kind, int argc,
+                            JSValueConst* argv) {
+    JSValue error;
+    SceneTree* tree = storageTree(ctx, error);
+    if (!tree) return error;
+    std::string slot;
+    if (!readSlotArg(ctx, argc, argv, slot, error)) return error;
+    PlayerStorage store = storageFor(*tree);
+    const StorageResult r = store.remove(kind, slot);
+    recordStorageResult(r);
+    if (r.status == StorageStatus::IoError)
+        Log::warn("[JS] storage.remove: ", r.error);
+    if (r.found) syncfsAfterMutation();
+    return JS_NewBool(ctx, r.found);
+}
+
+JSValue jsStorageInfoKind(JSContext* ctx, StorageKind kind, int argc,
+                          JSValueConst* argv) {
+    JSValue error;
+    SceneTree* tree = storageTree(ctx, error);
+    if (!tree) return error;
+    std::string slot;
+    if (!readSlotArg(ctx, argc, argv, slot, error)) return error;
+    const StorageResult r = storageFor(*tree).info(kind, slot);
+    recordStorageResult(r);
+    if (!r.found || !r) return JS_NULL;
+    return metaToJs(ctx, r.meta);
+}
+
+JSValue jsStorageListKind(JSContext* ctx, StorageKind kind) {
+    JSValue error;
+    SceneTree* tree = storageTree(ctx, error);
+    if (!tree) return error;
+    const std::vector<std::string> slots = storageFor(*tree).list(kind);
+    JSValue arr = JS_NewArray(ctx);
+    uint32_t i = 0;
+    for (const std::string& s : slots)
+        JS_SetPropertyUint32(ctx, arr, i++, JS_NewStringLen(ctx, s.data(), s.size()));
+    return arr;
+}
+
+// storage.* (progression)
+JSValue jsStorageSave(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return jsStorageSaveKind(ctx, StorageKind::Progress, argc, argv);
+}
 JSValue jsStorageLoad(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    JSValue error;
-    const std::filesystem::path path = storageSlotPath(ctx, argc, argv, error);
-    if (path.empty()) return error;
-    std::ifstream file(path, std::ios::binary);
-    if (!file) return JS_NULL;
-    std::ostringstream content;
-    content << file.rdbuf();
-    const std::string text = content.str();
-    return JS_NewStringLen(ctx, text.data(), text.size());
+    return jsStorageLoadKind(ctx, StorageKind::Progress, argc, argv);
 }
-
 JSValue jsStorageHas(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    JSValue error;
-    const std::filesystem::path path = storageSlotPath(ctx, argc, argv, error);
-    if (path.empty()) return error;
-    std::error_code ec;
-    return JS_NewBool(ctx, std::filesystem::is_regular_file(path, ec));
+    return jsStorageHasKind(ctx, StorageKind::Progress, argc, argv);
+}
+JSValue jsStorageRemove(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return jsStorageRemoveKind(ctx, StorageKind::Progress, argc, argv);
+}
+JSValue jsStorageInfo(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return jsStorageInfoKind(ctx, StorageKind::Progress, argc, argv);
+}
+JSValue jsStorageList(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    return jsStorageListKind(ctx, StorageKind::Progress);
 }
 
-JSValue jsStorageRemove(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    JSValue error;
-    const std::filesystem::path path = storageSlotPath(ctx, argc, argv, error);
-    if (path.empty()) return error;
-    std::error_code ec;
-    const bool removed = std::filesystem::remove(path, ec);
-#ifdef __EMSCRIPTEN__
-    if (removed) EM_ASM({ FS.syncfs(false, function() {}); });
-#endif
-    return JS_NewBool(ctx, removed);
+// storage.prefs.* (préférences)
+JSValue jsPrefSave(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return jsStorageSaveKind(ctx, StorageKind::Preference, argc, argv);
+}
+JSValue jsPrefLoad(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return jsStorageLoadKind(ctx, StorageKind::Preference, argc, argv);
+}
+JSValue jsPrefHas(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return jsStorageHasKind(ctx, StorageKind::Preference, argc, argv);
+}
+JSValue jsPrefRemove(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return jsStorageRemoveKind(ctx, StorageKind::Preference, argc, argv);
+}
+JSValue jsPrefInfo(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return jsStorageInfoKind(ctx, StorageKind::Preference, argc, argv);
+}
+JSValue jsPrefList(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    return jsStorageListKind(ctx, StorageKind::Preference);
+}
+
+JSValue jsStorageLastError(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    if (gLastStorageStatus == StorageStatus::Ok) return JS_NULL;
+    JSValue o = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, o, "status",
+                      JS_NewString(ctx, toString(gLastStorageStatus)));
+    JS_SetPropertyStr(ctx, o, "message",
+                      JS_NewStringLen(ctx, gLastStorageError.data(),
+                                      gLastStorageError.size()));
+    return o;
 }
 
 JSValue jsAssetsStats(JSContext* ctx, JSValueConst, int, JSValueConst*) {
@@ -991,10 +1119,22 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JS_SetPropertyStr(ctx, global, "audio", audio);
 
     JSValue storage = JS_NewObject(ctx);
-    JS_SetPropertyStr(ctx, storage, "save", JS_NewCFunction(ctx, jsStorageSave, "save", 2));
+    JS_SetPropertyStr(ctx, storage, "save", JS_NewCFunction(ctx, jsStorageSave, "save", 3));
     JS_SetPropertyStr(ctx, storage, "load", JS_NewCFunction(ctx, jsStorageLoad, "load", 1));
     JS_SetPropertyStr(ctx, storage, "has", JS_NewCFunction(ctx, jsStorageHas, "has", 1));
     JS_SetPropertyStr(ctx, storage, "remove", JS_NewCFunction(ctx, jsStorageRemove, "remove", 1));
+    JS_SetPropertyStr(ctx, storage, "info", JS_NewCFunction(ctx, jsStorageInfo, "info", 1));
+    JS_SetPropertyStr(ctx, storage, "list", JS_NewCFunction(ctx, jsStorageList, "list", 0));
+    JS_SetPropertyStr(ctx, storage, "lastError", JS_NewCFunction(ctx, jsStorageLastError, "lastError", 0));
+    // storage.prefs.* : préférences, namespace séparé de la progression.
+    JSValue prefs = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, prefs, "save", JS_NewCFunction(ctx, jsPrefSave, "save", 3));
+    JS_SetPropertyStr(ctx, prefs, "load", JS_NewCFunction(ctx, jsPrefLoad, "load", 1));
+    JS_SetPropertyStr(ctx, prefs, "has", JS_NewCFunction(ctx, jsPrefHas, "has", 1));
+    JS_SetPropertyStr(ctx, prefs, "remove", JS_NewCFunction(ctx, jsPrefRemove, "remove", 1));
+    JS_SetPropertyStr(ctx, prefs, "info", JS_NewCFunction(ctx, jsPrefInfo, "info", 1));
+    JS_SetPropertyStr(ctx, prefs, "list", JS_NewCFunction(ctx, jsPrefList, "list", 0));
+    JS_SetPropertyStr(ctx, storage, "prefs", prefs);
     JS_SetPropertyStr(ctx, global, "storage", storage);
 
     JS_FreeValue(ctx, global);
