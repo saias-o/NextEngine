@@ -1,6 +1,6 @@
 # SaidaEngine - Plan unique vers la V1
 
-Mise à jour : 2026-07-17.
+Mise à jour : 2026-07-18.
 
 **Verdict : NO-GO pour une V1 publique.** Ce fichier est l'unique todolist du
 moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
@@ -54,18 +54,22 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 - [x] Remplacer le contournement storage par une vraie API JS
   autoload/cross-node/groupes/signaux.
 - [x] Automatiser le clic Build de l'éditeur, pas seulement `saida_tool`.
-- [ ] Exécuter l'artefact Windows sur une machine vierge sans MSYS2, SDK ou
+- [x] Exécuter l'artefact Windows sur une machine vierge sans MSYS2, SDK ou
   checkout moteur.
-- [ ] Exécuter l'artefact Web servi avec les bons headers sur Chrome et Edge.
+- [x] Exécuter l'artefact Web servi avec les bons headers sur Chrome et Edge.
 - [x] Vérifier save/load après redémarrage sur desktop et navigateur.
 - [x] Éliminer toute étape manuelle non documentée entre projet et artefact.
 
-Preuves externes machine vierge et navigateurs réels planifiées pour le
-week-end des 18–19 juillet 2026; les cases restent ouvertes jusqu'aux verdicts
-des vérificateurs archivés.
+Preuves externes acquises le 2026-07-18 sur une machine Windows vierge (aucun
+MSYS2, SDK ni checkout moteur), depuis le bundle release-candidate du commit
+`0808b636` (`release-manifest.json` schema 1, `dirty:false`) :
+`verify_witness_windows.ps1` → `WINDOWS CLEAN-BUNDLE PASS` (gameplay/UI PASS,
+save/UI restart PASS); `verify_witness_web.ps1` → `Edge WEB PASS` et
+`Chrome WEB PASS` (COOP/COEP + MIME `application/wasm`, `[E2E] PASS` sur 16
+cycles puis `[E2E] RESTART PASS`).
 
 Gate : un commit propre produit des artefacts desktop/Web jouables et identifiés
-par hash, avec WitnessGame PASS sur les deux.
+par hash, avec WitnessGame PASS sur les deux. **Fermée le 2026-07-18.**
 
 ## P0.2 - Parité des contrats et données durables
 
