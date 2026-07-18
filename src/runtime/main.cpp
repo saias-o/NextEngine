@@ -73,6 +73,14 @@ int main(int argc, char** argv) {
         // Same standalone path as the XR preview: load project + scene, mount the
         // persistent World (autoloads), run unscaled (Play).
         saida::Engine engine(nullptr, projectAbs, false);
+
+        // Shipped game: persist saves/prefs under the per-user OS data directory
+        // (never next to the read-only exe), keyed by the game's identity. Set
+        // before any autoload/script can touch storage. Falls back to the project
+        // file stem if the project carries no name.
+        std::string saveId = engine.project().name();
+        if (saveId.empty()) saveId = fs::path(boot.manifest.project).stem().string();
+        saida::setSaveIdentity(saveId);
         for (const std::string& spec : testAutoloads) {
             std::string error;
             if (!saida::runtime::applyTestAutoload(engine.project(), spec, error))

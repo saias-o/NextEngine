@@ -1,5 +1,7 @@
 #include "project/PlayerStorage.hpp"
 
+#include "core/Paths.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -193,10 +195,75 @@ void testList(const std::filesystem::path& root) {
     require(prefs.size() == 1 && prefs[0] == "theme", "preference list");
 }
 
+void setEnv(const char* name, const char* value) {
+#ifdef _WIN32
+    _putenv_s(name, value ? value : "");
+#else
+    if (value) ::setenv(name, value, 1);
+    else ::unsetenv(name);
+#endif
+}
+
+bool endsWith(const std::string& s, const std::string& suffix) {
+    return s.size() >= suffix.size() &&
+           s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+bool startsWith(const std::string& s, const std::string& prefix) {
+    return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
+}
+
+// Politique de localisation des saves (core/Paths). Prouve la précédence
+// override → dir OS keyé par identité → repli racine projet, et la sanitisation
+// du nom de jeu en composant de dossier sûr.
+void testSaveLocationPolicy(const std::filesystem::path& root) {
+    // Environnement neutre : ni override ni base OS injectée par l'hôte.
+    setEnv("SAIDA_SAVE_DIR", nullptr);
+    setSaveIdentity("");
+    require(userSaveRoot().empty(), "editor/dev (no identity) -> project root");
+
+    // Identité posée (jeu packagé) + base OS déterministe -> dir utilisateur keyé.
+    const std::string base = (root / "osbase").generic_string();
+#if defined(_WIN32)
+    setEnv("APPDATA", base.c_str());
+#elif defined(__APPLE__)
+    setEnv("HOME", base.c_str());  // base réelle = HOME/Library/Application Support
+#else
+    setEnv("XDG_DATA_HOME", base.c_str());
+#endif
+    setSaveIdentity("Witness Game");
+    require(saveIdentity() == "Witness_Game", "space sanitized to underscore");
+    const std::string keyed = userSaveRoot();
+    require(!keyed.empty(), "packaged identity resolves a save root");
+    require(startsWith(keyed, base), "save root rooted under OS user data base");
+    require(endsWith(keyed, "/SaidaEngine/Games/Witness_Game"),
+            "save root keyed by game identity");
+    require(keyed.find("..") == std::string::npos, "no parent traversal in save root");
+
+    // Override explicite : gagne quelle que soit l'identité; séparateurs
+    // normalisés et slash final retiré.
+    setEnv("SAIDA_SAVE_DIR", "D:\\ci\\slot\\");
+    require(userSaveRoot() == "D:/ci/slot", "SAIDA_SAVE_DIR override wins, normalized");
+    setEnv("SAIDA_SAVE_DIR", nullptr);
+
+    // Sanitisation hostile : pas de traversée parent, ponctuation retirée.
+    setSaveIdentity("../Evil Game!!");
+    require(saveIdentity().find("..") == std::string::npos, "identity strips traversal");
+    require(saveIdentity() == "Evil_Game", "identity sanitized to safe component");
+
+    // Nom sans caractère exploitable -> identité vide -> repli racine projet.
+    setSaveIdentity("...");
+    require(saveIdentity().empty(), "dot-only name yields empty identity");
+    require(userSaveRoot().empty(), "empty identity -> project root fallback");
+
+    setSaveIdentity("");
+}
+
 } // namespace
 
 int main() {
     const std::filesystem::path root = testRoot();
+    testSaveLocationPolicy(root / "policy");
     testRoundTrip(root / "round");
     testNamespaceSeparation(root / "ns");
     testLegacyMigration(root / "legacy");

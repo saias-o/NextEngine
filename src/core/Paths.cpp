@@ -1,6 +1,8 @@
 #include "core/Paths.hpp"
 
+#include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <utility>
 
@@ -72,6 +74,74 @@ std::string g_activeProjectRoot;
 void setActiveProjectRoot(const std::string& dir) { g_activeProjectRoot = dir; }
 
 const std::string& activeProjectRoot() { return g_activeProjectRoot; }
+
+namespace {
+// Identité du jeu packagé keyant son dossier de saves utilisateur (nom nettoyé).
+// Vide dans l'éditeur/dev → les saves restent sous la racine projet.
+std::string g_saveIdentity;
+
+const char* envOrNull(const char* name) {
+    const char* v = std::getenv(name);
+    return (v && *v) ? v : nullptr;
+}
+
+// Réduit un nom de jeu à un composant de dossier sûr : [A-Za-z0-9._-], l'espace
+// devient '_', le reste est ignoré ; pas de '.'/'_' en tête (dossier caché POSIX
+// et '..'), pas de '.'/espace en fin, borné. Vide si rien d'exploitable ne reste.
+std::string sanitizeIdentity(const std::string& name) {
+    std::string out;
+    out.reserve(name.size());
+    for (unsigned char c : name) {
+        if (std::isalnum(c) || c == '-' || c == '_' || c == '.')
+            out.push_back(static_cast<char>(c));
+        else if (c == ' ')
+            out.push_back('_');
+    }
+    const std::size_t start = out.find_first_not_of("._");
+    if (start == std::string::npos) return {};
+    out.erase(0, start);
+    while (!out.empty() && (out.back() == '.' || out.back() == ' ')) out.pop_back();
+    if (out.size() > 64) out.resize(64);
+    return out;
+}
+
+// Base du dossier de données utilisateur de l'OS, ou vide si irrésolvable.
+std::string osUserDataBase() {
+#if defined(_WIN32)
+    if (const char* p = envOrNull("APPDATA")) return normalizeSeparators(p);
+    if (const char* p = envOrNull("LOCALAPPDATA")) return normalizeSeparators(p);
+    return {};
+#elif defined(__APPLE__)
+    if (const char* home = envOrNull("HOME"))
+        return normalizeSeparators(home) + "/Library/Application Support";
+    return {};
+#else
+    if (const char* p = envOrNull("XDG_DATA_HOME")) return normalizeSeparators(p);
+    if (const char* home = envOrNull("HOME")) return normalizeSeparators(home) + "/.local/share";
+    return {};
+#endif
+}
+} // namespace
+
+void setSaveIdentity(const std::string& appName) {
+    g_saveIdentity = sanitizeIdentity(appName);
+}
+
+const std::string& saveIdentity() { return g_saveIdentity; }
+
+std::string userSaveRoot() {
+#ifdef __EMSCRIPTEN__
+    // Le player web persiste via IDBFS monté à la racine projet par le shell.
+    return {};
+#else
+    if (const char* env = envOrNull("SAIDA_SAVE_DIR"))
+        return stripTrailingSlash(normalizeSeparators(env));
+    if (g_saveIdentity.empty()) return {};  // éditeur/dev → racine projet
+    const std::string base = osUserDataBase();
+    if (base.empty()) return {};            // pas d'emplacement OS → repli racine projet
+    return stripTrailingSlash(base) + "/SaidaEngine/Games/" + g_saveIdentity;
+#endif
+}
 
 SandboxedPathResult resolveSandboxedProjectPath(const std::string& projectRoot,
                                                 const std::string& userPath,

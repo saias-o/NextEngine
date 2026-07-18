@@ -22,6 +22,26 @@ namespace saida {
 void setRuntimeRoot(const std::string& dir);
 const std::string& runtimeRoot();  // empty when unset
 
+// Save-location policy (shipped games).
+//
+// A shipped game must not write its saves next to its executable: Program Files
+// is read-only and a portable copy is shared. Persistent saves/prefs therefore
+// go to the per-user data directory of the OS, keyed by the game's identity. The
+// editor/dev process leaves the identity empty, so saves stay under the project
+// root where the developer sees them; the web player persists via IDBFS mounted
+// at the project root by the shell and is unaffected.
+//
+// setSaveIdentity() is called once at boot by the packaged runtime with the
+// game's name (sanitized to a safe directory component). userSaveRoot() returns
+// the base directory the storage layer should own for saves/ and prefs/, or an
+// empty string when the caller must fall back to the project root. Precedence:
+//   1) $SAIDA_SAVE_DIR  — explicit override (CI/tests/power users, portable saves)
+//   2) per-OS user data dir keyed by saveIdentity() when set (shipped game)
+//   3) empty            — editor/dev/web → project root
+void setSaveIdentity(const std::string& appName);
+const std::string& saveIdentity();  // sanitized; empty in editor/dev
+std::string userSaveRoot();         // empty → caller uses the project root
+
 // Root of the currently loaded .saidaproj (editor or runtime). Used to resolve
 // project content files (scripts, ui) that aren't in the asset registry.
 void setActiveProjectRoot(const std::string& dir);

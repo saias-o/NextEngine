@@ -4,6 +4,7 @@
 #include "core/AtomicFile.hpp"
 #include "core/Input.hpp"
 #include "core/Log.hpp"
+#include "core/Paths.hpp"
 #include "core/Reflection.hpp"
 #include "core/Time.hpp"
 #include "graphics/ResourceManager.hpp"
@@ -149,6 +150,12 @@ void recordStorageResult(const StorageResult& r) {
 }
 
 PlayerStorage storageFor(SceneTree& tree) {
+    // Jeu packagé : saves/prefs sous le dossier utilisateur de l'OS (jamais à côté
+    // de l'exe). Éditeur/dev et web : racine projet (userSaveRoot() renvoie vide).
+    const std::string base = userSaveRoot();
+    if (!base.empty())
+        return PlayerStorage(std::filesystem::path(base) / "saves",
+                             std::filesystem::path(base) / "prefs");
     return PlayerStorage(std::filesystem::path(tree.resolveProjectPath("saves")),
                          std::filesystem::path(tree.resolveProjectPath("prefs")));
 }

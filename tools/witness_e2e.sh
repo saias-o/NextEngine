@@ -14,6 +14,12 @@ rm -rf "$OUT"
     --out "$OUT" --version 0.1.0 --company Saida > /dev/null
 
 cd "$OUT"
+# Les jeux packagés persistent leurs saves sous le dossier utilisateur de l'OS.
+# On les épingle à un dossier neuf par invocation (partagé par les deux runs) :
+# la preuve de redémarrage reste hermétique, insensible aux saves d'un run
+# précédent dans %APPDATA%/~/.local/share.
+export SAIDA_SAVE_DIR="$OUT/.saves"
+
 "./Witness Game.exe" --test-autoload \
     "E2EDriver=scripts/e2e_driver.js" > e2e.log 2>&1 || true
 

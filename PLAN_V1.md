@@ -149,7 +149,16 @@ desktop et Web; l'absence XR éventuelle est un fallback déclaré.
 - [x] Émettre un warning quand un module JS ne fournit aucun hook reconnu.
 - [ ] Définir la politique de permissions des scripts publics au-delà du
   confinement filesystem et du budget temps.
-- [ ] Déplacer les saves vers l'emplacement utilisateur de chaque OS.
+- [x] Déplacer les saves vers l'emplacement utilisateur de chaque OS. Politique
+  `core/Paths::userSaveRoot` : un jeu packagé écrit `saves/`/`prefs/` sous le
+  dossier de données utilisateur de l'OS (`%APPDATA%\SaidaEngine\Games\<jeu>`,
+  `$XDG_DATA_HOME`/`~/.local/share`, `~/Library/Application Support`) keyé par
+  l'identité posée au boot par le runtime (nom du projet nettoyé), jamais à côté
+  de l'exe; précédence `$SAIDA_SAVE_DIR` (override CI/tests) > dir OS > repli
+  racine projet (éditeur/dev, web IDBFS inchangés). Prouvé headless
+  (`saida_player_storage_tests` : précédence, keying, sanitisation anti-traversée)
+  et bout-en-bout par `witness_e2e.sh` (export réel + run/restart, save écrite
+  dans le dossier ciblé, aucune `saves/` dans le package).
 - [x] Rendre les écritures atomiques avec conservation de l'ancien fichier si
   le remplacement échoue.
 - [x] Versionner les saves, fournir migrations/rejet explicite et metadata de

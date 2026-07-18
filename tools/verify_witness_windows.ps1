@@ -72,6 +72,13 @@ try {
         throw "Missing Windows entry point: $($artifact.entryPoint)"
     }
 
+    # Shipped games persist saves under the per-user OS data directory. Pin them
+    # to a fresh per-invocation directory (shared by both runs) so the restart
+    # proof is hermetic and cannot be polluted by a prior run's saves. Absent
+    # this override the runtime would write to %APPDATA%\SaidaEngine\Games\...,
+    # which persists across invocations.
+    $env:SAIDA_SAVE_DIR = Join-Path $work '.saves'
+
     $first = Invoke-WitnessRun $exe $work (Join-Path $work 'first-run')
     if ($first -notmatch '\[E2E\] PASS') {
         throw "First run did not report E2E PASS:`n$first"
@@ -89,6 +96,7 @@ try {
     $KeepWork = $true
     throw
 } finally {
+    Remove-Item Env:SAIDA_SAVE_DIR -ErrorAction SilentlyContinue
     if (-not $KeepWork -and (Test-Path -LiteralPath $work)) {
         Remove-Item -LiteralPath $work -Recurse -Force
     } elseif (Test-Path -LiteralPath $work) {

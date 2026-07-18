@@ -360,12 +360,21 @@ durabilité :
 `storage.save` écrit un fichier temporaire dans le même répertoire, force les
 données sur le stockage puis remplace la destination atomiquement
 (`writeFileAtomically`). L'ancien fichier reste intact si l'écriture ou le
-remplacement échoue, et les temporaires en échec sont supprimés. Desktop écrit
-sous la racine runtime; Web utilise IDBFS/IndexedDB (flush `syncfs` après chaque
-mutation durable).
+remplacement échoue, et les temporaires en échec sont supprimés.
 
-Reste hors de ce contrat : emplacement OS utilisateur des saves (encore sous la
-racine projet) et API asynchrone complète nécessaire à IDBFS/cloud save.
+**Emplacement (`core/Paths::userSaveRoot`).** Un jeu packagé n'écrit jamais à
+côté de son exe (Program Files en lecture seule, copie portable partagée) : ses
+`saves/` et `prefs/` vivent sous le dossier de données utilisateur de l'OS, keyé
+par l'identité du jeu (son nom nettoyé en composant de dossier sûr), posée au
+boot par le runtime (`setSaveIdentity`). Précédence : (1) `$SAIDA_SAVE_DIR`
+(override explicite, CI/tests/saves portables), (2) dir utilisateur OS
+(`%APPDATA%\SaidaEngine\Games\<jeu>`, `$XDG_DATA_HOME`/`~/.local/share/...`,
+`~/Library/Application Support/...`) keyé par l'identité, (3) repli racine projet
+quand aucune identité n'est posée (éditeur/dev) ou irrésolvable. Web utilise
+IDBFS/IndexedDB (flush `syncfs` après chaque mutation durable), monté à la racine
+projet par le shell — inchangé.
+
+Reste hors de ce contrat : API asynchrone complète nécessaire à IDBFS/cloud save.
 
 ## 6. JavaScript QuickJS
 
@@ -721,9 +730,10 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
 - Les producteurs SaidaOp externes V1 doivent émettre `opVersion: 2` et les
   `NodeId`; les opérations historiques par nom sont volontairement refusées.
 - Bindings physique, animation, séquences et blackboard encore incomplets.
-- Sauvegardes encore locales au projet (pas d'emplacement OS utilisateur) et
-  sans API asynchrone complète; enveloppe versionnée, metadata, namespaces
-  progression/préférences et quotas désormais en place.
+- Sauvegardes d'un jeu packagé sous le dossier utilisateur de l'OS (keyé par
+  l'identité du jeu, override `$SAIDA_SAVE_DIR`); éditeur/dev restent sous la
+  racine projet. API asynchrone complète encore absente; enveloppe versionnée,
+  metadata, namespaces progression/préférences et quotas en place.
 - Asset LRU en cours de scène, streaming Web et sweep rigs/anims absents.
 - Point-light shadows cubemap et lightmaps persistantes absentes.
 - XR sans MSAA multiview, overlay et matrice hardware validée.
