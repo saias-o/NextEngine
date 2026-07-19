@@ -254,8 +254,18 @@ RESTART PASS via IndexedDB), le tout après flush durable explicite.
   `registerMemoryRig` : un ré-import rend le même AssetID et ne remplace
   jamais une instance détenue — un snapshot restauré après éviction référence
   un id résoluble au lieu d'un compteur dynamique perdu.
-- [ ] Implémenter fetch/IDBFS streaming pour remplacer le preload MEMFS des gros
-  jeux Web.
+- [x] Implémenter fetch/IDBFS streaming pour remplacer le preload MEMFS des gros
+  jeux Web. `project-files.json` passe en schéma 2 : `files` (préchargé MEMFS
+  avant `main()`) et `streamed` (`.png/.jpg/.jpeg/.obj` — les types servis en
+  async par l'AssetLoader), classés par l'exporteur web. Sur wasm, un miss
+  fichier de l'AssetLoader déclenche `emscripten_async_wget_data` (l'entry
+  reste `Loading`, le decode se fait au retour réseau — aucun blocage), compté
+  dans `assets.stats().streamedFetches` et affiché dans le verdict E2E.
+  Prouvé navigateur : `[E2E] PASS … streamed=18` (probe.obj re-fetché à chaque
+  cycle de scène après éviction, corrupt.obj streamé puis refusé au decode,
+  runtime vivant) puis `RESTART PASS`; desktop inchangé (`streamed=0`).
+  Les scènes/scripts/glTF restent au boot (chargements synchrones) — leur
+  streaming éventuel suit le passage de ces loaders à l'AssetLoader.
 - [x] Gérer un OBJ/glTF/GLB corrompu sans abort du player Web.
   `cgltf_validate` est appelé après chaque parse (un accessor hors limites —
   le cas malveillant type — est refusé AVANT toute lecture OOB fatale en

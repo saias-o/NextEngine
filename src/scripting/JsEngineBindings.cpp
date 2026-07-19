@@ -421,6 +421,8 @@ JSValue jsAssetsStats(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     // Cumul des refus depuis le boot (contenu corrompu/hostile) — critère CI.
     JS_SetPropertyStr(ctx, o, "failedTotal",
                       JS_NewInt64(ctx, static_cast<int64_t>(stats.failedTotal)));
+    JS_SetPropertyStr(ctx, o, "streamedFetches",
+                      JS_NewInt64(ctx, static_cast<int64_t>(stats.streamedFetches)));
     JS_SetPropertyStr(ctx, o, "residentBytes",
                       JS_NewInt64(ctx, static_cast<int64_t>(stats.residentBytes)));
     JS_SetPropertyStr(ctx, o, "budgetBytes",

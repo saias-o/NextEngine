@@ -307,9 +307,21 @@ BuildExporter::Result BuildExporter::exportWebBuild(const Project& project,
     if (!writeBootManifest(project, packagedProject, options.mainScene))
         return fail("cannot write web boot manifest");
 
+    // Schéma 2 : `boot` est monté dans MEMFS avant main(); `streamed` (types
+    // servis en async par l'AssetLoader) est fetché à la demande au premier
+    // load — le preload ne paie plus le poids des gros assets.
+    nlohmann::json bootFiles = nlohmann::json::array();
+    nlohmann::json streamedFiles = nlohmann::json::array();
+    for (const std::string& file : packageFileList(packagedProject)) {
+        const std::string ext = fs::path(file).extension().string();
+        const bool streamed = ext == ".png" || ext == ".jpg" || ext == ".jpeg" ||
+                              ext == ".obj";
+        (streamed ? streamedFiles : bootFiles).push_back(file);
+    }
     nlohmann::json fileManifest = {
-        {"schema", 1},
-        {"files", packageFileList(packagedProject)}
+        {"schema", 2},
+        {"files", std::move(bootFiles)},
+        {"streamed", std::move(streamedFiles)}
     };
     std::ofstream filesJson(outDir / "project-files.json", std::ios::trunc);
     if (!filesJson) return fail("cannot write project-files.json");

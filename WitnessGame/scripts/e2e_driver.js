@@ -345,7 +345,7 @@ function onUpdate(dt) {
                    "/" + s.budgetBytes + ", gpu=" + s.gpuResidentBytes +
                    ", gpuEvicted=" + s.gpuEvictedCount +
                    ", hitchMax=" + hitchMax.toFixed(3) + "s@" + hitchCount +
-                   ", flush=durable)");
+                   ", streamed=" + s.streamedFetches + ", flush=durable)");
         });
         return;
     }

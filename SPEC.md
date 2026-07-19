@@ -832,8 +832,10 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
   reste futur.
 - Budget GPU mi-scène avec LRU mesuré, sweep rigs/anims, identités glTF
   stables et refus du contenu corrompu en place; streaming Web fetch/IDBFS,
-  politique tangentes explicite et export meshopt UI en place; streaming Web
-  fetch/IDBFS reste absent (MikkTSpace P1, KTX2/Basis P2 par décision).
+  politique tangentes explicite et export meshopt UI en place; le package web
+  streame textures/OBJ à la demande (manifest schéma 2, fetch async sur miss
+  MEMFS), scènes/scripts/glTF restant préchargés (MikkTSpace P1, KTX2/Basis P2
+  par décision).
 - Point-light shadows cubemap et lightmaps persistantes absentes.
 - XR sans MSAA multiview, overlay et matrice hardware validée.
 - Build UI/machine vierge, signature, crash reporting et rollback non prouvés.

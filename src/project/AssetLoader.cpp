@@ -1,6 +1,10 @@
 #include "project/AssetLoader.hpp"
 
 #include "core/Log.hpp"
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include "core/Profiler.hpp"
 
 #include <algorithm>
@@ -158,12 +162,19 @@ void AssetLoader::load(const std::shared_ptr<AssetHandle::Entry>& entry) {
     entry->state.store(AssetLoadState::Loading, std::memory_order_release);
     std::ifstream file(entry->path, std::ios::binary | std::ios::ate);
     if (!file) {
+#ifdef __EMSCRIPTEN__
+        // Package web streame : les assets hors du preload MEMFS sont fetches
+        // a la demande; l'entry reste Loading jusqu'au retour reseau.
+        streamFetch(entry);
+        return;
+#else
         std::lock_guard<std::mutex> lock(entry->mutex);
         entry->error = "asset file not found: " + entry->path;
         entry->state.store(AssetLoadState::Failed, std::memory_order_release);
         failedTotal_.fetch_add(1, std::memory_order_relaxed);
         Log::warn(entry->error);
         return;
+#endif
     }
 
     const std::streamoff end = file.tellg();
@@ -174,7 +185,21 @@ void AssetLoader::load(const std::shared_ptr<AssetHandle::Entry>& entry) {
         failedTotal_.fetch_add(1, std::memory_order_relaxed);
         return;
     }
-    const uint64_t size = static_cast<uint64_t>(end);
+    std::vector<uint8_t> bytes(static_cast<size_t>(end));
+    file.seekg(0, std::ios::beg);
+    if (end && !file.read(reinterpret_cast<char*>(bytes.data()), end)) {
+        std::lock_guard<std::mutex> lock(entry->mutex);
+        entry->error = "failed to read asset: " + entry->path;
+        entry->state.store(AssetLoadState::Failed, std::memory_order_release);
+        failedTotal_.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    finishLoad(entry, std::move(bytes));
+}
+
+void AssetLoader::finishLoad(const std::shared_ptr<AssetHandle::Entry>& entry,
+                             std::vector<uint8_t>&& bytes) {
+    const uint64_t size = bytes.size();
     const uint64_t previous = accounting_->residentBytes.fetch_add(size, std::memory_order_relaxed);
     if (previous + size > accounting_->budgetBytes.load(std::memory_order_relaxed)) {
         accounting_->residentBytes.fetch_sub(size, std::memory_order_relaxed);
@@ -186,18 +211,7 @@ void AssetLoader::load(const std::shared_ptr<AssetHandle::Entry>& entry) {
         return;
     }
     entry->accountedBytes = size;
-    entry->data.resize(static_cast<size_t>(size));
-    file.seekg(0, std::ios::beg);
-    if (size && !file.read(reinterpret_cast<char*>(entry->data.data()), end)) {
-        entry->data.clear();
-        accounting_->residentBytes.fetch_sub(size, std::memory_order_relaxed);
-        entry->accountedBytes = 0;
-        std::lock_guard<std::mutex> lock(entry->mutex);
-        entry->error = "failed to read asset: " + entry->path;
-        entry->state.store(AssetLoadState::Failed, std::memory_order_release);
-        failedTotal_.fetch_add(1, std::memory_order_relaxed);
-        return;
-    }
+    entry->data = std::move(bytes);
 
     if (entry->decoder) {
         AssetDecodeResult decoded;
@@ -251,6 +265,38 @@ void AssetLoader::workerMain() {
     }
 }
 
+#ifdef __EMSCRIPTEN__
+struct AssetLoader::StreamCtx {
+    AssetLoader* loader;
+    std::shared_ptr<AssetHandle::Entry> entry;
+};
+
+void AssetLoader::streamFetch(const std::shared_ptr<AssetHandle::Entry>& entry) {
+    // "/project/assets/x.obj" (chemin MEMFS) -> "project/assets/x.obj" (URL
+    // relative au serveur du package).
+    std::string url = entry->path;
+    if (!url.empty() && url.front() == '/') url.erase(0, 1);
+    auto* ctx = new StreamCtx{this, entry};
+    emscripten_async_wget_data(
+        url.c_str(), ctx,
+        [](void* arg, void* data, int size) {
+            std::unique_ptr<StreamCtx> owned(static_cast<StreamCtx*>(arg));
+            std::vector<uint8_t> bytes(static_cast<uint8_t*>(data),
+                                       static_cast<uint8_t*>(data) + size);
+            owned->loader->streamedFetches_.fetch_add(1, std::memory_order_relaxed);
+            owned->loader->finishLoad(owned->entry, std::move(bytes));
+        },
+        [](void* arg) {
+            std::unique_ptr<StreamCtx> owned(static_cast<StreamCtx*>(arg));
+            std::lock_guard<std::mutex> lock(owned->entry->mutex);
+            owned->entry->error = "asset file not found (stream): " + owned->entry->path;
+            owned->entry->state.store(AssetLoadState::Failed, std::memory_order_release);
+            failedTotal_.fetch_add(1, std::memory_order_relaxed);
+            Log::warn(owned->entry->error);
+        });
+}
+#endif
+
 void AssetLoader::pump() {
 #ifdef __EMSCRIPTEN__
     // Pas de worker : draine toute la file (mêmes garanties de complétion par
@@ -278,6 +324,7 @@ std::atomic<uint64_t> AssetLoader::failedTotal_{0};
 AssetLoadStats AssetLoader::stats() const {
     AssetLoadStats result;
     result.failedTotal = failedTotal_.load(std::memory_order_relaxed);
+    result.streamedFetches = streamedFetches_.load(std::memory_order_relaxed);
     result.residentBytes = accounting_->residentBytes.load(std::memory_order_relaxed);
     result.budgetBytes = accounting_->budgetBytes.load(std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(mutex_);

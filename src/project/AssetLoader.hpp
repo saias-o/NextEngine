@@ -47,6 +47,8 @@ struct AssetLoadStats {
     // Cumul des requêtes passées en échec depuis le boot (jamais décrémenté,
     // même une fois le handle relâché) — critère CI « contenu refusé ».
     uint64_t failedTotal = 0;
+    // Assets servis par fetch reseau a la demande (package web streame).
+    uint64_t streamedFetches = 0;
     uint64_t residentBytes = 0;
     uint64_t budgetBytes = 0;
 };
@@ -113,6 +115,7 @@ public:
 private:
     friend class AssetHandle;
     static std::atomic<uint64_t> failedTotal_;
+    std::atomic<uint64_t> streamedFetches_{0};
 
     struct Job {
         AssetLoadPriority priority = AssetLoadPriority::Normal;
@@ -139,6 +142,12 @@ private:
                                 AssetDecoder decoder);
     bool popJob(Job& job);
     void load(const std::shared_ptr<AssetHandle::Entry>& entry);
+    void finishLoad(const std::shared_ptr<AssetHandle::Entry>& entry,
+                    std::vector<uint8_t>&& bytes);
+#ifdef __EMSCRIPTEN__
+    struct StreamCtx;
+    void streamFetch(const std::shared_ptr<AssetHandle::Entry>& entry);
+#endif
     void workerMain();
 
     AssetRegistry* registry_ = nullptr;

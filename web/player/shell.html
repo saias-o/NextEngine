@@ -102,8 +102,11 @@
             return response.json();
           })
           .then(function(manifest) {
-            if (manifest.schema !== 1 || !Array.isArray(manifest.files))
+            if ((manifest.schema !== 1 && manifest.schema !== 2) ||
+                !Array.isArray(manifest.files))
               throw new Error('unsupported project file manifest');
+            // Schéma 2 : `streamed` n'est pas préchargé — le moteur le fetch
+            // à la demande (miss MEMFS → emscripten_async_wget).
             FS.mkdirTree('/project');
             return Promise.all(manifest.files.map(function(relative) {
               if (typeof relative !== 'string' || relative.startsWith('/') ||
