@@ -3,6 +3,7 @@
 #include "scene/Scene.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/UIImageNode.hpp"
+#include "scene/animation/Animator.hpp"
 #include "scene/SceneSerializer.hpp"
 #include "scene/BehaviourRegistry.hpp"
 #include "scripting/ScriptBehaviour.hpp"
@@ -154,6 +155,15 @@ void collectAssetUsage(Node& node, ResourceManager::AssetUsage& usage) {
         if (scene->settings().skyboxTexture != kAssetInvalid)
             usage.textures.insert(scene->settings().skyboxTexture);
     }
+    // Animation : les Animators détiennent des pointeurs bruts vers rig et
+    // clips — tout ce qu'un Animator vivant référence doit survivre au trim.
+    for (const auto& behaviour : node.behaviours()) {
+        if (auto* animator = dynamic_cast<Animator*>(behaviour.get())) {
+            if (animator->rig()) usage.rigs.insert(animator->rig());
+            for (const auto& [name, clip] : animator->clips())
+                if (clip) usage.animations.insert(clip);
+        }
+    }
     for (const auto& child : node.children()) collectAssetUsage(*child, usage);
 }
 } // namespace
@@ -189,6 +199,17 @@ void SceneTree::applyDeferred() {
         ResourceManager::AssetUsage usage;
         collectAssetUsage(*world_, usage);
         resources_.trimUnused(usage);
+    }
+
+    // 3bis) Budget GPU mi-scène : le ResourceManager évince en LRU ce que la
+    // scène vivante ne référence plus. Sa photographie des références est
+    // rafraîchie à chaque changement de hiérarchie (spawn, queueFree, scène) —
+    // le walk ne coûte rien sur une hiérarchie stable.
+    if (lastUsageVersion_ != Node::g_hierarchyVersion) {
+        lastUsageVersion_ = Node::g_hierarchyVersion;
+        ResourceManager::AssetUsage usage;
+        collectAssetUsage(*world_, usage);
+        resources_.setLiveUsage(std::move(usage));
     }
 
     // 4) Les caches aplatis (meshes/lights) du World pointent encore sur les

@@ -230,18 +230,55 @@ RESTART PASS via IndexedDB), le tout après flush durable explicite.
 
 ## P0.5 - Assets, mémoire et contenu hostile
 
-- [ ] Imposer le budget GPU pendant une scène avec LRU mesuré.
-- [ ] Faire passer rigs, clips et graphs par AssetLoader et `trimUnused`.
-- [ ] Stabiliser l'identité des meshes glTF mémoire après Play/Stop et
-  changement de scène.
+- [x] Imposer le budget GPU pendant une scène avec LRU mesuré.
+  `ResourceManager` applique `gpuBudgetBytes` (512 MiB par défaut,
+  `assets.setGpuBudget` en JS) à CHAQUE frame : au-delà du budget, les
+  textures/meshes ni référencés par la scène vivante (photographie d'usage
+  rafraîchie par le SceneTree à chaque changement de hiérarchie) ni en cours
+  de chargement sont évincés du moins récemment utilisé (`lastUse_` daté par
+  frameClock) au plus récent, compteurs `gpuEvictedCount/Bytes` exposés dans
+  `assets.stats()`; si tout le dépassement est référencé, warning unique
+  mesuré, rien de cassé. Prouvé E2E desktop ET web : le driver serre le budget
+  sous le résident, libère la sonde .obj de l'arène, et atteste l'éviction LRU
+  mi-scène (`gpu budget ok (lru evicted 1, resident 5376 <= 39420)`).
+- [x] Balayer rigs, clips et graphs par `trimUnused` (les caches d'animation ne
+  croissent plus sans borne : rigs/clips détenus par des Animators vivants
+  survivent — pointeurs marqués par le collecteur d'usage —, les caches
+  ClipView/AnimGraph, purs caches fichier rechargés par chemin, sont balayés
+  entièrement au changement de scène; visible dans le log d'éviction). Le
+  chargement *asynchrone* de ces assets via l'AssetLoader (fichiers .srig/.sclip
+  hors glTF) reste à faire — noté ci-dessous.
+- [x] Stabiliser l'identité des meshes glTF mémoire après Play/Stop et
+  changement de scène. `registerMemoryMesh` gagne une saveur à clé de
+  sous-asset stable (`model.gltf#mesh2_prim0`), idempotente comme
+  `registerMemoryRig` : un ré-import rend le même AssetID et ne remplace
+  jamais une instance détenue — un snapshot restauré après éviction référence
+  un id résoluble au lieu d'un compteur dynamique perdu.
 - [ ] Implémenter fetch/IDBFS streaming pour remplacer le preload MEMFS des gros
   jeux Web.
-- [ ] Gérer un OBJ/glTF/GLB corrompu sans abort du player Web.
+- [x] Gérer un OBJ/glTF/GLB corrompu sans abort du player Web.
+  `cgltf_validate` est appelé après chaque parse (un accessor hors limites —
+  le cas malveillant type — est refusé AVANT toute lecture OOB fatale en
+  wasm); un OBJ qui « parse » en zéro géométrie est refusé au décodage
+  (`failedTotal` cumulatif dans `assets.stats()`) et `createMesh` refuse la
+  géométrie vide (les buffers GPU vides étaient fatals — bug réel trouvé par
+  la sonde). Prouvé par `saida_hostile_asset_tests` (GLB tronqué, glTF à
+  accessor hors limites, poubelle binaire, fichier absent, OBJ hostile) et
+  par WitnessGame : l'arène embarque `corrupt.obj`/`corrupt.glb` volontaires,
+  le driver exige `failedTotal >= 1` avec le runtime vivant — PASS desktop,
+  éditeur et navigateur.
 - [ ] Ajouter MikkTSpace ou désactiver explicitement le normal mapping sans
   tangentes valides.
 - [ ] Brancher l'export GLB meshopt dans l'UI d'import.
 - [ ] Décider KTX2/Basis pour textures de release Web.
-- [ ] Mesurer hitch et mémoire sur N cycles avec seuils CI.
+- [ ] Faire passer les fichiers d'animation autonomes (.srig/.sclip/.sgraph)
+  par le chargement asynchrone de l'AssetLoader (le balayage, lui, est fait).
+- [x] Mesurer hitch et mémoire sur N cycles avec seuils CI. Le driver E2E
+  mesure `hitchMax` (dt max) et le nombre de frames > 100 ms sur les 16
+  cycles hub↔arena, les publie dans le verdict
+  (`hitchMax=0.049s@0` web, `0.072s@0` desktop) et échoue au-delà d'un
+  plafond de 2 s; les critères mémoire (loader stable, GPU stable, budget)
+  étaient déjà bloquants dans les trois harnais.
 
 Gate : budget respecté, aucune croissance non bornée, contenu invalide refusé
 sans tuer le runtime.

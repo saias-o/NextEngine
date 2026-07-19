@@ -1,5 +1,10 @@
 {
     "assets": {
+        "11553204360099943063": {
+            "hash": 9128389304540855693,
+            "path": "assets/models/corrupt.obj",
+            "type": "Mesh"
+        },
         "13376256074310275454": {
             "hash": 5992337059017574862,
             "path": "scenes/hub.scene",
@@ -16,14 +21,24 @@
             "type": "Audio"
         },
         "2091199236596790819": {
-            "hash": 10848921693576381284,
+            "hash": 2541658507146149787,
             "path": "scenes/arena.scene",
             "type": "Scene"
+        },
+        "262174432839847883": {
+            "hash": 2774654145232898221,
+            "path": "assets/models/probe.obj",
+            "type": "Mesh"
         },
         "5242988153271604998": {
             "hash": 9544813464768885387,
             "path": "assets/audio/save.ogg",
             "type": "Audio"
+        },
+        "8459743445224903056": {
+            "hash": 3023165812359970369,
+            "path": "assets/models/corrupt.glb",
+            "type": "Mesh"
         }
     },
     "schema": 1,

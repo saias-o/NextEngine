@@ -93,6 +93,13 @@ AssetDecoder makeMeshDecoder() {
     return [](std::vector<uint8_t>&& bytes, AssetDecodeResult& out, std::string& error) {
         auto data = std::make_shared<MeshData>();
         if (!Mesh::parseObjBytes(bytes.data(), bytes.size(), *data, error)) return false;
+        // Contenu hostile : un fichier poubelle peut « parser » en zéro
+        // géométrie — le refuser ici évite de créer des buffers GPU vides
+        // (création fatale) et rend l'asset failed avec diagnostic.
+        if (data->vertices.empty() || data->indices.empty()) {
+            error = "no usable geometry (corrupt or empty OBJ)";
+            return false;
+        }
         out.payload = data;
         out.bytes = static_cast<uint64_t>(data->vertices.size()) * sizeof(Vertex) +
                     static_cast<uint64_t>(data->indices.size()) * sizeof(uint32_t);
@@ -396,6 +403,11 @@ void ResourceManager::updateMaterialData(uint32_t index, const glm::vec4& baseCo
 
 Mesh* ResourceManager::createMesh(AssetID id, const std::vector<Vertex>& vertices,
                                   const std::vector<uint32_t>& indices) {
+    // Défense en profondeur : jamais de buffer GPU vide (création fatale).
+    if (vertices.empty() || indices.empty()) {
+        Log::error("createMesh: refusing empty geometry for asset ", id);
+        return nullptr;
+    }
     auto mesh = std::make_unique<Mesh>(*geometryRegistry_, vertices, indices);
     Mesh* ptr = mesh.get();
     gpuResidentBytes_ += ptr->gpuBytes();
@@ -457,8 +469,10 @@ void ResourceManager::finalizePendingMeshes() {
 }
 
 Mesh* ResourceManager::getMesh(AssetID id) {
-    if (auto it = meshes_.find(id); it != meshes_.end())
+    if (auto it = meshes_.find(id); it != meshes_.end()) {
+        lastUse_[id] = frameClock_;
         return it->second.get();
+    }
     if (id == kAssetBuiltinCube)
         return createMesh(id, cubeVertices(), cubeIndices());
     return loadMesh(id);  // treat as an .obj file path via registry
@@ -480,8 +494,10 @@ AnimationClip* ResourceManager::getAnimation(AssetID id) {
 
 Texture* ResourceManager::getTexture(AssetID id, bool srgb) {
     if (id == kAssetInvalid) return nullptr;
-    if (auto it = textures_.find(id); it != textures_.end())
+    if (auto it = textures_.find(id); it != textures_.end()) {
+        lastUse_[id] = frameClock_;
         return it->second.get();
+    }
     // Un asset en échec rend le damier magenta (fallback visible) au lieu de
     // relancer un chargement voué à l'échec à chaque frame.
     if (failedTextures_.count(id)) return missingTexture();
@@ -599,13 +615,38 @@ void ResourceManager::trimUnused(const AssetUsage& used) {
         it = materials_.erase(it);
     }
 
+    // Assets d'animation : rigs et clips que plus aucun Animator vivant ne
+    // détient (pointeurs bruts marqués par le collecteur) sont libérés; les
+    // caches ClipView/AnimGraph sont de purs caches fichier→asset rechargés
+    // par chemin à la demande, balayés entièrement.
+    const size_t rigsBefore = rigs_.size();
+    const size_t animationsBefore = animations_.size();
+    for (auto it = rigs_.begin(); it != rigs_.end();) {
+        if (used.rigs.count(it->second.get())) ++it;
+        else it = rigs_.erase(it);
+    }
+    for (auto it = animations_.begin(); it != animations_.end();) {
+        if (used.animations.count(it->second.get())) ++it;
+        else it = animations_.erase(it);
+    }
+    const size_t viewsSwept = clipViews_.size();
+    const size_t graphsSwept = animGraphs_.size();
+    clipViews_.clear();
+    animGraphs_.clear();
+
     const size_t evicted = (texturesBefore - textures_.size()) +
                            (meshesBefore - meshes_.size()) +
-                           (materialsBefore - materials_.size());
+                           (materialsBefore - materials_.size()) +
+                           (rigsBefore - rigs_.size()) +
+                           (animationsBefore - animations_.size()) +
+                           viewsSwept + graphsSwept;
     if (evicted)
         Log::info("assets: evicted ", texturesBefore - textures_.size(), " textures, ",
                   meshesBefore - meshes_.size(), " meshes, ",
-                  materialsBefore - materials_.size(), " materials (gpu resident ",
+                  materialsBefore - materials_.size(), " materials, ",
+                  rigsBefore - rigs_.size(), " rigs, ",
+                  animationsBefore - animations_.size(), " clips, ",
+                  viewsSwept + graphsSwept, " views/graphs (gpu resident ",
                   gpuResidentBytes_, " bytes)");
 }
 
@@ -660,7 +701,77 @@ void ResourceManager::pumpAssetLoads() {
     assetLoader_->pump();
     finalizePendingTextures();
     finalizePendingMeshes();
+    enforceGpuBudget();
     SAIDA_PROFILE_COUNTER("Assets/GpuResidentBytes", gpuResidentBytes_);
+    SAIDA_PROFILE_COUNTER("Assets/GpuEvictions", gpuEvictedCount_);
+}
+
+void ResourceManager::enforceGpuBudget() {
+    if (gpuBudgetBytes_ == 0 || gpuResidentBytes_ <= gpuBudgetBytes_) {
+        overBudgetWarned_ = false;
+        return;
+    }
+    if (!hasLiveUsage_) return;  // pas encore de photographie : ne rien casser
+
+    // Candidats : assets chargés par id, ni référencés par la scène vivante ni
+    // en cours de chargement, ni builtin/défauts. Tri LRU par lastUse_.
+    struct Candidate {
+        AssetID id;
+        uint64_t lastUse;
+        bool isMesh;
+    };
+    std::vector<Candidate> candidates;
+    for (const auto& [id, tex] : textures_) {
+        (void)tex;
+        if (liveUsage_.textures.count(id) || pendingTextures_.count(id)) continue;
+        auto it = lastUse_.find(id);
+        candidates.push_back({id, it != lastUse_.end() ? it->second : 0, false});
+    }
+    for (const auto& [id, mesh] : meshes_) {
+        if (id == kAssetBuiltinCube || pendingMeshes_.count(id)) continue;
+        if (liveUsage_.meshes.count(mesh.get())) continue;
+        auto it = lastUse_.find(id);
+        candidates.push_back({id, it != lastUse_.end() ? it->second : 0, true});
+    }
+    std::sort(candidates.begin(), candidates.end(),
+              [](const Candidate& a, const Candidate& b) { return a.lastUse < b.lastUse; });
+
+    for (const Candidate& c : candidates) {
+        if (gpuResidentBytes_ <= gpuBudgetBytes_) break;
+        Retired r;
+        r.frame = frameClock_;
+        uint64_t bytes = 0;
+        if (c.isMesh) {
+            auto it = meshes_.find(c.id);
+            bytes = it->second->gpuBytes();
+            reverseMeshMap_.erase(it->second.get());
+            r.mesh = std::move(it->second);
+            meshes_.erase(it);
+        } else {
+            auto it = textures_.find(c.id);
+            bytes = it->second->gpuBytes();
+            r.bindlessIndex = it->second->bindlessIndex();
+            r.texture = std::move(it->second);
+            textures_.erase(it);
+        }
+        gpuResidentBytes_ -= std::min(gpuResidentBytes_, bytes);
+        gpuEvictedBytes_ += bytes;
+        ++gpuEvictedCount_;
+        lastUse_.erase(c.id);
+        graveyard_.push_back(std::move(r));
+        Log::info("assets: gpu budget evicted ", c.isMesh ? "mesh" : "texture", " id=",
+                  c.id, " (", bytes, " bytes, resident ", gpuResidentBytes_, "/",
+                  gpuBudgetBytes_, ")");
+    }
+
+    if (gpuResidentBytes_ > gpuBudgetBytes_ && !overBudgetWarned_) {
+        // Tout le dépassement est référencé par la scène : mesuré et signalé
+        // une fois, jamais cassé.
+        overBudgetWarned_ = true;
+        Log::warn("assets: gpu budget exceeded by live content (resident ",
+                  gpuResidentBytes_, " > budget ", gpuBudgetBytes_,
+                  "), nothing evictable");
+    }
 }
 
 Material* ResourceManager::getMaterial(const MaterialDesc& desc) {
@@ -718,6 +829,23 @@ AssetID ResourceManager::registerGeneratedTexture(const uint8_t* pixels, uint32_
 AssetID ResourceManager::registerMemoryMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
     static std::atomic<AssetID> s_dynamicId{0x4000000000000000ULL};
     AssetID id = s_dynamicId++;
+    createMesh(id, vertices, indices);
+    return id;
+}
+
+AssetID ResourceManager::registerMemoryMesh(const std::string& subPath,
+                                            const std::vector<Vertex>& vertices,
+                                            const std::vector<uint32_t>& indices) {
+    // Identité STABLE par clé de sous-asset ("model.gltf#mesh2_prim0"), même
+    // règle que registerMemoryRig : un ré-import (Play/Stop, changement de
+    // scène aller-retour) retrouve le même AssetID, donc un snapshot restauré
+    // référence toujours un id résoluble au lieu d'un compteur dynamique
+    // perdu après éviction. Idempotent : les MeshNode branchés détiennent des
+    // Mesh* bruts, remplacer l'instance les laisserait pendre.
+    if (!registry_) return registerMemoryMesh(vertices, indices);
+    const AssetID id = registry_->registerAsset(subPath, AssetType::Mesh);
+    if (id == kAssetInvalid) return registerMemoryMesh(vertices, indices);
+    if (meshes_.find(id) != meshes_.end()) return id;
     createMesh(id, vertices, indices);
     return id;
 }

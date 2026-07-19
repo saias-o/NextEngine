@@ -83,6 +83,10 @@ public:
 
     // Register a dynamically generated mesh (e.g. from gltf primitive)
     AssetID registerMemoryMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
+    // Saveur à identité stable par clé de sous-asset ("model.gltf#mesh2_prim0"),
+    // idempotente comme registerMemoryRig — un ré-import rend le même id.
+    AssetID registerMemoryMesh(const std::string& subPath, const std::vector<Vertex>& vertices,
+                               const std::vector<uint32_t>& indices);
 
     // Register memory structures directly from loaders
     AssetID registerMemoryRig(const std::string& path, std::unique_ptr<Rig> rig);
@@ -125,12 +129,29 @@ public:
     // meshes) — diagnostics de fuite du chantier 3, exposé via assets.stats().
     uint64_t gpuResidentBytes() const { return gpuResidentBytes_; }
 
+    // Budget GPU appliqué PENDANT une scène (pas seulement au changeScene) :
+    // au-delà du budget, les assets ni référencés par la scène vivante (cf.
+    // setLiveUsage) ni en cours de chargement sont évincés du moins récemment
+    // utilisé au plus récent. Si tout le dépassement est référencé, rien n'est
+    // cassé : un warning unique le mesure. 0 = illimité.
+    void setGpuBudget(uint64_t bytes) { gpuBudgetBytes_ = bytes; }
+    uint64_t gpuBudgetBytes() const { return gpuBudgetBytes_; }
+    uint64_t gpuEvictedCount() const { return gpuEvictedCount_; }
+    uint64_t gpuEvictedBytes() const { return gpuEvictedBytes_; }
+
+
     // Ensemble des ressources encore référencées par les scènes vivantes —
     // construit par le SceneTree (walk du World) après un changeScene.
     struct AssetUsage {
         std::unordered_set<const Mesh*> meshes;
         std::unordered_set<AssetID> textures;
         std::unordered_set<const Material*> materials;
+        // Animation : rigs et clips encore détenus (pointeurs bruts) par des
+        // Animators vivants. Les caches ClipView/AnimGraph n'ont que des
+        // consommateurs transitoires (rebind par chemin) et sont balayés
+        // entièrement au trim.
+        std::unordered_set<const Rig*> rigs;
+        std::unordered_set<const AnimationClip*> animations;
     };
 
     // Évince du cache tout ce
@@ -140,6 +161,14 @@ public:
     // slots matériaux sont alors recyclés. Les builtins, les textures par
     // défaut et les proxies en cours de chargement sont exempts.
     void trimUnused(const AssetUsage& used);
+
+    // Photographie des références vivantes (SceneTree, rafraîchie à chaque
+    // changement de hiérarchie) — les candidats à l'éviction budget mi-scène
+    // sont exactement les assets hors de cet ensemble.
+    void setLiveUsage(AssetUsage usage) {
+        liveUsage_ = std::move(usage);
+        hasLiveUsage_ = true;
+    }
 
     // Confie un objet GPU potentiellement encore référencé par une frame en
     // vol ; il sera détruit après kRetireFrames pumps (pattern ThumbnailCache).
@@ -234,6 +263,17 @@ private:
     std::vector<uint32_t> freeBindlessIndices_;
     std::vector<uint32_t> freeMaterialIndices_;
     uint64_t gpuResidentBytes_ = 0;
+
+    // Budget GPU mi-scène (LRU mesuré). lastUse_ est daté par frameClock_ à
+    // chaque résolution/finalisation d'un asset.
+    void enforceGpuBudget();
+    uint64_t gpuBudgetBytes_ = 512ull * 1024ull * 1024ull;
+    uint64_t gpuEvictedCount_ = 0;
+    uint64_t gpuEvictedBytes_ = 0;
+    bool overBudgetWarned_ = false;
+    std::unordered_map<AssetID, uint64_t> lastUse_;
+    AssetUsage liveUsage_;
+    bool hasLiveUsage_ = false;
 };
 
 } // namespace saida

@@ -418,6 +418,9 @@ JSValue jsAssetsStats(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     JS_SetPropertyStr(ctx, o, "loading", JS_NewInt64(ctx, stats.loading));
     JS_SetPropertyStr(ctx, o, "ready", JS_NewInt64(ctx, stats.ready));
     JS_SetPropertyStr(ctx, o, "failed", JS_NewInt64(ctx, stats.failed));
+    // Cumul des refus depuis le boot (contenu corrompu/hostile) — critère CI.
+    JS_SetPropertyStr(ctx, o, "failedTotal",
+                      JS_NewInt64(ctx, static_cast<int64_t>(stats.failedTotal)));
     JS_SetPropertyStr(ctx, o, "residentBytes",
                       JS_NewInt64(ctx, static_cast<int64_t>(stats.residentBytes)));
     JS_SetPropertyStr(ctx, o, "budgetBytes",
@@ -426,7 +429,26 @@ JSValue jsAssetsStats(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     // — champ additif (compat OK), critère de fuite du chantier 3 en E2E.
     JS_SetPropertyStr(ctx, o, "gpuResidentBytes",
                       JS_NewInt64(ctx, static_cast<int64_t>(tree->resources().gpuResidentBytes())));
+    // Budget GPU mi-scène (P0.5) : plafond, évictions LRU cumulées.
+    JS_SetPropertyStr(ctx, o, "gpuBudgetBytes",
+                      JS_NewInt64(ctx, static_cast<int64_t>(tree->resources().gpuBudgetBytes())));
+    JS_SetPropertyStr(ctx, o, "gpuEvictedCount",
+                      JS_NewInt64(ctx, static_cast<int64_t>(tree->resources().gpuEvictedCount())));
+    JS_SetPropertyStr(ctx, o, "gpuEvictedBytes",
+                      JS_NewInt64(ctx, static_cast<int64_t>(tree->resources().gpuEvictedBytes())));
     return o;
+}
+
+// assets.setGpuBudget(bytes) : plafond GPU mi-scène (0 = illimité). Outil de
+// test/diagnostic d'abord — un jeu peut aussi l'adapter à la plateforme.
+JSValue jsAssetsSetGpuBudget(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    SceneTree* tree = treeFromJs(ctx);
+    if (!tree) return JS_ThrowInternalError(ctx, "assets.setGpuBudget requires a mounted SceneTree");
+    double bytes = 0.0;
+    if (argc < 1 || JS_ToFloat64(ctx, &bytes, argv[0]) != 0 || bytes < 0.0)
+        return JS_ThrowTypeError(ctx, "assets.setGpuBudget(bytes >= 0)");
+    tree->resources().setGpuBudget(static_cast<uint64_t>(bytes));
+    return JS_NewBool(ctx, true);
 }
 
 void installAssetHandleClass(JSContext* ctx) {
@@ -1510,6 +1532,7 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JSValue assets = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, assets, "load", JS_NewCFunction(ctx, jsAssetsLoad, "load", 2));
     JS_SetPropertyStr(ctx, assets, "stats", JS_NewCFunction(ctx, jsAssetsStats, "stats", 0));
+    JS_SetPropertyStr(ctx, assets, "setGpuBudget", JS_NewCFunction(ctx, jsAssetsSetGpuBudget, "setGpuBudget", 1));
     JS_SetPropertyStr(ctx, global, "assets", assets);
 
     JSValue audio = JS_NewObject(ctx);

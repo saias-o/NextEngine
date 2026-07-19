@@ -1709,6 +1709,125 @@
     "mass": 1.5
    },
    {
+    "type": "Node",
+    "id": 7115703165270337687,
+    "name": "GpuProbe",
+    "enabled": true,
+    "behaviours": [],
+    "children": [
+     {
+      "type": "MeshNode",
+      "id": 12598874948357840199,
+      "name": "GpuProbeMesh",
+      "enabled": true,
+      "behaviours": [],
+      "children": [],
+      "transform": {
+       "position": [
+        0,
+        0,
+        0
+       ],
+       "rotation": [
+        0,
+        0,
+        0,
+        1
+       ],
+       "scale": [
+        2.0,
+        1.0,
+        2.0
+       ]
+      },
+      "mesh": "assets/models/probe.obj",
+      "baseColor": [
+       0.2,
+       0.5,
+       0.8,
+       1.0
+      ],
+      "roughness": 0.8,
+      "metallic": 0.0
+     }
+    ],
+    "transform": {
+     "position": [
+      -6.0,
+      0.05,
+      6.0
+     ],
+     "rotation": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    },
+    "groups": [
+     "gpu_probe"
+    ]
+   },
+   {
+    "type": "MeshNode",
+    "id": 18253716108336734549,
+    "name": "CorruptObj",
+    "enabled": true,
+    "behaviours": [],
+    "children": [],
+    "transform": {
+     "position": [
+      0,
+      -20,
+      0
+     ],
+     "rotation": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    },
+    "mesh": "assets/models/corrupt.obj"
+   },
+   {
+    "type": "Node",
+    "id": 10495406182521033251,
+    "name": "CorruptGlb",
+    "enabled": true,
+    "behaviours": [],
+    "children": [],
+    "transform": {
+     "position": [
+      0,
+      -20,
+      0
+     ],
+     "rotation": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    },
+    "importedFrom": "assets/models/corrupt.glb"
+   },
+   {
     "type": "Area",
     "id": 11139997871628700334,
     "name": "DoorToHub",

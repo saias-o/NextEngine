@@ -183,6 +183,75 @@ def crate(prefix, index, pos):
                 ])
 
 
+def write_probe_obj():
+    """Écrit assets/models/probe.obj : une grille de plan (~34 Ko GPU) chargée
+    par l'AssetLoader (.obj async). Sert de matière au test E2E du budget GPU
+    mi-scène : une fois son nœud queueFree, elle devient évincable en LRU."""
+    n = 16
+    lines = ["# grille probe E2E (budget GPU)"]
+    for z in range(n + 1):
+        for x in range(n + 1):
+            lines.append(f"v {x / n - 0.5:.4f} 0 {z / n - 0.5:.4f}")
+    lines += [f"vt {x / n:.4f} {z / n:.4f}" for z in range(n + 1) for x in range(n + 1)]
+    lines += ["vn 0 1 0"]
+    for z in range(n):
+        for x in range(n):
+            a = z * (n + 1) + x + 1
+            b = a + 1
+            c = a + n + 1
+            d = c + 1
+            lines.append(f"f {a}/{a}/1 {b}/{b}/1 {d}/{d}/1")
+            lines.append(f"f {a}/{a}/1 {d}/{d}/1 {c}/{c}/1")
+    path = os.path.join(HERE, "assets", "models", "probe.obj")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="\n") as f:
+        f.write("\n".join(lines) + "\n")
+    print("wrote", path)
+
+
+def write_corrupt_assets():
+    """Contenu hostile embarqué (P0.5) : un .obj poubelle et un .glb tronqué.
+
+    L'arène les référence volontairement — le moteur doit les refuser avec
+    diagnostic et continuer (fallbacks), sur desktop comme dans le player
+    wasm où une lecture hors limites serait fatale."""
+    models = os.path.join(HERE, "assets", "models")
+    os.makedirs(models, exist_ok=True)
+    with open(os.path.join(models, "corrupt.obj"), "wb") as f:
+        f.write(bytes((i * 37) % 251 for i in range(2048)))
+    # En-tête GLB valide, chunk JSON tronqué en plein milieu.
+    import struct
+    json_part = b'{"asset":{"version":"2.0"},"meshes":[{"primi'
+    glb = b"glTF" + struct.pack("<II", 2, 4096) + struct.pack("<II", 2048, 0x4E4F534A) + json_part
+    with open(os.path.join(models, "corrupt.glb"), "wb") as f:
+        f.write(glb)
+    print("wrote corrupt.obj / corrupt.glb")
+
+
+def gpu_probe(prefix, pos=(-6.0, 0.05, 6.0)):
+    """Mesh .obj décoratif, cible du test budget GPU du driver E2E."""
+    return node(f"{prefix}/gpuprobe", "Node", "GpuProbe", pos=pos,
+                groups=["gpu_probe"], children=[
+                    node(f"{prefix}/gpuprobe/mesh", "MeshNode", "GpuProbeMesh",
+                         scale=(2.0, 1.0, 2.0), mesh="assets/models/probe.obj",
+                         baseColor=[0.2, 0.5, 0.8, 1.0], roughness=0.8,
+                         metallic=0.0),
+                ])
+
+
+def corrupt_probes(prefix):
+    """Contenu hostile référencé par la scène : le .obj poubelle échoue en
+    async (assets.stats().failed), le .glb tronqué est refusé à l'import —
+    dans les deux cas la scène continue (le driver l'atteste)."""
+    glb_node = node(f"{prefix}/corruptglb", "Node", "CorruptGlb", pos=(0, -20, 0))
+    glb_node["importedFrom"] = "assets/models/corrupt.glb"
+    return [
+        node(f"{prefix}/corruptobj", "MeshNode", "CorruptObj", pos=(0, -20, 0),
+             mesh="assets/models/corrupt.obj"),
+        glb_node,
+    ]
+
+
 def pendulum(prefix, pos=(6.0, 4.0, 6.0)):
     """Bob dynamique suspendu à un PointJoint ancré au monde (P0.4).
 
@@ -244,6 +313,8 @@ def arena():
         crate(p, 1, (-3, 2.2, 0)),
         crate(p, 2, (3, 1.0, 2)),
         pendulum(p),
+        gpu_probe(p),
+        *corrupt_probes(p),
         door(p, "DoorToHub", (0, 1.1, 11.4), "scenes/hub.scene",
              (1.0, 0.5, 0.2, 1.0)),
         hud(p, "Relics: ?"),
@@ -252,6 +323,8 @@ def arena():
 
 
 def main():
+    write_probe_obj()
+    write_corrupt_assets()
     scenes = {"hub.scene": hub(), "arena.scene": arena()}
     out_dir = os.path.join(HERE, "scenes")
     os.makedirs(out_dir, exist_ok=True)

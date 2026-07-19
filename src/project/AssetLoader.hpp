@@ -44,6 +44,9 @@ struct AssetLoadStats {
     uint32_t loading = 0;
     uint32_t ready = 0;
     uint32_t failed = 0;
+    // Cumul des requêtes passées en échec depuis le boot (jamais décrémenté,
+    // même une fois le handle relâché) — critère CI « contenu refusé ».
+    uint64_t failedTotal = 0;
     uint64_t residentBytes = 0;
     uint64_t budgetBytes = 0;
 };
@@ -104,7 +107,13 @@ public:
         std::atomic<uint64_t> budgetBytes{0};
     };
 
+    // Cumul des échecs de chargement depuis le boot (jamais décrémenté).
+    uint64_t failedTotal() const { return failedTotal_.load(std::memory_order_relaxed); }
+
 private:
+    friend class AssetHandle;
+    static std::atomic<uint64_t> failedTotal_;
+
     struct Job {
         AssetLoadPriority priority = AssetLoadPriority::Normal;
         uint64_t sequence = 0;

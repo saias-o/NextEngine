@@ -138,6 +138,7 @@ private:
     std::unordered_map<std::string, std::string> sceneCache_;
 
     SceneTimerQueue timerQueue_;
+    uint32_t lastUsageVersion_ = 0;  // photographie d'usage GPU (budget mi-scène)
 };
 
 } // namespace saida

@@ -350,6 +350,13 @@ bool GLTFLoader::loadAnimationData(const std::string& path, GltfAnimationData& o
         if (error) *error = "failed to load buffers for " + path;
         return false;
     }
+    // Contenu hostile : refuse les accessors/vues hors des buffers déclarés
+    // avant toute lecture (une lecture OOB abort le player wasm).
+    if (cgltf_validate(data) != cgltf_result_success) {
+        cgltf_free(data);
+        if (error) *error = "invalid glTF data (validation failed) for " + path;
+        return false;
+    }
     if (!decodeMeshoptBuffers(data)) {
         cgltf_free(data);
         if (error) *error = "failed to decode meshopt buffers for " + path;
@@ -395,6 +402,14 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
     result = cgltf_load_buffers(&cgltfOptions, data, loadPath.c_str());
     if (result != cgltf_result_success) {
         Log::error("GLTFLoader: Failed to load buffers for ", loadPath);
+        cgltf_free(data);
+        return false;
+    }
+
+    // Contenu hostile : refuse les accessors/vues hors des buffers déclarés
+    // avant toute lecture (une lecture OOB abort le player wasm).
+    if (cgltf_validate(data) != cgltf_result_success) {
+        Log::error("GLTFLoader: validation failed for ", loadPath, " — refusing hostile/corrupt data");
         cgltf_free(data);
         return false;
     }
@@ -563,14 +578,12 @@ bool GLTFLoader::load(const std::string& path, Node& rootNode, ResourceManager& 
                 v.tangent = glm::vec4(glm::normalize(t), handedness);
             }
             
-            AssetID meshId = resources.registerMemoryMesh(vertices, indices);
+            // Clé stable par sous-asset : un ré-import (Play/Stop, cycles de
+            // scène) rend le même AssetID — un snapshot restauré reste résoluble.
+            const std::string meshKey =
+                loadPath + "#mesh" + std::to_string(i) + "_prim" + std::to_string(j);
+            AssetID meshId = resources.registerMemoryMesh(meshKey, vertices, indices);
             Log::info("Loaded GLTF Primitive: ", vertexCount, " vertices, ", indices.size(), " indices, meshId=", meshId, " type=", prim.type);
-            for(size_t debugIdx=0; debugIdx < std::min<size_t>(10, indices.size()); ++debugIdx) {
-                Log::info("  Idx ", debugIdx, ": ", indices[debugIdx]);
-            }
-            for(size_t debugV=0; debugV < std::min<size_t>(3, vertices.size()); ++debugV) {
-                Log::info("  Vtx ", debugV, " pos=(", vertices[debugV].pos.x, ", ", vertices[debugV].pos.y, ", ", vertices[debugV].pos.z, ")");
-            }
             meshesPrimitives[i].push_back(meshId);
         }
     }

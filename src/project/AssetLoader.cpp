@@ -161,6 +161,7 @@ void AssetLoader::load(const std::shared_ptr<AssetHandle::Entry>& entry) {
         std::lock_guard<std::mutex> lock(entry->mutex);
         entry->error = "asset file not found: " + entry->path;
         entry->state.store(AssetLoadState::Failed, std::memory_order_release);
+        failedTotal_.fetch_add(1, std::memory_order_relaxed);
         Log::warn(entry->error);
         return;
     }
@@ -170,6 +171,7 @@ void AssetLoader::load(const std::shared_ptr<AssetHandle::Entry>& entry) {
         std::lock_guard<std::mutex> lock(entry->mutex);
         entry->error = "cannot determine asset size: " + entry->path;
         entry->state.store(AssetLoadState::Failed, std::memory_order_release);
+        failedTotal_.fetch_add(1, std::memory_order_relaxed);
         return;
     }
     const uint64_t size = static_cast<uint64_t>(end);
@@ -179,6 +181,7 @@ void AssetLoader::load(const std::shared_ptr<AssetHandle::Entry>& entry) {
         std::lock_guard<std::mutex> lock(entry->mutex);
         entry->error = "asset memory budget exceeded: " + entry->path;
         entry->state.store(AssetLoadState::Failed, std::memory_order_release);
+        failedTotal_.fetch_add(1, std::memory_order_relaxed);
         Log::warn(entry->error);
         return;
     }
@@ -192,6 +195,7 @@ void AssetLoader::load(const std::shared_ptr<AssetHandle::Entry>& entry) {
         std::lock_guard<std::mutex> lock(entry->mutex);
         entry->error = "failed to read asset: " + entry->path;
         entry->state.store(AssetLoadState::Failed, std::memory_order_release);
+        failedTotal_.fetch_add(1, std::memory_order_relaxed);
         return;
     }
 
@@ -210,6 +214,7 @@ void AssetLoader::load(const std::shared_ptr<AssetHandle::Entry>& entry) {
             entry->error = "failed to decode asset: " + entry->path +
                            (decodeError.empty() ? "" : " (" + decodeError + ")");
             entry->state.store(AssetLoadState::Failed, std::memory_order_release);
+        failedTotal_.fetch_add(1, std::memory_order_relaxed);
             Log::warn(entry->error);
             return;
         }
@@ -220,6 +225,7 @@ void AssetLoader::load(const std::shared_ptr<AssetHandle::Entry>& entry) {
             std::lock_guard<std::mutex> lock(entry->mutex);
             entry->error = "asset memory budget exceeded after decode: " + entry->path;
             entry->state.store(AssetLoadState::Failed, std::memory_order_release);
+        failedTotal_.fetch_add(1, std::memory_order_relaxed);
             Log::warn(entry->error);
             return;
         }
@@ -267,8 +273,11 @@ void AssetLoader::collectGarbage() {
     }
 }
 
+std::atomic<uint64_t> AssetLoader::failedTotal_{0};
+
 AssetLoadStats AssetLoader::stats() const {
     AssetLoadStats result;
+    result.failedTotal = failedTotal_.load(std::memory_order_relaxed);
     result.residentBytes = accounting_->residentBytes.load(std::memory_order_relaxed);
     result.budgetBytes = accounting_->budgetBytes.load(std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(mutex_);

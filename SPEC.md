@@ -236,18 +236,36 @@ le chargement, un fallback est visible; un échec utilise un damier magenta.
 Les proxies mesh restent stables et la physique reconstruit le body quand le
 mesh devient disponible.
 
-Les enregistrements mémoire `registerMemoryRig`/`registerMemoryAnimation` sont
-idempotents : ré-importer le même glTF conserve les instances existantes, les
-Animators déjà attachés gardent donc des pointeurs valides.
+Les enregistrements mémoire `registerMemoryRig`/`registerMemoryAnimation` ET
+`registerMemoryMesh` (saveur à clé `model.gltf#meshN_primM`) sont idempotents :
+ré-importer le même glTF conserve les instances existantes et rend les mêmes
+AssetID — les Animators/MeshNodes attachés gardent des pointeurs valides et un
+snapshot restauré après éviction référence des ids résolubles.
 
-Au `changeScene`, `trimUnused` effectue un mark-and-sweep. La destruction GPU
-est différée quatre frames; index bindless et slots matériaux sont recyclés.
-`gpuResidentBytes` est exposé à `assets.stats()` et au profiler. Un E2E desktop
-et Web a vérifié sa stabilité sur 16 cycles hub/arène.
+Au `changeScene`, `trimUnused` effectue un mark-and-sweep : textures, meshes,
+matériaux, plus les rigs/clips que plus aucun Animator vivant ne détient et
+les caches ClipView/AnimGraph (purs caches fichier, rechargés par chemin). La
+destruction GPU est différée quatre frames; index bindless et slots matériaux
+sont recyclés.
 
-Limites : pas encore de LRU contraignant pendant une scène, rigs/animations
-hors sweep, streaming Web fetch/IDBFS absent et identités de meshes glTF mémoire
-encore fragiles lors d'un Stop après changement de scène.
+PENDANT une scène, `gpuBudgetBytes` (512 MiB par défaut, `assets.setGpuBudget`)
+est appliqué à chaque frame : au-delà, les textures/meshes ni référencés par
+la scène vivante (photographie d'usage rafraîchie à chaque changement de
+hiérarchie) ni en chargement sont évincés en LRU (`lastUse` par frame),
+compteurs `gpuEvictedCount/Bytes` dans `assets.stats()`. Si tout le dépassement
+est référencé : warning unique, rien de cassé. `gpuResidentBytes` est exposé à
+`assets.stats()` et au profiler; l'E2E desktop et Web vérifie stabilité sur 16
+cycles, éviction LRU mi-scène réelle et seuil de hitch (dt max publié dans le
+verdict, plafond CI 2 s).
+
+Contenu hostile : `cgltf_validate` après chaque parse (accessor hors limites
+refusé avant toute lecture — fatale en wasm), OBJ sans géométrie utilisable
+refusé au décodage (`failedTotal` cumulatif dans `assets.stats()`), géométrie
+vide refusée à la création GPU. WitnessGame embarque un `corrupt.obj` et un
+`corrupt.glb` volontaires traversés par les trois harnais.
+
+Limites : streaming Web fetch/IDBFS absent (preload MEMFS), chargement async
+des fichiers d'animation autonomes (.srig/.sclip/.sgraph) hors AssetLoader.
 
 ### 4.3 Formats média
 
@@ -806,7 +824,9 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
   progression/préférences, quotas et contrat de durabilité asynchrone
   (`storage.flush()` → Promise) en place; seul un backend cloud effectif
   reste futur.
-- Asset LRU en cours de scène, streaming Web et sweep rigs/anims absents.
+- Budget GPU mi-scène avec LRU mesuré, sweep rigs/anims, identités glTF
+  stables et refus du contenu corrompu en place; streaming Web fetch/IDBFS,
+  MikkTSpace et KTX2/Basis restent absents.
 - Point-light shadows cubemap et lightmaps persistantes absentes.
 - XR sans MSAA multiview, overlay et matrice hardware validée.
 - Build UI/machine vierge, signature, crash reporting et rollback non prouvés.

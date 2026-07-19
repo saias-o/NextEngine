@@ -39,6 +39,13 @@ let restartMode = false;
 let restartRelics = 0;
 let restartHudSeen = false;
 let restartSeqSeen = false;
+// Phase 1.5 : budget GPU mi-scène (P0.5).
+let budgetState = 0;   // 0 = attendre la sonde résidente, 1 = attendre l'éviction LRU
+let budgetValue = 0;
+let budgetT = 0;
+// Hitch (P0.5) : dt max et frames > 100 ms pendant les cycles de phase 2.
+let hitchMax = 0;
+let hitchCount = 0;
 
 function hudText() {
     const hud = tree.firstInGroup("witness_hud");
@@ -249,13 +256,55 @@ function onUpdate(dt) {
             input.inject("MoveForward", 0);
             if (checkPhysicsApi() !== true) return;  // verdict déjà posé
             if (checkGameplayApi() !== true) return;
-            phase = 2;
-            console.log("[E2E] phase 1 ok — UI updated, relic collected, starting scene cycles");
+            phase = 1.5;
+            console.log("[E2E] phase 1 ok — UI updated, relic collected, checking gpu budget");
             return;
         }
         if (t > TIMEOUT) finish("FAIL: no relic collected within " + TIMEOUT + "s");
         return;
     }
+
+    // Phase 1.5 — budget GPU mi-scène : la sonde .obj de l'arène est résidente;
+    // on serre le budget juste sous le total puis on libère la sonde. Le
+    // ResourceManager doit l'évincer en LRU sans changeScene et repasser sous
+    // le budget, compteurs à l'appui.
+    if (phase === 1.5) {
+        budgetT += dt;
+        if (budgetT > 10)
+            return finish("FAIL: gpu budget phase timed out (state=" + budgetState + ")");
+        const s = assets.stats();
+        if (budgetState === 0) {
+            if (s.gpuResidentBytes < 20000) return;  // sonde pas encore chargée
+            budgetValue = s.gpuResidentBytes - 1000;
+            if (assets.setGpuBudget(budgetValue) !== true)
+                return finish("FAIL: assets.setGpuBudget rejected");
+            const probe = tree.firstInGroup("gpu_probe");
+            if (probe === null) return finish("FAIL: gpu probe missing from the arena");
+            probe.queueFree();
+            budgetState = 1;
+            return;
+        }
+        if (s.gpuEvictedCount >= 1 && s.gpuResidentBytes <= budgetValue) {
+            assets.setGpuBudget(536870912);  // budget par défaut restauré
+            console.log("[E2E] gpu budget ok (lru evicted " + s.gpuEvictedCount +
+                        " asset(s), resident " + s.gpuResidentBytes + " <= " +
+                        budgetValue + ")");
+            // Contenu hostile (P0.5) : l'arène référence corrupt.obj (échec
+            // async → compteur failed) et corrupt.glb (refusé à l'import).
+            // Qu'on soit ici, HUD vivant, prouve « refusé sans tuer le
+            // runtime »; le compteur prouve que le refus a bien eu lieu.
+            if (s.failedTotal < 1)
+                return finish("FAIL: corrupt asset was not refused (failedTotal=" + s.failedTotal + ")");
+            console.log("[E2E] hostile assets ok (failedTotal=" + s.failedTotal + ", runtime alive)");
+            phase = 2;
+        }
+        return;
+    }
+
+    // Hitch : mesuré pendant les cycles (le changeScene est inclus — c'est le
+    // pire cas réel que le seuil borne).
+    if (dt > hitchMax) hitchMax = dt;
+    if (dt > 0.1) hitchCount++;
 
     sinceSwap += dt;
     if (sinceSwap < CYCLE_INTERVAL) return;
@@ -282,6 +331,11 @@ function onUpdate(dt) {
         // Contrat async storage (P0.4) : le verdict n'est émis qu'après un
         // flush durable (desktop : immédiat; web : syncfs IndexedDB résolu) —
         // le run RESTART qui suit relit précisément cette progression.
+        // Seuil hitch (P0.5) : mesuré sur tous les cycles; le plafond CI est
+        // volontairement large (machines partagées), la valeur mesurée est
+        // dans le verdict pour suivre les régressions.
+        if (hitchMax > 2.0)
+            return finish("FAIL: frame hitch " + hitchMax.toFixed(3) + "s over 2s ceiling");
         if (finished) return;
         finished = true;  // fige le driver, le verdict part dans la réaction
         storage.flush().then(function (ok) {
@@ -289,6 +343,8 @@ function onUpdate(dt) {
             if (ok !== true) return finish("FAIL: storage.flush did not resolve true");
             finish("PASS (ui=ok, cycles=" + CYCLES + ", resident=" + s.residentBytes +
                    "/" + s.budgetBytes + ", gpu=" + s.gpuResidentBytes +
+                   ", gpuEvicted=" + s.gpuEvictedCount +
+                   ", hitchMax=" + hitchMax.toFixed(3) + "s@" + hitchCount +
                    ", flush=durable)");
         });
         return;
