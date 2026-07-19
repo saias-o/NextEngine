@@ -114,12 +114,28 @@ static std::vector<float> parseMsftScreenCoverage(const cgltf_node* node) {
     }
 }
 
+static bool primHasAuthorTangents(const cgltf_primitive* prim) {
+    for (size_t k = 0; k < prim->attributes_count; ++k)
+        if (prim->attributes[k].type == cgltf_attribute_type_tangent) return true;
+    return false;
+}
+
 static Material* resolvePrimitiveMaterial(cgltf_primitive* prim, cgltf_data* data,
                                           ResourceManager& resources,
                                           const std::vector<MaterialDesc>& materials) {
     if (prim->material) {
         size_t matIdx = prim->material - data->materials;
-        return resources.getMaterial(materials[matIdx]);
+        MaterialDesc desc = materials[matIdx];
+        // Politique V1 : sans tangentes d'auteur, le normal mapping est
+        // désactivé explicitement — les tangentes reconstruites par moyenne de
+        // triangles ne sont pas MikkTSpace et donneraient un éclairage faux en
+        // silence. (MikkTSpace : P1.)
+        if (desc.normalId != kAssetInvalid && !primHasAuthorTangents(prim)) {
+            Log::warn("GLTFLoader: material ", matIdx, " has a normal map but the "
+                      "primitive has no authored tangents — normal mapping disabled");
+            desc.normalId = kAssetInvalid;
+        }
+        return resources.getMaterial(desc);
     }
     return resources.getMaterial(MaterialDesc{});
 }

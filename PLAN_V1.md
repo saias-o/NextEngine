@@ -267,10 +267,24 @@ RESTART PASS via IndexedDB), le tout après flush durable explicite.
   par WitnessGame : l'arène embarque `corrupt.obj`/`corrupt.glb` volontaires,
   le driver exige `failedTotal >= 1` avec le runtime vivant — PASS desktop,
   éditeur et navigateur.
-- [ ] Ajouter MikkTSpace ou désactiver explicitement le normal mapping sans
-  tangentes valides.
-- [ ] Brancher l'export GLB meshopt dans l'UI d'import.
-- [ ] Décider KTX2/Basis pour textures de release Web.
+- [x] Ajouter MikkTSpace ou désactiver explicitement le normal mapping sans
+  tangentes valides. Option retenue : désactivation explicite — un matériau à
+  normal map dont la primitive n'a pas de tangentes d'auteur perd sa normal
+  map avec warning loggé (les tangentes reconstruites par moyenne de triangles
+  ne sont pas MikkTSpace et fausseraient l'éclairage en silence). MikkTSpace
+  reste P1.
+- [x] Brancher l'export GLB meshopt dans l'UI d'import. Bouton « Export
+  meshopt GLB » du panneau 3D Importer : `collectExportMeshes` relit la
+  géométrie du fichier source (.gltf/.glb validé+décodé ou .obj — fidélité
+  complète, pas de readback GPU) puis `exportMeshoptGlb` écrit
+  `<source>.meshopt.glb` quantifié. Boucle collect → export → collect prouvée
+  par `saida_meshopt_export_tests`.
+- [x] Décider KTX2/Basis pour textures de release Web. Décision V1 : NON —
+  les textures restent PNG/JPG (stbi) sur toutes les plateformes. Le corpus
+  V1 n'a pas de contenu texturé lourd qui justifie le transcodeur basisu
+  (dépendance + surface de code) ; l'upload RGBA8 est le comportement mesuré
+  par les harnais. KTX2/Basis reste en P2, réévalué quand un jeu réel dépasse
+  le budget texture web.
 - [ ] Faire passer les fichiers d'animation autonomes (.srig/.sclip/.sgraph)
   par le chargement asynchrone de l'AssetLoader (le balayage, lui, est fait).
 - [x] Mesurer hitch et mémoire sur N cycles avec seuils CI. Le driver E2E

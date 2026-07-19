@@ -270,7 +270,13 @@ des fichiers d'animation autonomes (.srig/.sclip/.sgraph) hors AssetLoader.
 ### 4.3 Formats média
 
 - Audio : `.ogg` Vorbis recommandé; `.wav` accepté. MP3 et FLAC non compilés.
-- Meshes : glTF/GLB et OBJ. Meshopt est décodé; KTX2/Basis reste absent.
+- Meshes : glTF/GLB et OBJ. Meshopt est décodé à l'import et exporté depuis
+  l'UI d'import (« Export meshopt GLB », quantifié + EXT_meshopt_compression).
+- Textures : PNG/JPG (stbi) sur toutes les plateformes — décision V1 : pas de
+  KTX2/Basis (pas de contenu texturé lourd qui justifie le transcodeur; P2).
+- Tangentes : sans tangentes d'auteur dans un glTF, le normal mapping du
+  matériau est désactivé explicitement (warning loggé) — jamais d'éclairage
+  approximé en silence; MikkTSpace est P1.
 - Un glTF/GLB corrompu peut encore interrompre le player Web.
 - `GLTFLoader` utilise une tangente de secours `(1,0,0,1)`; MikkTSpace ou une
   désactivation propre du normal mapping reste nécessaire.
@@ -826,7 +832,8 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
   reste futur.
 - Budget GPU mi-scène avec LRU mesuré, sweep rigs/anims, identités glTF
   stables et refus du contenu corrompu en place; streaming Web fetch/IDBFS,
-  MikkTSpace et KTX2/Basis restent absents.
+  politique tangentes explicite et export meshopt UI en place; streaming Web
+  fetch/IDBFS reste absent (MikkTSpace P1, KTX2/Basis P2 par décision).
 - Point-light shadows cubemap et lightmaps persistantes absentes.
 - XR sans MSAA multiview, overlay et matrice hardware validée.
 - Build UI/machine vierge, signature, crash reporting et rollback non prouvés.

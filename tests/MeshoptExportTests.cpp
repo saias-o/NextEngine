@@ -15,6 +15,7 @@
 #include <array>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <tuple>
@@ -180,8 +181,41 @@ void testQuantizedRoundTrip() {
 
 } // namespace
 
+// collectExportMeshes (source → ExportMesh) puis export : le chemin complet du
+// bouton « Export meshopt GLB » de l'éditeur, sans GPU.
+void testCollectFromObjAndExport() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "saida_meshopt_collect";
+    fs::create_directories(dir);
+    const fs::path objPath = dir / "tri.obj";
+    {
+        std::ofstream out(objPath);
+        out << "v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 0 1\nvn 0 0 1\n"
+               "f 1/1/1 2/2/1 3/3/1\n";
+    }
+
+    std::vector<saida::ExportMesh> meshes;
+    std::string error;
+    require(saida::collectExportMeshes(objPath.string(), meshes, error));
+    require(meshes.size() == 1);
+    require(meshes[0].vertices.size() == 3 && meshes[0].indices.size() == 3);
+
+    const fs::path glbPath = dir / "tri.meshopt.glb";
+    require(saida::exportMeshoptGlb(meshes, glbPath.string()));
+
+    // Le GLB produit doit être relisible par collectExportMeshes (cgltf +
+    // meshopt decode), bouclant collect → export → collect.
+    std::vector<saida::ExportMesh> reread;
+    require(saida::collectExportMeshes(glbPath.string(), reread, error));
+    require(reread.size() == 1 && reread[0].indices.size() == 3);
+
+    require(!saida::collectExportMeshes((dir / "missing.gltf").string(), meshes, error));
+    fs::remove_all(dir);
+}
+
 int main() {
     testCubeRoundTrip();
     testQuantizedRoundTrip();
+    testCollectFromObjAndExport();
     return 0;
 }

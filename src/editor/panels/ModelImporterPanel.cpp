@@ -1,4 +1,5 @@
 #include "editor/panels/ModelImporterPanel.hpp"
+#include "tools/MeshoptGlbExporter.hpp"
 #include "editor/EditorUI.hpp"
 #include "scene/Scene.hpp"
 #include "scene/animation/Animator.hpp"
@@ -6,6 +7,7 @@
 #include "scene/animation/ClipNode.hpp"
 #include "scene/animation/AnimationClip.hpp"
 
+#include <filesystem>
 #include <imgui.h>
 
 #include <algorithm>
@@ -103,6 +105,25 @@ void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::
     ImGui::Separator();
     ImGui::Spacing();
 
+    // Export GLB meshopt : réécrit la géométrie du modèle prévisualisé en
+    // .meshopt.glb (buffers quantifiés + EXT_meshopt_compression) à côté de la
+    // source — le format compact destiné aux packages web.
+    if (ImGui::Button("Export meshopt GLB", ImVec2(180, 30))) {
+        std::vector<ExportMesh> meshes;
+        std::string error;
+        const std::string outPath =
+            std::filesystem::path(modelPath).replace_extension(".meshopt.glb").string();
+        if (!collectExportMeshes(modelPath, meshes, error)) {
+            exportStatus_ = "Export failed: " + error;
+        } else if (exportMeshoptGlb(meshes, outPath)) {
+            exportStatus_ = "Exported " + std::to_string(meshes.size()) + " mesh(es) to " + outPath;
+        } else {
+            exportStatus_ = "Export failed (see log)";
+        }
+    }
+    if (!exportStatus_.empty()) ImGui::TextWrapped("%s", exportStatus_.c_str());
+
+    ImGui::Spacing();
     if (ImGui::Button("Close Preview", ImVec2(150, 30))) {
         closeRequested = true;
     }

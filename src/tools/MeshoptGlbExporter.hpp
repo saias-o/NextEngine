@@ -23,4 +23,9 @@ struct MeshoptExportOptions {
 bool exportMeshoptGlb(const std::vector<ExportMesh>& meshes, const std::string& outPath,
                       const MeshoptExportOptions& options = {});
 
+// Relit la géométrie d'un .gltf/.glb (validé) ou .obj source — la fidélité
+// complète vient du fichier, pas d'un readback GPU.
+bool collectExportMeshes(const std::string& sourcePath, std::vector<ExportMesh>& out,
+                         std::string& error);
+
 } // namespace saida

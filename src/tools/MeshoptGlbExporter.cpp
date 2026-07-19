@@ -1,11 +1,15 @@
 #include "tools/MeshoptGlbExporter.hpp"
 #include "core/Log.hpp"
+#include "scene/GltfMeshopt.hpp"
 
 #include <meshoptimizer.h>
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>
 
+#include <cgltf.h>
+
 #include <cstddef>  // offsetof
+#include <filesystem>
 #include <cstring>
 #include <fstream>
 #include <limits>
@@ -288,6 +292,95 @@ bool exportMeshoptGlb(const std::vector<ExportMesh>& meshes, const std::string& 
     Log::info("MeshoptGlbExporter: wrote ", outPath, " (", meshCount,
               " meshes, ", options.quantize ? "quantized" : "lossless",
               ", BIN ", bin.size(), " bytes)");
+    return true;
+}
+
+bool collectExportMeshes(const std::string& sourcePath, std::vector<ExportMesh>& out,
+                         std::string& error) {
+    const std::string ext = std::filesystem::path(sourcePath).extension().string();
+    if (ext == ".obj") {
+        std::ifstream in(sourcePath, std::ios::binary);
+        if (!in) { error = "cannot open " + sourcePath; return false; }
+        std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                   std::istreambuf_iterator<char>());
+        MeshData data;
+        if (!Mesh::parseObjBytes(bytes.data(), bytes.size(), data, error)) return false;
+        if (data.vertices.empty() || data.indices.empty()) {
+            error = "no usable geometry in " + sourcePath;
+            return false;
+        }
+        ExportMesh mesh;
+        mesh.name = std::filesystem::path(sourcePath).stem().string();
+        mesh.vertices = std::move(data.vertices);
+        mesh.indices = std::move(data.indices);
+        out.push_back(std::move(mesh));
+        return true;
+    }
+
+    cgltf_options options = {};
+    cgltf_data* data = nullptr;
+    if (cgltf_parse_file(&options, sourcePath.c_str(), &data) != cgltf_result_success) {
+        error = "failed to parse " + sourcePath;
+        return false;
+    }
+    if (cgltf_load_buffers(&options, data, sourcePath.c_str()) != cgltf_result_success ||
+        cgltf_validate(data) != cgltf_result_success || !decodeMeshoptBuffers(data)) {
+        cgltf_free(data);
+        error = "invalid or corrupt glTF: " + sourcePath;
+        return false;
+    }
+
+    for (size_t m = 0; m < data->meshes_count; ++m) {
+        for (size_t p = 0; p < data->meshes[m].primitives_count; ++p) {
+            const cgltf_primitive& prim = data->meshes[m].primitives[p];
+            if (prim.type != cgltf_primitive_type_triangles) continue;
+
+            ExportMesh mesh;
+            mesh.name = data->meshes[m].name
+                ? std::string(data->meshes[m].name) + "_prim" + std::to_string(p)
+                : "mesh" + std::to_string(m) + "_prim" + std::to_string(p);
+
+            size_t vertexCount = 0;
+            for (size_t a = 0; a < prim.attributes_count; ++a)
+                if (prim.attributes[a].type == cgltf_attribute_type_position)
+                    vertexCount = prim.attributes[a].data->count;
+            if (vertexCount == 0) continue;
+            mesh.vertices.resize(vertexCount);
+
+            for (size_t a = 0; a < prim.attributes_count; ++a) {
+                const cgltf_attribute& attr = prim.attributes[a];
+                for (size_t v = 0; v < vertexCount && v < attr.data->count; ++v) {
+                    Vertex& vert = mesh.vertices[v];
+                    switch (attr.type) {
+                    case cgltf_attribute_type_position:
+                        cgltf_accessor_read_float(attr.data, v, &vert.pos.x, 3); break;
+                    case cgltf_attribute_type_normal:
+                        cgltf_accessor_read_float(attr.data, v, &vert.normal.x, 3); break;
+                    case cgltf_attribute_type_texcoord:
+                        cgltf_accessor_read_float(attr.data, v, &vert.texCoord.x, 2); break;
+                    case cgltf_attribute_type_tangent:
+                        cgltf_accessor_read_float(attr.data, v, &vert.tangent.x, 4); break;
+                    default: break;
+                    }
+                }
+            }
+
+            if (prim.indices) {
+                mesh.indices.resize(prim.indices->count);
+                for (size_t i = 0; i < prim.indices->count; ++i)
+                    mesh.indices[i] = uint32_t(cgltf_accessor_read_index(prim.indices, i));
+            } else {
+                mesh.indices.resize(vertexCount);
+                for (size_t i = 0; i < vertexCount; ++i) mesh.indices[i] = uint32_t(i);
+            }
+            out.push_back(std::move(mesh));
+        }
+    }
+    cgltf_free(data);
+    if (out.empty()) {
+        error = "no triangle geometry in " + sourcePath;
+        return false;
+    }
     return true;
 }
 
