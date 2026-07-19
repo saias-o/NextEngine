@@ -9,6 +9,7 @@
 // seule la voie bindRaw est compilée, g_window reste toujours null.
 #ifdef __EMSCRIPTEN__
 #include <GLFW/glfw3.h>
+#include <emscripten.h>
 #include <emscripten/html5.h>
 namespace saida { class Window; }
 #else
@@ -57,6 +58,43 @@ std::string g_activeGamepadName;
 InputDevice g_lastActiveDevice = InputDevice::None;
 #ifdef __EMSCRIPTEN__
 bool g_touchBackendAvailable = false;
+
+EM_JS(int, saida_web_gamepad_rumble,
+      (int index, double lowFrequency, double highFrequency, int durationMs), {
+    try {
+        if (!navigator.getGamepads) return 0;
+        const gamepad = navigator.getGamepads()[index];
+        if (!gamepad) return 0;
+        const actuator = gamepad.vibrationActuator;
+        if (!actuator || typeof actuator.playEffect !== 'function') return 0;
+        if (actuator.effects &&
+            typeof actuator.effects.includes === 'function' &&
+            !actuator.effects.includes('dual-rumble')) return 0;
+        Promise.resolve(actuator.playEffect('dual-rumble', {
+            startDelay: 0,
+            duration: durationMs,
+            strongMagnitude: lowFrequency,
+            weakMagnitude: highFrequency
+        })).catch(() => {});
+        return 1;
+    } catch (_) {
+        return 0;
+    }
+});
+
+EM_JS(int, saida_web_gamepad_stop_rumble, (int index), {
+    try {
+        if (!navigator.getGamepads) return 0;
+        const gamepad = navigator.getGamepads()[index];
+        if (!gamepad) return 0;
+        const actuator = gamepad.vibrationActuator;
+        if (!actuator || typeof actuator.reset !== 'function') return 0;
+        Promise.resolve(actuator.reset()).catch(() => {});
+        return 1;
+    } catch (_) {
+        return 0;
+    }
+});
 #endif
 
 // Actions virtuelles injectées (tests/CI) : combinées aux bindings au max.
@@ -858,6 +896,38 @@ const char* Input::deviceName(InputDevice device) {
         case InputDevice::Touch: return "touch";
     }
     return "none";
+}
+bool Input::rumble(float lowFrequency, float highFrequency,
+                   uint32_t durationMs) {
+    if (g_activeGamepad < 0 ||
+        !platform::has(platform::Capability::GamepadInput)) {
+        return false;
+    }
+    lowFrequency = std::clamp(lowFrequency, 0.0f, 1.0f);
+    highFrequency = std::clamp(highFrequency, 0.0f, 1.0f);
+    durationMs = std::min(durationMs, uint32_t{5000});
+    if (durationMs == 0) return stopRumble();
+#ifdef __EMSCRIPTEN__
+    return saida_web_gamepad_rumble(
+               g_activeGamepad, static_cast<double>(lowFrequency),
+               static_cast<double>(highFrequency),
+               static_cast<int>(durationMs)) != 0;
+#else
+    // GLFW 3.x n'expose aucune API haptique standard.
+    return false;
+#endif
+}
+
+bool Input::stopRumble() {
+    if (g_activeGamepad < 0 ||
+        !platform::has(platform::Capability::GamepadInput)) {
+        return false;
+    }
+#ifdef __EMSCRIPTEN__
+    return saida_web_gamepad_stop_rumble(g_activeGamepad) != 0;
+#else
+    return false;
+#endif
 }
 
 glm::vec2 Input::mouseDelta() { return g_mouseDelta; }

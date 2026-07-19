@@ -187,6 +187,9 @@ zone normalisée du canvas. `input.exportProfile(name)` renvoie le profil JSON
 versionné; le jeu le sauvegarde avec `storage.prefs.save`, le recharge avec
 `storage.prefs.load`, puis appelle `input.applyProfile`. Un profil invalide est
 refusé en bloc et laisse les bindings courants inchangés.
+Sur Web, `input.rumble(low, high, durationMs)` utilise le `dual-rumble` W3C du
+pad actif et renvoie `false` si son navigateur ou sa manette ne l'expose pas;
+`input.stopRumble()` arrête l'effet. GLFW desktop ne fournit pas ce backend.
 
 Les SaidaOps V1 utilisent `opVersion: 2` et ciblent les nœuds par identifiant
 64 bits stable encodé en chaîne décimale (`nodeId`, `parentId`, `newParentId`,

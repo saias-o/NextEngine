@@ -162,6 +162,11 @@ public:
     static bool touchBackendAvailable();
     static InputDevice lastActiveDevice();
     static const char* deviceName(InputDevice device);
+    // Haptique dynamique du pad actif. Retourne false lorsque le backend ou
+    // l'actuateur dual-rumble est absent; aucune réussite neutre n'est simulée.
+    static bool rumble(float lowFrequency, float highFrequency,
+                       uint32_t durationMs);
+    static bool stopRumble();
 
     static glm::vec2 mouseDelta();          // movement since last frame
     static glm::vec2 mousePosition();       // cursor position in window pixels

@@ -327,7 +327,8 @@ l'AssetLoader avec consommateurs non bloquants sur desktop et Web.
   normalisé vers le contrat GLFW (dont triggers), hotplug, tests natifs du
   mapping et preuve navigateur `gamepad=yes` lorsque l'API est disponible.
 - [ ] Tester le backend desktop avec manettes physiques Xbox/PlayStation
-  reconnues par GLFW.
+  reconnues par GLFW. À faire dans la session assistée matériel; aucun pad
+  physique compatible n'est connecté à la machine de CI actuelle.
 - [x] Ajouter rebinding runtime et profils sérialisés : API C++ et QuickJS,
   profil JSON schema 1 validé/appliqué atomiquement, noms de contrôles stables,
   round-trip exhaustif et persistance possible via `storage.prefs`.
@@ -341,8 +342,11 @@ l'AssetLoader avec consommateurs non bloquants sur desktop et Web.
 - [ ] Détecter le dernier périphérique actif et adapter les prompts UI.
   Le cœur est livré : transitions clavier/souris, manette anti-drift et touch
   alimentent `Input::lastActiveDevice` / `input.lastActiveDevice()`. L'adaptation
-  des prompts reste hors de ce lot non-UI.
-- [ ] Ajouter haptique standard lorsque disponible.
+  des prompts reste réservée à la session assistée UI.
+- [x] Ajouter haptique standard lorsque disponible : player Web branché sur
+  `GamepadHapticActuator.playEffect('dual-rumble')`/`reset`, API C++ et QuickJS,
+  bornes W3C et retour `false` si l'actuateur manque. Desktop reste explicitement
+  non supporté car GLFW 3.x n'expose pas d'haptique.
 
 Gate : la matrice publiée correspond exactement aux backends testés; aucune
 valeur neutre trompeuse.

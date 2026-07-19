@@ -155,6 +155,11 @@ int main() {
         assert(ctx.eval(
             "if (input.lastActiveDevice() !== 'none')"
             "  throw new Error('last active device default');"));
+        assert(ctx.eval(
+            "if (input.rumble(0.25, 0.75, 100) !== false)"
+            "  throw new Error('headless rumble must report unavailable');"
+            "if (input.stopRumble() !== false)"
+            "  throw new Error('headless stopRumble must report unavailable');"));
     }
 
     {

@@ -109,6 +109,7 @@ relatifs sont normalisés et les symlinks qui sortent de la racine sont refusés
 | Game UI | RmlUi | HUD RmlUi `UICanvasNode`/`UITextNode`; WebCanvas absent | authoring partiel |
 | Keyboard/mouse | oui | oui | navigateur/UI hôte |
 | Gamepad | GLFW standard | Gamepad API, mapping `standard` | non requis |
+| Haptique pad | non (GLFW) | `dual-rumble` si exposé par le pad | non requis |
 | Touch | non | brut + zones/tap/swipes | hôte |
 | Storage joueur | fichiers | IDBFS | non requis |
 | XR | OpenXR | non | non |
@@ -402,8 +403,12 @@ Cette donnée est prête pour les prompts adaptatifs, qui ne sont pas encore
 branchés dans l'UI.
 
 La V1 ne promet ni multi-joueur local ni sélection de périphérique par joueur.
-L'haptique n'est pas livrée. `Input::injectAction` et `input.inject` sont
-réservés aux tests/CI.
+Sur Web, `Input::rumble` / `input.rumble(low, high, durationMs)` utilise
+strictement le `GamepadHapticActuator` W3C du pad actif avec `dual-rumble`;
+`stopRumble` appelle `reset`. Les magnitudes sont bornées à `[0, 1]`, la durée à
+5 secondes, et l'API renvoie `false` si le pad ou l'effet manque. Desktop renvoie
+`false`, car GLFW 3.x n'expose aucune haptique standard.
+`Input::injectAction` et `input.inject` sont réservés aux tests/CI.
 
 ### 5.3 Audio
 

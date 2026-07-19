@@ -901,6 +901,38 @@ JSValue jsInputLastActiveDevice(JSContext* ctx, JSValueConst, int,
     return JS_NewString(ctx, Input::deviceName(Input::lastActiveDevice()));
 }
 
+JSValue jsInputRumble(JSContext* ctx, JSValueConst, int argc,
+                      JSValueConst* argv) {
+    if (argc < 3)
+        return JS_ThrowTypeError(
+            ctx, "input.rumble(lowFrequency, highFrequency, durationMs)");
+    double lowFrequency = 0.0;
+    double highFrequency = 0.0;
+    int32_t durationMs = 0;
+    if (JS_ToFloat64(ctx, &lowFrequency, argv[0]) != 0 ||
+        JS_ToFloat64(ctx, &highFrequency, argv[1]) != 0 ||
+        JS_ToInt32(ctx, &durationMs, argv[2]) != 0) {
+        return JS_EXCEPTION;
+    }
+    if (!std::isfinite(lowFrequency) || !std::isfinite(highFrequency) ||
+        lowFrequency < 0.0 || lowFrequency > 1.0 ||
+        highFrequency < 0.0 || highFrequency > 1.0 ||
+        durationMs < 0 || durationMs > 5000) {
+        return JS_ThrowRangeError(
+            ctx, "input.rumble: magnitudes must be within [0, 1] and "
+                 "duration within [0, 5000] ms");
+    }
+    return JS_NewBool(
+        ctx, Input::rumble(static_cast<float>(lowFrequency),
+                           static_cast<float>(highFrequency),
+                           static_cast<uint32_t>(durationMs)));
+}
+
+JSValue jsInputStopRumble(JSContext* ctx, JSValueConst, int,
+                          JSValueConst*) {
+    return JS_NewBool(ctx, Input::stopRumble());
+}
+
 JSValue jsTreeChangeScene(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     SceneTree* tree = treeFromJs(ctx);
     if (!tree || argc < 1) return JS_NewBool(ctx, false);
@@ -1706,6 +1738,11 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JS_SetPropertyStr(ctx, input, "lastActiveDevice",
                       JS_NewCFunction(ctx, jsInputLastActiveDevice,
                                       "lastActiveDevice", 0));
+    JS_SetPropertyStr(ctx, input, "rumble",
+                      JS_NewCFunction(ctx, jsInputRumble, "rumble", 3));
+    JS_SetPropertyStr(ctx, input, "stopRumble",
+                      JS_NewCFunction(ctx, jsInputStopRumble,
+                                      "stopRumble", 0));
     JS_SetPropertyStr(ctx, global, "input", input);
 
     JSValue tree = JS_NewObject(ctx);
