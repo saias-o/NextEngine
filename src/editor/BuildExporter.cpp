@@ -315,7 +315,8 @@ BuildExporter::Result BuildExporter::exportWebBuild(const Project& project,
     for (const std::string& file : packageFileList(packagedProject)) {
         const std::string ext = fs::path(file).extension().string();
         const bool streamed = ext == ".png" || ext == ".jpg" || ext == ".jpeg" ||
-                              ext == ".obj";
+                              ext == ".obj" || ext == ".srig" || ext == ".sclip" ||
+                              ext == ".sgraph";
         (streamed ? streamedFiles : bootFiles).push_back(file);
     }
     nlohmann::json fileManifest = {

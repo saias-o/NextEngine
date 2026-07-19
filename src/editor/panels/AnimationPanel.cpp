@@ -10,6 +10,7 @@
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/ClipNode.hpp"
 #include "scene/animation/ClipView.hpp"
+#include "scene/animation/RigAsset.hpp"
 
 #include <imgui.h>
 
@@ -88,7 +89,7 @@ void drawDiagnostics(const std::vector<AssetDiagnostic>& diagnostics) {
 
 } // namespace
 
-// Scan (mis en cache) des .sclip/.sgraph/.sseq du projet, chemins projet-relatifs.
+// Scan (mis en cache) des assets d'animation du projet, chemins projet-relatifs.
 void AnimationPanel::refreshAssetList(EditorUI* editor, Project* project) {
     const double now = ImGui::GetTime();
     if (editor->animAssetScanTime_ >= 0.0 && now - editor->animAssetScanTime_ < 2.0) return;
@@ -108,7 +109,7 @@ void AnimationPanel::refreshAssetList(EditorUI* editor, Project* project) {
             continue;
         }
         const std::string ext = entry.path().extension().string();
-        if (ext == ".sclip" || ext == ".sgraph" || ext == ".sseq") {
+        if (ext == ".srig" || ext == ".sclip" || ext == ".sgraph" || ext == ".sseq") {
             editor->animAssetFiles_.push_back(
                 entry.path().lexically_relative(root).generic_string());
         }
@@ -242,6 +243,74 @@ void AnimationPanel::drawClipViewSection(EditorUI* editor, Animator* animator, R
     }
 }
 
+void AnimationPanel::completePendingAssetLoad(EditorUI* editor, Animator* animator,
+                                              ResourceManager* resources) {
+    using Action = EditorUI::AnimPendingAction;
+    const Action action = editor->animPendingAction_;
+    if (action == Action::None) return;
+
+    const AssetID id = editor->animPendingAssetId_;
+    AssetLoadState state = AssetLoadState::Failed;
+    std::string error;
+    if (action == Action::InspectRig) {
+        state = resources->rigAssetLoadState(id);
+        error = resources->rigAssetLoadError(id);
+    } else if (action == Action::PlayClipView || action == Action::EditClipView) {
+        state = resources->clipViewLoadState(id);
+        error = resources->clipViewLoadError(id);
+    } else if (action == Action::ApplyGraph) {
+        state = resources->animGraphLoadState(id);
+        error = resources->animGraphLoadError(id);
+    }
+
+    if (state == AssetLoadState::Queued || state == AssetLoadState::Loading) return;
+
+    const std::string path = editor->animPendingAssetPath_;
+    if (state == AssetLoadState::Failed) {
+        editor->animStatus_ = "Échec de chargement de " + path +
+                              (error.empty() ? "" : " : " + error);
+    } else if (action == Action::InspectRig) {
+        const RigAsset* rig = resources->getRigAsset(id);
+        if (rig) {
+            editor->animStatus_ = "Rig '" + (rig->name.empty() ? path : rig->name) +
+                                  "' chargé : " +
+                                  std::to_string(rig->semantics.size()) + " sémantiques.";
+        }
+    } else if (action == Action::PlayClipView) {
+        const ClipView* view = resources->getClipView(id);
+        if (view) {
+            animator->playView(*view, 0.0f);
+            editor->animStatus_ = "Vue '" + view->name + "' jouée depuis " + path;
+        }
+    } else if (action == Action::EditClipView) {
+        const ClipView* view = resources->getClipView(id);
+        if (view) {
+            std::snprintf(editor->animViewName_, sizeof(editor->animViewName_), "%s",
+                          view->name.c_str());
+            editor->animViewStart_ = view->effectiveStart();
+            editor->animViewEnd_ = view->hasRange ? view->rangeEnd : 0.0f;
+            editor->animViewLoop_ = view->loop;
+            editor->animViewSpeed_ = view->speed;
+            editor->animStatus_ = "Vue '" + view->name + "' chargée dans l'éditeur.";
+        }
+    } else if (action == Action::ApplyGraph) {
+        const AnimGraphAsset* graph = resources->getAnimGraph(id);
+        std::vector<AssetDiagnostic> diagnostics;
+        if (graph && animator->setGraph(*graph, &diagnostics)) {
+            editor->animAppliedGraphId_ = id;
+            editor->animStatus_ =
+                "Graphe '" + (graph->name.empty() ? path : graph->name) + "' appliqué.";
+        } else {
+            editor->animStatus_ = "Échec d'application de " + path +
+                (diagnostics.empty() ? "" : " : " + diagnostics.front().message);
+        }
+    }
+
+    editor->animPendingAction_ = Action::None;
+    editor->animPendingAssetId_ = kAssetInvalid;
+    editor->animPendingAssetPath_.clear();
+}
+
 void AnimationPanel::drawAssetsSection(EditorUI* editor, Animator* animator, ResourceManager* resources,
                        Project* project) {
     if (!ImGui::CollapsingHeader("Assets du projet", ImGuiTreeNodeFlags_DefaultOpen)) return;
@@ -254,7 +323,7 @@ void AnimationPanel::drawAssetsSection(EditorUI* editor, Animator* animator, Res
     if (ImGui::SmallButton("Rescanner")) editor->animAssetScanTime_ = -1.0;
 
     if (editor->animAssetFiles_.empty()) {
-        ImGui::TextDisabled("Aucun .sclip/.sgraph/.sseq dans le projet.");
+        ImGui::TextDisabled("Aucun .srig/.sclip/.sgraph/.sseq dans le projet.");
         return;
     }
 
@@ -275,6 +344,7 @@ void AnimationPanel::drawAssetsSection(EditorUI* editor, Animator* animator, Res
         const std::string abs =
             (std::filesystem::path(project->rootPath()) / rel).generic_string();
         const bool isClipView = rel.size() > 6 && rel.rfind(".sclip") == rel.size() - 6;
+        const bool isRig = rel.size() > 5 && rel.rfind(".srig") == rel.size() - 5;
         const bool isSequence = rel.size() > 5 && rel.rfind(".sseq") == rel.size() - 5;
 
         if (isSequence) {
@@ -304,40 +374,34 @@ void AnimationPanel::drawAssetsSection(EditorUI* editor, Animator* animator, Res
         } else if (isClipView) {
             if (ImGui::SmallButton("Jouer")) {
                 const AssetID id = resources->loadClipView(abs);
-                const ClipView* loaded = resources->getClipView(id);
-                if (loaded) {
-                    animator->playView(*loaded, 0.0f);
-                    editor->animStatus_ = "Vue '" + loaded->name + "' jouée depuis " + rel;
-                } else {
-                    editor->animStatus_ = "Fichier invalide : " + rel + " (voir le log)";
-                }
+                editor->animPendingAction_ = EditorUI::AnimPendingAction::PlayClipView;
+                editor->animPendingAssetId_ = id;
+                editor->animPendingAssetPath_ = rel;
+                editor->animStatus_ = "Chargement de " + rel + "...";
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Éditer")) {
                 const AssetID id = resources->loadClipView(abs);
-                if (const ClipView* loaded = resources->getClipView(id)) {
-                    std::snprintf(editor->animViewName_, sizeof(editor->animViewName_), "%s",
-                                  loaded->name.c_str());
-                    editor->animViewStart_ = loaded->effectiveStart();
-                    editor->animViewEnd_ = loaded->hasRange ? loaded->rangeEnd : 0.0f;
-                    editor->animViewLoop_ = loaded->loop;
-                    editor->animViewSpeed_ = loaded->speed;
-                    editor->animStatus_ = "Vue '" + loaded->name + "' chargée dans l'éditeur.";
-                }
+                editor->animPendingAction_ = EditorUI::AnimPendingAction::EditClipView;
+                editor->animPendingAssetId_ = id;
+                editor->animPendingAssetPath_ = rel;
+                editor->animStatus_ = "Chargement de " + rel + "...";
+            }
+        } else if (isRig) {
+            if (ImGui::SmallButton("Inspecter")) {
+                const AssetID id = resources->loadRigAsset(abs);
+                editor->animPendingAction_ = EditorUI::AnimPendingAction::InspectRig;
+                editor->animPendingAssetId_ = id;
+                editor->animPendingAssetPath_ = rel;
+                editor->animStatus_ = "Chargement de " + rel + "...";
             }
         } else {
             if (ImGui::SmallButton("Appliquer")) {
                 const AssetID id = resources->loadAnimGraph(abs);
-                const AnimGraphAsset* graph = resources->getAnimGraph(id);
-                std::vector<AssetDiagnostic> diags;
-                if (graph && animator->setGraph(*graph, &diags)) {
-                    editor->animAppliedGraphId_ = id;
-                    editor->animStatus_ = "Graphe '" +
-                        (graph->name.empty() ? rel : graph->name) + "' appliqué.";
-                } else {
-                    editor->animStatus_ = "Échec d'application de " + rel +
-                        (diags.empty() ? " (voir le log)" : " : " + diags.front().message);
-                }
+                editor->animPendingAction_ = EditorUI::AnimPendingAction::ApplyGraph;
+                editor->animPendingAssetId_ = id;
+                editor->animPendingAssetPath_ = rel;
+                editor->animStatus_ = "Chargement de " + rel + "...";
             }
         }
         ImGui::PopID();
@@ -425,6 +489,7 @@ void AnimationPanel::draw(EditorUI* editor, Scene* scene, ResourceManager* resou
     ImGui::Text("Animator : %s", found.nodeName.c_str());
     ImGui::Separator();
 
+    completePendingAssetLoad(editor, found.animator, resources);
     drawPlaybackSection(found.animator);
     drawClipViewSection(editor, found.animator, resources, project);
     drawAssetsSection(editor, found.animator, resources, project);

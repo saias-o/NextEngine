@@ -1,6 +1,6 @@
 # SaidaEngine - Plan unique vers la V1
 
-Mise à jour : 2026-07-18.
+Mise à jour : 2026-07-19.
 
 **Verdict : NO-GO pour une V1 publique.** Ce fichier est l'unique todolist du
 moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
@@ -22,8 +22,8 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
   multi-binding; le Web annonce encore explicitement `NO`.
 - [x] Snapshot headless fail-closed sur son registre, Camera incluse, références
   Mesh préservées et création Mesh sans ResourceManager refusée.
-- [x] AssetLoader async texture/OBJ et déchargement GPU sur changement de scène;
-  mémoire GPU stable sur 16 cycles desktop/Web dans le harnais.
+- [x] AssetLoader async texture/OBJ et `.srig/.sclip/.sgraph`, plus déchargement
+  GPU sur changement de scène; mémoire stable sur 16 cycles desktop/Web.
 - [x] Schémas, migrations et corpus de compatibilité de base.
 - [x] API JS cross-node : autoloads, groupes, résolution NodeId, signaux et
   appels JSON entre contextes, traversés par Witness desktop/Web.
@@ -245,9 +245,7 @@ RESTART PASS via IndexedDB), le tout après flush durable explicite.
   croissent plus sans borne : rigs/clips détenus par des Animators vivants
   survivent — pointeurs marqués par le collecteur d'usage —, les caches
   ClipView/AnimGraph, purs caches fichier rechargés par chemin, sont balayés
-  entièrement au changement de scène; visible dans le log d'éviction). Le
-  chargement *asynchrone* de ces assets via l'AssetLoader (fichiers .srig/.sclip
-  hors glTF) reste à faire — noté ci-dessous.
+  entièrement au changement de scène; visible dans le log d'éviction).
 - [x] Stabiliser l'identité des meshes glTF mémoire après Play/Stop et
   changement de scène. `registerMemoryMesh` gagne une saveur à clé de
   sous-asset stable (`model.gltf#mesh2_prim0`), idempotente comme
@@ -256,16 +254,16 @@ RESTART PASS via IndexedDB), le tout après flush durable explicite.
   un id résoluble au lieu d'un compteur dynamique perdu.
 - [x] Implémenter fetch/IDBFS streaming pour remplacer le preload MEMFS des gros
   jeux Web. `project-files.json` passe en schéma 2 : `files` (préchargé MEMFS
-  avant `main()`) et `streamed` (`.png/.jpg/.jpeg/.obj` — les types servis en
-  async par l'AssetLoader), classés par l'exporteur web. Sur wasm, un miss
+  avant `main()`) et `streamed`
+  (`.png/.jpg/.jpeg/.obj/.srig/.sclip/.sgraph` — les types servis en async par
+  l'AssetLoader), classés par l'exporteur web. Sur wasm, un miss
   fichier de l'AssetLoader déclenche `emscripten_async_wget_data` (l'entry
   reste `Loading`, le decode se fait au retour réseau — aucun blocage), compté
   dans `assets.stats().streamedFetches` et affiché dans le verdict E2E.
   Prouvé navigateur : `[E2E] PASS … streamed=18` (probe.obj re-fetché à chaque
   cycle de scène après éviction, corrupt.obj streamé puis refusé au decode,
   runtime vivant) puis `RESTART PASS`; desktop inchangé (`streamed=0`).
-  Les scènes/scripts/glTF restent au boot (chargements synchrones) — leur
-  streaming éventuel suit le passage de ces loaders à l'AssetLoader.
+  Les scènes/scripts/glTF restent au boot (chargements synchrones).
 - [x] Gérer un OBJ/glTF/GLB corrompu sans abort du player Web.
   `cgltf_validate` est appelé après chaque parse (un accessor hors limites —
   le cas malveillant type — est refusé AVANT toute lecture OOB fatale en
@@ -295,8 +293,20 @@ RESTART PASS via IndexedDB), le tout après flush durable explicite.
   (dépendance + surface de code) ; l'upload RGBA8 est le comportement mesuré
   par les harnais. KTX2/Basis reste en P2, réévalué quand un jeu réel dépasse
   le budget texture web.
-- [ ] Faire passer les fichiers d'animation autonomes (.srig/.sclip/.sgraph)
-  par le chargement asynchrone de l'AssetLoader (le balayage, lui, est fait).
+- [x] Faire passer les fichiers d'animation autonomes (.srig/.sclip/.sgraph)
+  par le chargement asynchrone de l'AssetLoader. Trois payloads typés séparent
+  ces formes du cache Raw/Image/Mesh; lecture+parse tournent sur le worker
+  desktop ou dans `pump()` Web, puis `ResourceManager` finalise à `ready` et
+  conserve erreurs/états sans attente. `CharacterBehaviour` demande son
+  `.sgraph` et ne l'applique qu'à `ready`; le panneau Animation diffère
+  Jouer/Éditer/Appliquer et inspecte aussi `.srig`. L'export Web classe ces
+  trois extensions dans `streamed` : Witness fetch réellement
+  `anim/locomotion.sgraph` après chaque sweep. Prouvé par
+  `saida_asset_loader_tests` (succès des trois formats + graphe incohérent
+  refusé, requêtes immédiates), build natif complet et 62/62 CTest, builds
+  player Web/authoring WASM/runtime d'authoring, Witness desktop
+  `PASS (run + restart)` et Chrome Web (`PASS`, 16 cycles, `streamed=36`,
+  flush durable, puis vrai second processus `RESTART PASS`).
 - [x] Mesurer hitch et mémoire sur N cycles avec seuils CI. Le driver E2E
   mesure `hitchMax` (dt max) et le nombre de frames > 100 ms sur les 16
   cycles hub↔arena, les publie dans le verdict
@@ -305,7 +315,10 @@ RESTART PASS via IndexedDB), le tout après flush durable explicite.
   étaient déjà bloquants dans les trois harnais.
 
 Gate : budget respecté, aucune croissance non bornée, contenu invalide refusé
-sans tuer le runtime.
+sans tuer le runtime. **Fermée le 2026-07-19** : budgets CPU/GPU et sweeps sont
+bloquants dans les harnais, les formats hostiles échouent sans abort, et tous
+les assets V1 streamables — textures, OBJ et animation autonome — passent par
+l'AssetLoader avec consommateurs non bloquants sur desktop et Web.
 
 ## P0.6 - Input et capacités
 

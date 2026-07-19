@@ -1,6 +1,6 @@
 # SaidaEngine - Spécification canonique
 
-Mise à jour : 2026-07-16. Ce document est la vérité technique du moteur. Il
+Mise à jour : 2026-07-19. Ce document est la vérité technique du moteur. Il
 décrit ce qui existe réellement, les contrats candidats V1 et les limites. Les
 travaux à effectuer vivent uniquement dans [PLAN_V1.md](PLAN_V1.md).
 
@@ -236,6 +236,14 @@ le chargement, un fallback est visible; un échec utilise un damier magenta.
 Les proxies mesh restent stables et la physique reconstruit le body quand le
 mesh devient disponible.
 
+Les fichiers d'animation autonomes `.srig`, `.sclip` et `.sgraph` suivent le
+même contrat : lecture et parse JSON sur le worker desktop ou dans `pump()` Web,
+payload typé finalisé par `ResourceManager` sur le thread principal, état et
+diagnostic consultables sans attente. `CharacterBehaviour` demande son graphe
+puis l'applique seulement à `ready`; le panneau Animation conserve l'action
+Jouer/Éditer/Appliquer/Inspecter et la termine sur une frame ultérieure. Un
+document invalide passe à `failed` sans remplacer le graphe ou la vue vivante.
+
 Les enregistrements mémoire `registerMemoryRig`/`registerMemoryAnimation` ET
 `registerMemoryMesh` (saveur à clé `model.gltf#meshN_primM`) sont idempotents :
 ré-importer le même glTF conserve les instances existantes et rend les mêmes
@@ -264,8 +272,10 @@ refusé au décodage (`failedTotal` cumulatif dans `assets.stats()`), géométri
 vide refusée à la création GPU. WitnessGame embarque un `corrupt.obj` et un
 `corrupt.glb` volontaires traversés par les trois harnais.
 
-Limites : streaming Web fetch/IDBFS absent (preload MEMFS), chargement async
-des fichiers d'animation autonomes (.srig/.sclip/.sgraph) hors AssetLoader.
+Sur Web, `project-files.json` sépare le boot MEMFS des assets streamés :
+PNG/JPG, OBJ et `.srig/.sclip/.sgraph` sont servis à la demande par fetch via
+l'AssetLoader. Les scènes, scripts, glTF/GLB, `.sseq` et `.sretarget` restent
+préchargés tant que leurs consommateurs ne sont pas asynchrones.
 
 ### 4.3 Formats média
 
@@ -277,9 +287,6 @@ des fichiers d'animation autonomes (.srig/.sclip/.sgraph) hors AssetLoader.
 - Tangentes : sans tangentes d'auteur dans un glTF, le normal mapping du
   matériau est désactivé explicitement (warning loggé) — jamais d'éclairage
   approximé en silence; MikkTSpace est P1.
-- Un glTF/GLB corrompu peut encore interrompre le player Web.
-- `GLTFLoader` utilise une tangente de secours `(1,0,0,1)`; MikkTSpace ou une
-  désactivation propre du normal mapping reste nécessaire.
 
 ### 4.4 AutoLOD
 
@@ -537,6 +544,11 @@ WitnessGame traverse un personnage riggé avec Idle/Walk, un graphe locomotion
 et la séquence `anim/intro.sseq` (clips du totem, événement `intro_beat`,
 intensité du Sun) en desktop et Web.
 
+Les assets `.srig/.sclip/.sgraph` sont chargés par l'AssetLoader sans bloquer la
+frame. Le runtime continue avec son état courant pendant `queued/loading`; un
+graphe de personnage ne devient propriétaire de la lecture qu'après
+chargement, validation et compilation réussis.
+
 SIMD généralisé, pose sharing massif et GPU crowds sont différés jusqu'à des
 mesures qui les justifient.
 
@@ -711,8 +723,9 @@ le second contrôle COOP/COEP et MIME WASM, lance Chrome ou Edge et collecte un
 verdict automatique via le serveur local. Aucun checkout moteur, MSYS2 ou SDK
 n'est requis par la preuve Windows sur machine vierge.
 
-Le package Web embarque player, projet et shaders sous MEMFS. Les gros jeux
-nécessitent encore fetch/IDBFS streaming et compression/manifest de release.
+Le package Web embarque player, shaders et fichiers de boot sous MEMFS. Les
+textures PNG/JPG, OBJ et assets `.srig/.sclip/.sgraph` restent hors du preload
+et sont fetchés à la demande; scènes, scripts et glTF/GLB restent au boot.
 
 WitnessGame est le corpus vertical : scènes, scripts, signaux, physique,
 animation, audio, UI, save/load et changement de scène. Le harnais desktop
@@ -813,7 +826,7 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
 - V1 non publiée; aucun badge local ne vaut stabilité publique.
 - Player Web : WebGPU obligatoire, HTTP obligatoire, UI limitée au HUD
   `UICanvasNode`/`UITextNode`, WebCanvas absent, gamepad absent, touch incomplet,
-  MSAA absent et contenu glTF corrompu encore dangereux.
+  MSAA absent.
 - Audio Web soumis au geste utilisateur.
 - Un runtime/canvas Emscripten par page; build non modularisé.
 - Registres natif/headless/Web explicitement matricés; l'UI avancée reste hors
@@ -833,9 +846,9 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
 - Budget GPU mi-scène avec LRU mesuré, sweep rigs/anims, identités glTF
   stables et refus du contenu corrompu en place; streaming Web fetch/IDBFS,
   politique tangentes explicite et export meshopt UI en place; le package web
-  streame textures/OBJ à la demande (manifest schéma 2, fetch async sur miss
-  MEMFS), scènes/scripts/glTF restant préchargés (MikkTSpace P1, KTX2/Basis P2
-  par décision).
+  streame textures/OBJ et `.srig/.sclip/.sgraph` à la demande (manifest schéma
+  2, fetch async sur miss MEMFS), scènes/scripts/glTF restant préchargés
+  (MikkTSpace P1, KTX2/Basis P2 par décision).
 - Point-light shadows cubemap et lightmaps persistantes absentes.
 - XR sans MSAA multiview, overlay et matrice hardware validée.
 - Build UI/machine vierge, signature, crash reporting et rollback non prouvés.

@@ -22,7 +22,14 @@ enum class AssetLoadPriority : uint8_t { Low, Normal, High, Critical };
 // Distingue les requêtes du même AssetID selon la forme demandée : les bytes
 // bruts (JS assets.load) et un payload décodé (texture, mesh) coexistent sans
 // se télescoper dans le cache d'entrées.
-enum class AssetPayloadKind : uint8_t { Raw = 0, Image = 1, MeshObj = 2 };
+enum class AssetPayloadKind : uint8_t {
+    Raw = 0,
+    Image = 1,
+    MeshObj = 2,
+    RigAsset = 3,
+    ClipView = 4,
+    AnimGraph = 5
+};
 
 // Résultat d'un décodage exécuté sur le worker (desktop) ou dans pump() (web) :
 // un payload opaque typé par l'appelant + sa taille réelle pour la comptabilité

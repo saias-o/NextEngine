@@ -369,6 +369,7 @@ add_library(saida_engine STATIC
     src/scene/animation/Animator.cpp
     src/scene/animation/AnimBlackboard.cpp
     src/scene/animation/AnimGraphParser.cpp
+    src/scene/animation/AnimationAssetDecoders.cpp
     src/scene/animation/AnimationCache.cpp
     src/scene/animation/AnimationCooker.cpp
     src/scene/animation/AnimationProgram.cpp

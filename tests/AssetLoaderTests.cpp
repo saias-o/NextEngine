@@ -1,5 +1,6 @@
 #include "project/AssetLoader.hpp"
 #include "project/AssetRegistry.hpp"
+#include "scene/animation/AnimationAssetDecoders.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -39,6 +40,12 @@ void writeBytes(const std::filesystem::path& path, size_t count, uint8_t value) 
     file.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
 }
 
+void writeText(const std::filesystem::path& path, const std::string& text) {
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream file(path, std::ios::binary);
+    file << text;
+}
+
 } // namespace
 
 int main() {
@@ -47,6 +54,14 @@ int main() {
     fs::remove_all(root);
     writeBytes(root / "assets/small.bin", 4096, 0x2a);
     writeBytes(root / "assets/too-large.bin", 32768, 0x7f);
+    writeText(root / "assets/hero.srig",
+              R"({"schema":1,"name":"Hero","semantics":{"hips":"Hips"},"height":1.8})");
+    writeText(root / "assets/run.sclip",
+              R"({"schema":1,"source":"hero.glb#Run","name":"Run","loop":true,"speed":1})");
+    writeText(root / "assets/locomotion.sgraph",
+              R"({"schema":2,"name":"Locomotion","parameters":[{"name":"speed","type":"float","default":0}],"clips":{"idle":"hero.glb#Idle"},"states":[{"name":"Idle","play":"idle","loop":true}],"initial":"Idle","transitions":[]})");
+    writeText(root / "assets/bad.sgraph",
+              R"({"schema":2,"name":"Bad","clips":{},"states":[{"name":"Idle","play":"missing"}],"initial":"Idle"})");
 
     saida::AssetRegistry registry;
     assert(registry.load(root.string()));
@@ -139,6 +154,54 @@ int main() {
     assert(failed.failed());
     assert(failed.error().find("corrupt payload") != std::string::npos);
     failed.reset();
+    assert(waitForResidentZero(loader));
+
+    // Les trois formats d'animation autonomes utilisent le même pipeline :
+    // request() reste immédiat, le parse JSON se fait dans le decoder, et le
+    // payload typé n'est visible qu'à Ready.
+    const auto requestAnimation = [&](const char* path, saida::AssetType type,
+                                      saida::AssetPayloadKind kind,
+                                      saida::AssetDecoder decoder) {
+        const auto start = std::chrono::steady_clock::now();
+        auto result = loader.request(path, type, saida::AssetLoadPriority::High, kind,
+                                     std::move(decoder));
+        assert(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(50));
+        return result;
+    };
+
+    auto rigAsset = requestAnimation("assets/hero.srig", saida::AssetType::Rig,
+                                     saida::AssetPayloadKind::RigAsset,
+                                     saida::makeRigAssetDecoder());
+    auto clipView = requestAnimation("assets/run.sclip", saida::AssetType::Animation,
+                                     saida::AssetPayloadKind::ClipView,
+                                     saida::makeClipViewDecoder());
+    auto animGraph = requestAnimation("assets/locomotion.sgraph",
+                                      saida::AssetType::Animation,
+                                      saida::AssetPayloadKind::AnimGraph,
+                                      saida::makeAnimGraphDecoder());
+    assert(waitForTerminal(rigAsset));
+    assert(waitForTerminal(clipView));
+    assert(waitForTerminal(animGraph));
+    assert(rigAsset.ready() && clipView.ready() && animGraph.ready());
+    auto decodedRig = std::static_pointer_cast<saida::DecodedRigAsset>(rigAsset.payload());
+    auto decodedView = std::static_pointer_cast<saida::DecodedClipView>(clipView.payload());
+    auto decodedGraph = std::static_pointer_cast<saida::DecodedAnimGraph>(animGraph.payload());
+    assert(decodedRig && decodedRig->asset.name == "Hero");
+    assert(decodedView && decodedView->view.name == "Run");
+    assert(decodedGraph && decodedGraph->graph.initial == "Idle");
+
+    rigAsset.reset();
+    clipView.reset();
+    animGraph.reset();
+    assert(waitForResidentZero(loader));
+
+    auto badGraph = requestAnimation("assets/bad.sgraph", saida::AssetType::Animation,
+                                     saida::AssetPayloadKind::AnimGraph,
+                                     saida::makeAnimGraphDecoder());
+    assert(waitForTerminal(badGraph));
+    assert(badGraph.failed());
+    assert(badGraph.error().find("missing") != std::string::npos);
+    badGraph.reset();
     assert(waitForResidentZero(loader));
 
     fs::remove_all(root);

@@ -35,6 +35,7 @@ class Rig;
 class AnimationClip;
 class ClipView;
 class AnimGraphAsset;
+class RigAsset;
 
 // Loads and caches GPU resources. Owns material set 1 layout/pool.
 class ResourceManager {
@@ -92,13 +93,24 @@ public:
     AssetID registerMemoryRig(const std::string& path, std::unique_ptr<Rig> rig);
     AssetID registerMemoryAnimation(const std::string& subPath, std::unique_ptr<AnimationClip> clip);
 
-    // Assets d'authoring animation (.sclip / .sgraph), chargés et cachés par
-    // AssetID. Un fichier invalide loggue ses diagnostics et retourne
-    // kAssetInvalid ; recharger un chemin déjà chargé rend le même id.
+    // Assets d'authoring animation autonomes, cachés par AssetID. Ces appels
+    // enregistrent l'identité et lancent une requête asynchrone. Le getter
+    // reste null jusqu'à Ready; les erreurs de lecture/parse sont exposées par
+    // l'état et le diagnostic sans bloquer le consommateur.
+    AssetID loadRigAsset(const std::string& path);
+    const RigAsset* getRigAsset(AssetID id) const;
+    AssetLoadState rigAssetLoadState(AssetID id) const;
+    std::string rigAssetLoadError(AssetID id) const;
+
     AssetID loadClipView(const std::string& path);
     const ClipView* getClipView(AssetID id) const;
+    AssetLoadState clipViewLoadState(AssetID id) const;
+    std::string clipViewLoadError(AssetID id) const;
+
     AssetID loadAnimGraph(const std::string& path);
     const AnimGraphAsset* getAnimGraph(AssetID id) const;
+    AssetLoadState animGraphLoadState(AssetID id) const;
+    std::string animGraphLoadError(AssetID id) const;
 
     Texture* defaultWhiteTexture();
     Texture* defaultNormalTexture();
@@ -197,6 +209,7 @@ private:
     uint32_t getBindlessTextureIndex(Texture* texture);
     void finalizePendingTextures();
     void finalizePendingMeshes();
+    void finalizePendingAnimationAssets();
     void rebindMaterialsUsing(AssetID textureId);
     void drainGraveyard();
     void writeMaterialSlot(uint32_t index, const glm::vec4& baseColor, const glm::vec4& emissive,
@@ -227,6 +240,7 @@ private:
     std::unordered_map<MaterialDesc, std::unique_ptr<Material>> materials_;
     std::unordered_map<AssetID, std::unique_ptr<Rig>> rigs_;
     std::unordered_map<AssetID, std::unique_ptr<AnimationClip>> animations_;
+    std::unordered_map<AssetID, std::unique_ptr<RigAsset>> rigAssets_;
     std::unordered_map<AssetID, std::unique_ptr<ClipView>> clipViews_;
     std::unordered_map<AssetID, std::unique_ptr<AnimGraphAsset>> animGraphs_;
     std::unordered_map<const Mesh*, AssetID> reverseMeshMap_;  // mesh -> id
@@ -245,6 +259,12 @@ private:
     std::unordered_set<AssetID> failedTextures_;
     // Proxies Mesh en attente de leur géométrie (parse .obj sur le worker).
     std::unordered_map<AssetID, AssetHandle> pendingMeshes_;
+    std::unordered_map<AssetID, AssetHandle> pendingRigAssets_;
+    std::unordered_map<AssetID, AssetHandle> pendingClipViews_;
+    std::unordered_map<AssetID, AssetHandle> pendingAnimGraphs_;
+    std::unordered_map<AssetID, std::string> failedRigAssets_;
+    std::unordered_map<AssetID, std::string> failedClipViews_;
+    std::unordered_map<AssetID, std::string> failedAnimGraphs_;
 
     // Objets GPU retirés mais possiblement encore lus par une frame en vol :
     // détruits (et leur index bindless recyclé) après kRetireFrames pumps.

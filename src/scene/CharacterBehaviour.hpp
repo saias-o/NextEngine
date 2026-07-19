@@ -3,6 +3,7 @@
 #include "scene/Behaviour.hpp"
 #include "core/Reflection.hpp"
 
+#include <cstdint>
 #include <string>
 
 namespace saida {
@@ -44,6 +45,7 @@ private:
 
     bool warned_ = false;     // warn once if attached to a non-CharacterBody node
     Animator* animator_ = nullptr;  // cached child Animator (found lazily)
+    uint64_t graphAssetId_ = 0;
     bool graphApplied_ = false;
     bool graphFailed_ = false;
 };

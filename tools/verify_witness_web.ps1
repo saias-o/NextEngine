@@ -61,7 +61,7 @@ function Wait-Verdict([string]$BaseUrl, [string]$Pattern, [int]$Seconds) {
         try {
             $report = Invoke-RestMethod -Uri "$BaseUrl/__saida_e2e" -TimeoutSec 2
             if ([string]$report.verdict -match $Pattern) { return [string]$report.verdict }
-            if ([string]$report.verdict -match '\[E2E\].*FAIL') {
+            if ([string]$report.verdict -match '\[E2E\]\s+FAIL(?:\s|$)') {
                 throw "Browser reported failure: $($report.verdict)"
             }
         } catch {
@@ -70,6 +70,14 @@ function Wait-Verdict([string]$BaseUrl, [string]$Pattern, [int]$Seconds) {
         Start-Sleep -Milliseconds 250
     } while ((Get-Date) -lt $deadline)
     throw "Timed out waiting for browser verdict $Pattern"
+}
+
+function Stop-BrowserProfile([string]$ProfilePath) {
+    Get-CimInstance Win32_Process | Where-Object {
+        $_.CommandLine -and $_.CommandLine.Contains($ProfilePath)
+    } | ForEach-Object {
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if (-not $Browser) { throw "Pass -Browser Chrome or -Browser Edge" }
@@ -126,10 +134,13 @@ try {
     Start-Process -FilePath $BrowserPath -ArgumentList $arguments | Out-Null
     $first = Wait-Verdict $baseUrl '\[E2E\] PASS' $TimeoutSeconds
 
+    # Un vrai second processus prouve que le PASS précédent a été durablement
+    # flushé dans IndexedDB. `--new-tab` ne navigue pas de façon fiable une
+    # instance Chrome headless existante qui utilise déjà ce profil.
+    Stop-BrowserProfile $profile
+    Start-Sleep -Milliseconds 500
     Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$baseUrl/__saida_e2e/reset" | Out-Null
-    Start-Process -FilePath $BrowserPath -ArgumentList @(
-        "--user-data-dir=$profile", '--new-tab', $url
-    ) | Out-Null
+    Start-Process -FilePath $BrowserPath -ArgumentList $arguments | Out-Null
     $restart = Wait-Verdict $baseUrl '\[E2E\] RESTART PASS' $TimeoutSeconds
 
     Write-Host "$Browser WEB PASS"
@@ -145,11 +156,7 @@ try {
         Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path -LiteralPath $profile) {
-        Get-CimInstance Win32_Process | Where-Object {
-            $_.CommandLine -and $_.CommandLine.Contains($profile)
-        } | ForEach-Object {
-            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
-        }
+        Stop-BrowserProfile $profile
     }
     if (-not $KeepWork -and (Test-Path -LiteralPath $work)) {
         Start-Sleep -Milliseconds 500

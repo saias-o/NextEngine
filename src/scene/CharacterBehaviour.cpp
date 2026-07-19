@@ -4,18 +4,15 @@
 #include "physics/CharacterBodyNode.hpp"
 #include "scene/animation/AnimGraphAsset.hpp"
 #include "scene/animation/Animator.hpp"
+#include "graphics/ResourceManager.hpp"
 #include "core/Input.hpp"
 #include "core/Log.hpp"
-#include "core/Paths.hpp"
-
-#include <nlohmann/json.hpp>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include <cmath>
-#include <filesystem>
 
 namespace saida {
 
@@ -109,16 +106,33 @@ void CharacterBehaviour::updateAnimation(bool onFloor, bool moving) {
 
     if (!graph.empty() && !graphFailed_) {
         if (!graphApplied_) {
-            std::string path = graph;
-            if (std::filesystem::path p(graph); p.is_relative() && !activeProjectRoot().empty())
-                path = (std::filesystem::path(activeProjectRoot()) / p).string();
-            AnimGraphParseResult parsed = AnimGraphAsset::loadFile(path);
-            std::vector<AssetDiagnostic> diags;
-            if (!parsed.ok || !animator_->setGraph(parsed.graph, &diags)) {
+            ResourceManager& resources = tree()->resources();
+            if (graphAssetId_ == kAssetInvalid) {
+                graphAssetId_ = resources.loadAnimGraph(tree()->resolveProjectPath(graph));
+                if (graphAssetId_ == kAssetInvalid) {
+                    graphFailed_ = true;
+                    Log::warn("Character: cannot request anim graph '", graph, "'");
+                    return;
+                }
+            }
+
+            const AssetLoadState state = resources.animGraphLoadState(graphAssetId_);
+            if (state == AssetLoadState::Queued || state == AssetLoadState::Loading)
+                return;
+            if (state == AssetLoadState::Failed) {
                 graphFailed_ = true;
-                const auto& all = parsed.ok ? diags : parsed.diagnostics;
+                const std::string error = resources.animGraphLoadError(graphAssetId_);
                 Log::warn("Character: cannot apply anim graph '", graph, "'",
-                          all.empty() ? "" : (": " + all.front().message));
+                          error.empty() ? "" : (": " + error));
+                return;
+            }
+
+            const AnimGraphAsset* loaded = resources.getAnimGraph(graphAssetId_);
+            std::vector<AssetDiagnostic> diags;
+            if (!loaded || !animator_->setGraph(*loaded, &diags)) {
+                graphFailed_ = true;
+                Log::warn("Character: cannot apply anim graph '", graph, "'",
+                          diags.empty() ? "" : (": " + diags.front().message));
                 return;
             }
             graphApplied_ = true;

@@ -25,6 +25,8 @@ private:
                                     ResourceManager* resources, Project* project);
     static void drawAssetsSection(EditorUI* editor, Animator* animator,
                                   ResourceManager* resources, Project* project);
+    static void completePendingAssetLoad(EditorUI* editor, Animator* animator,
+                                         ResourceManager* resources);
     static void drawGraphSection(EditorUI* editor, Animator* animator,
                                  ResourceManager* resources);
     static void drawSequenceSection(EditorUI* editor);

@@ -127,9 +127,19 @@ private:
     bool animViewLoop_ = true;
     float animViewSpeed_ = 1.0f;
     std::string animStatus_;
-    std::vector<std::string> animAssetFiles_;  // .sclip/.sgraph/.sseq du projet (relatifs)
+    std::vector<std::string> animAssetFiles_;  // .srig/.sclip/.sgraph/.sseq (relatifs)
     double animAssetScanTime_ = -1.0;
     uint64_t animAppliedGraphId_ = 0;  // AssetID du .sgraph appliqué (0 = aucun)
+    enum class AnimPendingAction {
+        None,
+        PlayClipView,
+        EditClipView,
+        ApplyGraph,
+        InspectRig
+    };
+    AnimPendingAction animPendingAction_ = AnimPendingAction::None;
+    uint64_t animPendingAssetId_ = 0;
+    std::string animPendingAssetPath_;
 
     // Séquence en preview : le player survit aux frames, l'Animator lié porte
     // le nœud de piste tant que la lecture est active.

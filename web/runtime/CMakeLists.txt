@@ -110,6 +110,7 @@ add_executable(saida_web
     # types et la chaîne de lecture qu'ils référencent doivent linker aussi.
     ${SAIDA_ROOT}/src/scene/animation/AnimBlackboard.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimGraphAsset.cpp
+    ${SAIDA_ROOT}/src/scene/animation/AnimationAssetDecoders.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimStateMachine.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimationClip.cpp
     ${SAIDA_ROOT}/src/scene/animation/Animator.cpp
