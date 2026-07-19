@@ -10,7 +10,13 @@ EXPORT="$ROOT/build/witness-web-export"
 OUT="${1:-$ROOT/build/witness-web}"
 rm -rf "$EXPORT" "$OUT"
 
-./build/bin/saida_tool.exe export-game WitnessGame/WitnessGame.saidaproj \
+"${SAIDA_TOOL:-$(
+    if [[ -x "$ROOT/build/bin/saida_tool.exe" ]]; then
+        printf '%s' "$ROOT/build/bin/saida_tool.exe"
+    else
+        printf '%s' "$ROOT/build/bin/saida_tool"
+    fi
+)}" export-game WitnessGame/WitnessGame.saidaproj \
     --platform web --out "$EXPORT" > /dev/null
 
 # exportWebBuild écrit <out>/web ; on publie ce dossier tel quel.

@@ -1,5 +1,4 @@
 {
-  "schema": 2,
   "scene": {
     "behaviours": [],
     "children": [
@@ -197,6 +196,7 @@
     },
     "type": "Scene"
   },
+  "schema": 2,
   "snapshotMode": "authoring-headless",
   "version": 2
 }

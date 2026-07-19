@@ -1,33 +1,11 @@
 name: Saida Web Artifacts
 
-# Artefacts WASM (P0.2) : runtime web d'édition (Emscripten/WebGPU) + WASM de
-# validation du gateway. Workflow SÉPARÉ de ci.yml exprès : c'est le maillon le
-# plus fragile (emsdk + naga + port emdawnwebgpu) et il ne doit pas bloquer la
-# publication du binaire `saida_tool` (dépendance dure de la plateforme).
-#
-# La CI plateforme (web-e2e) télécharge `engine-web-runtime` depuis un run vert
-# de CE workflow.
+# Runtime web d'édition, player Web, authoring WASM et jeu témoin exporté. Ce
+# workflow réutilisable est appelé par ci.yml : un échec Web bloque donc la CI
+# principale et la publication des artefacts de ce commit.
 
 on:
-  pull_request:
-    paths:
-      - "src/**"
-      - "web/**"
-      - "shaders/**"
-      - "CMakeLists.txt"
-      - ".github/workflows/web-artifacts.yml"
-  push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "web/**"
-      - "shaders/**"
-      - "CMakeLists.txt"
-      - ".github/workflows/web-artifacts.yml"
-
-concurrency:
-  group: engine-web-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
 
 jobs:
   wasm-artifacts:
@@ -64,6 +42,9 @@ jobs:
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSAIDA_ENABLE_XR=OFF -DSAIDA_ENABLE_MCP=OFF
           cmake --build build --target WebShaders
 
+      - name: Native export tool
+        run: cmake --build build --target saida_tool
+
       - name: Web runtime (Emscripten)
         run: ./web/build_web.sh Release
 
@@ -77,9 +58,31 @@ jobs:
       - name: Authoring WASM (validation gateway)
         run: ./web/build_authoring_wasm.sh Release
 
+      - name: Authoring WASM smoke
+        run: node web/authoring/smoke_test.mjs
+
+      - name: Export Witness Web through BuildExporter
+        run: bash ./tools/witness_web_stage.sh
+
+      - name: Witness Web (headless Chrome, run + restart)
+        run: bash ./tools/verify_witness_web_ci.sh
+
+      - name: SHA-256 manifest
+        run: |
+          mkdir -p build/ci-artifacts
+          sha256sum \
+            build-web/index.js build-web/index.wasm build-web/index.data \
+            build-web-player/index.html build-web-player/index.js \
+            build-web-player/index.wasm build-web-player/index.data \
+            build-authoring-wasm/saida_authoring.mjs \
+            build-authoring-wasm/saida_authoring.wasm \
+            > build/ci-artifacts/web-sha256.txt
+          printf 'commit=%s\nemsdk=6.0.1\n' "${{ github.sha }}" \
+            > build/ci-artifacts/build-identity.txt
+
       - uses: actions/upload-artifact@v4
         with:
-          name: engine-web-runtime
+          name: engine-web-runtime-${{ github.sha }}
           path: |
             build-web/index.js
             build-web/index.wasm
@@ -88,7 +91,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: engine-web-player
+          name: engine-web-player-${{ github.sha }}
           path: |
             build-web-player/index.html
             build-web-player/index.js
@@ -98,8 +101,20 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: saida-authoring-wasm
+          name: saida-authoring-wasm-${{ github.sha }}
           path: |
             build-authoring-wasm/saida_authoring.mjs
             build-authoring-wasm/saida_authoring.wasm
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: witness-web-${{ github.sha }}
+          path: build/witness-web
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-build-identity-${{ github.sha }}
+          path: build/ci-artifacts
           if-no-files-found: error
