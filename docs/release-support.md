@@ -11,7 +11,7 @@ identifié par son commit et son manifeste, passe les vérifications indiquées.
 
 | Surface | Cible supportée | Prérequis | Preuve bloquante |
 |---|---|---|---|
-| Éditeur et player desktop | Windows 11 x64 | GPU et pilote Vulkan 1.3; runtime UCRT livré avec le bundle | build UCRT64, CTest complet, corpus compatibilité, Witness exporté puis run + restart |
+| Éditeur et player desktop | Windows 11 x64 | GPU et pilote Vulkan 1.3; UCRT système et `glfw3.dll` livrée | build UCRT64, CTest complet, corpus compatibilité, Witness exporté puis run + restart |
 | Player Web | Chrome et Edge stables récents sur desktop | WebGPU activé, contexte sécurisé HTTP(S), COOP/COEP, MIME `application/wasm`, IndexedDB | build Emscripten, contrat runtime, Witness run + restart dans Chrome CI; recette externe Chrome et Edge |
 | Outil headless `saida_tool` | Debian 12 x64, glibc 2.36 | aucune surface GPU requise pour validate/fold/export | build propre conteneur Debian, CTest complet et fold byte-identique Windows/Linux |
 | Authoring WASM | navigateurs desktop de la ligne Player Web | WebAssembly, ES modules et hôte conforme au contrat d'authoring | build Emscripten et smoke Node bloquants |
@@ -86,6 +86,11 @@ sauvegarde compatible ou publier une correction en avant; ne jamais réécrire
 silencieusement les snapshots, projets ou saves. La révocation d'un certificat
 de signature est une opération distincte, réservée à une compromission de clé
 ou de chaîne de confiance.
+
+Sous Windows, joindre le `.crash.log` et le `.dmp` issus de
+`%LOCALAPPDATA%\SaidaEngine\CrashReports\<produit>\`. Le champ
+`symbolsArtifact` du log désigne le bundle CI immuable à télécharger; vérifier
+celui-ci avec `verify_release_symbols.ps1` avant toute analyse.
 
 ## Contenu et licences
 

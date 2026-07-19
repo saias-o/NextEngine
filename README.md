@@ -117,7 +117,10 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-Pour une Release, configurer avec `-DCMAKE_BUILD_TYPE=Release`. Les shaders
+Pour une release Windows qualifiée, configurer avec
+`-DCMAKE_BUILD_TYPE=RelWithDebInfo` : le packaging sépare ensuite les symboles
+et dépouille les copies distribuées. `Release` reste utilisable lorsqu'aucun
+symbole n'est attendu, mais ne ferme pas la gate de diagnostic V1. Les shaders
 GLSL sont générés dans `build/shaders`. Un build complet produit notamment :
 
 ```text
@@ -216,10 +219,10 @@ Build, crée les archives, inventorie chaque fichier et écrit leurs SHA-256 :
 
 Elle exige un worktree Git propre par défaut et produit
 `build/release/witness-v1/` avec `release-manifest.json`, les archives Windows
-et Web, ainsi que leurs vérificateurs autonomes. `-AllowDirty` est réservé aux
-preuves de développement et inscrit explicitement `dirty: true` dans le
-manifest. Sur une autre machine Windows, aucun checkout moteur, MSYS2 ou SDK
-n'est requis : extraire/copier ce dossier puis lancer :
+et Web, le bundle de symboles Windows, ainsi que leurs vérificateurs autonomes.
+`-AllowDirty` est réservé aux preuves de développement et inscrit explicitement
+`dirty: true` dans le manifest. Sur une autre machine Windows, aucun checkout
+moteur, MSYS2 ou SDK n'est requis : extraire/copier ce dossier puis lancer :
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\verify_witness_windows.ps1
@@ -243,9 +246,11 @@ Il écrit `build/release/engine/release-manifest.json` : commit, versions de
 formats lues depuis `saida_tool describe-engine`, et SHA-256 de `saida_tool`, du
 runtime desktop, du player Web, de l'authoring WASM, du runtime d'authoring et de
 chaque fixture immuable, ainsi que du bundle de conformité exact. `-AllowDirty`
-marque `dirty: true`. La plateforme épingle ce manifeste et le rejoue via
-`tools/verify_engine_release.ps1`, qui échoue au moindre écart d'octet, de
-version ou d'inventaire.
+marque `dirty: true`. Les exécutables doivent provenir d'un build
+`RelWithDebInfo`; le manifeste inventorie également leurs copies dépouillées,
+leurs `.dbg` et la fermeture DLL. La plateforme épingle ce manifeste et le
+rejoue via `tools/verify_engine_release.ps1`, qui échoue au moindre écart
+d'octet, de version ou d'inventaire.
 
 Le bundle de conformité peut aussi être produit seul :
 
@@ -257,6 +262,25 @@ Il écrit sous `build/release/compliance/` le SBOM SPDX 2.3, les notices
 GPL/tiers, l'inventaire hashé des assets et modèles et leur manifeste. La
 génération échoue si une nouvelle racine `third_party` ou un nouvel asset suivi
 n'a pas de décision explicite de licence, provenance et distribution.
+
+Les builds Windows `RelWithDebInfo` séparent les exécutables distribuables de
+leurs symboles de diagnostic :
+
+```powershell
+.\tools\package_release_symbols.ps1
+```
+
+Le bundle `build/release/windows-symbols/` contient quatre `.exe` dépouillés,
+leurs `.dbg`, un lien GNU debug vérifié et un manifeste SHA-256 lié au commit.
+`tools/verify_release_symbols.ps1` en refuse tout octet ou fichier inattendu.
+Le même bundle contient `windows-dependencies.json`, preuve récursive que chaque
+import PE x64 est une DLL système autorisée ou une DLL effectivement livrée;
+les runtimes dynamiques MinGW sont interdits.
+Les applications desktop installent leur crash reporter au tout début du
+processus : un fatal écrit un `.crash.log` et un minidump `.dmp` sous
+`%LOCALAPPDATA%\SaidaEngine\CrashReports\<produit>\` (override CI :
+`SAIDA_CRASH_DIR`). Le log nomme le commit et l'artefact
+`windows-symbols-<commit>` exact à utiliser.
 
 AutoLOD se compile séparément :
 

@@ -71,6 +71,13 @@ jobs:
         shell: pwsh
         run: ./tools/generate_release_compliance.ps1
 
+      - name: Versioned Windows binaries and crash symbols
+        shell: pwsh
+        run: >-
+          ./tools/package_release_symbols.ps1
+          -Objcopy C:\msys64\ucrt64\bin\objcopy.exe
+          -Objdump C:\msys64\ucrt64\bin\objdump.exe
+
       - uses: actions/upload-artifact@v4
         with:
           name: fold-windows-${{ github.sha }}
@@ -87,6 +94,12 @@ jobs:
         with:
           name: release-compliance-${{ github.sha }}
           path: build/release/compliance
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-symbols-${{ github.sha }}
+          path: build/release/windows-symbols
           if-no-files-found: error
 
   web-artifacts:
@@ -107,11 +120,12 @@ jobs:
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build git ca-certificates \
+            build-essential cmake ninja-build git git-lfs ca-certificates \
             libvulkan-dev libglfw3-dev libglm-dev glslc
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          lfs: true
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSAIDA_ENABLE_XR=OFF -DSAIDA_ENABLE_MCP=OFF

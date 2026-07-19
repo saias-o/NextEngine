@@ -29,6 +29,19 @@ public:
     // The most recent log lines (newest last), capped at `count`.
     static std::vector<std::string> recent(size_t count = 100) {
         std::lock_guard<std::mutex> lock(bufferMutex());
+        return recentUnlocked(count);
+    }
+
+    // Crash reporting cannot wait on a logger mutex potentially held by the
+    // failing thread. Return an empty snapshot when the ring is unavailable.
+    static std::vector<std::string> recentNonBlocking(size_t count = 100) {
+        std::unique_lock<std::mutex> lock(bufferMutex(), std::try_to_lock);
+        if (!lock.owns_lock()) return {};
+        return recentUnlocked(count);
+    }
+
+private:
+    static std::vector<std::string> recentUnlocked(size_t count) {
         auto& buf = buffer();
         std::vector<std::string> out;
         size_t n = count < buf.size() ? count : buf.size();
@@ -37,7 +50,6 @@ public:
         return out;
     }
 
-private:
     static constexpr size_t kRingCapacity = 512;
 
     static std::deque<std::string>& buffer() {

@@ -104,6 +104,11 @@ try {
     if ($dirty) { $complianceArgs['AllowDirty'] = $true }
     & (Join-Path $PSScriptRoot 'generate_release_compliance.ps1') @complianceArgs
     if ($LASTEXITCODE -ne 0) { throw "release compliance generation failed" }
+    $symbolsDir = Join-Path $out 'windows-symbols'
+    $symbolArgs = @{ OutputDir = $symbolsDir }
+    if ($dirty) { $symbolArgs['AllowDirty'] = $true }
+    & (Join-Path $PSScriptRoot 'package_release_symbols.ps1') @symbolArgs
+    if ($LASTEXITCODE -ne 0) { throw "release symbol packaging failed" }
 
     $toolPath = Resolve-Local $SaidaTool
     if (-not (Test-Path -LiteralPath $toolPath)) { throw "missing saida_tool: $toolPath" }
@@ -123,6 +128,8 @@ try {
     $artifacts['authoringWasm'] = Bundle-Inventory $AuthoringWasmDir 'saida_authoring.mjs'
     $artifacts['authoringRuntime'] = Bundle-Inventory $AuthoringRuntimeDir 'index.html'
     $artifacts['compliance'] = Exact-Directory-Inventory $complianceDir 'sbom.spdx.json'
+    $artifacts['windowsSymbols'] =
+        Exact-Directory-Inventory $symbolsDir 'windows-symbols-manifest.json'
 
     $commit = (& git rev-parse HEAD).Trim()
     $commitTime = (& git show -s --format=%cI HEAD).Trim()
@@ -150,6 +157,7 @@ try {
             AuthoringWasmDir = (Resolve-Local $AuthoringWasmDir)
             AuthoringRuntimeDir = (Resolve-Local $AuthoringRuntimeDir)
             ComplianceDir = $complianceDir
+            SymbolsDir = $symbolsDir
             FixturesDir = (Resolve-Local $FixturesDir)
         }
         if ($artifacts.Contains('desktopRuntime')) { $verifyArgs['DesktopRuntime'] = $runtimePath }

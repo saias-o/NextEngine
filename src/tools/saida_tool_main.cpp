@@ -1,6 +1,7 @@
 // Headless tool entry point. Keep machine output on stdout and diagnostics on stderr.
 
 #include "authoring/EngineManifest.hpp"
+#include "core/CrashReporter.hpp"
 #include "editor/BuildExporter.hpp"
 #include "project/Project.hpp"
 #include "authoring/SaidaOp.hpp"
@@ -1058,6 +1059,7 @@ int cmdExportGame(const std::vector<std::string>& args) {
 }
 
 int main(int argc, char** argv) {
+    saida::crash::install("saida_tool");
     if (argc < 2) {
         return usage(std::cerr);
     }

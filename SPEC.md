@@ -751,7 +751,8 @@ après export.
 worktree propre, elle compile/vérifie natif et player Web, appelle le vrai Build
 éditeur pour Windows et Web, refuse les saves dans les packages, archive les
 sorties et produit `release-manifest.json` : SHA moteur, état dirty, SHA-256 et
-taille des archives, plus l'inventaire hashé de chaque fichier. Les scripts
+taille des archives, plus l'inventaire hashé de chaque fichier et le bundle de
+symboles Windows. Les scripts
 `verify_witness_windows.ps1` et `verify_witness_web.ps1` revérifient l'archive
 avant extraction. Le premier exécute gameplay/UI puis save/UI au redémarrage;
 le second contrôle COOP/COEP et MIME WASM, lance Chrome ou Edge et collecte un
@@ -796,10 +797,34 @@ Play éditeur automatisé (`--play`). À surveiller : halos de viewport non
 reproduits et dispatch autoload encore dupliqué entre `Engine::mountWorld` et le
 player Web.
 
-Une release exige encore un runner propre pour le package desktop, une archive
-ou un installateur signé, des DLL vérifiées et des crash logs avec symboles.
-Le SBOM, les notices, l'inventaire de contenu, le rollback et les hashes
-immuables sont désormais produits ou documentés.
+Une release exige encore un runner propre pour le package desktop et une
+archive ou un installateur signé. La fermeture DLL, les crash logs avec
+symboles, le SBOM, les notices, l'inventaire de contenu, le rollback et les
+hashes immuables sont désormais produits ou documentés.
+
+Chaque exécutable desktop installe `core/CrashReporter` avant le boot moteur.
+Une exception fatale interceptée écrit un rapport texte et, sous Windows, un
+minidump dans le dossier de données utilisateur
+`SaidaEngine/CrashReports/<produit>`; `SAIDA_CRASH_DIR` fournit l'override
+tests/CI. Le rapport contient produit, timestamp UTC, PID/TID, exécutable,
+raison/code/adresse, commit de build, logs récents accessibles sans attendre le
+mutex du logger, base/RVA du module pour la symbolisation et le nom de
+l'artefact de symboles correspondant.
+
+`tools/package_release_symbols.ps1` extrait avec GNU objcopy les symboles
+`.dbg` des quatre exécutables `RelWithDebInfo`, dépouille les copies
+distribuables, y inscrit `.gnu_debuglink`, épingle le timestamp PE au commit et
+produit un manifeste exact de tailles/SHA-256. Le vérificateur autonome refuse
+un hash, un lien, une section `.debug_info` ou un fichier supplémentaire
+inattendu. La CI publie le bundle sous `windows-symbols-<SHA>`.
+
+`tools/validate_windows_dependencies.ps1` ferme les dépendances PE de chaque
+entry point et de ses DLL locales : format `pei-x86-64` obligatoire, import
+système explicitement autorisé ou DLL présente dans le bundle, collision de nom
+et dépendance manquante refusées. `libgcc_s_seh-1.dll`, `libstdc++-6.dll` et
+`libwinpthread-1.dll` sont interdites car le contrat UCRT64 les lie
+statiquement. Le rapport déterministe entre dans le bundle de symboles et dans
+l'archive Windows Witness.
 
 ## 13. Compatibilité persistante
 
@@ -838,11 +863,13 @@ versions de formats lues depuis `saida_tool describe-engine` (la section
 desktop, du player Web, de l'authoring WASM, du runtime d'authoring et de chaque
 fixture immuable. Il inclut aussi l'inventaire exact du bundle de conformité :
 SBOM SPDX 2.3, notices GPL/tiers, assets/modèles hashés et manifeste de leurs
-sources. `tools/verify_engine_release.ps1` recalcule chaque hash, refuse tout
-fichier ajouté ou manquant dans ce bundle et recompare les versions à l'outil;
-il échoue au moindre écart d'octet, d'inventaire ou de version. La plateforme
-Saida épingle ce manifeste pour interdire toute divergence entre son outil
-Docker, son bundle Web servi, ses licences et ses fixtures.
+sources, ainsi que les exécutables Windows dépouillés et leurs symboles
+versionnés. `tools/verify_engine_release.ps1` recalcule chaque hash, refuse tout
+fichier ajouté ou manquant dans ces bundles et recompare les versions à
+l'outil; il échoue au moindre écart d'octet, d'inventaire ou de version. La
+plateforme Saida épingle ce manifeste pour interdire toute divergence entre son
+outil Docker, son bundle Web servi, ses diagnostics, ses licences et ses
+fixtures.
 
 `tools/generate_release_compliance.ps1` relit les deux entrées revues
 `compliance/components.json` et `compliance/assets.json`. Le contrôle est
@@ -904,8 +931,11 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
   (MikkTSpace P1, KTX2/Basis P2 par décision).
 - Point-light shadows cubemap et lightmaps persistantes absentes.
 - XR sans MSAA multiview, overlay et matrice hardware validée.
-- Build UI/runner propre, signature, validation DLL et crash reporting avec
-  symboles non prouvés.
+- Build UI/runner propre, installeur final et signature non prouvés.
+- Fermeture récursive des imports DLL x64 prouvée; la disponibilité effective
+  de Vulkan 1.3 reste un prérequis machine.
+- Crash reporter Windows avec minidump et bundle de symboles déterministe lié
+  au commit; collecte distante des rapports hors périmètre moteur.
 - Licences, notices et SBOM générés en mode fail-closed; quatre assets legacy
   sans provenance sont explicitement exclus des bundles V1 et le Damaged
   Helmet CC-BY-NC reste interdit aux produits commerciaux.

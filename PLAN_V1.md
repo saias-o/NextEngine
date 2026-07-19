@@ -360,7 +360,21 @@ valeur neutre trompeuse.
 - [ ] Refaire la preuve Linux propre et byte-identique Windows/Linux sur les
   fixtures de fold.
 - [ ] Produire archive/installeur Windows signé, validation DLL et rollback.
-- [ ] Ajouter crash logs exploitables et symboles associés à la version.
+  Déjà fermés hors signature/installeur : `validate_windows_dependencies.ps1`
+  parcourt récursivement les imports PE x64 du bundle, autorise seulement les
+  DLL système déclarées ou présentes dans le package et refuse les runtimes
+  dynamiques MinGW; son rapport hashé entre dans le bundle de symboles et dans
+  chaque archive Witness. Le rollback immuable est documenté. Restent
+  l'installeur et sa signature avec la clé de publication.
+- [x] Ajouter crash logs exploitables et symboles associés à la version.
+  Les quatre entry points desktop installent `core/CrashReporter` avant le boot :
+  exception fatale → `.crash.log` métadonné et minidump Windows sous le dossier
+  utilisateur (override `SAIDA_CRASH_DIR`), avec commit, artefact de symboles,
+  code/adresse/RVA/base module et logs récents non bloquants.
+  `tools/package_release_symbols.ps1` produit de façon byte-reproductible les
+  quatre exécutables dépouillés + `.dbg`/`.gnu_debuglink`, manifeste SHA-256 et
+  vérificateur exact; la CI publie `windows-symbols-<SHA>` et le release
+  manifest moteur ainsi que la recette Witness l'inventorient.
 - [x] Générer SBOM, inventaire licences/assets/modèles et notices GPL/SPDX.
   `tools/generate_release_compliance.ps1` produit un document SPDX 2.3, les
   notices complètes, l'inventaire hashé de 23 assets/modèles et un manifeste

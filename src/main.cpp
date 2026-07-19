@@ -1,4 +1,5 @@
 #include "Engine.hpp"
+#include "core/CrashReporter.hpp"
 #include "core/Log.hpp"
 #include "editor/EditorApp.hpp"
 #include "core/Time.hpp"
@@ -15,6 +16,7 @@
 #include <vector>
 
 int main(int argc, char** argv) {
+    saida::crash::install("SaidaEngine");
     try {
         std::string initialProject;
         std::string runtimeScene;
@@ -114,7 +116,18 @@ int main(int argc, char** argv) {
         engine.setOnFrame([&editor](float dt) { editor.update(dt); });
         engine.run();
     } catch (const std::exception& e) {
+        const auto report =
+            saida::crash::writeFatalReport(std::string("fatal exception: ") + e.what());
         saida::Log::error(e.what());
+        if (!report.logPath.empty())
+            saida::Log::error("crash report: ", report.logPath.string());
+        return EXIT_FAILURE;
+    } catch (...) {
+        const auto report =
+            saida::crash::writeFatalReport("fatal non-standard exception");
+        saida::Log::error("fatal non-standard exception");
+        if (!report.logPath.empty())
+            saida::Log::error("crash report: ", report.logPath.string());
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

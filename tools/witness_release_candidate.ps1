@@ -50,6 +50,7 @@ try {
     $windowsDir = Join-Path $stage 'windows'
     $webExportDir = Join-Path $stage 'web-export'
     $complianceDir = Join-Path $stage 'compliance'
+    $symbolsDir = Join-Path $out 'windows-symbols'
     New-Item -ItemType Directory -Path $windowsDir, $webExportDir | Out-Null
 
     & build/bin/SaidaEngine.exe --project WitnessGame/WitnessGame.saidaproj `
@@ -75,6 +76,15 @@ try {
         Copy-Item -LiteralPath $file.FullName -Destination $windowsDir
         Copy-Item -LiteralPath $file.FullName -Destination $webDir
     }
+    & tools/validate_windows_dependencies.ps1 `
+        -BundleDir $windowsDir `
+        -EntryPoints @('Witness Game.exe') `
+        -OutputPath (Join-Path $windowsDir 'windows-dependencies.json')
+    if ($LASTEXITCODE -ne 0) { throw "Windows package dependency validation failed" }
+    $symbolArgs = @{ OutputDir = $symbolsDir }
+    if ($dirty) { $symbolArgs['AllowDirty'] = $true }
+    & tools/package_release_symbols.ps1 @symbolArgs
+    if ($LASTEXITCODE -ne 0) { throw "Release symbol packaging failed" }
 
     $windowsArchive = Join-Path $out 'WitnessGame-Windows.zip'
     $webArchive = Join-Path $out 'WitnessGame-Web.zip'
@@ -113,6 +123,10 @@ try {
         artifacts = [ordered]@{
             windows = Archive-Record $windowsArchive 'Witness Game.exe' $windowsDir
             web = Archive-Record $webArchive 'index.html' $webDir
+            windowsSymbols = [ordered]@{
+                entryPoint = 'windows-symbols-manifest.json'
+                files = File-Inventory $symbolsDir
+            }
         }
     }
     $manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 `

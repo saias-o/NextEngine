@@ -9,6 +9,7 @@
 // src/main.cpp.
 
 #include "Engine.hpp"
+#include "core/CrashReporter.hpp"
 #include "core/Log.hpp"
 #include "core/Paths.hpp"
 #include "core/PlatformCaps.hpp"
@@ -44,6 +45,7 @@ fs::path executableDir() {
 } // namespace
 
 int main(int argc, char** argv) {
+    saida::crash::install("SaidaEngineRuntime");
     try {
         std::vector<std::string> testAutoloads;
         for (int i = 1; i < argc; ++i) {
@@ -93,7 +95,18 @@ int main(int argc, char** argv) {
         saida::Time::setScale(1.0f);
         engine.run();
     } catch (const std::exception& e) {
+        const auto report =
+            saida::crash::writeFatalReport(std::string("fatal exception: ") + e.what());
         saida::Log::error(e.what());
+        if (!report.logPath.empty())
+            saida::Log::error("crash report: ", report.logPath.string());
+        return EXIT_FAILURE;
+    } catch (...) {
+        const auto report =
+            saida::crash::writeFatalReport("fatal non-standard exception");
+        saida::Log::error("fatal non-standard exception");
+        if (!report.logPath.empty())
+            saida::Log::error("crash report: ", report.logPath.string());
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

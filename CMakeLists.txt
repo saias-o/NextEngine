@@ -13,6 +13,63 @@ include(CTest)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# A crash report and its symbol bundle share this immutable identity. Track the
+# current ref as a configure dependency so a local commit followed by `cmake
+# --build` cannot silently retain the previous SHA.
+set(SAIDA_BUILD_COMMIT "unknown")
+find_package(Git QUIET)
+if(Git_FOUND)
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --verify HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE SAIDA_GIT_HEAD
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    string(LENGTH "${SAIDA_GIT_HEAD}" SAIDA_GIT_HEAD_LENGTH)
+    if(SAIDA_GIT_HEAD_LENGTH EQUAL 40 AND SAIDA_GIT_HEAD MATCHES "^[0-9a-fA-F]+$")
+        set(SAIDA_BUILD_COMMIT "${SAIDA_GIT_HEAD}")
+    endif()
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --git-path HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE SAIDA_GIT_HEAD_PATH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(SAIDA_GIT_HEAD_PATH)
+        get_filename_component(SAIDA_GIT_HEAD_PATH "${SAIDA_GIT_HEAD_PATH}"
+            ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+        if(EXISTS "${SAIDA_GIT_HEAD_PATH}")
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                "${SAIDA_GIT_HEAD_PATH}")
+        endif()
+    endif()
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} symbolic-ref -q HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE SAIDA_GIT_REF
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(SAIDA_GIT_REF)
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} rev-parse --git-path ${SAIDA_GIT_REF}
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            OUTPUT_VARIABLE SAIDA_GIT_REF_PATH
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+        get_filename_component(SAIDA_GIT_REF_PATH "${SAIDA_GIT_REF_PATH}"
+            ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+        if(EXISTS "${SAIDA_GIT_REF_PATH}")
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                "${SAIDA_GIT_REF_PATH}")
+        endif()
+    endif()
+endif()
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/generated/saida")
+configure_file(
+    "${CMAKE_SOURCE_DIR}/src/core/BuildIdentity.hpp.in"
+    "${CMAKE_BINARY_DIR}/generated/saida/BuildIdentity.hpp"
+    @ONLY)
+
 set(SAIDA_APP_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin)
 set(SAIDA_TEST_OUTPUT_DIR ${CMAKE_BINARY_DIR}/tests)
 
@@ -305,6 +362,7 @@ add_library(saida_engine STATIC
     src/core/Window.cpp
     src/core/Camera.cpp
     src/core/AtomicFile.cpp
+    src/core/CrashReporter.cpp
     src/core/Input.cpp
     src/core/InputProfile.cpp
     src/core/Paths.cpp
@@ -509,6 +567,7 @@ target_compile_definitions(saida_engine PUBLIC
     SAIDA_SHADER_DIR="${SHADER_OUT_DIR}"
     GLM_FORCE_RADIANS
     GLM_FORCE_DEPTH_ZERO_TO_ONE)
+target_include_directories(saida_engine PRIVATE "${CMAKE_BINARY_DIR}/generated")
 if(SAIDA_ENABLE_XR)
     target_compile_definitions(saida_engine PUBLIC SAIDA_ENABLE_XR)
 endif()
@@ -536,6 +595,9 @@ set_source_files_properties(
 # options propagate to executables linking the engine.
 if (MINGW)
     target_link_options(saida_engine PUBLIC -static -static-libgcc -static-libstdc++)
+endif()
+if (WIN32)
+    target_link_libraries(saida_engine PUBLIC dbghelp)
 endif()
 
 # ── Editor library ──────────────────────────────────────────────────────────
@@ -585,6 +647,13 @@ if (BUILD_TESTING)
     )
     target_compile_options(saida_core_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_core_tests COMMAND $<TARGET_FILE:saida_core_tests>)
+
+    add_executable(saida_crash_reporter_tests tests/CrashReporterTests.cpp)
+    saida_test_target(saida_crash_reporter_tests)
+    target_link_libraries(saida_crash_reporter_tests PRIVATE saida_engine)
+    target_compile_options(saida_crash_reporter_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_crash_reporter_tests
+        COMMAND $<TARGET_FILE:saida_crash_reporter_tests>)
 
     # The GPU culling buffers are all StorageBuffer descriptors, so a binding
     # swap remains shader-valid and is not caught by normal compilation. Keep a

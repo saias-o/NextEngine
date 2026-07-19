@@ -7,6 +7,7 @@ param(
     [string]$AuthoringWasmDir = 'build-authoring-wasm',
     [string]$AuthoringRuntimeDir = 'build-web',
     [string]$ComplianceDir = 'build/release/engine/compliance',
+    [string]$SymbolsDir = 'build/release/engine/windows-symbols',
     [string]$FixturesDir = 'tests/fixtures/compat'
 )
 
@@ -75,6 +76,7 @@ Check-Bundle $artifacts.webPlayer $WebPlayerDir 'webPlayer'
 Check-Bundle $artifacts.authoringWasm $AuthoringWasmDir 'authoringWasm'
 Check-Bundle $artifacts.authoringRuntime $AuthoringRuntimeDir 'authoringRuntime'
 Check-Bundle $artifacts.compliance $ComplianceDir 'compliance'
+Check-Bundle $artifacts.windowsSymbols $SymbolsDir 'windowsSymbols'
 
 foreach ($record in $manifest.fixtures) {
     Check-File (Join-Path $FixturesDir $record.path) $record "fixtures/$($record.path)"
