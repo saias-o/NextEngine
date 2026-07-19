@@ -80,6 +80,7 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/core/AtomicFile.cpp
     ${SAIDA_ROOT}/src/core/FileWatcher.cpp
     ${SAIDA_ROOT}/src/core/Input.cpp
+    ${SAIDA_ROOT}/src/core/InputProfile.cpp
     ${SAIDA_ROOT}/src/core/Paths.cpp
     ${SAIDA_ROOT}/src/core/PlatformCaps.cpp
     ${SAIDA_ROOT}/src/core/Reflection.cpp

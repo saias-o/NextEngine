@@ -306,6 +306,7 @@ add_library(saida_engine STATIC
     src/core/Camera.cpp
     src/core/AtomicFile.cpp
     src/core/Input.cpp
+    src/core/InputProfile.cpp
     src/core/Paths.cpp
     src/core/Profiler.cpp
     src/core/Reflection.cpp
@@ -610,6 +611,20 @@ if (BUILD_TESTING)
     target_include_directories(saida_input_gamepad_tests PRIVATE src)
     target_compile_options(saida_input_gamepad_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_input_gamepad_tests COMMAND $<TARGET_FILE:saida_input_gamepad_tests>)
+
+    add_executable(saida_input_profile_tests tests/InputProfileTests.cpp
+                   src/core/InputProfile.cpp)
+    saida_test_target(saida_input_profile_tests)
+    target_include_directories(saida_input_profile_tests PRIVATE
+        src third_party/glm third_party/json)
+    target_compile_options(saida_input_profile_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_input_profile_tests COMMAND $<TARGET_FILE:saida_input_profile_tests>)
+
+    add_executable(saida_input_touch_tests tests/InputTouchTests.cpp)
+    saida_test_target(saida_input_touch_tests)
+    target_include_directories(saida_input_touch_tests PRIVATE src third_party/glm)
+    target_compile_options(saida_input_touch_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_input_touch_tests COMMAND $<TARGET_FILE:saida_input_touch_tests>)
 
     add_executable(saida_animation_core_tests tests/AnimationCoreTests.cpp)
     saida_test_target(saida_animation_core_tests)

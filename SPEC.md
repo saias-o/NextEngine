@@ -108,8 +108,8 @@ relatifs sont normalisés et les symlinks qui sortent de la racine sont refusés
 | JavaScript | QuickJS | QuickJS | validation ciblée |
 | Game UI | RmlUi | HUD RmlUi `UICanvasNode`/`UITextNode`; WebCanvas absent | authoring partiel |
 | Keyboard/mouse | oui | oui | navigateur/UI hôte |
-| Gamepad | GLFW standard | `NO` | non requis |
-| Touch | brut/non complet | événements bruts | hôte |
+| Gamepad | GLFW standard | Gamepad API, mapping `standard` | non requis |
+| Touch | non | brut + zones/tap/swipes | hôte |
 | Storage joueur | fichiers | IDBFS | non requis |
 | XR | OpenXR | non | non |
 
@@ -364,16 +364,46 @@ Le système agrège des actions numériques/binaires à partir de bindings et de
 contexts empilables. Clavier, souris, delta/position, scroll, texte et touch brut
 sont échantillonnés une fois par frame.
 
-Sur desktop, le premier gamepad standard GLFW est détecté avec hotplug. Boutons,
-sticks et triggers supportent deadzone re-échelonnée, inversion et sensibilité
-par `scale`. Les actions par défaut couvrent mouvement, saut, sprint, tir et
-visée. Forces, fronts et callbacks sont agrégés entre bindings : relâcher un
-périphérique ne termine pas une action maintenue par un autre.
+Sur desktop, le premier gamepad standard GLFW est détecté avec hotplug. Sur Web,
+le backend interroge directement la Gamepad API via Emscripten, accepte le
+mapping navigateur `standard`, convertit ses boutons et sticks vers le même
+contrat sémantique et remet les triggers `[0, 1]` dans la convention GLFW
+`[-1, 1]`. `GamepadInput` n'est annoncé que si `navigator.getGamepads` est
+utilisable au boot; une manette absente reste distincte d'un backend absent.
 
-Le player Web garde `gamepad=NO` car le port GLFW Emscripten ne linke pas cette
-API. Multi-joueur local, choix de périphérique, profils persistants, rebinding,
-haptique et touch-as-bindings ne sont pas livrés. `Input::injectAction` et
-`input.inject` sont réservés aux tests/CI.
+Boutons, sticks et triggers supportent deadzone re-échelonnée, inversion et
+sensibilité par `scale`. Les actions par défaut couvrent mouvement, saut,
+sprint, tir et visée. Forces, fronts et callbacks sont agrégés entre bindings :
+relâcher un périphérique ne termine pas une action maintenue par un autre.
+
+Le rebinding runtime remplace atomiquement les contrôles d'une action/contexte
+via C++ ou QuickJS : `input.rebindKey`, `rebindMouse`,
+`rebindGamepadButton`, `rebindGamepadAxis` et `rebindTouch`.
+`input.exportProfile(name)` produit un JSON schema 1 à contrôles nommés, sans
+état transitoire de frame;
+`input.applyProfile(json)` valide intégralement le document avant de remplacer
+les bindings. Un jeu persiste cette chaîne dans `storage.prefs` puis la
+réapplique au boot. Schéma futur, contrôle inconnu, identifiant hors limites,
+deadzone hors `[0, 0.99]`, valeur non finie et plus de 2048 entrées sont refusés
+sans modifier le profil actif.
+
+Sur Web, quatre callbacks Emscripten attachés au canvas alimentent réellement
+start/move/end/cancel; `TouchInput` n'est annoncé que si leur installation
+réussit. `Press`, `Tap` et les quatre swipes directionnels se lient à des zones
+normalisées `[0, 1]`, indépendantes de la résolution. Le seuil de swipe est
+configurable, les gestes sont des impulsions d'une frame et le maintien reste
+actif tant que le contact est présent dans sa zone. Ces bindings font partie du
+profil sérialisé et sont disponibles en C++ comme via `input.rebindTouch`.
+
+`Input::lastActiveDevice` / `input.lastActiveDevice()` publie `none`,
+`keyboard-mouse`, `gamepad` ou `touch`. La récence se fonde sur les transitions,
+pas sur un contrôle maintenu; sticks et triggers filtrent le drift au repos.
+Cette donnée est prête pour les prompts adaptatifs, qui ne sont pas encore
+branchés dans l'UI.
+
+La V1 ne promet ni multi-joueur local ni sélection de périphérique par joueur.
+L'haptique n'est pas livrée. `Input::injectAction` et `input.inject` sont
+réservés aux tests/CI.
 
 ### 5.3 Audio
 
@@ -825,8 +855,8 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
 
 - V1 non publiée; aucun badge local ne vaut stabilité publique.
 - Player Web : WebGPU obligatoire, HTTP obligatoire, UI limitée au HUD
-  `UICanvasNode`/`UITextNode`, WebCanvas absent, gamepad absent, touch incomplet,
-  MSAA absent.
+  `UICanvasNode`/`UITextNode`, WebCanvas absent, gamepads sans mapping navigateur
+  `standard` ignorés, touch UI avancé non prouvé, MSAA absent.
 - Audio Web soumis au geste utilisateur.
 - Un runtime/canvas Emscripten par page; build non modularisé.
 - Registres natif/headless/Web explicitement matricés; l'UI avancée reste hors

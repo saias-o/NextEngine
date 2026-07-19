@@ -261,18 +261,24 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    Input::bindRaw(window);  // installe aussi le backend touch navigateur
+
     // Chaque capacité rejoint ce masque quand elle devient réelle (§2.5).
-    platform::setCapabilities(uint32_t(platform::Capability::Rendering) |
-                              uint32_t(platform::Capability::KeyboardMouse) |
-                              uint32_t(platform::Capability::ScriptGameplay) |
-                              uint32_t(platform::Capability::Physics) |
-                              uint32_t(platform::Capability::Audio) |
-                              uint32_t(platform::Capability::GameUI) |
-                              uint32_t(platform::Capability::UserStorage));
+    uint32_t capabilities =
+        uint32_t(platform::Capability::Rendering) |
+        uint32_t(platform::Capability::KeyboardMouse) |
+        uint32_t(platform::Capability::ScriptGameplay) |
+        uint32_t(platform::Capability::Physics) |
+        uint32_t(platform::Capability::Audio) |
+        uint32_t(platform::Capability::GameUI) |
+        uint32_t(platform::Capability::UserStorage);
+    if (Input::gamepadBackendAvailable())
+        capabilities |= uint32_t(platform::Capability::GamepadInput);
+    if (Input::touchBackendAvailable())
+        capabilities |= uint32_t(platform::Capability::TouchInput);
+    platform::setCapabilities(capabilities);
     AudioManager::get().init();
     Log::info(platform::report());
-
-    Input::bindRaw(window);  // actions clavier/souris sans le wrapper desktop
 
     rhi::Device::requestAsync([](std::unique_ptr<rhi::Device> device) {
         if (!device) {

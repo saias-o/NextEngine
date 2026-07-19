@@ -180,6 +180,14 @@ Le player Web active le même contrôle avec le paramètre URL
 L'authoring Web exécute systématiquement son corpus snapshot avant de publier
 `ready` et expose le même verdict dans la console.
 
+Les bindings de jeu peuvent être remplacés à l'exécution depuis QuickJS avec
+`input.rebindKey`, `input.rebindMouse`, `input.rebindGamepadButton` et
+`input.rebindGamepadAxis`. `input.rebindTouch` ajoute press/tap/swipes dans une
+zone normalisée du canvas. `input.exportProfile(name)` renvoie le profil JSON
+versionné; le jeu le sauvegarde avec `storage.prefs.save`, le recharge avec
+`storage.prefs.load`, puis appelle `input.applyProfile`. Un profil invalide est
+refusé en bloc et laisse les bindings courants inchangés.
+
 Les SaidaOps V1 utilisent `opVersion: 2` et ciblent les nœuds par identifiant
 64 bits stable encodé en chaîne décimale (`nodeId`, `parentId`, `newParentId`,
 `fromNodeId`, `toNodeId`). Cet encodage évite toute perte de précision

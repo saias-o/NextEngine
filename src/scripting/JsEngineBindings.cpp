@@ -3,6 +3,8 @@
 #include "audio/AudioManager.hpp"
 #include "core/AtomicFile.hpp"
 #include "core/Input.hpp"
+#include "core/InputProfile.hpp"
+#include "core/InputTouch.hpp"
 #include "core/Log.hpp"
 #include "core/Paths.hpp"
 #include "core/PlatformCaps.hpp"
@@ -32,6 +34,7 @@
 #endif
 
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -730,6 +733,172 @@ JSValue jsInputMousePosition(JSContext* ctx, JSValueConst, int, JSValueConst*) {
 
 JSValue jsInputMouseDelta(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     return makeVec2(ctx, Input::mouseDelta());
+}
+
+JSValue jsInputRebindKey(JSContext* ctx, JSValueConst, int argc,
+                         JSValueConst* argv) {
+    std::string action;
+    std::string control;
+    std::string context = kGlobalContext;
+    if (!readActionName(ctx, argc, argv, 0, action) ||
+        !readActionName(ctx, argc, argv, 1, control) ||
+        (argc >= 3 && !readActionName(ctx, argc, argv, 2, context))) {
+        return JS_ThrowTypeError(ctx,
+                                 "input.rebindKey(action, control, context?)");
+    }
+    KeyCode key = KeyCode::Unknown;
+    if (!parseInputControl(control, key))
+        return JS_ThrowTypeError(ctx, "input.rebindKey: unknown control '%s'",
+                                 control.c_str());
+    Input::rebindKey(action, key, context);
+    return JS_NewBool(ctx, true);
+}
+
+JSValue jsInputRebindMouse(JSContext* ctx, JSValueConst, int argc,
+                           JSValueConst* argv) {
+    std::string action;
+    std::string control;
+    std::string context = kGlobalContext;
+    if (!readActionName(ctx, argc, argv, 0, action) ||
+        !readActionName(ctx, argc, argv, 1, control) ||
+        (argc >= 3 && !readActionName(ctx, argc, argv, 2, context))) {
+        return JS_ThrowTypeError(ctx,
+                                 "input.rebindMouse(action, control, context?)");
+    }
+    MouseButton button = MouseButton::Left;
+    if (!parseInputControl(control, button))
+        return JS_ThrowTypeError(ctx, "input.rebindMouse: unknown control '%s'",
+                                 control.c_str());
+    Input::rebindMouse(action, button, context);
+    return JS_NewBool(ctx, true);
+}
+
+JSValue jsInputRebindGamepadButton(JSContext* ctx, JSValueConst, int argc,
+                                   JSValueConst* argv) {
+    std::string action;
+    std::string control;
+    std::string context = kGlobalContext;
+    if (!readActionName(ctx, argc, argv, 0, action) ||
+        !readActionName(ctx, argc, argv, 1, control) ||
+        (argc >= 3 && !readActionName(ctx, argc, argv, 2, context))) {
+        return JS_ThrowTypeError(
+            ctx, "input.rebindGamepadButton(action, control, context?)");
+    }
+    GamepadButton button = GamepadButton::A;
+    if (!parseInputControl(control, button))
+        return JS_ThrowTypeError(
+            ctx, "input.rebindGamepadButton: unknown control '%s'",
+            control.c_str());
+    Input::rebindGamepadButton(action, button, context);
+    return JS_NewBool(ctx, true);
+}
+
+JSValue jsInputRebindGamepadAxis(JSContext* ctx, JSValueConst, int argc,
+                                 JSValueConst* argv) {
+    std::string action;
+    std::string control;
+    if (!readActionName(ctx, argc, argv, 0, action) ||
+        !readActionName(ctx, argc, argv, 1, control)) {
+        return JS_ThrowTypeError(
+            ctx,
+            "input.rebindGamepadAxis(action, control, scale?, deadzone?, context?)");
+    }
+    GamepadAxis axis = GamepadAxis::LeftX;
+    if (!parseInputControl(control, axis))
+        return JS_ThrowTypeError(
+            ctx, "input.rebindGamepadAxis: unknown control '%s'",
+            control.c_str());
+
+    double scale = 1.0;
+    double deadzone = 0.1;
+    std::string context = kGlobalContext;
+    if ((argc >= 3 && JS_ToFloat64(ctx, &scale, argv[2]) != 0) ||
+        (argc >= 4 && JS_ToFloat64(ctx, &deadzone, argv[3]) != 0) ||
+        (argc >= 5 && !readActionName(ctx, argc, argv, 4, context))) {
+        return JS_EXCEPTION;
+    }
+    if (!std::isfinite(scale) || std::abs(scale) > 10.0 ||
+        !std::isfinite(deadzone) || deadzone < 0.0 || deadzone > 0.99) {
+        return JS_ThrowRangeError(
+            ctx, "input.rebindGamepadAxis: scale/deadzone out of range");
+    }
+    Input::rebindGamepadAxis(action, axis, static_cast<float>(scale),
+                             static_cast<float>(deadzone), context);
+    return JS_NewBool(ctx, true);
+}
+
+JSValue jsInputRebindTouch(JSContext* ctx, JSValueConst, int argc,
+                           JSValueConst* argv) {
+    std::string action;
+    std::string control;
+    if (!readActionName(ctx, argc, argv, 0, action) ||
+        !readActionName(ctx, argc, argv, 1, control) || argc < 6) {
+        return JS_ThrowTypeError(
+            ctx,
+            "input.rebindTouch(action, gesture, minX, minY, maxX, maxY, "
+            "minDistance?, context?)");
+    }
+    TouchGesture gesture = TouchGesture::Press;
+    if (!parseInputControl(control, gesture))
+        return JS_ThrowTypeError(ctx,
+                                 "input.rebindTouch: unknown gesture '%s'",
+                                 control.c_str());
+
+    double minX = 0.0;
+    double minY = 0.0;
+    double maxX = 1.0;
+    double maxY = 1.0;
+    double minDistance = 48.0;
+    std::string context = kGlobalContext;
+    if (JS_ToFloat64(ctx, &minX, argv[2]) != 0 ||
+        JS_ToFloat64(ctx, &minY, argv[3]) != 0 ||
+        JS_ToFloat64(ctx, &maxX, argv[4]) != 0 ||
+        JS_ToFloat64(ctx, &maxY, argv[5]) != 0 ||
+        (argc >= 7 && JS_ToFloat64(ctx, &minDistance, argv[6]) != 0) ||
+        (argc >= 8 && !readActionName(ctx, argc, argv, 7, context))) {
+        return JS_EXCEPTION;
+    }
+    const glm::vec2 zoneMin{static_cast<float>(minX), static_cast<float>(minY)};
+    const glm::vec2 zoneMax{static_cast<float>(maxX), static_cast<float>(maxY)};
+    if (!std::isfinite(minDistance) || minDistance < 0.0 ||
+        minDistance > 4096.0 ||
+        !std::isfinite(minX) || !std::isfinite(minY) ||
+        !std::isfinite(maxX) || !std::isfinite(maxY) ||
+        !input_detail::validTouchZone(zoneMin, zoneMax)) {
+        return JS_ThrowRangeError(
+            ctx, "input.rebindTouch: zone/distance out of range");
+    }
+    Input::rebindTouch(action, gesture, zoneMin, zoneMax,
+                       static_cast<float>(minDistance), context);
+    return JS_NewBool(ctx, true);
+}
+
+JSValue jsInputExportProfile(JSContext* ctx, JSValueConst, int argc,
+                             JSValueConst* argv) {
+    std::string name = "default";
+    if (argc >= 1 && !readActionName(ctx, argc, argv, 0, name))
+        return JS_ThrowTypeError(ctx, "input.exportProfile(name?)");
+    if (name.size() > 64)
+        return JS_ThrowRangeError(ctx,
+                                  "input.exportProfile: name exceeds 64 characters");
+    const std::string serialized = Input::serializeBindingProfile(name);
+    return JS_NewStringLen(ctx, serialized.data(), serialized.size());
+}
+
+JSValue jsInputApplyProfile(JSContext* ctx, JSValueConst, int argc,
+                            JSValueConst* argv) {
+    std::string serialized;
+    if (!readActionName(ctx, argc, argv, 0, serialized))
+        return JS_ThrowTypeError(ctx, "input.applyProfile(serializedJson)");
+    std::string error;
+    if (!Input::applyBindingProfile(serialized, error))
+        return JS_ThrowTypeError(ctx, "input.applyProfile: %s", error.c_str());
+    return JS_NewBool(ctx, true);
+}
+
+JSValue jsInputLastActiveDevice(JSContext* ctx, JSValueConst, int,
+                                JSValueConst*) {
+    return JS_NewString(ctx, Input::deviceName(Input::lastActiveDevice()));
 }
 
 JSValue jsTreeChangeScene(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -1517,6 +1686,26 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JS_SetPropertyStr(ctx, input, "inject", JS_NewCFunction(ctx, jsInputInject, "inject", 2));
     JS_SetPropertyStr(ctx, input, "mousePosition", JS_NewCFunction(ctx, jsInputMousePosition, "mousePosition", 0));
     JS_SetPropertyStr(ctx, input, "mouseDelta", JS_NewCFunction(ctx, jsInputMouseDelta, "mouseDelta", 0));
+    JS_SetPropertyStr(ctx, input, "rebindKey", JS_NewCFunction(ctx, jsInputRebindKey, "rebindKey", 3));
+    JS_SetPropertyStr(ctx, input, "rebindMouse", JS_NewCFunction(ctx, jsInputRebindMouse, "rebindMouse", 3));
+    JS_SetPropertyStr(ctx, input, "rebindGamepadButton",
+                      JS_NewCFunction(ctx, jsInputRebindGamepadButton,
+                                      "rebindGamepadButton", 3));
+    JS_SetPropertyStr(ctx, input, "rebindGamepadAxis",
+                      JS_NewCFunction(ctx, jsInputRebindGamepadAxis,
+                                      "rebindGamepadAxis", 5));
+    JS_SetPropertyStr(ctx, input, "rebindTouch",
+                      JS_NewCFunction(ctx, jsInputRebindTouch,
+                                      "rebindTouch", 8));
+    JS_SetPropertyStr(ctx, input, "exportProfile",
+                      JS_NewCFunction(ctx, jsInputExportProfile,
+                                      "exportProfile", 1));
+    JS_SetPropertyStr(ctx, input, "applyProfile",
+                      JS_NewCFunction(ctx, jsInputApplyProfile,
+                                      "applyProfile", 1));
+    JS_SetPropertyStr(ctx, input, "lastActiveDevice",
+                      JS_NewCFunction(ctx, jsInputLastActiveDevice,
+                                      "lastActiveDevice", 0));
     JS_SetPropertyStr(ctx, global, "input", input);
 
     JSValue tree = JS_NewObject(ctx);

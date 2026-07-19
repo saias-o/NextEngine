@@ -17,6 +17,15 @@ class Window;
 using InputContextID = std::string;
 const InputContextID kGlobalContext = "Global";
 
+enum class TouchGesture {
+    Press,
+    Tap,
+    SwipeLeft,
+    SwipeRight,
+    SwipeUp,
+    SwipeDown,
+};
+
 struct ActionBinding {
     std::string actionName;
     InputContextID context = kGlobalContext;
@@ -34,6 +43,13 @@ struct ActionBinding {
     GamepadAxis padAxis = GamepadAxis::LeftX;
     float axisScale = 1.0f; // Multiplier (useful for inversion)
     float deadzone = 0.1f;
+
+    bool isTouch = false;
+    TouchGesture touchGesture = TouchGesture::Press;
+    // Zone normalisée dans le canvas [0, 1], indépendante du DPI/résolution.
+    glm::vec2 touchZoneMin{0.0f};
+    glm::vec2 touchZoneMax{1.0f};
+    float touchMinDistance = 48.0f; // pixels logiques, swipes uniquement
 
     // Runtime state (updated every frame)
     float currentValue = 0.0f;
@@ -56,6 +72,21 @@ struct TouchPoint {
     TouchPhase phase = TouchPhase::Moved;
 };
 
+struct TouchGestureEvent {
+    uint64_t id = 0;
+    TouchGesture gesture = TouchGesture::Tap;
+    glm::vec2 startPosition{0.0f};
+    glm::vec2 endPosition{0.0f};
+    float distance = 0.0f;
+};
+
+enum class InputDevice {
+    None,
+    KeyboardMouse,
+    Gamepad,
+    Touch,
+};
+
 class Input {
 public:
     // ---- Binding API ----
@@ -65,6 +96,36 @@ public:
     static void bindGamepadAxis(const std::string& action, GamepadAxis axis, float scale = 1.0f, const InputContextID& context = kGlobalContext);
     static void bindGamepadAxis(const std::string& action, GamepadAxis axis, float scale,
                                 float deadzone, const InputContextID& context = kGlobalContext);
+
+    // Remplace atomiquement tous les bindings de l'action dans ce contexte par
+    // un contrôle unique. Ces appels constituent la surface de rebinding
+    // runtime; un profil peut ensuite être exporté et persisté par le jeu.
+    static void rebindKey(const std::string& action, KeyCode key,
+                          const InputContextID& context = kGlobalContext);
+    static void rebindMouse(const std::string& action, MouseButton btn,
+                            const InputContextID& context = kGlobalContext);
+    static void rebindGamepadButton(const std::string& action, GamepadButton button,
+                                    const InputContextID& context = kGlobalContext);
+    static void rebindGamepadAxis(const std::string& action, GamepadAxis axis,
+                                  float scale = 1.0f, float deadzone = 0.1f,
+                                  const InputContextID& context = kGlobalContext);
+    static void bindTouch(const std::string& action, TouchGesture gesture,
+                          glm::vec2 zoneMin = {0.0f, 0.0f},
+                          glm::vec2 zoneMax = {1.0f, 1.0f},
+                          float minDistance = 48.0f,
+                          const InputContextID& context = kGlobalContext);
+    static void rebindTouch(const std::string& action, TouchGesture gesture,
+                            glm::vec2 zoneMin = {0.0f, 0.0f},
+                            glm::vec2 zoneMax = {1.0f, 1.0f},
+                            float minDistance = 48.0f,
+                            const InputContextID& context = kGlobalContext);
+
+    // JSON schema 1, sans état de frame. L'application est tout-ou-rien :
+    // un document invalide laisse les bindings courants inchangés.
+    static std::string serializeBindingProfile(
+        const std::string& name = "default");
+    static bool applyBindingProfile(const std::string& serialized,
+                                    std::string& error);
     
     static void unmapAction(const std::string& action, const InputContextID& context = kGlobalContext);
     static void clearAllActions();
@@ -94,12 +155,20 @@ public:
     static bool isGamepadConnected();
     static int activeGamepadId();
     static const std::string& activeGamepadName();
+    // Backend présent sur ce build et utilisable par la plateforme courante.
+    // Sur Web, vérifie navigator.getGamepads via Emscripten sans exiger qu'une
+    // manette soit déjà connectée.
+    static bool gamepadBackendAvailable();
+    static bool touchBackendAvailable();
+    static InputDevice lastActiveDevice();
+    static const char* deviceName(InputDevice device);
 
     static glm::vec2 mouseDelta();          // movement since last frame
     static glm::vec2 mousePosition();       // cursor position in window pixels
     static glm::vec2 scrollDelta();         // wheel/trackpad delta since last frame
     static const std::vector<uint32_t>& textInputCodepoints();
     static const std::vector<TouchPoint>& touches();
+    static const std::vector<TouchGestureEvent>& touchGestures();
 
     // Platform backends with native touch (mobile/web) enqueue events before
     // Engine::run samples the frame. Desktop GLFW leaves this empty.

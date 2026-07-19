@@ -322,14 +322,26 @@ l'AssetLoader avec consommateurs non bloquants sur desktop et Web.
 
 ## P0.6 - Input et capacités
 
-- [ ] Implémenter un backend navigateur Gamepad API avant d'annoncer la capacité
-  Web, ou exclure formellement la manette Web de la V1.
+- [x] Implémenter un backend navigateur Gamepad API avant d'annoncer la capacité
+  Web : polling Emscripten de `navigator.getGamepads`, mapping `standard`
+  normalisé vers le contrat GLFW (dont triggers), hotplug, tests natifs du
+  mapping et preuve navigateur `gamepad=yes` lorsque l'API est disponible.
 - [ ] Tester le backend desktop avec manettes physiques Xbox/PlayStation
   reconnues par GLFW.
-- [ ] Ajouter rebinding runtime et profils sérialisés.
-- [ ] Ajouter sélection de périphérique et deux joueurs locaux si promis en V1.
-- [ ] Transformer touch brut en bindings/zones/gestes réutilisables.
+- [x] Ajouter rebinding runtime et profils sérialisés : API C++ et QuickJS,
+  profil JSON schema 1 validé/appliqué atomiquement, noms de contrôles stables,
+  round-trip exhaustif et persistance possible via `storage.prefs`.
+- [x] Ajouter sélection de périphérique et deux joueurs locaux si promis en V1 :
+  non promis; la V1 reste explicitement mono-joueur et utilise le premier pad
+  standard disponible.
+- [x] Transformer touch brut en bindings/zones/gestes réutilisables : vrai
+  backend canvas Web start/move/end/cancel, zones normalisées, press/tap/swipes,
+  seuil de distance, profils JSON et API C++/QuickJS. Tests purs et preuve
+  navigateur `touch=yes`.
 - [ ] Détecter le dernier périphérique actif et adapter les prompts UI.
+  Le cœur est livré : transitions clavier/souris, manette anti-drift et touch
+  alimentent `Input::lastActiveDevice` / `input.lastActiveDevice()`. L'adaptation
+  des prompts reste hors de ce lot non-UI.
 - [ ] Ajouter haptique standard lorsque disponible.
 
 Gate : la matrice publiée correspond exactement aux backends testés; aucune

@@ -1,5 +1,7 @@
 #include "core/Input.hpp"
 #include "core/InputGamepad.hpp"
+#include "core/InputProfile.hpp"
+#include "core/InputTouch.hpp"
 #include "core/Log.hpp"
 #include "core/PlatformCaps.hpp"
 
@@ -7,12 +9,14 @@
 // seule la voie bindRaw est compilée, g_window reste toujours null.
 #ifdef __EMSCRIPTEN__
 #include <GLFW/glfw3.h>
+#include <emscripten/html5.h>
 namespace saida { class Window; }
 #else
 #include "core/Window.hpp"
 #endif
 
 #include <algorithm>
+#include <cstring>
 
 namespace saida {
 
@@ -39,10 +43,21 @@ glm::vec2 g_scrollDelta{0.0f};
 std::vector<uint32_t> g_textInput;
 std::vector<TouchPoint> g_touches;
 std::vector<TouchPoint> g_pendingTouches;
+std::vector<TouchGestureEvent> g_touchGestures;
+std::vector<TouchGestureEvent> g_pendingTouchGestures;
 std::unordered_map<uint64_t, glm::vec2> g_lastTouchPositions;
+std::unordered_map<uint64_t, glm::vec2> g_touchStartPositions;
+std::unordered_map<uint64_t, glm::vec2> g_activeTouchPositions;
+glm::vec2 g_inputViewportSize{1.0f};
 GLFWgamepadstate g_gamepadState{};
+GLFWgamepadstate g_gamepadPrevState{};
 int g_activeGamepad = -1;
+int g_previousActiveGamepad = -1;
 std::string g_activeGamepadName;
+InputDevice g_lastActiveDevice = InputDevice::None;
+#ifdef __EMSCRIPTEN__
+bool g_touchBackendAvailable = false;
+#endif
 
 // Actions virtuelles injectées (tests/CI) : combinées aux bindings au max.
 struct InjectedAction {
@@ -211,17 +226,44 @@ int glfwAxisFromGamepadAxis(GamepadAxis axis) {
 }
 
 void sampleGamepad() {
+    g_previousActiveGamepad = g_activeGamepad;
+    g_gamepadPrevState = g_gamepadState;
     std::fill(std::begin(g_gamepadState.buttons), std::end(g_gamepadState.buttons),
               GLFW_RELEASE);
     std::fill(std::begin(g_gamepadState.axes), std::end(g_gamepadState.axes), 0.0f);
 
 #ifdef __EMSCRIPTEN__
-    // Emscripten's GLFW port exposes the declarations but does not link the
-    // standard gamepad functions. The web player advertises gamepad=NO until a
-    // browser Gamepad API backend is implemented.
-    g_activeGamepad = -1;
-    g_activeGamepadName.clear();
-    return;
+    int detected = -1;
+    std::string detectedName;
+    if (platform::has(platform::Capability::GamepadInput) &&
+        emscripten_sample_gamepad_data() == EMSCRIPTEN_RESULT_SUCCESS) {
+        const int gamepadCount = emscripten_get_num_gamepads();
+        for (int slot = 0; slot < gamepadCount; ++slot) {
+            EmscriptenGamepadEvent browserState{};
+            if (emscripten_get_gamepad_status(slot, &browserState) !=
+                    EMSCRIPTEN_RESULT_SUCCESS ||
+                !browserState.connected ||
+                std::strcmp(browserState.mapping, "standard") != 0) {
+                continue;
+            }
+
+            input_detail::StandardGamepadState normalized;
+            const input_detail::WebStandardGamepadSample sample{
+                browserState.axis, browserState.numAxes,
+                browserState.analogButton, browserState.digitalButton,
+                browserState.numButtons};
+            if (!input_detail::mapWebStandardGamepad(sample, normalized)) continue;
+
+            detected = browserState.index;
+            detectedName = browserState.id;
+            for (size_t i = 0; i < normalized.buttons.size(); ++i)
+                g_gamepadState.buttons[i] =
+                    normalized.buttons[i] ? GLFW_PRESS : GLFW_RELEASE;
+            for (size_t i = 0; i < normalized.axes.size(); ++i)
+                g_gamepadState.axes[i] = normalized.axes[i];
+            break;
+        }
+    }
 #else
     int detected = -1;
     if (platform::has(platform::Capability::GamepadInput)) {
@@ -235,6 +277,7 @@ void sampleGamepad() {
 
     if (detected >= 0 && glfwGetGamepadState(detected, &g_gamepadState) != GLFW_TRUE)
         detected = -1;
+#endif
 
     if (detected == g_activeGamepad) return;
     if (g_activeGamepad >= 0)
@@ -243,14 +286,81 @@ void sampleGamepad() {
     g_activeGamepad = detected;
     g_activeGamepadName.clear();
     if (g_activeGamepad >= 0) {
+#ifdef __EMSCRIPTEN__
+        g_activeGamepadName = std::move(detectedName);
+#else
         if (const char* name = glfwGetGamepadName(g_activeGamepad))
             g_activeGamepadName = name;
+#endif
         if (g_activeGamepadName.empty()) g_activeGamepadName = "Standard gamepad";
         Log::info("gamepad connected: ", g_activeGamepadName,
                   " (id=", g_activeGamepad, ")");
     }
-#endif
 }
+
+bool gamepadHadActivity() {
+    // Le hotplug seul ne constitue pas une action utilisateur.
+    if (g_activeGamepad < 0 || g_activeGamepad != g_previousActiveGamepad)
+        return false;
+    for (int i = 0; i <= GLFW_GAMEPAD_BUTTON_LAST; ++i) {
+        if (g_gamepadState.buttons[i] != g_gamepadPrevState.buttons[i])
+            return true;
+    }
+    for (int i = 0; i <= GLFW_GAMEPAD_AXIS_LAST; ++i) {
+        if (input_detail::gamepadAxisHasActivity(
+                static_cast<GamepadAxis>(i), g_gamepadPrevState.axes[i],
+                g_gamepadState.axes[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+#ifdef __EMSCRIPTEN__
+EM_BOOL webTouchCallback(int eventType, const EmscriptenTouchEvent* event,
+                         void*) {
+    if (!event) return EM_FALSE;
+    TouchPhase phase = TouchPhase::Moved;
+    switch (eventType) {
+        case EMSCRIPTEN_EVENT_TOUCHSTART: phase = TouchPhase::Began; break;
+        case EMSCRIPTEN_EVENT_TOUCHEND: phase = TouchPhase::Ended; break;
+        case EMSCRIPTEN_EVENT_TOUCHCANCEL: phase = TouchPhase::Cancelled; break;
+        case EMSCRIPTEN_EVENT_TOUCHMOVE: phase = TouchPhase::Moved; break;
+        default: return EM_FALSE;
+    }
+    for (int i = 0; i < event->numTouches; ++i) {
+        const EmscriptenTouchPoint& point = event->touches[i];
+        if (!point.isChanged) continue;
+        Input::submitTouch(
+            static_cast<uint64_t>(point.identifier),
+            {static_cast<float>(point.targetX), static_cast<float>(point.targetY)},
+            phase);
+    }
+    // Le canvas du player possède le geste : empêcher scroll/zoom navigateur
+    // évite qu'un drag de gameplay soit consommé par la page.
+    return EM_TRUE;
+}
+
+bool installWebTouchBackend() {
+    constexpr const char* kCanvas = "#canvas";
+    const EMSCRIPTEN_RESULT start =
+        emscripten_set_touchstart_callback(kCanvas, nullptr, false,
+                                           webTouchCallback);
+    const EMSCRIPTEN_RESULT move =
+        emscripten_set_touchmove_callback(kCanvas, nullptr, false,
+                                          webTouchCallback);
+    const EMSCRIPTEN_RESULT end =
+        emscripten_set_touchend_callback(kCanvas, nullptr, false,
+                                         webTouchCallback);
+    const EMSCRIPTEN_RESULT cancel =
+        emscripten_set_touchcancel_callback(kCanvas, nullptr, false,
+                                            webTouchCallback);
+    return start == EMSCRIPTEN_RESULT_SUCCESS &&
+           move == EMSCRIPTEN_RESULT_SUCCESS &&
+           end == EMSCRIPTEN_RESULT_SUCCESS &&
+           cancel == EMSCRIPTEN_RESULT_SUCCESS;
+}
+#endif
 
 } // namespace
 
@@ -315,6 +425,9 @@ void Input::bindRaw(GLFWwindow* window) {
         g_rawTextInput.push_back(codepoint);
     });
 
+#ifdef __EMSCRIPTEN__
+    g_touchBackendAvailable = installWebTouchBackend();
+#endif
     installDefaultBindings();
 }
 
@@ -350,6 +463,31 @@ float Input::evaluateBinding(const ActionBinding& binding) {
             return input_detail::gamepadAxisActionValue(
                 binding.padAxis, g_gamepadState.axes[axis], binding.axisScale,
                 binding.deadzone);
+        }
+    } else if (binding.isTouch) {
+        if (!platform::has(platform::Capability::TouchInput)) return 0.0f;
+        if (binding.touchGesture == TouchGesture::Press) {
+            for (const auto& [id, position] : g_activeTouchPositions) {
+                (void)id;
+                if (input_detail::touchPointInZone(
+                        position, g_inputViewportSize,
+                        binding.touchZoneMin, binding.touchZoneMax)) {
+                    return 1.0f;
+                }
+            }
+        } else {
+            for (const TouchGestureEvent& gesture : g_touchGestures) {
+                if (gesture.gesture != binding.touchGesture ||
+                    !input_detail::touchPointInZone(
+                        gesture.startPosition, g_inputViewportSize,
+                        binding.touchZoneMin, binding.touchZoneMax)) {
+                    continue;
+                }
+                if (binding.touchGesture == TouchGesture::Tap ||
+                    gesture.distance >= binding.touchMinDistance) {
+                    return 1.0f;
+                }
+            }
         }
     }
 
@@ -402,10 +540,32 @@ void Input::newFrame() {
     }
     g_touches = std::move(g_pendingTouches);
     g_pendingTouches.clear();
+    g_touchGestures = std::move(g_pendingTouchGestures);
+    g_pendingTouchGestures.clear();
 
     double mx, my;
     glfwGetCursorPos(w, &mx, &my);
     g_mousePos = {static_cast<float>(mx), static_cast<float>(my)};
+    int viewportWidth = 0;
+    int viewportHeight = 0;
+    glfwGetWindowSize(w, &viewportWidth, &viewportHeight);
+    g_inputViewportSize = {
+        static_cast<float>(std::max(viewportWidth, 1)),
+        static_cast<float>(std::max(viewportHeight, 1))};
+
+    // Les transitions (pas les états tenus) conservent un vrai ordre de
+    // récence entre périphériques. Une touche clavier maintenue ne reprend donc
+    // pas les prompts à une manette qui vient de bouger.
+    bool keyboardMouseActivity =
+        g_mouseDelta != glm::vec2(0.0f) || g_scrollDelta != glm::vec2(0.0f) ||
+        !g_textInput.empty();
+    for (int k = 0; !keyboardMouseActivity && k <= GLFW_KEY_LAST; ++k)
+        keyboardMouseActivity = g_keyCurr[k] != g_keyPrev[k];
+    for (int b = 0; !keyboardMouseActivity && b <= GLFW_MOUSE_BUTTON_LAST; ++b)
+        keyboardMouseActivity = g_mouseCurr[b] != g_mousePrev[b];
+    if (keyboardMouseActivity) g_lastActiveDevice = InputDevice::KeyboardMouse;
+    if (gamepadHadActivity()) g_lastActiveDevice = InputDevice::Gamepad;
+    if (!g_touches.empty()) g_lastActiveDevice = InputDevice::Touch;
 
     // 2. Advance injected action states (same current/previous cycle as bindings)
     for (auto& [name, injected] : g_injectedActions) {
@@ -493,6 +653,85 @@ void Input::bindGamepadAxis(const std::string& action, GamepadAxis axis, float s
     b.axisScale = scale;
     b.deadzone = std::clamp(deadzone, 0.0f, 0.99f);
     g_bindings.push_back(b);
+}
+
+void Input::rebindKey(const std::string& action, KeyCode key,
+                      const InputContextID& context) {
+    unmapAction(action, context);
+    bindKey(action, key, context);
+}
+
+void Input::rebindMouse(const std::string& action, MouseButton btn,
+                        const InputContextID& context) {
+    unmapAction(action, context);
+    bindMouse(action, btn, context);
+}
+
+void Input::rebindGamepadButton(const std::string& action, GamepadButton button,
+                                const InputContextID& context) {
+    unmapAction(action, context);
+    bindGamepadButton(action, button, context);
+}
+
+void Input::rebindGamepadAxis(const std::string& action, GamepadAxis axis,
+                              float scale, float deadzone,
+                              const InputContextID& context) {
+    unmapAction(action, context);
+    bindGamepadAxis(action, axis, scale, deadzone, context);
+}
+
+void Input::bindTouch(const std::string& action, TouchGesture gesture,
+                      glm::vec2 zoneMin, glm::vec2 zoneMax, float minDistance,
+                      const InputContextID& context) {
+    ActionBinding binding;
+    binding.actionName = action;
+    binding.context = context;
+    binding.isTouch = true;
+    binding.touchGesture = gesture;
+    const glm::vec2 clampedMin =
+        glm::clamp(zoneMin, glm::vec2(0.0f), glm::vec2(1.0f));
+    const glm::vec2 clampedMax =
+        glm::clamp(zoneMax, glm::vec2(0.0f), glm::vec2(1.0f));
+    binding.touchZoneMin = glm::min(clampedMin, clampedMax);
+    binding.touchZoneMax = glm::max(clampedMin, clampedMax);
+    binding.touchMinDistance = std::clamp(minDistance, 0.0f, 4096.0f);
+    g_bindings.push_back(std::move(binding));
+}
+
+void Input::rebindTouch(const std::string& action, TouchGesture gesture,
+                        glm::vec2 zoneMin, glm::vec2 zoneMax, float minDistance,
+                        const InputContextID& context) {
+    unmapAction(action, context);
+    bindTouch(action, gesture, zoneMin, zoneMax, minDistance, context);
+}
+
+std::string Input::serializeBindingProfile(const std::string& name) {
+    InputBindingProfile profile;
+    profile.name = name.empty() || name.size() > 64 ? "default" : name;
+    profile.bindings = g_bindings;
+    return serializeInputBindingProfile(profile).dump();
+}
+
+bool Input::applyBindingProfile(const std::string& serialized,
+                                std::string& error) {
+    const nlohmann::json doc =
+        nlohmann::json::parse(serialized, nullptr, /*allow_exceptions=*/false);
+    if (doc.is_discarded()) {
+        error = "input profile is not valid JSON";
+        return false;
+    }
+    InputBindingProfileParseResult parsed = parseInputBindingProfile(doc);
+    if (!parsed.ok) {
+        error = std::move(parsed.error);
+        return false;
+    }
+    for (ActionBinding& binding : parsed.profile.bindings) {
+        binding.currentValue = 0.0f;
+        binding.previousValue = 0.0f;
+    }
+    g_bindings = std::move(parsed.profile.bindings);
+    error.clear();
+    return true;
 }
 
 void Input::unmapAction(const std::string& action, const InputContextID& context) {
@@ -596,12 +835,39 @@ bool Input::isMouseButtonReleased(MouseButton btn) {
 bool Input::isGamepadConnected() { return g_activeGamepad >= 0; }
 int Input::activeGamepadId() { return g_activeGamepad; }
 const std::string& Input::activeGamepadName() { return g_activeGamepadName; }
+bool Input::gamepadBackendAvailable() {
+#ifdef __EMSCRIPTEN__
+    return emscripten_sample_gamepad_data() == EMSCRIPTEN_RESULT_SUCCESS;
+#else
+    return true;
+#endif
+}
+bool Input::touchBackendAvailable() {
+#ifdef __EMSCRIPTEN__
+    return g_touchBackendAvailable;
+#else
+    return false;
+#endif
+}
+InputDevice Input::lastActiveDevice() { return g_lastActiveDevice; }
+const char* Input::deviceName(InputDevice device) {
+    switch (device) {
+        case InputDevice::None: return "none";
+        case InputDevice::KeyboardMouse: return "keyboard-mouse";
+        case InputDevice::Gamepad: return "gamepad";
+        case InputDevice::Touch: return "touch";
+    }
+    return "none";
+}
 
 glm::vec2 Input::mouseDelta() { return g_mouseDelta; }
 glm::vec2 Input::mousePosition() { return g_mousePos; }
 glm::vec2 Input::scrollDelta() { return g_scrollDelta; }
 const std::vector<uint32_t>& Input::textInputCodepoints() { return g_textInput; }
 const std::vector<TouchPoint>& Input::touches() { return g_touches; }
+const std::vector<TouchGestureEvent>& Input::touchGestures() {
+    return g_touchGestures;
+}
 
 void Input::submitTouch(uint64_t id, glm::vec2 position, TouchPhase phase) {
     glm::vec2 previous = position;
@@ -609,8 +875,26 @@ void Input::submitTouch(uint64_t id, glm::vec2 position, TouchPhase phase) {
         previous = it->second;
     }
     g_pendingTouches.push_back({id, position, previous, phase});
+    if (phase == TouchPhase::Began) {
+        g_touchStartPositions[id] = position;
+        g_activeTouchPositions[id] = position;
+    } else if (phase == TouchPhase::Moved) {
+        g_activeTouchPositions[id] = position;
+    } else if (phase == TouchPhase::Ended) {
+        glm::vec2 start = previous;
+        if (auto it = g_touchStartPositions.find(id);
+            it != g_touchStartPositions.end()) {
+            start = it->second;
+        }
+        const glm::vec2 delta = position - start;
+        g_pendingTouchGestures.push_back({
+            id, input_detail::classifyTouchGesture(start, position),
+            start, position, glm::length(delta)});
+    }
     if (phase == TouchPhase::Ended || phase == TouchPhase::Cancelled) {
         g_lastTouchPositions.erase(id);
+        g_touchStartPositions.erase(id);
+        g_activeTouchPositions.erase(id);
     } else {
         g_lastTouchPositions[id] = position;
     }
@@ -625,7 +909,11 @@ void Input::consumeMouse() {
     g_scrollDelta = {0.0f, 0.0f};
     g_touches.clear();
     g_pendingTouches.clear();
+    g_touchGestures.clear();
+    g_pendingTouchGestures.clear();
     g_lastTouchPositions.clear();
+    g_touchStartPositions.clear();
+    g_activeTouchPositions.clear();
     
     // Also clear bindings that are mouse-based
     for (auto& binding : g_bindings) {

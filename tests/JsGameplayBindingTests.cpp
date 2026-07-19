@@ -5,6 +5,7 @@
 // contexte QuickJS headless. Les cibles sans behaviour répondent false/null,
 // jamais une exception.
 #include "core/Reflection.hpp"
+#include "core/Input.hpp"
 #include "scene/Blackboard.hpp"
 #include "scene/Node.hpp"
 #include "scene/ReflectedTypes.hpp"
@@ -125,6 +126,35 @@ int main() {
         // C++ → C++ via le même store : la valeur écrite côté C++ est visible en JS.
         board->setNumber("score", 43.0);
         assert(ctx.eval("if (node.getData('score') !== 43) throw new Error('C++ write visible');"));
+
+        // --- rebinding runtime + profil JSON persistable via storage.prefs ---
+        assert(ctx.eval(
+            "input.rebindKey('Jump', 'J');"
+            "input.rebindMouse('Fire', 'Button4', 'Gameplay');"
+            "input.rebindGamepadButton('Confirm', 'A');"
+            "input.rebindGamepadAxis('MoveLeft', 'LeftX', -1.0, 0.2);"
+            "input.rebindTouch('Dash', 'SwipeRight', 0.5, 0, 1, 1, 64);"
+            "globalThis.inputProfile = input.exportProfile('custom');"
+            "const p = JSON.parse(globalThis.inputProfile);"
+            "if (p.schema !== 1 || p.name !== 'custom' || p.bindings.length !== 5)"
+            "  throw new Error('profile export');"
+            "if (input.applyProfile(globalThis.inputProfile) !== true)"
+            "  throw new Error('profile apply');"));
+        const std::string profileBeforeInvalid =
+            Input::serializeBindingProfile("custom");
+        std::string profileError;
+        assert(!Input::applyBindingProfile(
+            R"({"schema":99,"name":"future","bindings":[]})", profileError));
+        assert(!profileError.empty());
+        assert(Input::serializeBindingProfile("custom") == profileBeforeInvalid);
+        assert(ctx.eval(
+            "let rejected = false;"
+            "try { input.applyProfile('{\"schema\":99,\"name\":\"bad\",\"bindings\":[]}'); }"
+            "catch (e) { rejected = true; }"
+            "if (!rejected) throw new Error('invalid profile accepted');"));
+        assert(ctx.eval(
+            "if (input.lastActiveDevice() !== 'none')"
+            "  throw new Error('last active device default');"));
     }
 
     {
