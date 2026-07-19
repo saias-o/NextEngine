@@ -589,6 +589,10 @@
       "jumpForce": 6.0,
       "faceMovement": true,
       "graph": "anim/locomotion.sgraph"
+     },
+     {
+      "type": "Blackboard",
+      "enabled": true
      }
     ],
     "children": [

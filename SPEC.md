@@ -424,10 +424,39 @@ Il n'existe pas de hot reload DLL C++ : le linkage dynamique libstdc++ est
 fragile sur la toolchain UCRT64 actuelle et le build est statique. C#/.NET n'est
 pas retenu afin d'éviter runtime, marshalling et second écosystème de bindings.
 
-### 6.2 API candidate V1
+### 6.2 Politique de permissions des scripts (V1)
+
+Le modèle est *capability-based* : un script n'a aucune autorité ambiante
+au-delà des globals que le moteur installe explicitement — `console` et les
+capacités `node/time/input/tree/assets/audio/physics/storage` (plus
+`exportProperty`/`props` pendant le chargement d'un `ScriptBehaviour`).
+Concrètement :
+
+- pas de réseau (aucun `fetch`/socket), pas d'accès OS, processus ou variables
+  d'environnement; quickjs-libc (`std`, `os`) n'est pas lié;
+- pas de filesystem : la seule persistance est `storage`/`storage.prefs`
+  (quotas par slot/namespace, erreurs typées); les imports de modules sont
+  résolus uniquement sous la racine canonique du projet;
+- budget temps interruptible (deadline 100 ms, 1024 jobs, microtasks
+  interrompues) et callbacks protégés — un script hostile peut geler sa frame,
+  pas le processus;
+- toute nouvelle capacité doit être ajoutée ici ET dans l'allowlist du test
+  `saida_js_permission_policy_tests`, qui verrouille la surface globale par
+  différence avec un contexte QuickJS nu (une autorité apparue ou disparue
+  fait échouer la suite).
+
+### 6.3 API candidate V1
 
 - `node` : nom, position, translation, activation, suppression différée,
-  groupes, `on`, `emit`; sur `UITextNode`, `setText/getText`.
+  groupes, `on`, `emit`; sur `UITextNode`, `setText/getText`. Gameplay (le
+  behaviour est résolu sur le nœud, sinon premier descendant) :
+  `playClip(name, loop?, crossfade?)`/`currentClip()` (Animator),
+  `setAnimFloat/setAnimBool/setAnimTrigger` (blackboard d'animation → pilote
+  un `.sgraph`), `playSequence()/stopSequence()` (SequenceDirector, signaux
+  `sequenceEvent`/`sequenceFinished` réfléchis), `setData/getData/hasData`
+  (Blackboard gameplay, number/bool/string, signal `changed`); cible sans
+  behaviour → false/null, jamais d'exception. `animationEvent` de l'Animator
+  est un signal réfléchi abonnable par `on`.
 - `time` : `delta`, `elapsed`, `wait`, `every`, `tween`, `cancel`.
 - `input` : actions, forces, axes, vecteurs, souris et injection de test.
 - `audio` : `play(alias)`.
@@ -441,6 +470,13 @@ pas retenu afin d'éviter runtime, marshalling et second écosystème de binding
 - `storage` : slots opaques de progression (`save/load/has/remove/info/list`,
   `save` accepte un `dataVersion` optionnel), sous-objet `storage.prefs` pour les
   préférences et `storage.lastError()` pour le dernier échec typé; décrits en 5.4.
+  Contrat de durabilité : la visibilité est synchrone (un `load` après `save`
+  rend la valeur), la durabilité est asynchrone — `storage.flush()` retourne
+  une Promise résolue `true` quand les écritures en attente (saves ET prefs)
+  sont durables, `false` en échec, jamais rejetée. Desktop : écritures
+  atomiques durables dès `save`, résolution au prochain drain de microtasks;
+  Web : résolution par le callback `FS.syncfs` (IndexedDB); un backend cloud
+  futur s'insère derrière la même promesse sans changer l'API.
 - `physics` : `available()`;
   `raycast(origin, direction, maxDistance, opts?)` → `null` ou
   `{point, normal, distance, node: NodeRef|null}`;
@@ -450,7 +486,6 @@ pas retenu afin d'éviter runtime, marshalling et second écosystème de binding
   physique (pas de Play, pas de corps), les queries répondent « rien »
   (`null`/liste vide), jamais une erreur. Même surface desktop et player Web.
 
-Il manque encore les bindings complets animation/graph/séquences/blackboard.
 Les références cross-node deviennent invalides
 explicitement lorsque leur NodeId disparaît; aucun pointeur JS ne survit à la
 destruction d'une scène.
@@ -761,13 +796,16 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
   de certains folds.
 - Les producteurs SaidaOp externes V1 doivent émettre `opVersion: 2` et les
   `NodeId`; les opérations historiques par nom sont volontairement refusées.
-- Queries physiques (raycast filtré, overlapSphere) et joints V1
-  (Fixed/Point/Hinge) livrés avec parité JS desktop/Web; bindings animation,
-  graph, séquences et blackboard encore incomplets.
+- Queries physiques (raycast filtré, overlapSphere), joints V1
+  (Fixed/Point/Hinge) et bindings animation/graph/séquences/blackboard livrés
+  avec parité JS desktop/Web; contraintes avancées (slider, cône, moteurs) et
+  API d'animation étendue (scrub, root motion JS) restent P1.
 - Sauvegardes d'un jeu packagé sous le dossier utilisateur de l'OS (keyé par
   l'identité du jeu, override `$SAIDA_SAVE_DIR`); éditeur/dev restent sous la
-  racine projet. API asynchrone complète encore absente; enveloppe versionnée,
-  metadata, namespaces progression/préférences et quotas en place.
+  racine projet. Enveloppe versionnée, metadata, namespaces
+  progression/préférences, quotas et contrat de durabilité asynchrone
+  (`storage.flush()` → Promise) en place; seul un backend cloud effectif
+  reste futur.
 - Asset LRU en cours de scène, streaming Web et sweep rigs/anims absents.
 - Point-light shadows cubemap et lightmaps persistantes absentes.
 - XR sans MSAA multiview, overlay et matrice hardware validée.

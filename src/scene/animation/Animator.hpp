@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/ReflectionFwd.hpp"
 #include "core/Signal.hpp"
 #include "scene/Behaviour.hpp"
 #include "scene/animation/Rig.hpp"
@@ -105,6 +106,12 @@ public:
     ClipNode* activeClipNode() const;
 
     const char* typeName() const override { return "Animator"; }
+
+    // Reflection: signals only (animationEvent) — serialization stays the
+    // hand-written one (SAIDA_REFLECT_BEHAVIOUR would change the on-disk
+    // format). Lets scripts do `node.on("animationEvent", fn)`.
+    static constexpr const char* reflectName() { return "Animator"; }
+    static void describe(reflect::TypeBuilder<Animator>& t);
 
 private:
     void refreshRootMotionExtraction();

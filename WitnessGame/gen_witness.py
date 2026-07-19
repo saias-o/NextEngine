@@ -108,7 +108,10 @@ def player(prefix, pos):
                 behaviours=[{"type": "Character", "enabled": True,
                              "moveSpeed": 6.0, "jumpForce": 6.0,
                              "faceMovement": True,
-                             "graph": "anim/locomotion.sgraph"}])
+                             "graph": "anim/locomotion.sgraph"},
+                            # Store gameplay partagé : traversé par le driver
+                            # E2E via node.setData/getData (P0.4).
+                            {"type": "Blackboard", "enabled": True}])
 
 
 def statue(prefix, pos):

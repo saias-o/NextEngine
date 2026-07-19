@@ -28,6 +28,8 @@ public:
     double number(const std::string& key, double fallback = 0.0) const;
     bool boolean(const std::string& key, bool fallback = false) const;
     std::string string(const std::string& key, const std::string& fallback = {}) const;
+    // Typed access without fallback games (JS bindings). Null when absent.
+    const Value* find(const std::string& key) const;
 
     Signal<std::string> changed;  // emits the key whenever a value is set
 

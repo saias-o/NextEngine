@@ -160,10 +160,30 @@ desktop et Web; l'absence XR éventuelle est un fallback déclaré.
   raycast/overlap dans le driver E2E) : PASS éditeur `--play`, desktop packagé
   (`witness_e2e.sh`, run + restart) et navigateur (PASS 16 cycles + RESTART
   PASS). Restent en P1 : slider/cône/moteurs/breakables et diagnostics.
-- [ ] Compléter les bindings animation, graph, sequence et blackboard.
+- [x] Compléter les bindings animation, graph, sequence et blackboard.
+  Sur `node` et `NodeRef` (résolution : behaviour du nœud, sinon premier
+  descendant — la règle du SequenceDirector) : `playClip`/`currentClip`,
+  `setAnimFloat`/`setAnimBool`/`setAnimTrigger` (paramètres du blackboard
+  d'animation, pilotent un `.sgraph`), `playSequence`/`stopSequence`,
+  `setData`/`getData`/`hasData` (Blackboard gameplay, number/bool/string);
+  cible sans behaviour → false/null, jamais d'exception. Le signal
+  `animationEvent` de l'Animator est réfléchi (descripteur signaux-seulement,
+  sérialisation manuscrite intacte) donc abonnable par `node.on`. Prouvé par
+  `saida_js_gameplay_tests` (traversée QuickJS headless complète) et par
+  WitnessGame : `gameplay api ok` dans l'arène (Animator du Player trouvé en
+  descendant, round-trip Blackboard, réponses négatives sur la caméra) et
+  replay d'`intro.sseq` via `playSequence` au run RESTART.
 - [x] Émettre un warning quand un module JS ne fournit aucun hook reconnu.
-- [ ] Définir la politique de permissions des scripts publics au-delà du
-  confinement filesystem et du budget temps.
+- [x] Définir la politique de permissions des scripts publics au-delà du
+  confinement filesystem et du budget temps. Politique *capability-based*
+  (SPEC 6.2) : aucune autorité ambiante au-delà des globals installés
+  (`console` + `node/time/input/tree/assets/audio/physics/storage`); pas de
+  réseau, pas d'OS/processus/env (quickjs-libc non lié), pas de filesystem
+  hors `storage` quota-é, imports confinés à la racine projet, budget temps
+  interruptible. Verrouillée par `saida_js_permission_policy_tests` : la
+  surface globale d'un contexte moteur est diffée contre un contexte QuickJS
+  nu et doit égaler exactement l'allowlist — toute capacité apparue ou
+  disparue casse la suite.
 - [x] Déplacer les saves vers l'emplacement utilisateur de chaque OS. Politique
   `core/Paths::userSaveRoot` : un jeu packagé écrit `saves/`/`prefs/` sous le
   dossier de données utilisateur de l'OS (`%APPDATA%\SaidaEngine\Games\<jeu>`,
@@ -188,10 +208,25 @@ desktop et Web; l'absence XR éventuelle est un fallback déclaré.
   (16 MiB) et nombre de slots (256); échec `false` avec statut typé consultable
   par `storage.lastError()` (`invalid_slot`/`quota_exceeded`/`not_found`/
   `corrupt`/`io_error`). Prouvé par `saida_player_storage_tests`.
-- [ ] Stabiliser le contrat asynchrone nécessaire à IDBFS/cloud save futur.
+- [x] Stabiliser le contrat asynchrone nécessaire à IDBFS/cloud save futur.
+  Contrat : visibilité synchrone (un `load` après `save` rend la valeur),
+  durabilité asynchrone — `storage.flush()` retourne une Promise résolue
+  `true` quand les écritures en attente (saves et prefs) sont durables,
+  `false` en échec, jamais rejetée. Desktop : écritures atomiques durables dès
+  `save`, résolution au prochain drain de microtasks; Web : résolution par le
+  callback `FS.syncfs` (IndexedDB), résolveurs en vol libérés au teardown du
+  contexte (hot-reload sûr); un backend cloud futur s'insère derrière la même
+  promesse. Prouvé par `saida_js_storage_flush_tests` et par le driver
+  WitnessGame : le verdict PASS n'est émis qu'après un flush durable
+  (`flush=durable`), et le run RESTART relit cette progression sur desktop
+  (fichier) comme au reload navigateur (IndexedDB).
 
 Gate : WitnessGame communique sans fichier détourné et récupère une sauvegarde
-cohérente après crash/redémarrage.
+cohérente après crash/redémarrage. **Fermée le 2026-07-19** : cross-node,
+signaux, Blackboard et storage versionné/quota-é remplacent tout fichier
+détourné; la progression est relue au redémarrage par les harnais desktop
+(`witness_e2e.sh`, run + restart), éditeur `--play` et navigateur (PASS puis
+RESTART PASS via IndexedDB), le tout après flush durable explicite.
 
 ## P0.5 - Assets, mémoire et contenu hostile
 

@@ -16,6 +16,7 @@
 #include "scene/RotatorBehaviour.hpp"
 #include "scene/SpawnerBehaviour.hpp"
 #include "scene/StateMachineBehaviour.hpp"
+#include "scene/animation/Animator.hpp"
 #include "scene/animation/SequenceDirectorBehaviour.hpp"
 #include "physics/AreaNode.hpp"
 #include "physics/JointNodes.hpp"
@@ -58,6 +59,8 @@ void registerReflectedTypes() {
     registered = true;
 
     registerBehaviour<RotatorBehaviour>();
+    // Signals-only descriptor (animationEvent) — serialization stays manual.
+    registerBehaviour<Animator>();
     registerBehaviour<AudioSourceBehaviour>();
     registerBehaviour<CameraFollowBehaviour>();
     registerBehaviour<CharacterBehaviour>();

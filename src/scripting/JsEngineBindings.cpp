@@ -14,10 +14,13 @@
 #include "project/AssetLoader.hpp"
 #include "project/PlayerStorage.hpp"
 #include "scene/Behaviour.hpp"
+#include "scene/Blackboard.hpp"
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SceneTree.hpp"
 #include "scene/UITextNode.hpp"
+#include "scene/animation/Animator.hpp"
+#include "scene/animation/SequenceDirectorBehaviour.hpp"
 #include "scripting/JsContext.hpp"
 #include "scripting/ScriptBehaviour.hpp"
 #include "scripting/JsTimerBindings.hpp"
@@ -172,6 +175,53 @@ void syncfsAfterMutation() {
 #else
     (void)0;
 #endif
+}
+
+// ---- storage.flush() : contrat de durabilité asynchrone --------------------
+// Visibilité synchrone (un load qui suit un save rend la valeur), durabilité
+// asynchrone : la promesse se résout `true` une fois les écritures en attente
+// durables, `false` en échec — jamais de rejet. Desktop : les écritures sont
+// atomiques et durables dès save(), la promesse se résout au prochain drain de
+// microtasks. Web : résolution par le callback FS.syncfs (IndexedDB). Un
+// backend cloud futur s'insère derrière la même promesse sans changer l'API.
+// Couvre saves ET prefs (le flush est global au filesystem persistant).
+
+#ifdef __EMSCRIPTEN__
+struct PendingFlush {
+    JSContext* ctx;
+    JSValue resolve;
+};
+
+std::unordered_map<int, PendingFlush>& pendingFlushes() {
+    static std::unordered_map<int, PendingFlush> map;
+    return map;
+}
+
+int gNextFlushToken = 0;
+#endif
+
+JSValue jsStorageFlush(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    JSValue funcs[2];
+    JSValue promise = JS_NewPromiseCapability(ctx, funcs);
+    if (JS_IsException(promise)) return promise;
+
+#ifdef __EMSCRIPTEN__
+    const int token = ++gNextFlushToken;
+    pendingFlushes()[token] = {ctx, JS_DupValue(ctx, funcs[0])};
+    EM_ASM({
+        FS.syncfs(false, function(err) {
+            _saida_storage_flush_done($0, err ? 1 : 0);
+        });
+    }, token);
+#else
+    JSValue arg = JS_NewBool(ctx, true);
+    JSValue r = JS_Call(ctx, funcs[0], JS_UNDEFINED, 1, &arg);
+    JS_FreeValue(ctx, r);
+    JS_FreeValue(ctx, arg);
+#endif
+    JS_FreeValue(ctx, funcs[0]);
+    JS_FreeValue(ctx, funcs[1]);
+    return promise;
 }
 
 // Lit le slot (argv[0]) en le validant ; renvoie false et pose outError si absent
@@ -883,6 +933,176 @@ JSValue emitNodeSignal(JSContext* ctx, Node* node, int argc, JSValueConst* argv)
     return JS_NewBool(ctx, true);
 }
 
+// ---- gameplay : animation / graph / séquences / blackboard ----------------
+// Règle de résolution commune (celle du SequenceDirector) : le behaviour est
+// cherché sur le nœud ciblé, sinon premier trouvé dans ses descendants. Les
+// méthodes retournent false quand la cible n'a pas le behaviour — jamais une
+// exception — pour que les scripts puissent sonder sans se protéger.
+
+template <typename B>
+B* behaviourOnOrUnder(Node* node) {
+    if (!node) return nullptr;
+    if (B* b = node->getBehaviour<B>()) return b;
+    return node->findBehaviourInChildren<B>();
+}
+
+// node.playClip(name, loop=true, crossfade=0.2) — clip par nom sur l'Animator.
+// true = Animator trouvé (un nom de clip inconnu est loggé par le moteur).
+JSValue gameplayPlayClip(JSContext* ctx, Node* target, int argc, JSValueConst* argv) {
+    Animator* animator = behaviourOnOrUnder<Animator>(target);
+    if (!animator || argc < 1) return JS_NewBool(ctx, false);
+    const char* raw = JS_ToCString(ctx, argv[0]);
+    if (!raw) return JS_EXCEPTION;
+    std::string name = raw;
+    JS_FreeCString(ctx, raw);
+
+    bool loop = true;
+    double crossfade = 0.2;
+    if (argc >= 2) {
+        const int b = JS_ToBool(ctx, argv[1]);
+        if (b < 0) return JS_EXCEPTION;
+        loop = b != 0;
+    }
+    if (argc >= 3 && !toNumber(ctx, argv[2], crossfade)) return JS_NewBool(ctx, false);
+
+    animator->play(name, loop, static_cast<float>(crossfade));
+    return JS_NewBool(ctx, true);
+}
+
+JSValue gameplayCurrentClip(JSContext* ctx, Node* target) {
+    Animator* animator = behaviourOnOrUnder<Animator>(target);
+    if (!animator) return JS_NULL;
+    return JS_NewString(ctx, animator->currentClip().c_str());
+}
+
+enum class AnimParamKind { Float, Bool, Trigger };
+
+// setAnimFloat/setAnimBool/setAnimTrigger — paramètres du blackboard
+// d'animation (pilotent les transitions d'un .sgraph).
+JSValue gameplaySetAnimParam(JSContext* ctx, Node* target, AnimParamKind kind,
+                             int argc, JSValueConst* argv) {
+    Animator* animator = behaviourOnOrUnder<Animator>(target);
+    if (!animator || argc < 1) return JS_NewBool(ctx, false);
+    const char* raw = JS_ToCString(ctx, argv[0]);
+    if (!raw) return JS_EXCEPTION;
+    std::string name = raw;
+    JS_FreeCString(ctx, raw);
+
+    switch (kind) {
+    case AnimParamKind::Float: {
+        double value = 0.0;
+        if (argc < 2 || !toNumber(ctx, argv[1], value)) return JS_NewBool(ctx, false);
+        animator->setFloat(name, static_cast<float>(value));
+        break;
+    }
+    case AnimParamKind::Bool: {
+        if (argc < 2) return JS_NewBool(ctx, false);
+        const int b = JS_ToBool(ctx, argv[1]);
+        if (b < 0) return JS_EXCEPTION;
+        animator->setBool(name, b != 0);
+        break;
+    }
+    case AnimParamKind::Trigger:
+        animator->setTrigger(name);
+        break;
+    }
+    return JS_NewBool(ctx, true);
+}
+
+// playSequence()/stopSequence() — SequenceDirector du nœud (ou descendant).
+JSValue gameplaySequence(JSContext* ctx, Node* target, bool play) {
+    auto* director = behaviourOnOrUnder<SequenceDirectorBehaviour>(target);
+    if (!director) return JS_NewBool(ctx, false);
+    if (play) director->play();
+    else director->stop();
+    return JS_NewBool(ctx, true);
+}
+
+// setData/getData/hasData — Blackboard gameplay du nœud (ou descendant).
+// Valeurs number/bool/string, comme le store C++.
+JSValue gameplaySetData(JSContext* ctx, Node* target, int argc, JSValueConst* argv) {
+    Blackboard* board = behaviourOnOrUnder<Blackboard>(target);
+    if (!board || argc < 2) return JS_NewBool(ctx, false);
+    const char* raw = JS_ToCString(ctx, argv[0]);
+    if (!raw) return JS_EXCEPTION;
+    std::string key = raw;
+    JS_FreeCString(ctx, raw);
+
+    JSValueConst v = argv[1];
+    if (JS_IsBool(v)) {
+        board->setBool(std::move(key), JS_ToBool(ctx, v) != 0);
+    } else if (JS_IsNumber(v)) {
+        double d = 0.0;
+        if (JS_ToFloat64(ctx, &d, v) != 0) return JS_EXCEPTION;
+        board->setNumber(std::move(key), d);
+    } else if (JS_IsString(v)) {
+        const char* s = JS_ToCString(ctx, v);
+        if (!s) return JS_EXCEPTION;
+        board->setString(std::move(key), s);
+        JS_FreeCString(ctx, s);
+    } else {
+        return JS_ThrowTypeError(ctx, "setData value must be number, bool or string");
+    }
+    return JS_NewBool(ctx, true);
+}
+
+JSValue gameplayGetData(JSContext* ctx, Node* target, int argc, JSValueConst* argv) {
+    Blackboard* board = behaviourOnOrUnder<Blackboard>(target);
+    if (!board || argc < 1) return JS_NULL;
+    const char* raw = JS_ToCString(ctx, argv[0]);
+    if (!raw) return JS_EXCEPTION;
+    std::string key = raw;
+    JS_FreeCString(ctx, raw);
+
+    const Blackboard::Value* value = board->find(key);
+    if (!value) return argc >= 2 ? JS_DupValue(ctx, argv[1]) : JS_NULL;
+    if (const double* d = std::get_if<double>(value)) return JS_NewFloat64(ctx, *d);
+    if (const bool* b = std::get_if<bool>(value)) return JS_NewBool(ctx, *b);
+    return JS_NewString(ctx, std::get<std::string>(*value).c_str());
+}
+
+JSValue gameplayHasData(JSContext* ctx, Node* target, int argc, JSValueConst* argv) {
+    Blackboard* board = behaviourOnOrUnder<Blackboard>(target);
+    if (!board || argc < 1) return JS_NewBool(ctx, false);
+    const char* raw = JS_ToCString(ctx, argv[0]);
+    if (!raw) return JS_EXCEPTION;
+    const bool has = board->has(raw);
+    JS_FreeCString(ctx, raw);
+    return JS_NewBool(ctx, has);
+}
+
+// Variantes self (`node.*`) des méthodes gameplay.
+JSValue jsNodePlayClip(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return gameplayPlayClip(ctx, nodeFromJs(ctx), argc, argv);
+}
+JSValue jsNodeCurrentClip(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    return gameplayCurrentClip(ctx, nodeFromJs(ctx));
+}
+JSValue jsNodeSetAnimFloat(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return gameplaySetAnimParam(ctx, nodeFromJs(ctx), AnimParamKind::Float, argc, argv);
+}
+JSValue jsNodeSetAnimBool(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return gameplaySetAnimParam(ctx, nodeFromJs(ctx), AnimParamKind::Bool, argc, argv);
+}
+JSValue jsNodeSetAnimTrigger(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return gameplaySetAnimParam(ctx, nodeFromJs(ctx), AnimParamKind::Trigger, argc, argv);
+}
+JSValue jsNodePlaySequence(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    return gameplaySequence(ctx, nodeFromJs(ctx), true);
+}
+JSValue jsNodeStopSequence(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    return gameplaySequence(ctx, nodeFromJs(ctx), false);
+}
+JSValue jsNodeSetData(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return gameplaySetData(ctx, nodeFromJs(ctx), argc, argv);
+}
+JSValue jsNodeGetData(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return gameplayGetData(ctx, nodeFromJs(ctx), argc, argv);
+}
+JSValue jsNodeHasData(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    return gameplayHasData(ctx, nodeFromJs(ctx), argc, argv);
+}
+
 JSValue jsNodeOn(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     return subscribeNodeSignal(ctx, nodeFromJs(ctx), argc, argv);
 }
@@ -913,6 +1133,16 @@ enum NodeRefMethod {
     NodeRefAddToGroup,
     NodeRefRemoveFromGroup,
     NodeRefIsInGroup,
+    NodeRefPlayClip,
+    NodeRefCurrentClip,
+    NodeRefSetAnimFloat,
+    NodeRefSetAnimBool,
+    NodeRefSetAnimTrigger,
+    NodeRefPlaySequence,
+    NodeRefStopSequence,
+    NodeRefSetData,
+    NodeRefGetData,
+    NodeRefHasData,
 };
 
 JSValue jsNodeRefMethod(JSContext* ctx, JSValueConst, int argc,
@@ -968,6 +1198,26 @@ JSValue jsNodeRefMethod(JSContext* ctx, JSValueConst, int argc,
         if (!text) return JS_ThrowTypeError(ctx, "NodeRef target is not a UITextNode");
         return JS_NewString(ctx, text->text().c_str());
     }
+    case NodeRefPlayClip:
+        return gameplayPlayClip(ctx, target, argc, argv);
+    case NodeRefCurrentClip:
+        return gameplayCurrentClip(ctx, target);
+    case NodeRefSetAnimFloat:
+        return gameplaySetAnimParam(ctx, target, AnimParamKind::Float, argc, argv);
+    case NodeRefSetAnimBool:
+        return gameplaySetAnimParam(ctx, target, AnimParamKind::Bool, argc, argv);
+    case NodeRefSetAnimTrigger:
+        return gameplaySetAnimParam(ctx, target, AnimParamKind::Trigger, argc, argv);
+    case NodeRefPlaySequence:
+        return gameplaySequence(ctx, target, true);
+    case NodeRefStopSequence:
+        return gameplaySequence(ctx, target, false);
+    case NodeRefSetData:
+        return gameplaySetData(ctx, target, argc, argv);
+    case NodeRefGetData:
+        return gameplayGetData(ctx, target, argc, argv);
+    case NodeRefHasData:
+        return gameplayHasData(ctx, target, argc, argv);
     case NodeRefAddToGroup:
     case NodeRefRemoveFromGroup:
     case NodeRefIsInGroup: {
@@ -1032,7 +1282,6 @@ JSValue jsNodeRefCall(JSContext* ctx, JSValueConst, int argc,
                              exportName.c_str());
 }
 
-JSValue makeNodeRef(JSContext* ctx, Node* target);  // défini plus bas
 
 // ---- physics: queries de scène (raycast / overlap) -----------------------
 // Parité desktop/web : le player web embarque le même Jolt (wasm). Le monde
@@ -1176,6 +1425,16 @@ JSValue makeNodeRef(JSContext* ctx, Node* target) {
     setNodeRefMethod(ctx, object, target->id(), "addToGroup", jsNodeRefMethod, 1, NodeRefAddToGroup);
     setNodeRefMethod(ctx, object, target->id(), "removeFromGroup", jsNodeRefMethod, 1, NodeRefRemoveFromGroup);
     setNodeRefMethod(ctx, object, target->id(), "isInGroup", jsNodeRefMethod, 1, NodeRefIsInGroup);
+    setNodeRefMethod(ctx, object, target->id(), "playClip", jsNodeRefMethod, 3, NodeRefPlayClip);
+    setNodeRefMethod(ctx, object, target->id(), "currentClip", jsNodeRefMethod, 0, NodeRefCurrentClip);
+    setNodeRefMethod(ctx, object, target->id(), "setAnimFloat", jsNodeRefMethod, 2, NodeRefSetAnimFloat);
+    setNodeRefMethod(ctx, object, target->id(), "setAnimBool", jsNodeRefMethod, 2, NodeRefSetAnimBool);
+    setNodeRefMethod(ctx, object, target->id(), "setAnimTrigger", jsNodeRefMethod, 1, NodeRefSetAnimTrigger);
+    setNodeRefMethod(ctx, object, target->id(), "playSequence", jsNodeRefMethod, 0, NodeRefPlaySequence);
+    setNodeRefMethod(ctx, object, target->id(), "stopSequence", jsNodeRefMethod, 0, NodeRefStopSequence);
+    setNodeRefMethod(ctx, object, target->id(), "setData", jsNodeRefMethod, 2, NodeRefSetData);
+    setNodeRefMethod(ctx, object, target->id(), "getData", jsNodeRefMethod, 2, NodeRefGetData);
+    setNodeRefMethod(ctx, object, target->id(), "hasData", jsNodeRefMethod, 1, NodeRefHasData);
     setNodeRefMethod(ctx, object, target->id(), "on", jsNodeRefOn, 2);
     setNodeRefMethod(ctx, object, target->id(), "emit", jsNodeRefEmit, 1);
     setNodeRefMethod(ctx, object, target->id(), "call", jsNodeRefCall, 1);
@@ -1206,6 +1465,16 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JS_SetPropertyStr(ctx, node, "isInGroup", JS_NewCFunction(ctx, jsNodeIsInGroup, "isInGroup", 1));
     JS_SetPropertyStr(ctx, node, "on", JS_NewCFunction(ctx, jsNodeOn, "on", 2));
     JS_SetPropertyStr(ctx, node, "emit", JS_NewCFunction(ctx, jsNodeEmit, "emit", 1));
+    JS_SetPropertyStr(ctx, node, "playClip", JS_NewCFunction(ctx, jsNodePlayClip, "playClip", 3));
+    JS_SetPropertyStr(ctx, node, "currentClip", JS_NewCFunction(ctx, jsNodeCurrentClip, "currentClip", 0));
+    JS_SetPropertyStr(ctx, node, "setAnimFloat", JS_NewCFunction(ctx, jsNodeSetAnimFloat, "setAnimFloat", 2));
+    JS_SetPropertyStr(ctx, node, "setAnimBool", JS_NewCFunction(ctx, jsNodeSetAnimBool, "setAnimBool", 2));
+    JS_SetPropertyStr(ctx, node, "setAnimTrigger", JS_NewCFunction(ctx, jsNodeSetAnimTrigger, "setAnimTrigger", 1));
+    JS_SetPropertyStr(ctx, node, "playSequence", JS_NewCFunction(ctx, jsNodePlaySequence, "playSequence", 0));
+    JS_SetPropertyStr(ctx, node, "stopSequence", JS_NewCFunction(ctx, jsNodeStopSequence, "stopSequence", 0));
+    JS_SetPropertyStr(ctx, node, "setData", JS_NewCFunction(ctx, jsNodeSetData, "setData", 2));
+    JS_SetPropertyStr(ctx, node, "getData", JS_NewCFunction(ctx, jsNodeGetData, "getData", 2));
+    JS_SetPropertyStr(ctx, node, "hasData", JS_NewCFunction(ctx, jsNodeHasData, "hasData", 1));
     JS_SetPropertyStr(ctx, global, "node", node);
 
     JSValue time = JS_NewObject(ctx);
@@ -1269,10 +1538,46 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JS_SetPropertyStr(ctx, prefs, "remove", JS_NewCFunction(ctx, jsPrefRemove, "remove", 1));
     JS_SetPropertyStr(ctx, prefs, "info", JS_NewCFunction(ctx, jsPrefInfo, "info", 1));
     JS_SetPropertyStr(ctx, prefs, "list", JS_NewCFunction(ctx, jsPrefList, "list", 0));
+    JS_SetPropertyStr(ctx, storage, "flush", JS_NewCFunction(ctx, jsStorageFlush, "flush", 0));
     JS_SetPropertyStr(ctx, storage, "prefs", prefs);
     JS_SetPropertyStr(ctx, global, "storage", storage);
 
     JS_FreeValue(ctx, global);
+}
+
+#ifdef __EMSCRIPTEN__
+// Callback du FS.syncfs de storage.flush() : résout la promesse si le contexte
+// est toujours vivant (sinon le résolveur a déjà été libéré par ~JsContext).
+extern "C" EMSCRIPTEN_KEEPALIVE void saida_storage_flush_done(int token, int failed) {
+    auto& pending = pendingFlushes();
+    auto it = pending.find(token);
+    if (it == pending.end()) return;
+    JSContext* ctx = it->second.ctx;
+    JSValue resolve = it->second.resolve;
+    pending.erase(it);
+    if (!JsContext::fromRaw(ctx)) return;  // contexte détruit entre-temps
+    JSValue ok = JS_NewBool(ctx, failed == 0);
+    JSValue r = JS_Call(ctx, resolve, JS_UNDEFINED, 1, &ok);
+    JS_FreeValue(ctx, r);
+    JS_FreeValue(ctx, ok);
+    JS_FreeValue(ctx, resolve);
+}
+#endif
+
+void JsEngineBindings::dropPendingFlushes(JSContext* context) {
+#ifdef __EMSCRIPTEN__
+    auto& pending = pendingFlushes();
+    for (auto it = pending.begin(); it != pending.end();) {
+        if (it->second.ctx == context) {
+            JS_FreeValue(context, it->second.resolve);
+            it = pending.erase(it);
+        } else {
+            ++it;
+        }
+    }
+#else
+    (void)context;
+#endif
 }
 
 } // namespace saida

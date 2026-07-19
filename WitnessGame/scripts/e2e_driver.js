@@ -37,6 +37,8 @@ let initialHudSeen = false;
 let updatedHudSeen = false;
 let restartMode = false;
 let restartRelics = 0;
+let restartHudSeen = false;
+let restartSeqSeen = false;
 
 function hudText() {
     const hud = tree.firstInGroup("witness_hud");
@@ -156,18 +158,69 @@ function checkPhysicsApi() {
     return true;
 }
 
+// Traversée des bindings gameplay (P0.4) dans l'arène : animation/graph via
+// l'Animator du Player (paramètre `speed` du locomotion.sgraph), Blackboard
+// via setData/getData/hasData, et réponses négatives sur une cible sans
+// behaviour (la caméra). Le replay de séquence est validé au restart (hub).
+function checkGameplayApi() {
+    const player = tree.firstInGroup("player");
+    if (player === null) return finish("FAIL: player missing for gameplay checks");
+
+    // L'Animator vit sur un descendant du Player (import glTF) : la règle
+    // « behaviour du nœud ou d'un descendant » doit le trouver.
+    if (player.setAnimFloat("speed", 0) !== true)
+        return finish("FAIL: setAnimFloat did not reach the player's Animator");
+    if (player.setAnimTrigger("e2e_probe") !== true)
+        return finish("FAIL: setAnimTrigger rejected on the player");
+    if (typeof player.currentClip() !== "string")
+        return finish("FAIL: currentClip did not answer on the player");
+
+    if (player.setData("e2e_zone", "arena") !== true ||
+        player.getData("e2e_zone") !== "arena" ||
+        player.hasData("e2e_zone") !== true ||
+        player.getData("e2e_missing", 7) !== 7)
+        return finish("FAIL: Blackboard setData/getData/hasData round-trip");
+
+    const camera = tree.firstInGroup("camera");
+    if (camera === null) return finish("FAIL: camera missing for gameplay checks");
+    if (camera.setAnimFloat("speed", 1) !== false || camera.hasData("x") !== false)
+        return finish("FAIL: gameplay bindings answered true without a behaviour");
+
+    console.log("[E2E] gameplay api ok (anim/graph/blackboard)");
+    return true;
+}
+
 function onUpdate(dt) {
     if (finished) return;
     t += dt;
 
     if (restartMode) {
-        if (hudText() === "Relics: " + restartRelics) {
+        if (!restartHudSeen) {
+            if (hudText() === "Relics: " + restartRelics) {
+                restartHudSeen = true;
+                // Replay de séquence via le binding playSequence (P0.4) : la
+                // statue du hub rejoue intro.sseq; sequenceFinished doit
+                // retomber avant le verdict.
+                const statue = tree.firstInGroup("sequence");
+                if (statue === null)
+                    return finish("FAIL: hub statue missing for the sequence replay");
+                if (!statue.on("sequenceFinished", function () { restartSeqSeen = true; }))
+                    return finish("FAIL: sequenceFinished subscription rejected");
+                if (statue.playSequence() !== true)
+                    return finish("FAIL: playSequence rejected on the statue");
+            } else if (t > 5) {
+                finish("FAIL: restored save not reflected by HUD (expected Relics: " +
+                       restartRelics + ", got " + hudText() + ")");
+            }
+            return;
+        }
+        if (restartSeqSeen) {
             finished = true;
-            console.log("[E2E] RESTART PASS (relics=" + restartRelics + ", hud=ok)");
+            console.log("[E2E] RESTART PASS (relics=" + restartRelics +
+                        ", hud=ok, sequence replayed)");
             tree.quit();
-        } else if (t > 5) {
-            finish("FAIL: restored save not reflected by HUD (expected Relics: " +
-                   restartRelics + ", got " + hudText() + ")");
+        } else if (t > 15) {
+            finish("FAIL: replayed sequence never finished");
         }
         return;
     }
@@ -195,6 +248,7 @@ function onUpdate(dt) {
             }
             input.inject("MoveForward", 0);
             if (checkPhysicsApi() !== true) return;  // verdict déjà posé
+            if (checkGameplayApi() !== true) return;
             phase = 2;
             console.log("[E2E] phase 1 ok — UI updated, relic collected, starting scene cycles");
             return;
@@ -225,8 +279,19 @@ function onUpdate(dt) {
         if (gpuAtStart >= 0 && s.gpuResidentBytes > gpuAtStart)
             return finish("FAIL: GPU resident memory grew across cycles (" +
                           gpuAtStart + " -> " + s.gpuResidentBytes + ")");
-        return finish("PASS (ui=ok, cycles=" + CYCLES + ", resident=" + s.residentBytes +
-                      "/" + s.budgetBytes + ", gpu=" + s.gpuResidentBytes + ")");
+        // Contrat async storage (P0.4) : le verdict n'est émis qu'après un
+        // flush durable (desktop : immédiat; web : syncfs IndexedDB résolu) —
+        // le run RESTART qui suit relit précisément cette progression.
+        if (finished) return;
+        finished = true;  // fige le driver, le verdict part dans la réaction
+        storage.flush().then(function (ok) {
+            finished = false;
+            if (ok !== true) return finish("FAIL: storage.flush did not resolve true");
+            finish("PASS (ui=ok, cycles=" + CYCLES + ", resident=" + s.residentBytes +
+                   "/" + s.budgetBytes + ", gpu=" + s.gpuResidentBytes +
+                   ", flush=durable)");
+        });
+        return;
     }
     cycles++;
     tree.changeScene(cycles % 2 ? "scenes/hub.scene" : "scenes/arena.scene");

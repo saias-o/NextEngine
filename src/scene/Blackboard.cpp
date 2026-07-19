@@ -19,6 +19,11 @@ void Blackboard::setString(std::string key, std::string value) {
 
 bool Blackboard::has(const std::string& key) const { return values_.count(key) != 0; }
 
+const Blackboard::Value* Blackboard::find(const std::string& key) const {
+    auto it = values_.find(key);
+    return it != values_.end() ? &it->second : nullptr;
+}
+
 double Blackboard::number(const std::string& key, double fallback) const {
     auto it = values_.find(key);
     if (it == values_.end()) return fallback;

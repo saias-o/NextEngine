@@ -170,7 +170,7 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     registerBuiltinRenderFeatures();  // water/skybox/debug-lines plug into the Renderer
 
     // Register remaining built-in behaviours (not yet migrated to reflection).
-    BehaviourRegistry::instance().registerType<Animator>("Animator");
+    // Animator is registered by registerReflectedTypes() (signals-only descriptor).
     BehaviourRegistry::instance().registerType<LODGroupBehaviour>("LOD Group");
     BehaviourRegistry::instance().registerType<ScriptBehaviour>("ScriptBehaviour");
 #ifdef SAIDA_ENABLE_XR

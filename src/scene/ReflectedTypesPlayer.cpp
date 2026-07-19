@@ -71,7 +71,8 @@ void registerReflectedTypes() {
     registerBehaviour<CharacterBehaviour>();
     registerBehaviour<CameraFollowBehaviour>();
     registerBehaviour<AudioSourceBehaviour>();
-    BehaviourRegistry::instance().registerType<Animator>("Animator");
+    // Signals-only descriptor (animationEvent) — serialization stays manual.
+    registerBehaviour<Animator>();
     BehaviourRegistry::instance().registerType<ScriptBehaviour>("ScriptBehaviour");
 
     registerNode<LightNode>();

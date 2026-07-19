@@ -1,4 +1,5 @@
 #include "scripting/JsContext.hpp"
+#include "scripting/JsEngineBindings.hpp"
 
 #include "core/Log.hpp"
 #include "core/Paths.hpp"
@@ -110,6 +111,7 @@ JsContext::~JsContext() {
         // (so a pending emit can't reach a freed callback), then release the
         // retained JS callbacks while the context is still valid.
         clearSignalSubscriptions();
+        JsEngineBindings::dropPendingFlushes(ctx_);  // storage.flush() en vol
         contextRegistry().erase(ctx_);
         JS_FreeValue(ctx_, moduleNamespace_);
         JS_FreeContext(ctx_);

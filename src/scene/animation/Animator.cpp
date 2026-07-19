@@ -1,3 +1,4 @@
+#include "core/Reflection.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/AnimGraphAsset.hpp"
 #include "scene/animation/AnimationClip.hpp"
@@ -255,6 +256,13 @@ void Animator::onUpdate(float dt) {
     // GlobalPose in object space (identity base): the renderer applies the entity
     // model matrix to the whole mesh after skinning.
     globalPose_.computeFrom(currentLocalPose_, *rig_, glm::mat4(1.0f));
+}
+
+void Animator::describe(reflect::TypeBuilder<Animator>& t) {
+    t.doc("Skeletal animation player: clips, clip views and .sgraph graphs "
+          "driven by the animation blackboard. Emits 'animationEvent' for each "
+          "ClipView event crossed by the active clip.");
+    t.signal("animationEvent", &Animator::animationEvent);
 }
 
 } // namespace saida
