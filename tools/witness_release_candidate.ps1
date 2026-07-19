@@ -28,6 +28,8 @@ try {
     if ($dirty -and -not $AllowDirty) {
         throw "Release candidate requires a clean Git worktree (use -AllowDirty only for development proofs)"
     }
+    $commit = (& git rev-parse HEAD).Trim()
+    $commitTime = (& git show -s --format=%cI HEAD).Trim()
 
     if (-not $SkipBuild) {
         New-Item -ItemType Directory -Force -Path build/tmp, build/msys_home | Out-Null
@@ -88,8 +90,18 @@ try {
 
     $windowsArchive = Join-Path $out 'WitnessGame-Windows.zip'
     $webArchive = Join-Path $out 'WitnessGame-Web.zip'
-    Compress-Archive -Path (Join-Path $windowsDir '*') -DestinationPath $windowsArchive
-    Compress-Archive -Path (Join-Path $webDir '*') -DestinationPath $webArchive
+    & tools/new_deterministic_zip.ps1 `
+        -SourceDir $windowsDir -DestinationPath $windowsArchive -TimestampUtc $commitTime
+    if ($LASTEXITCODE -ne 0) { throw "Deterministic Windows archive creation failed" }
+    & tools/verify_deterministic_zip.ps1 `
+        -SourceDir $windowsDir -ArchivePath $windowsArchive -TimestampUtc $commitTime
+    if ($LASTEXITCODE -ne 0) { throw "Deterministic Windows archive verification failed" }
+    & tools/new_deterministic_zip.ps1 `
+        -SourceDir $webDir -DestinationPath $webArchive -TimestampUtc $commitTime
+    if ($LASTEXITCODE -ne 0) { throw "Deterministic Web archive creation failed" }
+    & tools/verify_deterministic_zip.ps1 `
+        -SourceDir $webDir -ArchivePath $webArchive -TimestampUtc $commitTime
+    if ($LASTEXITCODE -ne 0) { throw "Deterministic Web archive verification failed" }
 
     function File-Inventory([string]$Directory) {
         $prefix = ([System.IO.Path]::GetFullPath($Directory).TrimEnd('\', '/') +
@@ -115,10 +127,10 @@ try {
 
     $manifest = [ordered]@{
         schema = 1
-        engineCommit = (& git rev-parse HEAD).Trim()
+        engineCommit = $commit
         dirty = $dirty
         version = '0.1.0'
-        generatedAtUtc = [DateTime]::UtcNow.ToString('o')
+        generatedAtUtc = ([DateTimeOffset]::Parse($commitTime).UtcDateTime.ToString('o'))
         project = 'WitnessGame/WitnessGame.saidaproj'
         artifacts = [ordered]@{
             windows = Archive-Record $windowsArchive 'Witness Game.exe' $windowsDir

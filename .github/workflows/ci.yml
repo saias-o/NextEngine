@@ -23,6 +23,7 @@ jobs:
           lfs: true
 
       - uses: msys2/setup-msys2@v2
+        id: msys2
         with:
           msystem: UCRT64
           update: true
@@ -36,6 +37,7 @@ jobs:
             mingw-w64-ucrt-x86_64-vulkan-loader
             mingw-w64-ucrt-x86_64-glfw
             mingw-w64-ucrt-x86_64-glm
+            mingw-w64-ucrt-x86_64-mesa
             mingw-w64-ucrt-x86_64-shaderc
 
       - name: Configure
@@ -60,6 +62,12 @@ jobs:
       - name: Compatibility corpus (explicit gate)
         run: ctest --test-dir build --output-on-failure -R "^saida_compat_corpus_tests$"
 
+      - name: Editor Build + Witness desktop (software Vulkan, run + restart)
+        env:
+          SAIDA_WINDOW_HIDDEN: "1"
+          VK_DRIVER_FILES: ${{ steps.msys2.outputs.msys2-location }}\ucrt64\share\vulkan\icd.d\lvp_icd.x86_64.json
+        run: ./tools/witness_editor_build.sh build/witness-editor-build-ci
+
       - name: Fold determinism (Windows reference)
         run: |
           ./build/bin/saida_tool.exe apply-ops tests/fixtures/fold-determinism/base.json \
@@ -71,12 +79,28 @@ jobs:
         shell: pwsh
         run: ./tools/generate_release_compliance.ps1
 
+      - name: Deterministic release ZIP contract
+        shell: pwsh
+        run: |
+          ./tools/new_deterministic_zip.ps1 `
+            -SourceDir build/release/compliance `
+            -DestinationPath build/release/zip-proof-a.zip
+          ./tools/verify_deterministic_zip.ps1 `
+            -SourceDir build/release/compliance `
+            -ArchivePath build/release/zip-proof-a.zip
+          ./tools/new_deterministic_zip.ps1 `
+            -SourceDir build/release/compliance `
+            -DestinationPath build/release/zip-proof-b.zip
+          $a = (Get-FileHash -Algorithm SHA256 build/release/zip-proof-a.zip).Hash
+          $b = (Get-FileHash -Algorithm SHA256 build/release/zip-proof-b.zip).Hash
+          if ($a -ne $b) { throw "Release ZIPs are not byte-identical" }
+
       - name: Versioned Windows binaries and crash symbols
         shell: pwsh
         run: >-
           ./tools/package_release_symbols.ps1
-          -Objcopy C:\msys64\ucrt64\bin\objcopy.exe
-          -Objdump C:\msys64\ucrt64\bin\objdump.exe
+          -Objcopy '${{ steps.msys2.outputs.msys2-location }}\ucrt64\bin\objcopy.exe'
+          -Objdump '${{ steps.msys2.outputs.msys2-location }}\ucrt64\bin\objdump.exe'
 
       - uses: actions/upload-artifact@v4
         with:

@@ -7,8 +7,7 @@ param(
         'SaidaEngineHub.exe',
         'saida_tool.exe'
     ),
-    [string]$OutputPath = 'build/release/windows-dependencies.json',
-    [string]$Objdump = ''
+    [string]$OutputPath = 'build/release/windows-dependencies.json'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,22 +31,6 @@ if (-not $output.StartsWith($buildRoot + [System.IO.Path]::DirectorySeparatorCha
 }
 if (-not (Test-Path -LiteralPath $bundle -PathType Container)) {
     throw "Missing Windows bundle: $bundle"
-}
-
-if ($Objdump) {
-    $objdumpPath = if ([System.IO.Path]::IsPathRooted($Objdump)) {
-        [System.IO.Path]::GetFullPath($Objdump)
-    } else {
-        (Get-Command $Objdump -ErrorAction Stop).Source
-    }
-} else {
-    $command = Get-Command objdump.exe -ErrorAction SilentlyContinue
-    if (-not $command) { $command = Get-Command objdump -ErrorAction SilentlyContinue }
-    if (-not $command) { throw "Required tool not found: objdump" }
-    $objdumpPath = $command.Source
-}
-if (-not (Test-Path -LiteralPath $objdumpPath -PathType Leaf)) {
-    throw "objdump not found: $objdumpPath"
 }
 
 $systemDlls = @(
@@ -83,23 +66,251 @@ function Relative-Path([string]$Path) {
     $full.Substring($bundle.TrimEnd('\', '/').Length + 1).Replace('\', '/')
 }
 
+function Assert-ReadableRange(
+    [System.IO.BinaryReader]$Reader,
+    [long]$Offset,
+    [long]$Bytes,
+    [string]$Label
+) {
+    if ($Offset -lt 0 -or $Bytes -lt 0 -or
+        $Offset -gt $Reader.BaseStream.Length - $Bytes) {
+        throw "Malformed PE ($Label outside file)"
+    }
+}
+
+function Read-U16(
+    [System.IO.BinaryReader]$Reader,
+    [long]$Offset,
+    [string]$Label
+) {
+    Assert-ReadableRange $Reader $Offset 2 $Label
+    $Reader.BaseStream.Position = $Offset
+    $Reader.ReadUInt16()
+}
+
+function Read-U32(
+    [System.IO.BinaryReader]$Reader,
+    [long]$Offset,
+    [string]$Label
+) {
+    Assert-ReadableRange $Reader $Offset 4 $Label
+    $Reader.BaseStream.Position = $Offset
+    $Reader.ReadUInt32()
+}
+
+function Convert-RvaToFileOffset(
+    [uint32]$Rva,
+    [object[]]$Sections,
+    [uint32]$SizeOfHeaders,
+    [long]$FileLength,
+    [string]$Label
+) {
+    if ($Rva -lt $SizeOfHeaders) {
+        if ([long]$Rva -ge $FileLength) {
+            throw "Malformed PE ($Label header RVA outside file)"
+        }
+        return [long]$Rva
+    }
+    foreach ($section in $Sections) {
+        $span = [Math]::Max([uint64]$section.virtualSize, [uint64]$section.rawSize)
+        $start = [uint64]$section.virtualAddress
+        $value = [uint64]$Rva
+        if ($value -ge $start -and $value -lt $start + $span) {
+            $delta = $value - $start
+            if ($delta -ge [uint64]$section.rawSize) {
+                throw "Malformed PE ($Label points into virtual-only section data)"
+            }
+            $offset = [uint64]$section.rawOffset + $delta
+            if ($offset -ge [uint64]$FileLength) {
+                throw "Malformed PE ($Label file offset outside file)"
+            }
+            return [long]$offset
+        }
+    }
+    throw "Malformed PE ($Label RVA 0x$($Rva.ToString('x')) is unmapped)"
+}
+
+function Read-ImportName(
+    [System.IO.BinaryReader]$Reader,
+    [uint32]$Rva,
+    [object[]]$Sections,
+    [uint32]$SizeOfHeaders,
+    [string]$Label
+) {
+    $offset = Convert-RvaToFileOffset `
+        $Rva $Sections $SizeOfHeaders $Reader.BaseStream.Length $Label
+    $bytes = New-Object System.Collections.Generic.List[byte]
+    for ($i = 0; $i -lt 512; ++$i) {
+        Assert-ReadableRange $Reader ($offset + $i) 1 $Label
+        $Reader.BaseStream.Position = $offset + $i
+        $value = $Reader.ReadByte()
+        if ($value -eq 0) {
+            if ($bytes.Count -eq 0) { throw "Malformed PE (empty $Label)" }
+            $name = [System.Text.Encoding]::ASCII.GetString($bytes.ToArray())
+            if ($name.Contains('/') -or $name.Contains('\') -or
+                -not $name.EndsWith('.dll', [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "Malformed PE (unsafe import name '$name')"
+            }
+            return $name
+        }
+        if ($value -lt 0x20 -or $value -gt 0x7e) {
+            throw "Malformed PE (non-ASCII byte in $Label)"
+        }
+        $bytes.Add($value)
+    }
+    throw "Malformed PE ($Label exceeds 511 bytes)"
+}
+
 function Inspect-Pe([string]$Path) {
-    $format = (& $objdumpPath -f $Path 2>&1) -join "`n"
-    if ($LASTEXITCODE -ne 0 -or $format -notmatch 'file format pei-x86-64') {
-        throw "Expected a Windows x64 PE file: $(Relative-Path $Path)"
+    $imports = New-Object 'System.Collections.Generic.HashSet[string]' (
+        [System.StringComparer]::OrdinalIgnoreCase)
+    $stream = [System.IO.File]::Open(
+        $Path, [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+    try {
+        $reader = New-Object System.IO.BinaryReader($stream)
+        try {
+            if ((Read-U16 $reader 0 'DOS signature') -ne 0x5a4d) {
+                throw "Expected an MZ executable"
+            }
+            $peOffset = [long](Read-U32 $reader 0x3c 'PE header offset')
+            Assert-ReadableRange $reader $peOffset 24 'PE header'
+            $reader.BaseStream.Position = $peOffset
+            if ($reader.ReadUInt32() -ne 0x00004550) {
+                throw "Expected a PE signature"
+            }
+            if ($reader.ReadUInt16() -ne 0x8664) {
+                throw "Expected an x86_64 PE machine"
+            }
+            $sectionCount = $reader.ReadUInt16()
+            if ($sectionCount -eq 0 -or $sectionCount -gt 96) {
+                throw "Malformed PE (invalid section count $sectionCount)"
+            }
+            $optionalSize = Read-U16 $reader ($peOffset + 20) 'optional header size'
+            $optionalOffset = $peOffset + 24
+            if ($optionalSize -lt 112) {
+                throw "Malformed PE (optional header is too small)"
+            }
+            Assert-ReadableRange $reader $optionalOffset $optionalSize 'optional header'
+            if ((Read-U16 $reader $optionalOffset 'optional header magic') -ne 0x20b) {
+                throw "Expected a PE32+ optional header"
+            }
+            $sizeOfHeaders =
+                Read-U32 $reader ($optionalOffset + 60) 'SizeOfHeaders'
+            $directoryCount =
+                Read-U32 $reader ($optionalOffset + 108) 'NumberOfRvaAndSizes'
+            $sectionTable = $optionalOffset + $optionalSize
+            Assert-ReadableRange $reader $sectionTable ([long]$sectionCount * 40) 'section table'
+            $sections = @()
+            for ($i = 0; $i -lt $sectionCount; ++$i) {
+                $sectionOffset = $sectionTable + [long]$i * 40
+                $sections += [pscustomobject]@{
+                    virtualSize = Read-U32 $reader ($sectionOffset + 8) 'section VirtualSize'
+                    virtualAddress = Read-U32 $reader ($sectionOffset + 12) 'section VirtualAddress'
+                    rawSize = Read-U32 $reader ($sectionOffset + 16) 'section SizeOfRawData'
+                    rawOffset = Read-U32 $reader ($sectionOffset + 20) 'section PointerToRawData'
+                }
+            }
+
+            # IMAGE_DIRECTORY_ENTRY_IMPORT (index 1), descriptors of 20 bytes.
+            if ($directoryCount -gt 1) {
+                $importRva = Read-U32 $reader ($optionalOffset + 120) 'import directory RVA'
+                $importSize = Read-U32 $reader ($optionalOffset + 124) 'import directory size'
+                if ($importRva -ne 0 -or $importSize -ne 0) {
+                    if ($importRva -eq 0 -or $importSize -lt 20) {
+                        throw "Malformed PE (invalid import directory)"
+                    }
+                    $terminated = $false
+                    $limit = [Math]::Min([int]($importSize / 20 + 1), 4096)
+                    for ($i = 0; $i -lt $limit; ++$i) {
+                        $descriptorRva = [uint32]([uint64]$importRva + [uint64]$i * 20)
+                        $descriptor = Convert-RvaToFileOffset `
+                            $descriptorRva $sections $sizeOfHeaders $reader.BaseStream.Length `
+                            "import descriptor $i"
+                        $originalThunk = Read-U32 $reader $descriptor 'OriginalFirstThunk'
+                        $timeDate = Read-U32 $reader ($descriptor + 4) 'Import TimeDateStamp'
+                        $forwarder = Read-U32 $reader ($descriptor + 8) 'ForwarderChain'
+                        $nameRva = Read-U32 $reader ($descriptor + 12) 'import Name RVA'
+                        $firstThunk = Read-U32 $reader ($descriptor + 16) 'FirstThunk'
+                        if (($originalThunk -bor $timeDate -bor $forwarder -bor
+                             $nameRva -bor $firstThunk) -eq 0) {
+                            $terminated = $true
+                            break
+                        }
+                        if ($nameRva -eq 0) {
+                            throw "Malformed PE (import descriptor $i has no DLL name)"
+                        }
+                        $name = Read-ImportName `
+                            $reader $nameRva $sections $sizeOfHeaders "import DLL name $i"
+                        [void]$imports.Add($name)
+                    }
+                    if (-not $terminated) {
+                        throw "Malformed PE (unterminated import descriptor table)"
+                    }
+                }
+            }
+
+            # IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT (index 13), ImgDelayDescr
+            # records of eight DWORDs. Modern PE32+ images store RVAs (grAttrs
+            # bit 0); the obsolete VA form is rejected instead of guessed.
+            if ($directoryCount -gt 13 -and $optionalSize -ge 224) {
+                $delayRva = Read-U32 $reader ($optionalOffset + 216) 'delay import RVA'
+                $delaySize = Read-U32 $reader ($optionalOffset + 220) 'delay import size'
+                if ($delayRva -ne 0 -or $delaySize -ne 0) {
+                    if ($delayRva -eq 0 -or $delaySize -lt 32) {
+                        throw "Malformed PE (invalid delay import directory)"
+                    }
+                    $terminated = $false
+                    $limit = [Math]::Min([int]($delaySize / 32 + 1), 4096)
+                    for ($i = 0; $i -lt $limit; ++$i) {
+                        $descriptorRva = [uint32]([uint64]$delayRva + [uint64]$i * 32)
+                        $descriptor = Convert-RvaToFileOffset `
+                            $descriptorRva $sections $sizeOfHeaders $reader.BaseStream.Length `
+                            "delay import descriptor $i"
+                        $values = @()
+                        for ($field = 0; $field -lt 8; ++$field) {
+                            $values += Read-U32 $reader ($descriptor + $field * 4) `
+                                "delay import descriptor $i field $field"
+                        }
+                        $nonZero = $false
+                        foreach ($value in $values) {
+                            if ($value -ne 0) { $nonZero = $true; break }
+                        }
+                        if (-not $nonZero) {
+                            $terminated = $true
+                            break
+                        }
+                        if (($values[0] -band 1) -eq 0) {
+                            throw "Malformed PE (obsolete VA-form delay import descriptor)"
+                        }
+                        if ($values[1] -eq 0) {
+                            throw "Malformed PE (delay import descriptor $i has no DLL name)"
+                        }
+                        $name = Read-ImportName `
+                            $reader ([uint32]$values[1]) $sections $sizeOfHeaders `
+                            "delay import DLL name $i"
+                        [void]$imports.Add($name)
+                    }
+                    if (-not $terminated) {
+                        throw "Malformed PE (unterminated delay import descriptor table)"
+                    }
+                }
+            }
+        } finally {
+            $reader.Dispose()
+        }
+    } catch {
+        throw "Expected a valid Windows x64 PE file ($(Relative-Path $Path)): $($_.Exception.Message)"
+    } finally {
+        $stream.Dispose()
     }
-    $headers = (& $objdumpPath -p $Path 2>&1) -join "`n"
-    if ($LASTEXITCODE -ne 0) {
-        throw "objdump could not inspect: $(Relative-Path $Path)"
-    }
-    $imports = @([regex]::Matches($headers, 'DLL Name:\s+([^\s]+)') |
-        ForEach-Object { $_.Groups[1].Value } |
-        Sort-Object -Unique)
+    $sortedImports = [string[]]@($imports)
+    [Array]::Sort($sortedImports, [System.StringComparer]::OrdinalIgnoreCase)
     [ordered]@{
         path = (Relative-Path $Path)
         bytes = (Get-Item -LiteralPath $Path).Length
         sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
-        imports = $imports
+        imports = $sortedImports
     }
 }
 

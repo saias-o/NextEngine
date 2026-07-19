@@ -733,7 +733,10 @@ dialogue Build (`EditorUI::executeBuild`, mêmes défauts d'état que l'ouvertur
 du dialogue — la scène principale par défaut est la `mainScene` du projet),
 logge `[BUILD] PASS/FAIL` et retourne le verdict en code de sortie.
 `tools/witness_editor_build.sh` construit WitnessGame par ce chemin et exige le
-E2E complet sur l'artefact produit.
+E2E complet run + restart sur l'artefact produit. La CI conserve ce chemin exact
+sur runner Windows propre avec une fenêtre GLFW cachée et l'ICD logiciel
+Mesa/Lavapipe explicitement sélectionné; elle ne dépend donc pas du GPU du
+runner.
 
 Le mode Play de l'éditeur est également automatisable avec `SaidaEngine
 --project <p> --play`. Il déclenche la même transition différée que le bouton
@@ -752,7 +755,9 @@ worktree propre, elle compile/vérifie natif et player Web, appelle le vrai Buil
 éditeur pour Windows et Web, refuse les saves dans les packages, archive les
 sorties et produit `release-manifest.json` : SHA moteur, état dirty, SHA-256 et
 taille des archives, plus l'inventaire hashé de chaque fichier et le bundle de
-symboles Windows. Les scripts
+symboles Windows. Les ZIP sont écrits dans un ordre ordinal avec un timestamp
+unique dérivé du commit; les chemins ambigus, symlinks et reparse points sont
+refusés, puis chaque entrée est revérifiée contre le stage. Les scripts
 `verify_witness_windows.ps1` et `verify_witness_web.ps1` revérifient l'archive
 avant extraction. Le premier exécute gameplay/UI puis save/UI au redémarrage;
 le second contrôle COOP/COEP et MIME WASM, lance Chrome ou Edge et collecte un
@@ -824,7 +829,10 @@ système explicitement autorisé ou DLL présente dans le bundle, collision de n
 et dépendance manquante refusées. `libgcc_s_seh-1.dll`, `libstdc++-6.dll` et
 `libwinpthread-1.dll` sont interdites car le contrat UCRT64 les lie
 statiquement. Le rapport déterministe entre dans le bundle de symboles et dans
-l'archive Windows Witness.
+l'archive Windows Witness. Le lecteur PE64 interne borne chaque offset/RVA et
+parcourt les tables d'imports normale et différée; il couvre ainsi également
+l'exécutable dont VERSIONINFO/icône ont été réécrits par l'API Windows, sans
+dépendre de l'acceptation de cette réécriture par un désassembleur tiers.
 
 ## 13. Compatibilité persistante
 

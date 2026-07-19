@@ -361,11 +361,14 @@ valeur neutre trompeuse.
   fixtures de fold.
 - [ ] Produire archive/installeur Windows signé, validation DLL et rollback.
   Déjà fermés hors signature/installeur : `validate_windows_dependencies.ps1`
-  parcourt récursivement les imports PE x64 du bundle, autorise seulement les
-  DLL système déclarées ou présentes dans le package et refuse les runtimes
-  dynamiques MinGW; son rapport hashé entre dans le bundle de symboles et dans
-  chaque archive Witness. Le rollback immuable est documenté. Restent
-  l'installeur et sa signature avec la clé de publication.
+  parse de façon bornée les tables d'imports PE x64 normales/différées, parcourt
+  récursivement le bundle, autorise seulement les DLL système déclarées ou
+  présentes dans le package et refuse les runtimes dynamiques MinGW; son rapport
+  hashé entre dans le bundle de symboles et dans chaque archive Witness. Les ZIP
+  Witness sont canoniques et reproductibles
+  (ordre, timestamp du commit, refus des reparse points, vérification exacte).
+  Le rollback immuable est documenté. Restent l'installeur et sa signature avec
+  la clé de publication.
 - [x] Ajouter crash logs exploitables et symboles associés à la version.
   Les quatre entry points desktop installent `core/CrashReporter` avant le boot :
   exception fatale → `.crash.log` métadonné et minidump Windows sous le dossier

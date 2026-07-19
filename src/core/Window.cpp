@@ -6,11 +6,21 @@
 namespace saida {
 
 Window::Window(int width, int height, std::string title, bool visible) {
-    glfwInit();
+    if (glfwInit() != GLFW_TRUE)
+        throw std::runtime_error("failed to initialize GLFW");
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     glfwWindowHint(GLFW_VISIBLE, visible ? GLFW_TRUE : GLFW_FALSE);
     window_ = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
+    if (!window_) {
+        const char* description = nullptr;
+        glfwGetError(&description);
+        const std::string message =
+            description ? std::string("failed to create GLFW window: ") + description
+                        : "failed to create GLFW window";
+        glfwTerminate();
+        throw std::runtime_error(message);
+    }
     glfwSetWindowUserPointer(window_, this);
     glfwSetFramebufferSizeCallback(window_, framebufferResizeCallback);
 

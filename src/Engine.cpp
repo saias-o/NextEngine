@@ -58,6 +58,7 @@
 
 #include <exception>
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <vector>
@@ -122,7 +123,10 @@ public:
 Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool requireXr) {
     // The XR process currently has no desktop mirror swapchain. Keep its host
     // GLFW window hidden instead of presenting a misleading unrendered surface.
-    window_ = std::make_unique<Window>(kWidth, kHeight, "SaidaEngine", !requireXr);
+    // CI may also hide it while exercising the exact editor Build/runtime path
+    // on a clean runner with a software Vulkan ICD.
+    const bool hideWindow = requireXr || std::getenv("SAIDA_WINDOW_HIDDEN") != nullptr;
+    window_ = std::make_unique<Window>(kWidth, kHeight, "SaidaEngine", !hideWindow);
     Input::bind(window_.get());
 
     // Process roles are explicit: the editor always owns a desktop Vulkan/ImGui

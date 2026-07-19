@@ -147,8 +147,7 @@ try {
     $dependencyReportPath = Join-Path $out 'windows-dependencies.json'
     & (Join-Path $PSScriptRoot 'validate_windows_dependencies.ps1') `
         -BundleDir (Join-Path $build 'bin') `
-        -OutputPath $dependencyReportPath `
-        -Objdump $objdumpPath
+        -OutputPath $dependencyReportPath
     if ($LASTEXITCODE -ne 0) { throw "Windows dependency validation failed" }
     $manifest = [ordered]@{
         schema = 1

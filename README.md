@@ -210,6 +210,11 @@ JavaScript; les noms de nœuds ne sont pas des références d'opération.
 ./tools/witness_web_stage.sh
 ```
 
+Le harnais Build éditeur exige le run puis le restart de l'artefact exact. En
+CI, `SAIDA_WINDOW_HIDDEN=1` garde la fenêtre native cachée et `VK_DRIVER_FILES`
+épingle Mesa/Lavapipe, ce qui rend ce parcours reproductible sur un runner
+Windows propre sans GPU physique.
+
 La recette P0.1 complète construit les deux artefacts par le chemin du bouton
 Build, crée les archives, inventorie chaque fichier et écrit leurs SHA-256 :
 
@@ -220,6 +225,10 @@ Build, crée les archives, inventorie chaque fichier et écrit leurs SHA-256 :
 Elle exige un worktree Git propre par défaut et produit
 `build/release/witness-v1/` avec `release-manifest.json`, les archives Windows
 et Web, le bundle de symboles Windows, ainsi que leurs vérificateurs autonomes.
+Les ZIP sont canoniques : ordre ordinal, timestamps épinglés au commit, chemins
+ambigus/reparse points refusés et contenu revérifié sans extraction par
+`tools/verify_deterministic_zip.ps1`. Deux exécutions sur les mêmes octets
+produisent donc le même SHA-256.
 `-AllowDirty` est réservé aux preuves de développement et inscrit explicitement
 `dirty: true` dans le manifest. Sur une autre machine Windows, aucun checkout
 moteur, MSYS2 ou SDK n'est requis : extraire/copier ce dossier puis lancer :
