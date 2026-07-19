@@ -361,9 +361,22 @@ valeur neutre trompeuse.
   fixtures de fold.
 - [ ] Produire archive/installeur Windows signé, validation DLL et rollback.
 - [ ] Ajouter crash logs exploitables et symboles associés à la version.
-- [ ] Générer SBOM, inventaire licences/assets/modèles et notices GPL/SPDX.
+- [x] Générer SBOM, inventaire licences/assets/modèles et notices GPL/SPDX.
+  `tools/generate_release_compliance.ps1` produit un document SPDX 2.3, les
+  notices complètes, l'inventaire hashé de 23 assets/modèles et un manifeste
+  déterministe. Les 19 composants (moteur inclus), chaque racine
+  `third_party` et chaque extension d'asset suivie sont couverts en fail-closed;
+  quatre assets legacy sans provenance sont `distribution:false` et le
+  DamagedHelmet CC-BY-NC est signalé non commercial. Le bundle exact est inclus
+  dans le release manifest moteur, les archives Witness et un artefact CI
+  épinglé au SHA.
 - [ ] Tester le bouton Build et les packages sur runners propres.
-- [ ] Documenter support GPU/OS/navigateur et procédure de retrait d'une release.
+- [x] Documenter support GPU/OS/navigateur et procédure de retrait d'une release.
+  `docs/release-support.md` limite la V1 à Windows 11/Vulkan 1.3,
+  Chrome/Edge desktop WebGPU et `saida_tool` Debian 12, publie les surfaces non
+  qualifiées et impose promotion/retrait/rollback par manifeste, SHA et digest
+  immuables sans jamais reconstruire une identité existante ni rétrograder
+  silencieusement les données.
 
 Gate : une release peut être reproduite, identifiée, diagnostiquée et retirée.
 

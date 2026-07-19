@@ -66,6 +66,20 @@ function Bundle-Inventory([string]$Directory, [string]$EntryPoint) {
     [ordered]@{ entryPoint = $EntryPoint; files = $files }
 }
 
+function Exact-Directory-Inventory([string]$Directory, [string]$EntryPoint) {
+    $dir = Resolve-Local $Directory
+    if (-not (Test-Path -LiteralPath $dir)) { throw "missing bundle directory: $dir" }
+    $prefix = ([System.IO.Path]::GetFullPath($dir).TrimEnd('\', '/') +
+               [System.IO.Path]::DirectorySeparatorChar)
+    $files = @(Get-ChildItem -LiteralPath $dir -Recurse -File | Sort-Object FullName |
+        ForEach-Object { File-Record $_.FullName $_.FullName.Substring($prefix.Length) })
+    if ($files.Count -eq 0) { throw "no deliverable files under: $dir" }
+    if (-not ($files | Where-Object { $_.path -eq $EntryPoint })) {
+        throw "bundle $Directory is missing its entry point $EntryPoint"
+    }
+    [ordered]@{ entryPoint = $EntryPoint; exact = $true; files = $files }
+}
+
 function Fixture-Inventory([string]$Directory) {
     $dir = Resolve-Local $Directory
     if (-not (Test-Path -LiteralPath $dir)) { throw "missing fixtures directory: $dir" }
@@ -82,6 +96,14 @@ try {
     if ($dirty -and -not $AllowDirty) {
         throw "Release manifest requires a clean Git worktree (use -AllowDirty only for development proofs)"
     }
+
+    if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
+    New-Item -ItemType Directory -Path $out | Out-Null
+    $complianceDir = Join-Path $out 'compliance'
+    $complianceArgs = @{ OutputDir = $complianceDir }
+    if ($dirty) { $complianceArgs['AllowDirty'] = $true }
+    & (Join-Path $PSScriptRoot 'generate_release_compliance.ps1') @complianceArgs
+    if ($LASTEXITCODE -ne 0) { throw "release compliance generation failed" }
 
     $toolPath = Resolve-Local $SaidaTool
     if (-not (Test-Path -LiteralPath $toolPath)) { throw "missing saida_tool: $toolPath" }
@@ -100,20 +122,21 @@ try {
     $artifacts['webPlayer'] = Bundle-Inventory $WebPlayerDir 'index.html'
     $artifacts['authoringWasm'] = Bundle-Inventory $AuthoringWasmDir 'saida_authoring.mjs'
     $artifacts['authoringRuntime'] = Bundle-Inventory $AuthoringRuntimeDir 'index.html'
+    $artifacts['compliance'] = Exact-Directory-Inventory $complianceDir 'sbom.spdx.json'
 
+    $commit = (& git rev-parse HEAD).Trim()
+    $commitTime = (& git show -s --format=%cI HEAD).Trim()
     $manifest = [ordered]@{
         schema = 1
-        engineCommit = (& git rev-parse HEAD).Trim()
+        engineCommit = $commit
         dirty = $dirty
-        generatedAtUtc = [DateTime]::UtcNow.ToString('o')
+        generatedAtUtc = ([DateTimeOffset]::Parse($commitTime).UtcDateTime.ToString('o'))
         engineVersion = $manifestJson.engineVersion
         formats = $manifestJson.formats
         artifacts = $artifacts
         fixtures = Fixture-Inventory $FixturesDir
     }
 
-    if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
-    New-Item -ItemType Directory -Path $out | Out-Null
     $manifestPath = Join-Path $out 'release-manifest.json'
     $manifest | ConvertTo-Json -Depth 12 | Set-Content -Encoding UTF8 -LiteralPath $manifestPath
 
@@ -126,6 +149,7 @@ try {
             WebPlayerDir = (Resolve-Local $WebPlayerDir)
             AuthoringWasmDir = (Resolve-Local $AuthoringWasmDir)
             AuthoringRuntimeDir = (Resolve-Local $AuthoringRuntimeDir)
+            ComplianceDir = $complianceDir
             FixturesDir = (Resolve-Local $FixturesDir)
         }
         if ($artifacts.Contains('desktopRuntime')) { $verifyArgs['DesktopRuntime'] = $runtimePath }

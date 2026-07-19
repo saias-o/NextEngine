@@ -28,6 +28,7 @@ jobs:
           update: true
           install: >-
             git
+            diffutils
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-gcc
@@ -66,6 +67,10 @@ jobs:
           cmp build/fold-windows.json tests/fixtures/fold-determinism/expected.json
           echo "Windows fold matches the checked-in reference"
 
+      - name: SPDX SBOM, notices and asset/model inventory
+        shell: pwsh
+        run: ./tools/generate_release_compliance.ps1
+
       - uses: actions/upload-artifact@v4
         with:
           name: fold-windows-${{ github.sha }}
@@ -76,6 +81,12 @@ jobs:
         with:
           name: saida-tool-windows-${{ github.sha }}
           path: build/bin/saida_tool.exe
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-compliance-${{ github.sha }}
+          path: build/release/compliance
           if-no-files-found: error
 
   web-artifacts:

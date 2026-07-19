@@ -6,6 +6,7 @@ param(
     [string]$WebPlayerDir = 'build-web-player',
     [string]$AuthoringWasmDir = 'build-authoring-wasm',
     [string]$AuthoringRuntimeDir = 'build-web',
+    [string]$ComplianceDir = 'build/release/engine/compliance',
     [string]$FixturesDir = 'tests/fixtures/compat'
 )
 
@@ -45,6 +46,19 @@ function Check-Bundle($Bundle, [string]$Directory, [string]$Label) {
     foreach ($record in $Bundle.files) {
         Check-File (Join-Path $Directory $record.path) $record "$Label/$($record.path)"
     }
+    if ($Bundle.PSObject.Properties.Name -contains 'exact' -and $Bundle.exact) {
+        $prefix = ([System.IO.Path]::GetFullPath($Directory).TrimEnd('\', '/') +
+                   [System.IO.Path]::DirectorySeparatorChar)
+        $actual = @(Get-ChildItem -LiteralPath $Directory -Recurse -File |
+            ForEach-Object { $_.FullName.Substring($prefix.Length).Replace('\', '/') } |
+            Sort-Object)
+        $expected = @($Bundle.files | ForEach-Object { [string]$_.path } | Sort-Object)
+        $extra = @($actual | Where-Object { $_ -notin $expected })
+        $missing = @($expected | Where-Object { $_ -notin $actual })
+        if ($extra.Count -or $missing.Count) {
+            $failures.Add("$Label inventory mismatch: extra=[$($extra -join ', ')], missing=[$($missing -join ', ')]")
+        }
+    }
 }
 
 $artifacts = $manifest.artifacts
@@ -60,6 +74,7 @@ if ($artifacts.PSObject.Properties.Name -contains 'desktopRuntime') {
 Check-Bundle $artifacts.webPlayer $WebPlayerDir 'webPlayer'
 Check-Bundle $artifacts.authoringWasm $AuthoringWasmDir 'authoringWasm'
 Check-Bundle $artifacts.authoringRuntime $AuthoringRuntimeDir 'authoringRuntime'
+Check-Bundle $artifacts.compliance $ComplianceDir 'compliance'
 
 foreach ($record in $manifest.fixtures) {
     Check-File (Join-Path $FixturesDir $record.path) $record "fixtures/$($record.path)"

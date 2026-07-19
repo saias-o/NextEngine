@@ -77,8 +77,11 @@ jobs:
             build-authoring-wasm/saida_authoring.mjs \
             build-authoring-wasm/saida_authoring.wasm \
             > build/ci-artifacts/web-sha256.txt
-          printf 'commit=%s\nemsdk=6.0.1\n' "${{ github.sha }}" \
-            > build/ci-artifacts/build-identity.txt
+          {
+            printf 'commit=%s\nemsdk=6.0.1\n' "${{ github.sha }}"
+            printf 'browser=%s\n' "$(google-chrome --version)"
+            printf 'runner=%s\n' "$(uname -srvmo)"
+          } > build/ci-artifacts/build-identity.txt
 
       - uses: actions/upload-artifact@v4
         with:

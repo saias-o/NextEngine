@@ -49,6 +49,7 @@ try {
     $stage = Join-Path $out '.stage'
     $windowsDir = Join-Path $stage 'windows'
     $webExportDir = Join-Path $stage 'web-export'
+    $complianceDir = Join-Path $stage 'compliance'
     New-Item -ItemType Directory -Path $windowsDir, $webExportDir | Out-Null
 
     & build/bin/SaidaEngine.exe --project WitnessGame/WitnessGame.saidaproj `
@@ -64,6 +65,15 @@ try {
     }
     if (Test-Path -LiteralPath (Join-Path $webDir 'project/saves')) {
         throw "Web package unexpectedly contains saves"
+    }
+
+    $complianceArgs = @{ OutputDir = $complianceDir }
+    if ($dirty) { $complianceArgs['AllowDirty'] = $true }
+    & tools/generate_release_compliance.ps1 @complianceArgs
+    if ($LASTEXITCODE -ne 0) { throw "Release compliance generation failed" }
+    foreach ($file in Get-ChildItem -LiteralPath $complianceDir -File) {
+        Copy-Item -LiteralPath $file.FullName -Destination $windowsDir
+        Copy-Item -LiteralPath $file.FullName -Destination $webDir
     }
 
     $windowsArchive = Join-Path $out 'WitnessGame-Windows.zip'

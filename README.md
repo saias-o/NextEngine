@@ -15,6 +15,10 @@ Il n'existe que deux documents de vérité en plus de ce README :
   plateformes, procédures techniques et limites actuelles ;
 - [PLAN_V1.md](PLAN_V1.md) : unique checklist pour atteindre la V1.
 
+Le guide opérationnel [support et retrait d'une release](docs/release-support.md)
+publie la matrice qualifiée, les prérequis de promotion et la procédure de
+rollback sans créer une troisième source de vérité produit.
+
 La plateforme web, le backend et l'exploitation vivent dans
 [`saias-o/saida`](https://github.com/saias-o/saida). Son `PLAN_V1.md` porte le
 go/no-go global de production.
@@ -238,9 +242,21 @@ plateforme — se produit une fois les artefacts natif et Web construits :
 Il écrit `build/release/engine/release-manifest.json` : commit, versions de
 formats lues depuis `saida_tool describe-engine`, et SHA-256 de `saida_tool`, du
 runtime desktop, du player Web, de l'authoring WASM, du runtime d'authoring et de
-chaque fixture immuable. `-AllowDirty` marque `dirty: true`. La plateforme épingle
-ce manifeste et le rejoue via `tools/verify_engine_release.ps1`, qui échoue au
-moindre écart d'octet ou de version.
+chaque fixture immuable, ainsi que du bundle de conformité exact. `-AllowDirty`
+marque `dirty: true`. La plateforme épingle ce manifeste et le rejoue via
+`tools/verify_engine_release.ps1`, qui échoue au moindre écart d'octet, de
+version ou d'inventaire.
+
+Le bundle de conformité peut aussi être produit seul :
+
+```powershell
+.\tools\generate_release_compliance.ps1
+```
+
+Il écrit sous `build/release/compliance/` le SBOM SPDX 2.3, les notices
+GPL/tiers, l'inventaire hashé des assets et modèles et leur manifeste. La
+génération échoue si une nouvelle racine `third_party` ou un nouvel asset suivi
+n'a pas de décision explicite de licence, provenance et distribution.
 
 AutoLOD se compile séparément :
 
@@ -275,5 +291,6 @@ cmake --build build/autolod --parallel
 ## Licence
 
 Le projet est sous GPL-3.0. Les dépendances et assets gardent leurs licences.
-L'inventaire final, les notices/SPDX et la SBOM restent une gate de distribution
-stable dans [PLAN_V1.md](PLAN_V1.md).
+L'inventaire, les notices et le SBOM sont générés et vérifiés par la CI. Les
+assets explicitement non distribuables restent hors des bundles V1; consulter
+le [guide de release](docs/release-support.md) avant toute promotion.

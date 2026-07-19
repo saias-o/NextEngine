@@ -796,9 +796,10 @@ Play éditeur automatisé (`--play`). À surveiller : halos de viewport non
 reproduits et dispatch autoload encore dupliqué entre `Engine::mountWorld` et le
 player Web.
 
-Une release exige encore une machine vierge sans MSYS2/SDK, archive ou
-installateur signé, DLL vérifiées, crash logs, rollback, SBOM et hashes de
-tous les artefacts.
+Une release exige encore un runner propre pour le package desktop, une archive
+ou un installateur signé, des DLL vérifiées et des crash logs avec symboles.
+Le SBOM, les notices, l'inventaire de contenu, le rollback et les hashes
+immuables sont désormais produits ou documentés.
 
 ## 13. Compatibilité persistante
 
@@ -835,10 +836,27 @@ manifest liant hashes du player Web, authoring WASM, binaire headless et formats
 versions de formats lues depuis `saida_tool describe-engine` (la section
 `formats` en est la source unique), et le SHA-256 de `saida_tool`, du runtime
 desktop, du player Web, de l'authoring WASM, du runtime d'authoring et de chaque
-fixture immuable. `tools/verify_engine_release.ps1` recalcule chaque hash et
-recompare les versions à l'outil; il échoue au moindre écart d'octet ou de
-version. La plateforme Saida épingle ce manifeste pour interdire toute
-divergence entre son outil Docker, son bundle Web servi et ses fixtures.
+fixture immuable. Il inclut aussi l'inventaire exact du bundle de conformité :
+SBOM SPDX 2.3, notices GPL/tiers, assets/modèles hashés et manifeste de leurs
+sources. `tools/verify_engine_release.ps1` recalcule chaque hash, refuse tout
+fichier ajouté ou manquant dans ce bundle et recompare les versions à l'outil;
+il échoue au moindre écart d'octet, d'inventaire ou de version. La plateforme
+Saida épingle ce manifeste pour interdire toute divergence entre son outil
+Docker, son bundle Web servi, ses licences et ses fixtures.
+
+`tools/generate_release_compliance.ps1` relit les deux entrées revues
+`compliance/components.json` et `compliance/assets.json`. Le contrôle est
+fail-closed : chaque racine de `third_party` doit être déclarée exactement une
+fois, chaque asset suivi doit posséder licence, provenance et décision de
+distribution, et aucun asset `NOASSERTION` ne peut être distribué. Les quatre
+assets legacy sans provenance sont marqués `distribution: false`.
+`assets/models/DamagedHelmet.glb`, sous CC-BY-NC-4.0, reste distribuable
+uniquement hors produit commercial.
+
+La matrice GPU/OS/navigateur, les exclusions et la procédure de retrait sont
+publiées dans [docs/release-support.md](docs/release-support.md). La promotion
+s'effectue par manifeste, SHA de commit et digest immuables; `latest` n'est
+jamais une identité de release.
 
 Inventaire immuable actuel : `project_v0/v1.saidaproj`,
 `asset_registry_v0/v1.json`, `scene_v0/scene_v2.scene`,
@@ -886,8 +904,11 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
   (MikkTSpace P1, KTX2/Basis P2 par décision).
 - Point-light shadows cubemap et lightmaps persistantes absentes.
 - XR sans MSAA multiview, overlay et matrice hardware validée.
-- Build UI/machine vierge, signature, crash reporting et rollback non prouvés.
-- Inventaire des licences, notices et SBOM non finalisés.
+- Build UI/runner propre, signature, validation DLL et crash reporting avec
+  symboles non prouvés.
+- Licences, notices et SBOM générés en mode fail-closed; quatre assets legacy
+  sans provenance sont explicitement exclus des bundles V1 et le Damaged
+  Helmet CC-BY-NC reste interdit aux produits commerciaux.
 
 ## 15. Positionnement public
 

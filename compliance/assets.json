@@ -1,0 +1,215 @@
+{
+  "schema": 1,
+  "trackedExtensions": [
+    ".fbx",
+    ".glb",
+    ".gltf",
+    ".hdr",
+    ".jpeg",
+    ".jpg",
+    ".ktx2",
+    ".mp3",
+    ".obj",
+    ".ogg",
+    ".otf",
+    ".png",
+    ".sclip",
+    ".sgraph",
+    ".srig",
+    ".sseq",
+    ".ttf",
+    ".wav"
+  ],
+  "assets": [
+    {
+      "path": "assets/editor/saida_logo.png",
+      "kind": "image",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party editor artwork tracked in the Saida Engine repository."
+    },
+    {
+      "path": "assets/models/DamagedHelmet.glb",
+      "kind": "model",
+      "distribution": true,
+      "license": "CC-BY-NC-4.0",
+      "copyrightText": "Copyright 2018 ctxwing; Copyright 2016 theblueturtle_",
+      "provenance": "Khronos glTF Sample Assets, Damaged Helmet.",
+      "source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/DamagedHelmet",
+      "note": "Non-commercial asset; do not include it in a commercial binary bundle."
+    },
+    {
+      "path": "assets/textures/checker.png",
+      "kind": "image",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party generated checker texture."
+    },
+    {
+      "path": "BeachDemo/assets/skies/sunset.png",
+      "kind": "image",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party BeachDemo sky asset introduced in repository commit a3b57fa5."
+    },
+    {
+      "path": "GTAClone/ui/hud/star.png",
+      "kind": "image",
+      "distribution": false,
+      "license": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "provenance": "Legacy development project; provenance is not recorded.",
+      "note": "Excluded from V1 release bundles until provenance is documented."
+    },
+    {
+      "path": "MyGame/assets/models/Zleda_walk.glb",
+      "kind": "model",
+      "distribution": false,
+      "license": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "provenance": "Legacy development project; the GLB contains no copyright metadata.",
+      "note": "Excluded from V1 release bundles until provenance is documented."
+    },
+    {
+      "path": "MyGame/assets/sounds/big_band_banger.ogg",
+      "kind": "audio",
+      "distribution": false,
+      "license": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "provenance": "Legacy development project; the Ogg file contains no attribution tags.",
+      "note": "Excluded from V1 release bundles until provenance is documented."
+    },
+    {
+      "path": "MyGame/assets/textures/hdri_sky_809.jpg",
+      "kind": "image",
+      "distribution": false,
+      "license": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "provenance": "Legacy development project; provenance is not recorded.",
+      "note": "Excluded from V1 release bundles until provenance is documented."
+    },
+    {
+      "path": "tests/fixtures/animation/bad_graph.sgraph",
+      "kind": "test-fixture",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party compatibility fixture."
+    },
+    {
+      "path": "tests/fixtures/animation/bad_range.sclip",
+      "kind": "test-fixture",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party compatibility fixture."
+    },
+    {
+      "path": "tests/fixtures/animation/bad_sequence.sseq",
+      "kind": "test-fixture",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party compatibility fixture."
+    },
+    {
+      "path": "tests/fixtures/animation/intro.sseq",
+      "kind": "test-fixture",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party compatibility fixture."
+    },
+    {
+      "path": "tests/fixtures/animation/locomotion.sgraph",
+      "kind": "test-fixture",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party compatibility fixture."
+    },
+    {
+      "path": "tests/fixtures/animation/run_loop.sclip",
+      "kind": "test-fixture",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party compatibility fixture."
+    },
+    {
+      "path": "tests/fixtures/animation/two_bone.gltf",
+      "kind": "test-fixture",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party generated glTF compatibility fixture."
+    },
+    {
+      "path": "WitnessGame/anim/intro.sseq",
+      "kind": "animation",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party WitnessGame asset."
+    },
+    {
+      "path": "WitnessGame/anim/locomotion.sgraph",
+      "kind": "animation",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party WitnessGame asset."
+    },
+    {
+      "path": "WitnessGame/assets/audio/pickup.ogg",
+      "kind": "audio",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party generated WitnessGame audio introduced in commit 4c827967."
+    },
+    {
+      "path": "WitnessGame/assets/audio/save.ogg",
+      "kind": "audio",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party generated WitnessGame audio introduced in commit 4c827967."
+    },
+    {
+      "path": "WitnessGame/assets/models/corrupt.glb",
+      "kind": "hostile-test-fixture",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party malformed asset fixture."
+    },
+    {
+      "path": "WitnessGame/assets/models/corrupt.obj",
+      "kind": "hostile-test-fixture",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party malformed asset fixture."
+    },
+    {
+      "path": "WitnessGame/assets/models/probe.obj",
+      "kind": "model",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party generated GPU budget probe introduced in commit d84d3174."
+    },
+    {
+      "path": "WitnessGame/assets/models/totem.gltf",
+      "kind": "model",
+      "distribution": true,
+      "license": "GPL-3.0-only",
+      "copyrightText": "Copyright Saida Engine contributors",
+      "provenance": "First-party generated character model (generator metadata: gen_character.py)."
+    }
+  ]
+}
