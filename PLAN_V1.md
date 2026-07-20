@@ -1,6 +1,6 @@
 # SaidaEngine - Plan unique vers la V1
 
-Mise à jour : 2026-07-19.
+Mise à jour : 2026-07-20.
 
 **Verdict : NO-GO pour une V1 publique.** Ce fichier est l'unique todolist du
 moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
@@ -8,7 +8,7 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 ## Preuves acquises
 
 - [x] Build natif complet Windows UCRT64.
-- [x] Suite native : 54/54 tests le 2026-07-17.
+- [x] Suite native : 65/65 tests le 2026-07-20.
 - [x] Player Web Release et authoring WASM Release compilés.
 - [x] WitnessGame éditeur/desktop : Play éditeur automatisé via `--play`, export
   et runtime autonome, HUD vérifié, `E2E PASS` puis `RESTART PASS`.
@@ -18,8 +18,8 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 - [x] QuickJS : deadline 100 ms, 1024 jobs, microtasks interrompues, callbacks
   protégés et scripts/imports confinés à la racine canonique.
 - [x] Export Windows : copie robuste du contenu, symlinks/spéciaux refusés.
-- [x] Gamepad desktop : boutons, axes, triggers, deadzones, hotplug et agrégation
-  multi-binding; le Web annonce encore explicitement `NO`.
+- [x] Input desktop/Web : gamepad, touch, profils/rebinding, dernier périphérique
+  actif et haptique Web à retour explicite; les pads physiques restent à valider.
 - [x] Snapshot headless fail-closed sur son registre, Camera incluse, références
   Mesh préservées et création Mesh sans ResourceManager refusée.
 - [x] AssetLoader async texture/OBJ et `.srig/.sclip/.sgraph`, plus déchargement
@@ -43,6 +43,36 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 - [x] Matrice V1 canonique des factories natif/headless/authoring WASM/player
   Web, publiée dans `EngineManifest` et vérifiée au démarrage; round-trip
   headless exact du HUD et des cinq types physiques V1.
+
+## Reprise pour les prochaines sessions
+
+Point d'arrêt : ne pas rouvrir P0.5 sans régression reproductible. Les textures,
+OBJ et animations autonomes `.srig/.sclip/.sgraph` passent par l'`AssetLoader`
+asynchrone; Character consomme son graph à `ready`, le panneau Animation reste
+non bloquant, et les cycles Witness desktop/Web prouvent mémoire et
+déchargement. La qualification automatisée de P0.7 et son commit exact sont
+consignés dans la section P0.7 ci-dessous.
+
+Prochain chantier autonome conseillé, hors UI : finir la migration des
+behaviours built-in vers la réflexion et le registre unique. L'audit laisse
+deux exceptions manuelles, `LODGroupBehaviour` et `ScriptBehaviour`, enregistrées
+dans `src/Engine.cpp`, `src/authoring/SceneSnapshot.cpp` et
+`src/scene/ReflectedTypesPlayer.cpp`, alors que les autres built-ins passent par
+`registerBehaviour<T>()` dans `src/scene/ReflectedTypes.cpp`. Préserver les noms
+compatibles `"LOD Group"` et `"ScriptBehaviour"` ainsi que le payload spécifique
+du script (`script`, `hotReload`, `properties`); supprimer seulement les
+registrations redondantes après avoir ajouté des descripteurs/factories et des
+tests de round-trip sur les runtimes concernés. Rejouer les commandes de build
+du README, les 65+ tests, le corpus compat et la matrice avant de cocher P1.
+
+Après cette migration, l'ordre hors UI conseillé est : atomicité du Hub,
+compléments physique, rendu/lightmaps, puis LTO seulement après stabilité. À
+réserver à une session assistée séparée : tout P0.3 UI, adaptation visuelle des
+prompts et undo éditeur, pads physiques Xbox/PlayStation, signature Authenticode
+avec la clé de publication, validations XR/casques et benchmarks sur GPU
+physique. Lavapipe peut qualifier les contrats et le packaging CI, pas remplacer
+une preuve matérielle. Toute case cochée doit conserver dans ce fichier le
+commit/run ou le corpus exact qui la prouve.
 
 ## P0.1 - Jeu témoin et chemin de livraison
 
@@ -353,11 +383,11 @@ valeur neutre trompeuse.
 
 ## P0.7 - Release, CI et exploitation moteur
 
-- [ ] Rendre obligatoires build natif, 50+ tests, corpus compat, fold
+- [x] Rendre obligatoires build natif, 50+ tests, corpus compat, fold
   déterministe, Witness desktop et Witness Web dans la CI.
-- [ ] Publier `saida_tool`, player Web et authoring WASM comme artefacts pinnés,
+- [x] Publier `saida_tool`, player Web et authoring WASM comme artefacts pinnés,
   jamais via `latest` seul.
-- [ ] Refaire la preuve Linux propre et byte-identique Windows/Linux sur les
+- [x] Refaire la preuve Linux propre et byte-identique Windows/Linux sur les
   fixtures de fold.
 - [ ] Produire archive/installeur Windows signé, validation DLL et rollback.
   Fermé hors signature : `validate_windows_dependencies.ps1`
@@ -392,7 +422,15 @@ valeur neutre trompeuse.
   DamagedHelmet CC-BY-NC est signalé non commercial. Le bundle exact est inclus
   dans le release manifest moteur, les archives Witness et un artefact CI
   épinglé au SHA.
-- [ ] Tester le bouton Build et les packages sur runners propres.
+- [x] Tester le bouton Build et les packages sur runners propres.
+  Preuve commune : commit `6ec91c2`, workflow
+  [Saida Engine CI #29742700718](https://github.com/saias-o/NextEngine/actions/runs/29742700718).
+  Runner Windows propre : Vulkan Lavapipe préflight, build, 65/65 tests, corpus,
+  clic Build éditeur, Witness run + restart, installeur construit deux fois
+  byte-identique puis install/run/restart/uninstall, compliance et symboles.
+  Runner Web : Witness, player et authoring WASM publiés sous le SHA. Conteneur
+  Debian 12 propre : build, 65/65 tests, corpus, fold identique à la fixture et
+  byte-identique au résultat Windows, puis `saida_tool`/manifest épinglés.
 - [x] Documenter support GPU/OS/navigateur et procédure de retrait d'une release.
   `docs/release-support.md` limite la V1 à Windows 11/Vulkan 1.3,
   Chrome/Edge desktop WebGPU et `saida_tool` Debian 12, publie les surfaces non
