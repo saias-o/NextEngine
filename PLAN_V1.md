@@ -79,8 +79,8 @@ Prochain chantier autonome conseillé, hors UI : compléments physique
 (diagnostics, puis slider/cône/moteurs/breakables), rendu/lightmaps, puis LTO
 seulement après stabilité. À réserver à une session assistée séparée : la suite
 de P0.3 UI (adaptation visuelle des prompts, undo éditeur, World Space,
-lifecycle), le rebuild emsdk du player Web/authoring WASM après la
-refactorisation UI, pads physiques Xbox/PlayStation, signature Authenticode avec
+lifecycle), le run E2E Web navigateur du HUD (le build web compile déjà),
+pads physiques Xbox/PlayStation, signature Authenticode avec
 la clé de publication, validations XR/casques et benchmarks sur GPU physique.
 Lavapipe peut qualifier les contrats et le packaging CI, pas remplacer une
 preuve matérielle. Toute case cochée doit conserver dans ce fichier le commit/run
@@ -191,8 +191,8 @@ deux runtimes annoncés compatibles.
 - [~] Créer un corpus UI desktop/Web/XR et des captures de référence.
   `saida_ui_corpus_tests` couvre le backend CPU partagé par desktop et Web avec
   des assertions de pixels calculées (plus robustes que des captures golden),
-  dont la parité HUD `HudRasterizer`. Reste : corpus UI XR et parcours Web
-  spécifique (rebuild emsdk).
+  dont la parité HUD `HudRasterizer`. Reste : corpus UI XR et run E2E Web
+  navigateur du HUD (le build web compile/linke, commit `84cefcf`).
 - [ ] Mesurer le backend CPU avant de décider un backend GPU RmlUi.
 
 Preuves de session (2026-07-20) :
@@ -217,11 +217,15 @@ Preuves de session (2026-07-20) :
 - Fonts moteur déclarées et packagées, commit `8526e8d`.
 - Champ « Project Name » éditeur rendu lecture seule, commit `5e0a107`.
 
-À refaire en session assistée toolchain : reconstruire player Web et authoring
-WASM (emsdk absent de cette machine) pour reconfirmer le chemin `gatherHud` Web
-après la refactorisation, et prouver le HUD Web packagé. Le chemin Web conserve
-la logique d'origine (mêmes texture/bindgroup/draw); seul le compilateur emsdk
-n'a pas revérifié le build.
+Chemin Web reconstruit (emsdk `/c/Users/evand/emsdk`, emcc 6.0.1), commit
+`84cefcf` : `build-web-player`, `build-web` (viewer live-edit) et
+`build-authoring-wasm` compilent et linkent avec `HudRasterizer`. Le rebuild a
+d'ailleurs révélé deux ruptures réelles de la refacto (forward-decl `Texture`
+en conflit avec l'alias WebGPU; `HudRasterizer.cpp` absent des listes de
+sources web) — désormais corrigées. Reste à prouver en navigateur : le run E2E
+Web packagé (`witness_web_stage.sh` + Chrome/Edge) pour confirmer que le HUD
+Web rasterise réellement, la logique étant partagée avec le chemin desktop
+prouvé.
 
 Gate : WitnessGame et le corpus UI rendent et interagissent correctement sur
 desktop et Web; l'absence XR éventuelle est un fallback déclaré.
