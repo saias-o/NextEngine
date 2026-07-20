@@ -8,7 +8,8 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 ## Preuves acquises
 
 - [x] Build natif complet Windows UCRT64.
-- [x] Suite native : 65/65 tests le 2026-07-20.
+- [x] Suite native : 67/67 tests le 2026-07-20 (corpus UI `saida_ui_corpus_tests`
+  et son rasterizer HUD partagé inclus).
 - [x] Player Web Release et authoring WASM Release compilés.
 - [x] WitnessGame éditeur/desktop : Play éditeur automatisé via `--play`, export
   et runtime autonome, HUD vérifié, `E2E PASS` puis `RESTART PASS`.
@@ -67,15 +68,23 @@ correspondante.
 L'atomicité du renommage Hub est également fermée (voir la case P1 : opération
 `renameProjectDirectory` avec rollback, testée par `saida_project_rename_tests`).
 
+P0.3 UI est entamé (session 2026-07-20) : rendu CPU desktop finalisé et prouvé,
+HUD unifié desktop/Web par `HudRasterizer`, fonts déclarées/packagées, corpus
+headless `saida_ui_corpus_tests`. Restent dans P0.3 : contrat auteur Rml/CSS/JS
+stabilisé, indirection AssetRegistry des assets UI, World Space prouvé,
+unification hit-test/focus/input, lifecycle Play/Stop/reload, inspector/picking/
+undo UI, corpus XR et mesure CPU→décision backend GPU.
+
 Prochain chantier autonome conseillé, hors UI : compléments physique
 (diagnostics, puis slider/cône/moteurs/breakables), rendu/lightmaps, puis LTO
-seulement après stabilité. À
-réserver à une session assistée séparée : tout P0.3 UI, adaptation visuelle des
-prompts et undo éditeur, pads physiques Xbox/PlayStation, signature Authenticode
-avec la clé de publication, validations XR/casques et benchmarks sur GPU
-physique. Lavapipe peut qualifier les contrats et le packaging CI, pas remplacer
-une preuve matérielle. Toute case cochée doit conserver dans ce fichier le
-commit/run ou le corpus exact qui la prouve.
+seulement après stabilité. À réserver à une session assistée séparée : la suite
+de P0.3 UI (adaptation visuelle des prompts, undo éditeur, World Space,
+lifecycle), le rebuild emsdk du player Web/authoring WASM après la
+refactorisation UI, pads physiques Xbox/PlayStation, signature Authenticode avec
+la clé de publication, validations XR/casques et benchmarks sur GPU physique.
+Lavapipe peut qualifier les contrats et le packaging CI, pas remplacer une
+preuve matérielle. Toute case cochée doit conserver dans ce fichier le commit/run
+ou le corpus exact qui la prouve.
 
 ## P0.1 - Jeu témoin et chemin de livraison
 
@@ -159,17 +168,60 @@ deux runtimes annoncés compatibles.
 ## P0.3 - UI V1
 
 - [ ] Stabiliser le contrat auteur Rml/HTML, CSS et JS projet.
-- [ ] Charger fonts, images et feuilles de style depuis l'AssetRegistry avec
-  erreurs visibles.
-- [ ] Finaliser rendu RmlUi CPU desktop : géométrie, textures, clipping/scissor,
-  blend, transforms, resize et DPI.
-- [ ] Prouver Screen Space pour HUD/menu et World Space pour panneau 3D.
+- [~] Charger fonts, images et feuilles de style depuis l'AssetRegistry avec
+  erreurs visibles. Livré sauf l'indirection AssetID : les fonts par défaut du
+  moteur ont un manifeste déclaré (`RmlUiRuntime::kEngineFonts`) résolu par
+  fichier sous `assets/fonts/` puis le checkout dev, avec erreur explicite si
+  une font requise manque et embarquement `BuildExporter` desktop/Web; une
+  image UI absente rend le damier magenta (convention `missingTexture`); une
+  feuille de style projet se charge du disque avec la propriété web non
+  supportée filtrée. Tout prouvé par `saida_ui_corpus_tests`. Reste : router
+  les assets UI par AssetID de l'AssetRegistry plutôt que par chemin projet.
+- [x] Finaliser rendu RmlUi CPU desktop : géométrie, textures, clipping/scissor,
+  blend, transforms, resize et DPI. Le corpus headless `saida_ui_corpus_tests`
+  prouve chaque primitive sans GPU (72 checks) et le HUD desktop compose
+  réellement via le rasterizer partagé. Preuves commit `8b9683f` (voir case P1).
+- [~] Prouver Screen Space pour HUD/menu et World Space pour panneau 3D.
+  Screen Space HUD prouvé (desktop `--play` + packagé + corpus); World Space
+  (`WebCanvasNode` raycast plan) pas encore couvert par une preuve dédiée.
 - [ ] Unifier hit-test, focus, clavier, souris, scroll, touch et capture UI.
 - [ ] Brancher DOM ciblé et QuickJS sans API navigateur implicite.
 - [ ] Garantir lifecycle Play/Stop/reload et sérialisation des documents.
 - [ ] Ajouter inspector, picking et édition de chemins/modes avec undo/redo.
-- [ ] Créer un corpus UI desktop/Web/XR et des captures de référence.
+- [~] Créer un corpus UI desktop/Web/XR et des captures de référence.
+  `saida_ui_corpus_tests` couvre le backend CPU partagé par desktop et Web avec
+  des assertions de pixels calculées (plus robustes que des captures golden),
+  dont la parité HUD `HudRasterizer`. Reste : corpus UI XR et parcours Web
+  spécifique (rebuild emsdk).
 - [ ] Mesurer le backend CPU avant de décider un backend GPU RmlUi.
+
+Preuves de session (2026-07-20) :
+
+- Rendu CPU desktop et parité HUD, commit `8b9683f` : le HUD texte
+  (`UICanvasNode`/`UITextNode`) était rendu uniquement sur le player Web par un
+  `gatherLegacyWebUI` web-only; desktop `traverseUI` ne dessinait jamais
+  `UITextNode`, donc un jeu desktop packagé n'affichait aucun texte de HUD
+  (violation de la parité SPEC §1, masquée par le harnais qui vérifiait
+  `getText()` et non les pixels). Le markup + la rasterisation CPU sont
+  extraits dans `ui/HudRasterizer`, partagé desktop/Web; seul l'upload texture
+  diffère (quad bindless Vulkan vs texture+bindgroup WebGPU). Prouvé sur
+  l'artefact réel : `[HUD] rasterized 1046/967 visible pixel(s)` puis
+  `[E2E] PASS` + `RESTART PASS` en desktop packagé (`witness_e2e.sh`) et éditeur
+  `--play` (`witness_editor_play.sh`), 67/67 CTest (corpus UI inclus). Au
+  passage : blend CPU corrigé (couleurs de sommet et texels prémultipliés →
+  produit simple; l'ancien code multipliait deux fois par l'alpha et
+  assombrissait toute couleur semi-transparente), image manquante → damier
+  magenta, et ordre de teardown `~Engine` corrigé (le contexte RmlUi du HUD
+  desktop survivait à `Rml::Shutdown()` et crashait à la sortie — le renderer
+  est désormais détruit avant `RmlUiRuntime::shutdown()`).
+- Fonts moteur déclarées et packagées, commit `8526e8d`.
+- Champ « Project Name » éditeur rendu lecture seule, commit `5e0a107`.
+
+À refaire en session assistée toolchain : reconstruire player Web et authoring
+WASM (emsdk absent de cette machine) pour reconfirmer le chemin `gatherHud` Web
+après la refactorisation, et prouver le HUD Web packagé. Le chemin Web conserve
+la logique d'origine (mêmes texture/bindgroup/draw); seul le compilateur emsdk
+n'a pas revérifié le build.
 
 Gate : WitnessGame et le corpus UI rendent et interagissent correctement sur
 desktop et Web; l'absence XR éventuelle est un fallback déclaré.
