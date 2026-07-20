@@ -164,6 +164,7 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/graphics/TinyObjUsage.cpp
     ${SAIDA_ROOT}/src/graphics/UIRenderer.cpp
     ${SAIDA_ROOT}/src/graphics/cgltf_impl.cpp
+    ${SAIDA_ROOT}/src/ui/HudRasterizer.cpp
     ${SAIDA_ROOT}/src/ui/RmlUiRenderInterface.cpp
     ${SAIDA_ROOT}/src/ui/RmlUiRuntime.cpp
     ${SAIDA_ROOT}/src/fx/ParticleEffect.cpp

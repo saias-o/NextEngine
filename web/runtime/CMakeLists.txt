@@ -104,6 +104,7 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/scene/UICanvasNode.cpp
     ${SAIDA_ROOT}/src/scene/UITextNode.cpp
     ${SAIDA_ROOT}/src/scene/WaterNode.cpp
+    ${SAIDA_ROOT}/src/ui/HudRasterizer.cpp
     ${SAIDA_ROOT}/src/ui/RmlUiRenderInterface.cpp
     ${SAIDA_ROOT}/src/ui/RmlUiRuntime.cpp
     # ResourceManager charge les assets d'animation (.sclip/.sgraph) : leurs

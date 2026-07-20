@@ -16,7 +16,11 @@ class Scene;
 class UINode;
 class WebCanvasNode;
 class UICanvasNode;
+#ifndef SAIDA_RHI_WEBGPU
+// Desktop HUD texture type; on WebGPU `saida::Texture` is a type alias
+// (graphics/Texture.hpp), so forward-declaring it there would clash.
 class Texture;
+#endif
 
 struct UIDrawCmd {
     glm::vec2 position;
