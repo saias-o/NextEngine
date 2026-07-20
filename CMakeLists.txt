@@ -17,6 +17,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # current ref as a configure dependency so a local commit followed by `cmake
 # --build` cannot silently retain the previous SHA.
 set(SAIDA_BUILD_COMMIT "unknown")
+# A containerized CI checkout can be owned by a different uid, causing Git's
+# safe-directory guard to reject rev-parse. GitHub already exposes the exact
+# immutable commit being built, so use it as a fail-closed identity fallback.
+if(DEFINED ENV{GITHUB_SHA})
+    string(LENGTH "$ENV{GITHUB_SHA}" SAIDA_CI_HEAD_LENGTH)
+    if(SAIDA_CI_HEAD_LENGTH EQUAL 40 AND
+       "$ENV{GITHUB_SHA}" MATCHES "^[0-9a-fA-F]+$")
+        set(SAIDA_BUILD_COMMIT "$ENV{GITHUB_SHA}")
+    endif()
+endif()
 find_package(Git QUIET)
 if(Git_FOUND)
     execute_process(

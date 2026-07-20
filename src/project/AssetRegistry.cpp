@@ -398,6 +398,11 @@ std::string AssetRegistry::normalizeKey(const std::string& key) const {
     std::string pathPart = hash == std::string::npos ? key : key.substr(0, hash);
     const std::string suffix = hash == std::string::npos ? std::string() : key.substr(hash);
 
+    // Asset keys are a portable serialization format. On POSIX,
+    // std::filesystem treats '\' as an ordinary character rather than a path
+    // separator, so normalize Windows input before asking the host filesystem
+    // to collapse "." and ".." components.
+    std::replace(pathPart.begin(), pathPart.end(), '\\', '/');
     std::filesystem::path p = std::filesystem::path(pathPart).lexically_normal();
     if (p.is_absolute() && !projectRoot_.empty()) {
         const std::filesystem::path root =
