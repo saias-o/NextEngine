@@ -4,6 +4,7 @@
 #include "core/FormatVersions.hpp"
 #include "editor/ExeMetadata.hpp"
 #include "project/Project.hpp"
+#include "ui/RmlUiRuntime.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -95,6 +96,34 @@ std::string safeFileStem(std::string value) {
     }
     while (!value.empty() && (value.back() == ' ' || value.back() == '.')) value.pop_back();
     return value.empty() ? "Game" : value;
+}
+
+// Un package doit embarquer les fonts par défaut du moteur : sans elles, RmlUi
+// n'a aucune face et tout texte UI disparaît en silence hors checkout dev. Les
+// fichiers vont sous assets/fonts/ (première racine de résolution du runtime);
+// copiés avant les données projet, un fichier homonyme du projet gagne.
+bool copyEngineFonts(const fs::path& outRoot, std::string& log, std::string& error) {
+    std::error_code ec;
+    fs::create_directories(outRoot / "assets" / "fonts", ec);
+    if (ec) {
+        error = "cannot create assets/fonts: " + ec.message();
+        return false;
+    }
+    for (const EngineFontFile& font : RmlUiRuntime::engineFontFiles()) {
+        if (font.sourcePath.empty()) {
+            if (!font.required) continue;
+            error = "engine font not found: " + font.fileName;
+            return false;
+        }
+        fs::copy_file(font.sourcePath, outRoot / "assets" / "fonts" / font.fileName,
+                      fs::copy_options::overwrite_existing, ec);
+        if (ec) {
+            error = "failed to copy engine font " + font.fileName + ": " + ec.message();
+            return false;
+        }
+        log += "  assets/fonts/" + font.fileName + "\n";
+    }
+    return true;
 }
 
 bool copyProjectData(const Project& project, const fs::path& outRoot, std::string& log) {
@@ -237,7 +266,12 @@ BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
     if (!copyTree(shaderDir, outDir / "shaders", r.log))
         return fail("failed to copy shaders");
 
-    // 4. Project data, in a flat layout so Project::load() sets rootPath = outDir.
+    // 4. Engine default fonts, then project data in a flat layout so
+    //    Project::load() sets rootPath = outDir.
+    {
+        std::string fontError;
+        if (!copyEngineFonts(outDir, r.log, fontError)) return fail(fontError);
+    }
     if (!copyProjectData(project, outDir, r.log))
         return fail("failed to copy project data");
 

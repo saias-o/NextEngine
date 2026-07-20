@@ -220,7 +220,11 @@ target_link_options(saida_player PRIVATE
     -sEXPORTED_FUNCTIONS=_main,_saida_player_status
     $<$<CONFIG:Release>:-Oz>
     "SHELL:--preload-file \"${SAIDA_ROOT}/build/shaders/wgsl@/shaders\""
-    "SHELL:--preload-file \"${SAIDA_ROOT}/third_party/rmlui/Samples/assets/LatoLatin-Regular.ttf@/assets/third_party/rmlui/Samples/assets/LatoLatin-Regular.ttf\""
+    # Fonts par défaut du moteur, au chemin canonique assets/fonts/ (même liste
+    # que RmlUiRuntime::kEngineFonts; NotoEmoji volontairement hors bundle web).
+    "SHELL:--preload-file \"${SAIDA_ROOT}/third_party/rmlui/Samples/assets/LatoLatin-Regular.ttf@/assets/assets/fonts/LatoLatin-Regular.ttf\""
+    "SHELL:--preload-file \"${SAIDA_ROOT}/third_party/rmlui/Samples/assets/LatoLatin-Bold.ttf@/assets/assets/fonts/LatoLatin-Bold.ttf\""
+    "SHELL:--preload-file \"${SAIDA_ROOT}/third_party/rmlui/Samples/assets/RobotoMono-Regular.ttf@/assets/assets/fonts/RobotoMono-Regular.ttf\""
     # Le package du jeu de référence, monté tel quel sous /project.
     -sFORCE_FILESYSTEM=1
     "SHELL:--shell-file \"${CMAKE_CURRENT_SOURCE_DIR}/shell.html\""

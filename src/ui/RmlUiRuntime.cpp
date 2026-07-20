@@ -16,6 +16,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <sstream>
 
@@ -218,44 +219,115 @@ std::unique_ptr<NextRmlSystemInterface> gSystemInterface;
 std::unique_ptr<NextRmlFileInterface> gFileInterface;
 std::unique_ptr<RmlUiRenderInterface> gRenderInterface;
 
-void loadFontIfPresent(const std::string& path, bool fallback, Rml::Style::FontWeight weight = Rml::Style::FontWeight::Auto) {
-    if (!std::filesystem::exists(path)) return;
-    if (!Rml::LoadFontFace(path, fallback, weight)) {
-        Log::warn("[RmlUi] failed to load font: ", path);
-    }
+// ── Fonts par défaut du moteur ───────────────────────────────────────────────
+//
+// Le jeu déclare ses propres fonts par @font-face dans ses feuilles RCSS; ce
+// manifeste couvre seulement les familles par défaut (sans-serif, monospace,
+// fallback emoji) que tout texte doit pouvoir rendre sans configuration.
+// Résolution par fichier : assets/fonts/ (bundle packagé, racine runtime)
+// d'abord, puis le checkout dev (fonts d'exemple du sous-module RmlUi).
+
+struct EngineFontSpec {
+    const char* fileName;
+    Rml::Style::FontWeight weight;
+    bool fallback;      // participe à la chaîne de repli glyphes
+    bool requiredOnWeb; // false = limite déclarée du player Web (SPEC §14)
+};
+
+// NotoEmoji reste hors des bundles wasm : 400 KiB de plus au boot pour un
+// repli de glyphes que le contenu V1 n'utilise pas.
+constexpr EngineFontSpec kEngineFonts[] = {
+    {"LatoLatin-Regular.ttf", Rml::Style::FontWeight::Normal, true, true},
+    {"LatoLatin-Bold.ttf", Rml::Style::FontWeight::Bold, false, true},
+    {"RobotoMono-Regular.ttf", Rml::Style::FontWeight::Normal, false, true},
+    {"NotoEmoji-Regular.ttf", Rml::Style::FontWeight::Normal, true, false},
+};
+
+constexpr const char* kEngineFontRoots[] = {
+    "assets/fonts/",
+    "third_party/rmlui/Samples/assets/",
+};
+
+// Les familles génériques que les documents référencent; toutes pointent vers
+// les fichiers ci-dessus. "NextSans" est la famille historique des HUD.
+constexpr const char* kSansSerifAliases[] = {"NextSans", "Arial", "Helvetica", "sans-serif"};
+
+bool isFontRequiredHere(const EngineFontSpec& spec) {
+#ifdef __EMSCRIPTEN__
+    return spec.requiredOnWeb;
+#else
+    (void)spec;
+    return true;
+#endif
 }
 
-void loadFontAliasIfPresent(const std::string& path, const std::string& family,
-                            Rml::Style::FontWeight weight, bool fallback = false) {
-    if (!std::filesystem::exists(path)) return;
-    if (!Rml::LoadFontFace(path, family, Rml::Style::FontStyle::Normal, weight, fallback)) {
-        Log::warn("[RmlUi] failed to load font alias ", family, ": ", path);
+std::string resolveEngineFont(const char* fileName) {
+    for (const char* root : kEngineFontRoots) {
+        std::string candidate = assetPath(std::string(root) + fileName);
+        if (std::filesystem::exists(candidate)) return candidate;
     }
+    return {};
+}
+
+bool loadFontFace(const std::string& path, bool fallback, Rml::Style::FontWeight weight) {
+    if (Rml::LoadFontFace(path, fallback, weight)) return true;
+    Log::error("[RmlUi] failed to load font: ", path);
+    return false;
+}
+
+bool loadFontAlias(const std::string& path, const std::string& family,
+                   Rml::Style::FontWeight weight, bool fallback = false) {
+    if (Rml::LoadFontFace(path, family, Rml::Style::FontStyle::Normal, weight, fallback)) return true;
+    Log::error("[RmlUi] failed to load font alias ", family, ": ", path);
+    return false;
 }
 
 void loadDefaultFonts() {
-    loadFontIfPresent(assetPath("assets/fonts/NextSans-Regular.ttf"), true, Rml::Style::FontWeight::Normal);
-    loadFontIfPresent(assetPath("assets/fonts/NextSans-Bold.ttf"), false, Rml::Style::FontWeight::Bold);
-
-    const std::string sampleFonts = assetPath("third_party/rmlui/Samples/assets/");
-    const std::string latoRegular = sampleFonts + "LatoLatin-Regular.ttf";
-    const std::string latoBold = sampleFonts + "LatoLatin-Bold.ttf";
-    const std::string monoRegular = sampleFonts + "RobotoMono-Regular.ttf";
-    loadFontIfPresent(latoRegular, true, Rml::Style::FontWeight::Normal);
-    loadFontIfPresent(latoBold, false, Rml::Style::FontWeight::Bold);
-    loadFontIfPresent(monoRegular, false, Rml::Style::FontWeight::Normal);
-    loadFontIfPresent(sampleFonts + "NotoEmoji-Regular.ttf", true, Rml::Style::FontWeight::Normal);
-
-    for (const char* family : {"NextSans", "Arial", "Helvetica", "sans-serif"}) {
-        loadFontAliasIfPresent(latoRegular, family, Rml::Style::FontWeight::Normal, family == std::string("sans-serif"));
-        loadFontAliasIfPresent(latoBold, family, Rml::Style::FontWeight::Bold);
+    int loadedFaces = 0;
+    std::string latoRegular;
+    std::string latoBold;
+    std::string monoRegular;
+    for (const EngineFontSpec& spec : kEngineFonts) {
+        const std::string resolved = resolveEngineFont(spec.fileName);
+        if (resolved.empty()) {
+            if (isFontRequiredHere(spec)) {
+                Log::error("[RmlUi] engine font missing: ", spec.fileName,
+                           " (searched assets/fonts/ then the dev checkout)");
+            } else {
+                Log::info("[RmlUi] optional engine font not bundled: ", spec.fileName);
+            }
+            continue;
+        }
+        if (loadFontFace(resolved, spec.fallback, spec.weight)) ++loadedFaces;
+        if (spec.fileName == std::string("LatoLatin-Regular.ttf")) latoRegular = resolved;
+        else if (spec.fileName == std::string("LatoLatin-Bold.ttf")) latoBold = resolved;
+        else if (spec.fileName == std::string("RobotoMono-Regular.ttf")) monoRegular = resolved;
     }
-    loadFontAliasIfPresent(monoRegular, "monospace", Rml::Style::FontWeight::Normal);
+
+    for (const char* family : kSansSerifAliases) {
+        const bool isGenericFallback = family == std::string("sans-serif");
+        if (!latoRegular.empty()) loadFontAlias(latoRegular, family, Rml::Style::FontWeight::Normal, isGenericFallback);
+        if (!latoBold.empty()) loadFontAlias(latoBold, family, Rml::Style::FontWeight::Bold);
+    }
+    if (!monoRegular.empty()) loadFontAlias(monoRegular, "monospace", Rml::Style::FontWeight::Normal);
+
+    if (loadedFaces == 0) {
+        Log::error("[RmlUi] no engine font could be loaded — UI text will not render");
+    }
 }
 
 } // namespace
 
 bool RmlUiRuntime::initialized_ = false;
+
+std::vector<EngineFontFile> RmlUiRuntime::engineFontFiles() {
+    std::vector<EngineFontFile> files;
+    files.reserve(std::size(kEngineFonts));
+    for (const EngineFontSpec& spec : kEngineFonts) {
+        files.push_back({spec.fileName, resolveEngineFont(spec.fileName), isFontRequiredHere(spec)});
+    }
+    return files;
+}
 
 bool RmlUiRuntime::ensureInitialized() {
     if (initialized_) return true;

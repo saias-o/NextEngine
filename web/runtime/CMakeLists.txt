@@ -174,7 +174,11 @@ target_link_options(saida_web PRIVATE
     # WGSL shaders packaged into MEMFS at /shaders (16.1 web FS: preload).
     # Paths are quoted so a checkout under a directory with spaces still links.
     "SHELL:--preload-file \"${SAIDA_ROOT}/build/shaders/wgsl@/shaders\""
-    "SHELL:--preload-file \"${SAIDA_ROOT}/third_party/rmlui/Samples/assets/LatoLatin-Regular.ttf@/assets/third_party/rmlui/Samples/assets/LatoLatin-Regular.ttf\""
+    # Fonts par défaut du moteur, au chemin canonique assets/fonts/ (même liste
+    # que RmlUiRuntime::kEngineFonts; NotoEmoji volontairement hors bundle web).
+    "SHELL:--preload-file \"${SAIDA_ROOT}/third_party/rmlui/Samples/assets/LatoLatin-Regular.ttf@/assets/assets/fonts/LatoLatin-Regular.ttf\""
+    "SHELL:--preload-file \"${SAIDA_ROOT}/third_party/rmlui/Samples/assets/LatoLatin-Bold.ttf@/assets/assets/fonts/LatoLatin-Bold.ttf\""
+    "SHELL:--preload-file \"${SAIDA_ROOT}/third_party/rmlui/Samples/assets/RobotoMono-Regular.ttf@/assets/assets/fonts/RobotoMono-Regular.ttf\""
     # BeachDemo scene + sky texture, mapped to /project (parity-test scene).
     "SHELL:--preload-file \"${SAIDA_ROOT}/BeachDemo/scenes/beach.scene@/project/beach.scene\""
     "SHELL:--preload-file \"${SAIDA_ROOT}/BeachDemo/assets/skies/sunset.png@/project/sunset.png\""
