@@ -35,11 +35,21 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-vulkan-headers
             mingw-w64-ucrt-x86_64-vulkan-loader
+            mingw-w64-ucrt-x86_64-vulkan-tools
             mingw-w64-ucrt-x86_64-glfw
             mingw-w64-ucrt-x86_64-glm
             mingw-w64-ucrt-x86_64-mesa
             mingw-w64-ucrt-x86_64-shaderc
             mingw-w64-x86_64-nsis
+
+      - name: Software Vulkan preflight
+        run: |
+          test -f /ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json
+          test -f /ucrt64/bin/vulkan_lvp.dll
+          export VK_DRIVER_FILES="$(cygpath -w /ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json)"
+          export VK_ICD_FILENAMES="$VK_DRIVER_FILES"
+          export VK_LOADER_DEBUG=error,warn,driver
+          /ucrt64/bin/vulkaninfo.exe --summary
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSAIDA_ENABLE_XR=OFF
@@ -70,6 +80,7 @@ jobs:
           test -f /ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json
           test -f /ucrt64/bin/vulkan_lvp.dll
           export VK_DRIVER_FILES="$(cygpath -w /ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json)"
+          export VK_ICD_FILENAMES="$VK_DRIVER_FILES"
           ./tools/witness_editor_build.sh build/witness-editor-build-ci
 
       - name: Reproducible Windows installer (install + run + restart + uninstall)
@@ -80,6 +91,7 @@ jobs:
           $msysRoot = '${{ steps.msys2.outputs.msys2-location }}'
           $env:VK_DRIVER_FILES = [System.IO.Path]::GetFullPath(
             (Join-Path $msysRoot 'ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json'))
+          $env:VK_ICD_FILENAMES = $env:VK_DRIVER_FILES
           if (-not (Test-Path -LiteralPath $env:VK_DRIVER_FILES -PathType Leaf)) {
             throw "Lavapipe ICD not found: $env:VK_DRIVER_FILES"
           }

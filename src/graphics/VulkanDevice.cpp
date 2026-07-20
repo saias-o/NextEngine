@@ -9,6 +9,7 @@
 #include <cstring>
 #include <fstream>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -131,6 +132,10 @@ std::vector<const char*> VulkanDevice::requiredInstanceExtensions() const {
     if (!creator_) {
         uint32_t glfwExtCount = 0;
         const char** glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
+        if (!glfwExts || glfwExtCount == 0)
+            throw std::runtime_error(
+                "GLFW did not report the Vulkan surface extensions; "
+                "the loader or window backend is unavailable");
         extensions.assign(glfwExts, glfwExts + glfwExtCount);
     }
     if (validationEnabled_)
@@ -178,8 +183,19 @@ void VulkanDevice::createInstance() {
     if (creator_) {
         // OpenXR/Custom creator creates the instance.
         instance_ = creator_->createInstance(createInfo);
-    } else if (vkCreateInstance(&createInfo, nullptr, &instance_) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create Vulkan instance");
+    } else {
+        const VkResult result = vkCreateInstance(&createInfo, nullptr, &instance_);
+        if (result != VK_SUCCESS) {
+            std::ostringstream error;
+            error << "failed to create Vulkan instance (VkResult "
+                  << static_cast<int>(result) << ", API "
+                  << VK_API_VERSION_MAJOR(requestedApi) << "."
+                  << VK_API_VERSION_MINOR(requestedApi) << ", extensions:";
+            for (const char* extension : extensions)
+                error << " " << extension;
+            error << ")";
+            throw std::runtime_error(error.str());
+        }
     }
 }
 
