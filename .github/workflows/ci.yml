@@ -35,7 +35,6 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-vulkan-headers
             mingw-w64-ucrt-x86_64-vulkan-loader
-            mingw-w64-ucrt-x86_64-vulkan-tools
             mingw-w64-ucrt-x86_64-glfw
             mingw-w64-ucrt-x86_64-glm
             mingw-w64-ucrt-x86_64-mesa
@@ -49,7 +48,10 @@ jobs:
           export VK_DRIVER_FILES="$(cygpath -w /ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json)"
           export VK_ICD_FILENAMES="$VK_DRIVER_FILES"
           export VK_LOADER_DEBUG=error,warn,driver
-          /ucrt64/bin/vulkaninfo.exe --summary
+          mkdir -p build
+          c++ -std=c++17 -O2 tools/vulkan_preflight.cpp \
+            -o build/vulkan_preflight.exe -lvulkan-1
+          ./build/vulkan_preflight.exe
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSAIDA_ENABLE_XR=OFF
