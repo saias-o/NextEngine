@@ -360,15 +360,20 @@ valeur neutre trompeuse.
 - [ ] Refaire la preuve Linux propre et byte-identique Windows/Linux sur les
   fixtures de fold.
 - [ ] Produire archive/installeur Windows signé, validation DLL et rollback.
-  Déjà fermés hors signature/installeur : `validate_windows_dependencies.ps1`
+  Fermé hors signature : `validate_windows_dependencies.ps1`
   parse de façon bornée les tables d'imports PE x64 normales/différées, parcourt
   récursivement le bundle, autorise seulement les DLL système déclarées ou
   présentes dans le package et refuse les runtimes dynamiques MinGW; son rapport
   hashé entre dans le bundle de symboles et dans chaque archive Witness. Les ZIP
   Witness sont canoniques et reproductibles
   (ordre, timestamp du commit, refus des reparse points, vérification exacte).
-  Le rollback immuable est documenté. Restent l'installeur et sa signature avec
-  la clé de publication.
+  `build_witness_installer.ps1` produit avec NSIS 3.12+ un installeur par
+  utilisateur byte-reproductible avant signature, inventorié et sans suppression
+  récursive aveugle (payload exact et caches runtime nommés). Son vérificateur
+  automatise SHA, installation silencieuse,
+  payload exact, run + restart et désinstallation; la CI le reconstruit deux
+  fois et publie l'artefact épinglé au SHA. Le rollback immuable est documenté.
+  Reste uniquement la signature Authenticode avec la clé de publication.
 - [x] Ajouter crash logs exploitables et symboles associés à la version.
   Les quatre entry points desktop installent `core/CrashReporter` avant le boot :
   exception fatale → `.crash.log` métadonné et minidump Windows sous le dossier

@@ -11,7 +11,7 @@ identifié par son commit et son manifeste, passe les vérifications indiquées.
 
 | Surface | Cible supportée | Prérequis | Preuve bloquante |
 |---|---|---|---|
-| Éditeur et player desktop | Windows 11 x64 | GPU et pilote Vulkan 1.3; UCRT système et `glfw3.dll` livrée | build UCRT64, CTest complet, corpus compatibilité, Witness exporté puis run + restart |
+| Éditeur et player desktop | Windows 11 x64 | GPU et pilote Vulkan 1.3; UCRT système et `glfw3.dll` livrée | build UCRT64, CTest complet, corpus compatibilité, Witness exporté puis run + restart, installation et désinstallation exactes |
 | Player Web | Chrome et Edge stables récents sur desktop | WebGPU activé, contexte sécurisé HTTP(S), COOP/COEP, MIME `application/wasm`, IndexedDB | build Emscripten, contrat runtime, Witness run + restart dans Chrome CI; recette externe Chrome et Edge |
 | Outil headless `saida_tool` | Debian 12 x64, glibc 2.36 | aucune surface GPU requise pour validate/fold/export | build propre conteneur Debian, CTest complet et fold byte-identique Windows/Linux |
 | Authoring WASM | navigateurs desktop de la ligne Player Web | WebAssembly, ES modules et hôte conforme au contrat d'authoring | build Emscripten et smoke Node bloquants |
@@ -52,9 +52,11 @@ L'identité d'une release est le fichier
 1. partir d'un commit propre et conserver son SHA complet;
 2. générer le manifeste moteur et le bundle de conformité;
 3. vérifier chaque fichier avec `tools/verify_engine_release.ps1`;
-4. conserver les artefacts CI dont le nom contient ce SHA;
-5. promouvoir la plateforme et l'image conteneur par SHA ou digest immuable;
-6. n'utiliser `latest` que comme alias pratique, jamais comme preuve ni comme
+4. vérifier l'archive et l'installeur Witness, puis signer l'installeur avec la
+   clé de publication et inventorier le SHA des octets signés;
+5. conserver les artefacts CI dont le nom contient ce SHA;
+6. promouvoir la plateforme et l'image conteneur par SHA ou digest immuable;
+7. n'utiliser `latest` que comme alias pratique, jamais comme preuve ni comme
    unique référence de déploiement.
 
 Une release ne doit jamais être reconstruite sous la même identité. Toute

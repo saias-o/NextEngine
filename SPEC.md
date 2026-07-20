@@ -754,8 +754,9 @@ après export.
 worktree propre, elle compile/vérifie natif et player Web, appelle le vrai Build
 éditeur pour Windows et Web, refuse les saves dans les packages, archive les
 sorties et produit `release-manifest.json` : SHA moteur, état dirty, SHA-256 et
-taille des archives, plus l'inventaire hashé de chaque fichier et le bundle de
-symboles Windows. Les ZIP sont écrits dans un ordre ordinal avec un timestamp
+taille des archives et de l'installeur, plus l'inventaire hashé de chaque
+fichier et le bundle de symboles Windows. Les ZIP sont écrits dans un ordre
+ordinal avec un timestamp
 unique dérivé du commit; les chemins ambigus, symlinks et reparse points sont
 refusés, puis chaque entrée est revérifiée contre le stage. Les scripts
 `verify_witness_windows.ps1` et `verify_witness_web.ps1` revérifient l'archive
@@ -763,6 +764,20 @@ avant extraction. Le premier exécute gameplay/UI puis save/UI au redémarrage;
 le second contrôle COOP/COEP et MIME WASM, lance Chrome ou Edge et collecte un
 verdict automatique via le serveur local. Aucun checkout moteur, MSYS2 ou SDK
 n'est requis par la preuve Windows sur machine vierge.
+
+`build_witness_installer.ps1` compile le même stage avec NSIS 3.12+ dans un
+installeur par utilisateur. Avant signature, sa sortie est byte-reproductible :
+payload trié ordinalement, timestamps issus du commit, fermeture DLL et
+inventaire SHA-256 exacts. Le désinstalleur supprime chaque fichier inventorié,
+les caches régénérables `asset_registry.local.json`/`pipeline_cache.bin`, puis
+seulement les dossiers devenus vides; il ne fait pas de suppression récursive
+aveugle du dossier choisi. `verify_witness_installer.ps1` vérifie le
+SHA de l'installeur, installe silencieusement dans un dossier isolé, compare le
+payload exact, peut exécuter gameplay + restart, puis exige une désinstallation
+propre. La CI construit deux fois les mêmes octets, compare leur SHA et publie
+le bundle sous un nom contenant le commit. La signature Authenticode est
+volontairement séparée : elle modifie les octets et requiert la clé de
+publication.
 
 Le package Web embarque player, shaders et fichiers de boot sous MEMFS. Les
 textures PNG/JPG, OBJ et assets `.srig/.sclip/.sgraph` restent hors du preload
@@ -802,8 +817,8 @@ Play éditeur automatisé (`--play`). À surveiller : halos de viewport non
 reproduits et dispatch autoload encore dupliqué entre `Engine::mountWorld` et le
 player Web.
 
-Une release exige encore un runner propre pour le package desktop et une
-archive ou un installateur signé. La fermeture DLL, les crash logs avec
+Une release exige encore la signature Authenticode de l'installeur avec la clé
+de publication. L'archive et l'installeur reproductibles, la fermeture DLL, les crash logs avec
 symboles, le SBOM, les notices, l'inventaire de contenu, le rollback et les
 hashes immuables sont désormais produits ou documentés.
 
@@ -939,7 +954,8 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
   (MikkTSpace P1, KTX2/Basis P2 par décision).
 - Point-light shadows cubemap et lightmaps persistantes absentes.
 - XR sans MSAA multiview, overlay et matrice hardware validée.
-- Build UI/runner propre, installeur final et signature non prouvés.
+- Signature Authenticode de l'installeur non prouvée; elle requiert la clé de
+  publication et une qualification des octets signés.
 - Fermeture récursive des imports DLL x64 prouvée; la disponibilité effective
   de Vulkan 1.3 reste un prérequis machine.
 - Crash reporter Windows avec minidump et bundle de symboles déterministe lié

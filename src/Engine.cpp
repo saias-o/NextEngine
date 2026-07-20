@@ -81,6 +81,8 @@ namespace saida {
 namespace {
 constexpr uint32_t kWidth = 1600;
 constexpr uint32_t kHeight = 900;
+constexpr uint32_t kHiddenTestWidth = 640;
+constexpr uint32_t kHiddenTestHeight = 360;
 
 void sleepUntil(double targetTime) {
     while (true) {
@@ -125,8 +127,11 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     // GLFW window hidden instead of presenting a misleading unrendered surface.
     // CI may also hide it while exercising the exact editor Build/runtime path
     // on a clean runner with a software Vulkan ICD.
-    const bool hideWindow = requireXr || std::getenv("SAIDA_WINDOW_HIDDEN") != nullptr;
-    window_ = std::make_unique<Window>(kWidth, kHeight, "SaidaEngine", !hideWindow);
+    const bool hiddenTestWindow = std::getenv("SAIDA_WINDOW_HIDDEN") != nullptr;
+    const bool hideWindow = requireXr || hiddenTestWindow;
+    const uint32_t width = hiddenTestWindow ? kHiddenTestWidth : kWidth;
+    const uint32_t height = hiddenTestWindow ? kHiddenTestHeight : kHeight;
+    window_ = std::make_unique<Window>(width, height, "SaidaEngine", !hideWindow);
     Input::bind(window_.get());
 
     // Process roles are explicit: the editor always owns a desktop Vulkan/ImGui

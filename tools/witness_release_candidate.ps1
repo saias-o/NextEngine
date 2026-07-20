@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$OutputDir = 'build/release/witness-v1',
+    [string]$Makensis = '',
     [switch]$AllowDirty,
     [switch]$SkipBuild,
     [switch]$SkipLocalWindowsVerification
@@ -88,6 +89,22 @@ try {
     & tools/package_release_symbols.ps1 @symbolArgs
     if ($LASTEXITCODE -ne 0) { throw "Release symbol packaging failed" }
 
+    $installerPath = Join-Path $out 'WitnessGame-Setup.exe'
+    $installerManifestPath = Join-Path $out 'WitnessGame-Setup.manifest.json'
+    $installerArgs = @{
+        SourceDir = $windowsDir
+        OutputPath = $installerPath
+        ManifestPath = $installerManifestPath
+        Version = '0.1.0'
+        SkipVerify = $true
+    }
+    if ($Makensis) { $installerArgs['Makensis'] = $Makensis }
+    if ($dirty) { $installerArgs['AllowDirty'] = $true }
+    & tools/build_witness_installer.ps1 @installerArgs
+    if ($LASTEXITCODE -ne 0) { throw "Witness installer build failed" }
+    $installerManifest =
+        Get-Content -Raw -LiteralPath $installerManifestPath | ConvertFrom-Json
+
     $windowsArchive = Join-Path $out 'WitnessGame-Windows.zip'
     $webArchive = Join-Path $out 'WitnessGame-Web.zip'
     & tools/new_deterministic_zip.ps1 `
@@ -124,6 +141,14 @@ try {
             files = File-Inventory $SourceDir
         }
     }
+    function File-Record([string]$Path) {
+        $file = Get-Item -LiteralPath $Path
+        [ordered]@{
+            path = $file.Name
+            bytes = $file.Length
+            sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+        }
+    }
 
     $manifest = [ordered]@{
         schema = 1
@@ -135,6 +160,13 @@ try {
         artifacts = [ordered]@{
             windows = Archive-Record $windowsArchive 'Witness Game.exe' $windowsDir
             web = Archive-Record $webArchive 'index.html' $webDir
+            windowsInstaller = [ordered]@{
+                installer = File-Record $installerPath
+                manifest = File-Record $installerManifestPath
+                entryPoint = [string]$installerManifest.entryPoint
+                payloadFiles = @($installerManifest.payload).Count
+                authenticode = $installerManifest.authenticode
+            }
             windowsSymbols = [ordered]@{
                 entryPoint = 'windows-symbols-manifest.json'
                 files = File-Inventory $symbolsDir
@@ -152,13 +184,18 @@ SaidaEngine WitnessGame release candidate
 Windows clean-machine proof (PowerShell only; GPU driver/Vulkan runtime required):
   powershell -ExecutionPolicy Bypass -File .\verify_witness_windows.ps1
 
+Installer proof (silent install, exact payload, run + restart, uninstall):
+  powershell -ExecutionPolicy Bypass -File .\verify_witness_installer.ps1 -RunWitness
+
 Web browser proofs (Python 3 + recent browser required):
   powershell -ExecutionPolicy Bypass -File .\verify_witness_web.ps1 -Browser Chrome
   powershell -ExecutionPolicy Bypass -File .\verify_witness_web.ps1 -Browser Edge -Port 18081
 
-Both scripts verify the archive SHA-256 before execution. The Windows verifier
-runs the exact extracted archive twice. The Web verifier checks COOP/COEP and
-WASM MIME headers, then requires gameplay/UI PASS and save/UI RESTART PASS.
+The scripts verify SHA-256 before execution. The Windows verifier runs the
+exact extracted archive twice. The installer verifier checks every installed
+file, runs Witness twice and requires a clean uninstall. The Web verifier
+checks COOP/COEP and WASM MIME headers, then requires gameplay/UI PASS and
+save/UI RESTART PASS.
 "@ | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $out 'README.txt')
 
     Remove-Item -LiteralPath $stage -Recurse -Force
@@ -166,12 +203,16 @@ WASM MIME headers, then requires gameplay/UI PASS and save/UI RESTART PASS.
     if (-not $SkipLocalWindowsVerification) {
         & (Join-Path $out 'verify_witness_windows.ps1') -BundleDir $out
         if ($LASTEXITCODE -ne 0) { throw "Local Windows archive verification failed" }
+        & (Join-Path $out 'verify_witness_installer.ps1') `
+            -ManifestPath $installerManifestPath -RunWitness
+        if ($LASTEXITCODE -ne 0) { throw "Local Windows installer verification failed" }
     }
 
     Write-Host "WITNESS RELEASE CANDIDATE READY: $out"
     Write-Host "  commit: $($manifest.engineCommit)"
     Write-Host "  dirty: $dirty"
     Write-Host "  Windows: $($manifest.artifacts.windows.sha256)"
+    Write-Host "  Installer: $($manifest.artifacts.windowsInstaller.installer.sha256)"
     Write-Host "  Web:     $($manifest.artifacts.web.sha256)"
 } finally {
     Pop-Location

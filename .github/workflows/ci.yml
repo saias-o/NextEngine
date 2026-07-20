@@ -39,6 +39,7 @@ jobs:
             mingw-w64-ucrt-x86_64-glm
             mingw-w64-ucrt-x86_64-mesa
             mingw-w64-ucrt-x86_64-shaderc
+            mingw-w64-x86_64-nsis
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSAIDA_ENABLE_XR=OFF
@@ -65,8 +66,41 @@ jobs:
       - name: Editor Build + Witness desktop (software Vulkan, run + restart)
         env:
           SAIDA_WINDOW_HIDDEN: "1"
-          VK_DRIVER_FILES: ${{ steps.msys2.outputs.msys2-location }}\ucrt64\share\vulkan\icd.d\lvp_icd.x86_64.json
-        run: ./tools/witness_editor_build.sh build/witness-editor-build-ci
+        run: |
+          test -f /ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json
+          test -f /ucrt64/bin/vulkan_lvp.dll
+          export VK_DRIVER_FILES="$(cygpath -w /ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json)"
+          ./tools/witness_editor_build.sh build/witness-editor-build-ci
+
+      - name: Reproducible Windows installer (install + run + restart + uninstall)
+        shell: pwsh
+        env:
+          SAIDA_WINDOW_HIDDEN: "1"
+        run: |
+          $msysRoot = '${{ steps.msys2.outputs.msys2-location }}'
+          $env:VK_DRIVER_FILES = [System.IO.Path]::GetFullPath(
+            (Join-Path $msysRoot 'ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json'))
+          if (-not (Test-Path -LiteralPath $env:VK_DRIVER_FILES -PathType Leaf)) {
+            throw "Lavapipe ICD not found: $env:VK_DRIVER_FILES"
+          }
+          $arguments = @{
+            SourceDir = 'build/witness-editor-build-ci'
+            OutputPath = 'build/release/witness-installer/WitnessGame-Setup.exe'
+            Makensis = (Join-Path $msysRoot 'mingw64/bin/makensis.exe')
+            SkipVerify = $true
+          }
+          ./tools/build_witness_installer.ps1 @arguments
+          $first = (Get-FileHash -Algorithm SHA256 `
+            build/release/witness-installer/WitnessGame-Setup.exe).Hash
+          ./tools/build_witness_installer.ps1 @arguments
+          $second = (Get-FileHash -Algorithm SHA256 `
+            build/release/witness-installer/WitnessGame-Setup.exe).Hash
+          if ($first -ne $second) {
+            throw "Installer builds are not byte-identical"
+          }
+          ./tools/verify_witness_installer.ps1 `
+            -ManifestPath build/release/witness-installer/WitnessGame-Setup.manifest.json `
+            -RunWitness -TimeoutSeconds 180
 
       - name: Fold determinism (Windows reference)
         run: |
@@ -124,6 +158,12 @@ jobs:
         with:
           name: windows-symbols-${{ github.sha }}
           path: build/release/windows-symbols
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: witness-windows-installer-${{ github.sha }}
+          path: build/release/witness-installer
           if-no-files-found: error
 
   web-artifacts:

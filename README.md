@@ -90,7 +90,9 @@ pacman -S --needed \
   mingw-w64-ucrt-x86_64-shaderc \
   mingw-w64-ucrt-x86_64-vulkan-headers \
   mingw-w64-ucrt-x86_64-vulkan-loader \
-  mingw-w64-ucrt-x86_64-vulkan-validation-layers
+  mingw-w64-ucrt-x86_64-vulkan-validation-layers \
+  mingw-w64-ucrt-x86_64-mesa \
+  mingw-w64-x86_64-nsis
 git lfs install
 ```
 
@@ -105,7 +107,9 @@ git lfs pull
 ```
 
 Un pilote GPU Vulkan récent est requis. Le SDK LunarG est optionnel lorsque les
-paquets MSYS2 ci-dessus sont utilisés.
+paquets MSYS2 ci-dessus sont utilisés. Mesa fournit l'ICD logiciel Lavapipe
+réservé aux preuves CI. Le paquet MINGW64 NSIS est un outil de packaging
+autonome (version 3.12 minimum) : il ne change pas l'ABI UCRT64 du moteur.
 
 ## Compiler et vérifier
 
@@ -224,22 +228,33 @@ Build, crée les archives, inventorie chaque fichier et écrit leurs SHA-256 :
 
 Elle exige un worktree Git propre par défaut et produit
 `build/release/witness-v1/` avec `release-manifest.json`, les archives Windows
-et Web, le bundle de symboles Windows, ainsi que leurs vérificateurs autonomes.
+et Web, le bundle de symboles Windows, `WitnessGame-Setup.exe`, son manifeste
+et leurs vérificateurs autonomes.
 Les ZIP sont canoniques : ordre ordinal, timestamps épinglés au commit, chemins
 ambigus/reparse points refusés et contenu revérifié sans extraction par
 `tools/verify_deterministic_zip.ps1`. Deux exécutions sur les mêmes octets
 produisent donc le même SHA-256.
+L'installeur NSIS est lui aussi byte-reproductible avant signature. Il installe
+par utilisateur, inventorie chaque octet du payload, refuse les symlinks et
+collisions de casse, et sa désinstallation ne supprime que les fichiers
+inventoriés et les deux caches runtime régénérables explicitement nommés. Sa
+signature Authenticode reste une opération de publication
+séparée qui requiert la clé de signature.
 `-AllowDirty` est réservé aux preuves de développement et inscrit explicitement
 `dirty: true` dans le manifest. Sur une autre machine Windows, aucun checkout
 moteur, MSYS2 ou SDK n'est requis : extraire/copier ce dossier puis lancer :
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\verify_witness_windows.ps1
+powershell -ExecutionPolicy Bypass -File .\verify_witness_installer.ps1 -RunWitness
 powershell -ExecutionPolicy Bypass -File .\verify_witness_web.ps1 -Browser Chrome
 powershell -ExecutionPolicy Bypass -File .\verify_witness_web.ps1 -Browser Edge -Port 18081
 ```
 
-Le premier script exige seulement PowerShell et un pilote Vulkan fonctionnel.
+Les deux preuves Windows exigent seulement PowerShell et un pilote Vulkan
+fonctionnel. Le vérificateur d'installeur contrôle le SHA-256, réalise une
+installation silencieuse isolée, compare exactement chaque fichier, exécute
+gameplay puis restart et exige une désinstallation propre.
 Les preuves Web exigent Python 3 et le navigateur indiqué. Elles vérifient
 automatiquement SHA-256, COOP/COEP, MIME WASM, gameplay/UI et save+HUD après
 redémarrage; aucune lecture manuelle de console n'est nécessaire.
