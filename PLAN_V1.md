@@ -64,8 +64,12 @@ est inchangée, mêmes octets durables) et s'enregistrent par
 `isSupportedHeadlessBehaviourType` sont supprimés. Preuves dans la case P1
 correspondante.
 
-Prochain chantier autonome conseillé, hors UI : atomicité du Hub,
-compléments physique, rendu/lightmaps, puis LTO seulement après stabilité. À
+L'atomicité du renommage Hub est également fermée (voir la case P1 : opération
+`renameProjectDirectory` avec rollback, testée par `saida_project_rename_tests`).
+
+Prochain chantier autonome conseillé, hors UI : compléments physique
+(diagnostics, puis slider/cône/moteurs/breakables), rendu/lightmaps, puis LTO
+seulement après stabilité. À
 réserver à une session assistée séparée : tout P0.3 UI, adaptation visuelle des
 prompts et undo éditeur, pads physiques Xbox/PlayStation, signature Authenticode
 avec la clé de publication, validations XR/casques et benchmarks sur GPU
@@ -444,7 +448,18 @@ Gate : une release peut être reproduite, identifiée, diagnostiquée et retiré
 - [ ] XR : valider casques/runtimes ciblés, contrôleurs et hand tracking.
 - [ ] XR : MSAA multiview/resolve, overlay ImGui et backend d'anchors réel.
 - [ ] Éditeur : rendre undoables WebCanvas et `CollisionShape resetAuto`.
-- [ ] Hub : garantir renommage dossier, entrée Hub et `.saidaproj` atomique.
+- [x] Hub : garantir renommage dossier, entrée Hub et `.saidaproj` atomique.
+  `renameProjectDirectory` (`src/project/ProjectRename.*`) renomme ensemble le
+  dossier, le `.saidaproj` (fichier + champ `name`) et l'entrée `hub.json`,
+  avec validation du nom, refus fail-closed (cible existante, projet legacy ou
+  futur, registre Hub corrompu) et rollback complet sur échec — chaque état
+  intermédiaire reste chargeable. Le bouton Rename du Hub l'utilise et ne met
+  à jour l'entrée qu'en cas de succès. Au passage, `Project::load` accepte le
+  dossier du projet (résolution du `.saidaproj` unique), ce qui répare le
+  lancement depuis le Hub qui passait un dossier à `--project`. Prouvé le
+  2026-07-20 par `saida_project_rename_tests` (53 checks : succès bout-en-bout,
+  normalisation, refus sans mutation, hub sans entrée correspondante, rollback
+  Windows sur dossier verrouillé) et 66/66 CTest.
 - [x] Finir la migration des behaviours built-in vers réflexion/registre unique.
   `ScriptBehaviour` et `LODGroupBehaviour` gagnent un descripteur réfléchi sans
   propriétés (sérialisation manuscrite et noms `"ScriptBehaviour"`/`"LOD Group"`

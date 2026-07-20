@@ -483,6 +483,7 @@ add_library(saida_engine STATIC
     src/render/GIVolume.cpp
     # XR sources are added conditionally below via target_sources (SAIDA_ENABLE_XR)
     src/project/Project.cpp
+    src/project/ProjectRename.cpp
     src/project/AssetRegistry.cpp
     src/project/AssetLoader.cpp
     src/project/PlayerStorage.cpp
@@ -885,6 +886,12 @@ if (BUILD_TESTING)
     target_link_libraries(saida_player_storage_tests PRIVATE saida_engine)
     target_compile_options(saida_player_storage_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_player_storage_tests COMMAND $<TARGET_FILE:saida_player_storage_tests>)
+
+    add_executable(saida_project_rename_tests tests/ProjectRenameTests.cpp)
+    saida_test_target(saida_project_rename_tests)
+    target_link_libraries(saida_project_rename_tests PRIVATE saida_engine)
+    target_compile_options(saida_project_rename_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_project_rename_tests COMMAND $<TARGET_FILE:saida_project_rename_tests>)
 
     add_executable(saida_asset_loader_tests tests/AssetLoaderTests.cpp)
     saida_test_target(saida_asset_loader_tests)

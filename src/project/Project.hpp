@@ -126,4 +126,10 @@ private:
     AssetRegistry assetRegistry_;
 };
 
+// Locate the single `.saidaproj` file directly inside `directory` (used by
+// Project::load for directory paths and by the Hub rename/launch flows).
+// Returns an empty string and sets `error` when none or several exist.
+std::string resolveProjectFileInDirectory(const std::string& directory,
+                                          std::string& error);
+
 } // namespace saida

@@ -36,6 +36,31 @@ bool parseBool01(const std::string& value, bool fallback) {
 
 } // namespace
 
+std::string resolveProjectFileInDirectory(const std::string& directory,
+                                          std::string& error) {
+    std::error_code ec;
+    std::string found;
+    for (const auto& entry : fs::directory_iterator(directory, ec)) {
+        if (!entry.is_regular_file(ec) ||
+            entry.path().extension() != kProjectExtension)
+            continue;
+        if (!found.empty()) {
+            error = "several .saidaproj files in " + directory +
+                    "; open the intended one explicitly";
+            return {};
+        }
+        found = entry.path().string();
+    }
+    if (ec) {
+        error = "cannot scan " + directory + ": " + ec.message();
+        return {};
+    }
+    if (found.empty()) {
+        error = "no .saidaproj file in " + directory;
+        return {};
+    }
+    return found;
+}
 
 bool Project::create(const std::string& parentDir, const std::string& projectName) {
     fs::path projDir = fs::path(parentDir) / projectName;
@@ -80,6 +105,19 @@ bool Project::load(const std::string& neprojPath) {
     if (!fs::exists(path)) {
         Log::error("Project::load: file not found: ", neprojPath);
         return false;
+    }
+
+    // The Hub and --project accept the project directory as well as the
+    // .saidaproj file; a directory resolves to its single project file.
+    if (fs::is_directory(path)) {
+        std::string resolveError;
+        const std::string resolved =
+            resolveProjectFileInDirectory(neprojPath, resolveError);
+        if (resolved.empty()) {
+            Log::error("Project::load: ", resolveError);
+            return false;
+        }
+        return load(resolved);
     }
 
     std::ifstream file(neprojPath);

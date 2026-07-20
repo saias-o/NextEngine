@@ -1,6 +1,7 @@
 #include "Hub.hpp"
 #include "core/Log.hpp"
 #include "graphics/GpuSync.hpp"
+#include "project/ProjectRename.hpp"
 #include "imgui.h"
 
 #include <nlohmann/json.hpp>
@@ -218,20 +219,19 @@ void Hub::drawUI() {
                     ImGui::InputText("##rename", renameBuf_, sizeof(renameBuf_));
                     ImGui::SameLine();
                     if (ImGui::Button("Save")) {
-                        std::error_code ec;
-                        fs::path oldPath = projects_[i].path;
-                        fs::path newPath = oldPath.parent_path() / renameBuf_;
-                        fs::rename(oldPath, newPath, ec);
-                        
-                        if (!ec) {
-                            // Update project file as well? For now just the directory and hub entry
+                        // Directory, .saidaproj (file name + name field) and
+                        // the hub.json entry move together, with rollback on
+                        // failure; the entry is only updated on success and
+                        // the rename box stays open on refusal.
+                        const ProjectRenameResult renamed = renameProjectDirectory(
+                            projects_[i].path, renameBuf_, hubJsonPath_);
+                        if (renamed) {
                             projects_[i].name = renameBuf_;
-                            projects_[i].path = newPath.string();
-                            saveProjects();
+                            projects_[i].path = renamed.rootPath;
+                            renameIndex_ = -1;
                         } else {
-                            Log::warn("Failed to rename project folder: " + ec.message());
+                            Log::warn("Project rename refused: " + renamed.error);
                         }
-                        renameIndex_ = -1;
                     }
                     ImGui::SameLine();
                     if (ImGui::Button("Cancel")) {

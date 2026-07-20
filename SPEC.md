@@ -706,8 +706,16 @@ test matériel.
 L'éditeur fournit arbre de scène, inspector réfléchi, file browser, gizmos,
 Play/Stop et undo/redo. Certaines mutations restent seulement dirty, notamment
 scripts WebCanvas et changements de CollisionShape avec `resetAuto`; elles
-doivent devenir des commandes undoables. Le renommage de projet doit conserver
-dossier, Hub et `.saidaproj` cohérents.
+doivent devenir des commandes undoables.
+
+Le renommage de projet passe par `renameProjectDirectory`
+(`src/project/ProjectRename.*`) : le dossier, le fichier `.saidaproj` (nom et
+champ `name`) et l'entrée `hub.json` sont modifiés ensemble, chaque étape
+intermédiaire reste chargeable et tout échec restaure l'état antérieur. Le nom
+est validé comme composant de chemin sûr, un registre Hub corrompu ou un
+document projet legacy/futur refuse l'opération, et `Project::load` accepte
+désormais le dossier du projet (résolution du `.saidaproj` unique) — le chemin
+que le Hub stocke et passe à `--project`.
 
 Le MCP natif expose des outils aux agents. Le contrat cible exige permissions
 par outil, validation, dry-run/diff, transactions groupées, snapshot/rollback et
