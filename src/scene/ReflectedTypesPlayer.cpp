@@ -73,7 +73,9 @@ void registerReflectedTypes() {
     registerBehaviour<AudioSourceBehaviour>();
     // Signals-only descriptor (animationEvent) — serialization stays manual.
     registerBehaviour<Animator>();
-    BehaviourRegistry::instance().registerType<ScriptBehaviour>("ScriptBehaviour");
+    // Descriptor without properties — the script payload keeps its
+    // hand-written save()/load().
+    registerBehaviour<ScriptBehaviour>();
 
     registerNode<LightNode>();
     registerNode<WaterNode>();

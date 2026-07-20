@@ -10,6 +10,7 @@
 #include "scene/CameraFollowBehaviour.hpp"
 #include "scene/CharacterBehaviour.hpp"
 #include "scene/HealthBehaviour.hpp"
+#include "scene/LODGroupBehaviour.hpp"
 #include "scene/LightNode.hpp"
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/WaterNode.hpp"
@@ -18,6 +19,7 @@
 #include "scene/StateMachineBehaviour.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/SequenceDirectorBehaviour.hpp"
+#include "scripting/ScriptBehaviour.hpp"
 #include "physics/AreaNode.hpp"
 #include "physics/JointNodes.hpp"
 #include "scenario/ScenarioAnchor.hpp"
@@ -61,6 +63,10 @@ void registerReflectedTypes() {
     registerBehaviour<RotatorBehaviour>();
     // Signals-only descriptor (animationEvent) — serialization stays manual.
     registerBehaviour<Animator>();
+    // Descriptors without properties — serialization stays the hand-written
+    // save()/load() (script payload) or lives on MeshNode (LOD chain).
+    registerBehaviour<ScriptBehaviour>();
+    registerBehaviour<LODGroupBehaviour>();
     registerBehaviour<AudioSourceBehaviour>();
     registerBehaviour<CameraFollowBehaviour>();
     registerBehaviour<CharacterBehaviour>();

@@ -27,9 +27,6 @@
 #include "physics/CollisionShapeNode.hpp"
 #include "physics/RigidBodyNode.hpp"
 #include "physics/StaticBodyNode.hpp"
-#include "scene/LODGroupBehaviour.hpp"
-#include "scene/animation/Animator.hpp"
-#include "scripting/ScriptBehaviour.hpp"
 #endif
 
 #include <nlohmann/json.hpp>
@@ -79,17 +76,6 @@ void ensureHeadlessRegistries() {
         nodes.registerType<RigidBodyNode>("RigidBody");
     if (nodes.factories().find("CharacterBody") == nodes.factories().end())
         nodes.registerType<CharacterBodyNode>("CharacterBody");
-
-    // These behaviours have hand-written serializers rather than reflected
-    // descriptors. Registering them here only reconstructs their durable data;
-    // no script, animation or GPU runtime is started by load().
-    auto& behaviours = BehaviourRegistry::instance();
-    if (behaviours.factories().find("ScriptBehaviour") == behaviours.factories().end())
-        behaviours.registerType<ScriptBehaviour>("ScriptBehaviour");
-    if (behaviours.factories().find("Animator") == behaviours.factories().end())
-        behaviours.registerType<Animator>("Animator");
-    if (behaviours.factories().find("LOD Group") == behaviours.factories().end())
-        behaviours.registerType<LODGroupBehaviour>("LOD Group");
 #endif
 
     std::string typeMatrixError;
@@ -129,10 +115,6 @@ bool isSupportedHeadlessNodeType(const std::string& type) {
 }
 
 bool isSupportedHeadlessBehaviourType(const std::string& type) {
-#ifndef __EMSCRIPTEN__
-    if (type == "ScriptBehaviour" || type == "Animator" || type == "LOD Group")
-        return true;
-#endif
     const reflect::TypeDesc* desc = reflect::TypeRegistry::instance().find(type);
     return desc && desc->category == "behaviour";
 }

@@ -43,9 +43,6 @@
 #include "scene/ReflectedTypes.hpp"
 #include "scene/RuntimeTypeMatrix.hpp"
 #include "render/RenderFeatureRegistry.hpp"
-#include "scene/LODGroupBehaviour.hpp"
-#include "scene/animation/Animator.hpp"
-#include "scripting/ScriptBehaviour.hpp"
 #include "ui/RmlUiRuntime.hpp"
 #ifdef SAIDA_ENABLE_XR
 #include "xr/XrInstance.hpp"
@@ -177,11 +174,6 @@ Engine::Engine(SceneSetup sceneSetup, const std::string& initialProject, bool re
     // LightNode. Single central list — see scene/ReflectedTypes.cpp.
     registerReflectedTypes();
     registerBuiltinRenderFeatures();  // water/skybox/debug-lines plug into the Renderer
-
-    // Register remaining built-in behaviours (not yet migrated to reflection).
-    // Animator is registered by registerReflectedTypes() (signals-only descriptor).
-    BehaviourRegistry::instance().registerType<LODGroupBehaviour>("LOD Group");
-    BehaviourRegistry::instance().registerType<ScriptBehaviour>("ScriptBehaviour");
 #ifdef SAIDA_ENABLE_XR
     saida::xr::registerTypes();
 #endif

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/ReflectionFwd.hpp"
 #include "scene/Behaviour.hpp"
 
 namespace saida {
@@ -10,6 +11,12 @@ namespace saida {
 class LODGroupBehaviour : public Behaviour {
 public:
     const char* typeName() const override { return "LOD Group"; }
+
+    // Reflection: marker descriptor without properties — the durable LOD data
+    // is serialized by MeshNode. Registration flows through
+    // registerReflectedTypes() like every other built-in behaviour.
+    static constexpr const char* reflectName() { return "LOD Group"; }
+    static void describe(reflect::TypeBuilder<LODGroupBehaviour>& t);
 };
 
 } // namespace saida

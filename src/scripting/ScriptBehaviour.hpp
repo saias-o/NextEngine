@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/FileWatcher.hpp"
+#include "core/ReflectionFwd.hpp"
 #include "scene/Behaviour.hpp"
 #include "scripting/JsContext.hpp"
 
@@ -70,6 +71,13 @@ public:
     const char* typeName() const override { return "ScriptBehaviour"; }
     void save(nlohmann::json& j) const override;
     void load(const nlohmann::json& j) override;
+
+    // Reflection: descriptor without properties — serialization stays the
+    // hand-written save()/load() (the `script`/`hotReload`/`properties`
+    // payload is a durable format). Registration flows through
+    // registerReflectedTypes() like every other built-in behaviour.
+    static constexpr const char* reflectName() { return "ScriptBehaviour"; }
+    static void describe(reflect::TypeBuilder<ScriptBehaviour>& t);
 
 private:
     friend class JsTimerBindings;

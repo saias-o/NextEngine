@@ -398,6 +398,7 @@ add_library(saida_engine STATIC
     src/scene/Behaviour.cpp
     src/scene/MeshNode.cpp
     src/scene/MeshLod.cpp
+    src/scene/LODGroupBehaviour.cpp
     src/scene/LightNode.cpp
     src/scene/ParticleSystemNode.cpp
     src/scene/CameraNode.cpp

@@ -3,6 +3,7 @@
 #include "core/Log.hpp"
 #include "core/Paths.hpp"
 #include "core/Profiler.hpp"
+#include "core/Reflection.hpp"
 #include "scene/SceneTimerQueue.hpp"
 #include "scripting/JsContext.hpp"
 #include "scripting/JsEngineBindings.hpp"
@@ -452,6 +453,12 @@ void ScriptBehaviour::load(const nlohmann::json& j) {
         }
         properties_.push_back(std::move(property));
     }
+}
+
+void ScriptBehaviour::describe(reflect::TypeBuilder<ScriptBehaviour>& t) {
+    t.doc("QuickJS gameplay script attached to a node. The 'script' path, "
+          "'hotReload' flag and exported 'properties' are serialized by the "
+          "hand-written save()/load(), not through reflected properties.");
 }
 
 std::string ScriptBehaviour::resolveScriptPath() const {

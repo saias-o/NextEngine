@@ -53,19 +53,18 @@ non bloquant, et les cycles Witness desktop/Web prouvent mémoire et
 déchargement. La qualification automatisée de P0.7 et son commit exact sont
 consignés dans la section P0.7 ci-dessous.
 
-Prochain chantier autonome conseillé, hors UI : finir la migration des
-behaviours built-in vers la réflexion et le registre unique. L'audit laisse
-deux exceptions manuelles, `LODGroupBehaviour` et `ScriptBehaviour`, enregistrées
-dans `src/Engine.cpp`, `src/authoring/SceneSnapshot.cpp` et
-`src/scene/ReflectedTypesPlayer.cpp`, alors que les autres built-ins passent par
-`registerBehaviour<T>()` dans `src/scene/ReflectedTypes.cpp`. Préserver les noms
-compatibles `"LOD Group"` et `"ScriptBehaviour"` ainsi que le payload spécifique
-du script (`script`, `hotReload`, `properties`); supprimer seulement les
-registrations redondantes après avoir ajouté des descripteurs/factories et des
-tests de round-trip sur les runtimes concernés. Rejouer les commandes de build
-du README, les 65+ tests, le corpus compat et la matrice avant de cocher P1.
+La migration des behaviours built-in vers le registre unique est terminée :
+plus aucune exception manuelle. `LODGroupBehaviour` et `ScriptBehaviour` portent
+un descripteur réfléchi sans propriétés (leur sérialisation manuscrite —
+`script`/`hotReload`/`properties` pour le script, données LOD sur `MeshNode` —
+est inchangée, mêmes octets durables) et s'enregistrent par
+`registerBehaviour<T>()` dans `ReflectedTypes.cpp` et
+`ReflectedTypesPlayer.cpp`; les registrations manuelles de `src/Engine.cpp` et
+`src/authoring/SceneSnapshot.cpp` ainsi que le cas spécial de
+`isSupportedHeadlessBehaviourType` sont supprimés. Preuves dans la case P1
+correspondante.
 
-Après cette migration, l'ordre hors UI conseillé est : atomicité du Hub,
+Prochain chantier autonome conseillé, hors UI : atomicité du Hub,
 compléments physique, rendu/lightmaps, puis LTO seulement après stabilité. À
 réserver à une session assistée séparée : tout P0.3 UI, adaptation visuelle des
 prompts et undo éditeur, pads physiques Xbox/PlayStation, signature Authenticode
@@ -446,7 +445,17 @@ Gate : une release peut être reproduite, identifiée, diagnostiquée et retiré
 - [ ] XR : MSAA multiview/resolve, overlay ImGui et backend d'anchors réel.
 - [ ] Éditeur : rendre undoables WebCanvas et `CollisionShape resetAuto`.
 - [ ] Hub : garantir renommage dossier, entrée Hub et `.saidaproj` atomique.
-- [ ] Finir la migration des behaviours built-in vers réflexion/registre unique.
+- [x] Finir la migration des behaviours built-in vers réflexion/registre unique.
+  `ScriptBehaviour` et `LODGroupBehaviour` gagnent un descripteur réfléchi sans
+  propriétés (sérialisation manuscrite et noms `"ScriptBehaviour"`/`"LOD Group"`
+  préservés) et passent par `registerBehaviour<T>()` dans `ReflectedTypes.cpp`
+  et `ReflectedTypesPlayer.cpp`; les registrations manuelles dans `Engine.cpp`
+  et `SceneSnapshot.cpp` et le cas spécial headless sont supprimés. Preuves le
+  2026-07-20 : build natif complet, 65/65 CTest (corpus compat et matrice
+  inclus), `saida_tool verify-manifest` OK avec 18 behaviours annoncés (dont
+  les deux migrés, désormais publiés dans le manifeste), round-trip headless
+  17/18/161, `SaidaEngine --verify-runtime-contract` PASS natif 29/22/161,
+  player Web et authoring WASM reconstruits.
 - [ ] Physique : compléter queries, contraintes et diagnostics.
 - [ ] Stabiliser le flag GPU-driven et benchmarker chemin classique, bindless,
   indirect draw et compute culling sur un corpus reproductible.
