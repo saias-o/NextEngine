@@ -185,6 +185,8 @@ public:
 
     // UI backends publish capture intent without coupling Input to a specific UI.
     static void setUiCapture(bool keyboard, bool mouse);
+    static bool uiCapturesKeyboard();
+    static bool uiCapturesMouse();
 
     // ---- Context Management ----
     static void pushContext(const InputContextID& context);

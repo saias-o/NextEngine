@@ -660,8 +660,20 @@ résolues par fichier sous `assets/fonts/` (bundle packagé ou racine runtime)
 puis le checkout dev; une font requise absente est loggée en erreur explicite
 et un échec total de chargement est signalé. Le `BuildExporter` embarque ces
 fichiers sous `assets/fonts/` dans les packages desktop et Web (NotoEmoji
-volontairement hors bundle web). Le world-space, l'interaction complète et les
-outils auteur restent à prouver sur le corpus.
+volontairement hors bundle web).
+
+L'interaction du HUD écran (`UICanvasNode`/`UIInteractableNode`) a un unique
+chemin canonique, `ui/UIInteractionSystem` : hit-test des rectangles de nœuds
+(pivot inclus, le plus au-dessus gagne), machine hover/press/click et décision
+de capture d'input. Le contrat clé — *un HUD ne vole pas les clics du jeu* —
+est explicite : seul un `UIInteractableNode` actif sous le pointeur capture la
+souris (`Input::setUiCapture`); un HUD purement texte/décoratif laisse l'input
+à la logique de jeu. Prouvé sans GPU par `saida_ui_interaction_tests` (hover et
+capture, clic press+release, clic annulé au drag-out, HUD texte non capturant,
+bouton désactivé transparent, topmost gagnant, canvas inactif). Le focus
+clavier, le scroll et le touch sur les interactables du canvas ne sont pas
+encore unifiés (ils existent aujourd'hui côté `WebCanvasNode`); le world-space
+et les outils auteur restent aussi à prouver sur le corpus.
 
 Le niveau V1 exige : fonts/assets robustes, screen-space, world-space,
 clipping/scissor, resize/DPI, input clavier/souris/touch, fallback XR, bridge

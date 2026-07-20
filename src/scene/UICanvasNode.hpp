@@ -4,8 +4,9 @@
 
 namespace saida {
 
-class UINode;
-
+// Root of a screen-space UI tree. Hit-testing and interaction live in the
+// single canonical path, UIInteractionSystem; this node only carries the
+// design-space dimensions and its UINode children.
 class UICanvasNode : public Node {
 public:
     UICanvasNode() = default;
@@ -16,16 +17,11 @@ public:
     float height() const { return height_; }
     void setSize(float w, float h) { width_ = w; height_ = h; }
 
-    // Interroge l'arbre pour trouver le noeud d'UI cliqué
-    UINode* raycast(float mouseX, float mouseY);
-
     const char* typeName() const override { return "UICanvasNode"; }
     void serialize(nlohmann::json& j, ResourceManager& resources) const override;
     void deserialize(const nlohmann::json& j, ResourceManager& resources) override;
 
 private:
-    UINode* raycastRecursive(Node* node, float mouseX, float mouseY);
-
     float width_ = 1920.0f;
     float height_ = 1080.0f;
 };

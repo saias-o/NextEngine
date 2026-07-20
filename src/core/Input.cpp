@@ -532,6 +532,9 @@ float Input::evaluateBinding(const ActionBinding& binding) {
     return 0.0f;
 }
 
+bool Input::uiCapturesKeyboard() { return g_uiCapturesKeyboard; }
+bool Input::uiCapturesMouse() { return g_uiCapturesMouse; }
+
 void Input::setUiCapture(bool keyboard, bool mouse) {
     g_uiCapturesKeyboard = keyboard;
     g_uiCapturesMouse = mouse;

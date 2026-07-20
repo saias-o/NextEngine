@@ -901,6 +901,13 @@ if (BUILD_TESTING)
     target_compile_options(saida_ui_corpus_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_ui_corpus_tests COMMAND $<TARGET_FILE:saida_ui_corpus_tests>)
 
+    # Interaction UI V1 : hit-test, hover/press/click, capture, transparence HUD.
+    add_executable(saida_ui_interaction_tests tests/UiInteractionTests.cpp)
+    saida_test_target(saida_ui_interaction_tests)
+    target_link_libraries(saida_ui_interaction_tests PRIVATE saida_engine)
+    target_compile_options(saida_ui_interaction_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_ui_interaction_tests COMMAND $<TARGET_FILE:saida_ui_interaction_tests>)
+
     add_executable(saida_asset_loader_tests tests/AssetLoaderTests.cpp)
     saida_test_target(saida_asset_loader_tests)
     target_link_libraries(saida_asset_loader_tests PRIVATE saida_engine)
