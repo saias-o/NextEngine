@@ -23,6 +23,7 @@ Set-StrictMode -Version Latest
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $buildRoot = [System.IO.Path]::GetFullPath((Join-Path $root 'build')).TrimEnd('\', '/')
+. (Join-Path $PSScriptRoot 'git_worktree_state.ps1')
 $out = if ([System.IO.Path]::IsPathRooted($OutputDir)) {
     [System.IO.Path]::GetFullPath($OutputDir)
 } else {
@@ -91,10 +92,11 @@ function Fixture-Inventory([string]$Directory) {
 
 Push-Location $root
 try {
-    $status = (& git status --porcelain) -join "`n"
-    $dirty = -not [string]::IsNullOrWhiteSpace($status)
+    $worktree = Get-GitWorktreeState
+    $status = $worktree.Status
+    $dirty = $worktree.Dirty
     if ($dirty -and -not $AllowDirty) {
-        throw "Release manifest requires a clean Git worktree (use -AllowDirty only for development proofs)"
+        throw "Release manifest requires a clean Git worktree: $status (use -AllowDirty only for development proofs)"
     }
 
     if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }

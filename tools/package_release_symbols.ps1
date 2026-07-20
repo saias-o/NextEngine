@@ -12,6 +12,7 @@ Set-StrictMode -Version Latest
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $buildRoot = [System.IO.Path]::GetFullPath((Join-Path $root 'build')).TrimEnd('\', '/')
+. (Join-Path $PSScriptRoot 'git_worktree_state.ps1')
 $build = if ([System.IO.Path]::IsPathRooted($BuildDir)) {
     [System.IO.Path]::GetFullPath($BuildDir)
 } else {
@@ -70,10 +71,11 @@ function Write-Utf8NoBom([string]$Path, [string]$Text) {
 $previousSourceDateEpoch = $env:SOURCE_DATE_EPOCH
 Push-Location $root
 try {
-    $status = (& git status --porcelain) -join "`n"
-    $dirty = -not [string]::IsNullOrWhiteSpace($status)
+    $worktree = Get-GitWorktreeState
+    $status = $worktree.Status
+    $dirty = $worktree.Dirty
     if ($dirty -and -not $AllowDirty) {
-        throw "Symbol packaging requires a clean Git worktree (use -AllowDirty only for development proofs)"
+        throw "Symbol packaging requires a clean Git worktree: $status (use -AllowDirty only for development proofs)"
     }
 
     $objcopyPath = Resolve-Tool $Objcopy @('objcopy.exe', 'objcopy')

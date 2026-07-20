@@ -19,6 +19,7 @@ Set-StrictMode -Version Latest
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $buildRoot = [System.IO.Path]::GetFullPath((Join-Path $root 'build')).TrimEnd('\', '/')
+. (Join-Path $PSScriptRoot 'git_worktree_state.ps1')
 
 function Resolve-Local([string]$Path) {
     if ([System.IO.Path]::IsPathRooted($Path)) {
@@ -221,10 +222,11 @@ $payloadInclude = "$output.payload.nsh"
 $uninstallInclude = "$output.uninstall.nsh"
 Push-Location $root
 try {
-    $status = (& git status --porcelain) -join "`n"
-    $dirty = -not [string]::IsNullOrWhiteSpace($status)
+    $worktree = Get-GitWorktreeState
+    $status = $worktree.Status
+    $dirty = $worktree.Dirty
     if ($dirty -and -not $AllowDirty) {
-        throw "Installer build requires a clean Git worktree (use -AllowDirty only for development proofs)"
+        throw "Installer build requires a clean Git worktree: $status (use -AllowDirty only for development proofs)"
     }
     $commit = (& git rev-parse HEAD).Trim()
     $commitTime = (& git show -s --format=%cI HEAD).Trim()

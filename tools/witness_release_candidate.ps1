@@ -12,6 +12,7 @@ Set-StrictMode -Version Latest
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $buildRoot = [System.IO.Path]::GetFullPath((Join-Path $root 'build')).TrimEnd('\', '/')
+. (Join-Path $PSScriptRoot 'git_worktree_state.ps1')
 $out = if ([System.IO.Path]::IsPathRooted($OutputDir)) {
     [System.IO.Path]::GetFullPath($OutputDir)
 } else {
@@ -24,10 +25,11 @@ if (-not $out.StartsWith($buildRoot + [System.IO.Path]::DirectorySeparatorChar,
 
 Push-Location $root
 try {
-    $status = (& git status --porcelain) -join "`n"
-    $dirty = -not [string]::IsNullOrWhiteSpace($status)
+    $worktree = Get-GitWorktreeState
+    $status = $worktree.Status
+    $dirty = $worktree.Dirty
     if ($dirty -and -not $AllowDirty) {
-        throw "Release candidate requires a clean Git worktree (use -AllowDirty only for development proofs)"
+        throw "Release candidate requires a clean Git worktree: $status (use -AllowDirty only for development proofs)"
     }
     $commit = (& git rev-parse HEAD).Trim()
     $commitTime = (& git show -s --format=%cI HEAD).Trim()
