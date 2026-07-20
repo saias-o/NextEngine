@@ -451,7 +451,7 @@ Gate : une release peut être reproduite, identifiée, diagnostiquée et retiré
   préservés) et passent par `registerBehaviour<T>()` dans `ReflectedTypes.cpp`
   et `ReflectedTypesPlayer.cpp`; les registrations manuelles dans `Engine.cpp`
   et `SceneSnapshot.cpp` et le cas spécial headless sont supprimés. Preuves le
-  2026-07-20 : build natif complet, 65/65 CTest (corpus compat et matrice
+  2026-07-20, commit `620a976` : build natif complet, 65/65 CTest (corpus compat et matrice
   inclus), `saida_tool verify-manifest` OK avec 18 behaviours annoncés (dont
   les deux migrés, désormais publiés dans le manifeste), round-trip headless
   17/18/161, `SaidaEngine --verify-runtime-contract` PASS natif 29/22/161,
