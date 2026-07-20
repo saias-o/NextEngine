@@ -79,8 +79,7 @@ Prochain chantier autonome conseillé, hors UI : compléments physique
 (diagnostics, puis slider/cône/moteurs/breakables), rendu/lightmaps, puis LTO
 seulement après stabilité. À réserver à une session assistée séparée : la suite
 de P0.3 UI (adaptation visuelle des prompts, undo éditeur, World Space,
-lifecycle), le run E2E Web navigateur du HUD (le build web compile déjà),
-pads physiques Xbox/PlayStation, signature Authenticode avec
+lifecycle), pads physiques Xbox/PlayStation, signature Authenticode avec
 la clé de publication, validations XR/casques et benchmarks sur GPU physique.
 Lavapipe peut qualifier les contrats et le packaging CI, pas remplacer une
 preuve matérielle. Toute case cochée doit conserver dans ce fichier le commit/run
@@ -182,8 +181,9 @@ deux runtimes annoncés compatibles.
   prouve chaque primitive sans GPU (72 checks) et le HUD desktop compose
   réellement via le rasterizer partagé. Preuves commit `8b9683f` (voir case P1).
 - [~] Prouver Screen Space pour HUD/menu et World Space pour panneau 3D.
-  Screen Space HUD prouvé (desktop `--play` + packagé + corpus); World Space
-  (`WebCanvasNode` raycast plan) pas encore couvert par une preuve dédiée.
+  Screen Space HUD prouvé desktop (`--play` + packagé) ET Web (navigateur
+  WebGPU) + corpus; World Space (`WebCanvasNode` raycast plan) pas encore
+  couvert par une preuve dédiée.
 - [ ] Unifier hit-test, focus, clavier, souris, scroll, touch et capture UI.
 - [ ] Brancher DOM ciblé et QuickJS sans API navigateur implicite.
 - [ ] Garantir lifecycle Play/Stop/reload et sérialisation des documents.
@@ -191,8 +191,8 @@ deux runtimes annoncés compatibles.
 - [~] Créer un corpus UI desktop/Web/XR et des captures de référence.
   `saida_ui_corpus_tests` couvre le backend CPU partagé par desktop et Web avec
   des assertions de pixels calculées (plus robustes que des captures golden),
-  dont la parité HUD `HudRasterizer`. Reste : corpus UI XR et run E2E Web
-  navigateur du HUD (le build web compile/linke, commit `84cefcf`).
+  dont la parité HUD `HudRasterizer` (prouvée en navigateur WebGPU :
+  `[E2E] PASS ui=ok` + `[HUD] rasterized 1050 px`). Reste : corpus UI XR.
 - [ ] Mesurer le backend CPU avant de décider un backend GPU RmlUi.
 
 Preuves de session (2026-07-20) :
@@ -222,10 +222,12 @@ Chemin Web reconstruit (emsdk `/c/Users/evand/emsdk`, emcc 6.0.1), commit
 `build-authoring-wasm` compilent et linkent avec `HudRasterizer`. Le rebuild a
 d'ailleurs révélé deux ruptures réelles de la refacto (forward-decl `Texture`
 en conflit avec l'alias WebGPU; `HudRasterizer.cpp` absent des listes de
-sources web) — désormais corrigées. Reste à prouver en navigateur : le run E2E
-Web packagé (`witness_web_stage.sh` + Chrome/Edge) pour confirmer que le HUD
-Web rasterise réellement, la logique étant partagée avec le chemin desktop
-prouvé.
+sources web) — désormais corrigées. **HUD Web prouvé en navigateur** : package
+stagé par le vrai BuildExporter (`witness_web_stage.sh`), servi COOP/COEP,
+chargé dans un navigateur WebGPU → console `[HUD] rasterized 1050 visible
+pixel(s) at 1280x720` (fonts depuis `/assets/assets/fonts/`) puis
+`[E2E] PASS (ui=ok, cycles=16, streamed=36, flush=durable)`. Le HUD partagé
+`HudRasterizer` rasterise donc réellement sur les deux plateformes.
 
 Gate : WitnessGame et le corpus UI rendent et interagissent correctement sur
 desktop et Web; l'absence XR éventuelle est un fallback déclaré.
