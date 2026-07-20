@@ -41,6 +41,23 @@ jobs:
             mingw-w64-ucrt-x86_64-shaderc
             mingw-w64-x86_64-nsis
 
+      # GitHub's Windows runner is elevated. The Vulkan loader deliberately
+      # ignores driver override environment variables in an elevated process,
+      # so register the software ICD on this ephemeral VM.
+      - name: Register Lavapipe ICD for the elevated runner
+        shell: pwsh
+        run: |
+          $msysRoot = '${{ steps.msys2.outputs.msys2-location }}'
+          $icd = [System.IO.Path]::GetFullPath(
+            (Join-Path $msysRoot 'ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json'))
+          if (-not (Test-Path -LiteralPath $icd -PathType Leaf)) {
+            throw "Lavapipe ICD not found: $icd"
+          }
+          $registry = 'HKLM:\SOFTWARE\Khronos\Vulkan\Drivers'
+          New-Item -Path $registry -Force | Out-Null
+          New-ItemProperty -Path $registry -Name $icd `
+            -PropertyType DWord -Value 0 -Force | Out-Null
+
       - name: Software Vulkan preflight
         run: |
           test -f /ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json
