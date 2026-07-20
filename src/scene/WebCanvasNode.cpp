@@ -13,6 +13,7 @@
 #include "scene/SceneTree.hpp"
 #include "ui/RmlUiRenderInterface.hpp"
 #include "ui/RmlUiRuntime.hpp"
+#include "ui/WorldPanelGeometry.hpp"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
@@ -681,29 +682,15 @@ float WebCanvasNode::worldHeight() const {
 }
 
 bool WebCanvasNode::raycast(glm::vec3 origin, glm::vec3 direction, glm::vec2& local, float& distance) const {
-    if (mode_ != Mode::WorldSpace || width_ == 0 || height_ == 0) return false;
+    if (mode_ != Mode::WorldSpace) return false;
 
-    glm::mat4 invWorld = glm::inverse(worldTransform());
-    glm::vec3 localOrigin = glm::vec3(invWorld * glm::vec4(origin, 1.0f));
-    glm::vec3 localDirection = glm::normalize(glm::vec3(invWorld * glm::vec4(direction, 0.0f)));
-    if (std::abs(localDirection.z) < 1e-5f) return false;
-
-    float t = -localOrigin.z / localDirection.z;
-    if (t < 0.0f) return false;
-
-    glm::vec3 hit = localOrigin + localDirection * t;
-    float w = worldWidth_;
-    float h = worldHeight();
-    if (hit.x < -w * 0.5f || hit.x > w * 0.5f || hit.y < -h * 0.5f || hit.y > h * 0.5f) {
+    WorldPanelHit hit;
+    if (!raycastWorldPanel(worldTransform(), worldWidth_, worldHeight(), width_, height_,
+                           origin, direction, hit)) {
         return false;
     }
-
-    glm::vec3 worldHit = glm::vec3(worldTransform() * glm::vec4(hit, 1.0f));
-    distance = glm::length(worldHit - origin);
-    local = {
-        (hit.x / w + 0.5f) * static_cast<float>(width_),
-        (0.5f - hit.y / h) * static_cast<float>(height_)
-    };
+    local = hit.local;
+    distance = hit.distance;
     return true;
 }
 

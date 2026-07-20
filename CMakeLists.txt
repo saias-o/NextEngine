@@ -396,6 +396,7 @@ add_library(saida_engine STATIC
     src/ui/HudRasterizer.cpp
     src/ui/RmlUiRenderInterface.cpp
     src/ui/RmlUiRuntime.cpp
+    src/ui/WorldPanelGeometry.cpp
     src/scene/Behaviour.cpp
     src/scene/MeshNode.cpp
     src/scene/MeshLod.cpp
@@ -900,6 +901,13 @@ if (BUILD_TESTING)
     target_link_libraries(saida_ui_corpus_tests PRIVATE saida_engine)
     target_compile_options(saida_ui_corpus_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_ui_corpus_tests COMMAND $<TARGET_FILE:saida_ui_corpus_tests>)
+
+    # World-Space UI : géométrie du raycast d'un panneau 3D (interaction).
+    add_executable(saida_ui_worldspace_tests tests/UiWorldPanelTests.cpp)
+    saida_test_target(saida_ui_worldspace_tests)
+    target_link_libraries(saida_ui_worldspace_tests PRIVATE saida_engine)
+    target_compile_options(saida_ui_worldspace_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_ui_worldspace_tests COMMAND $<TARGET_FILE:saida_ui_worldspace_tests>)
 
     # Interaction UI V1 : hit-test, hover/press/click, capture, transparence HUD.
     add_executable(saida_ui_interaction_tests tests/UiInteractionTests.cpp)

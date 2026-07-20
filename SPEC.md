@@ -672,8 +672,17 @@ souris (`Input::setUiCapture`); un HUD purement texte/décoratif laisse l'input
 capture, clic press+release, clic annulé au drag-out, HUD texte non capturant,
 bouton désactivé transparent, topmost gagnant, canvas inactif). Le focus
 clavier, le scroll et le touch sur les interactables du canvas ne sont pas
-encore unifiés (ils existent aujourd'hui côté `WebCanvasNode`); le world-space
-et les outils auteur restent aussi à prouver sur le corpus.
+encore unifiés (ils existent aujourd'hui côté `WebCanvasNode`).
+
+Le World Space (panneau 3D `WebCanvasNode`) intersecte un rayon avec le plan
+local z=0 du panneau, borné par ses dimensions monde, et mappe le point en
+espace pixel (origine haut-gauche, y vers le bas). Cette géométrie est isolée
+du nœud lié au GPU dans `ui/WorldPanelGeometry` (`raycastWorldPanel`) — la même
+fonction sert la souris (`UIInteractionSystem`) et le rayon XR
+(`XRRayInteractor`) — et prouvée sans GPU par `saida_ui_worldspace_tests`
+(centre, coins, mapping y-bas, rejets hors-bornes/parallèle/derrière/dégénéré,
+panneaux translatés et pivotés). Le rendu world-space (compositing GPU) et les
+outils auteur restent à prouver sur le corpus.
 
 Le niveau V1 exige : fonts/assets robustes, screen-space, world-space,
 clipping/scissor, resize/DPI, input clavier/souris/touch, fallback XR, bridge

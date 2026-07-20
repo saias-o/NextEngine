@@ -8,8 +8,9 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 ## Preuves acquises
 
 - [x] Build natif complet Windows UCRT64.
-- [x] Suite native : 68/68 tests le 2026-07-20 (corpus UI `saida_ui_corpus_tests`
-  + rasterizer HUD partagé et interaction `saida_ui_interaction_tests` inclus).
+- [x] Suite native : 69/69 tests le 2026-07-21 (corpus UI `saida_ui_corpus_tests`
+  + rasterizer HUD partagé, interaction `saida_ui_interaction_tests` et
+  géométrie world-space `saida_ui_worldspace_tests` inclus).
 - [x] Player Web Release et authoring WASM Release compilés.
 - [x] WitnessGame éditeur/desktop : Play éditeur automatisé via `--play`, export
   et runtime autonome, HUD vérifié, `E2E PASS` puis `RESTART PASS`.
@@ -180,10 +181,13 @@ deux runtimes annoncés compatibles.
   blend, transforms, resize et DPI. Le corpus headless `saida_ui_corpus_tests`
   prouve chaque primitive sans GPU (72 checks) et le HUD desktop compose
   réellement via le rasterizer partagé. Preuves commit `8b9683f` (voir case P1).
-- [~] Prouver Screen Space pour HUD/menu et World Space pour panneau 3D.
+- [x] Prouver Screen Space pour HUD/menu et World Space pour panneau 3D.
   Screen Space HUD prouvé desktop (`--play` + packagé) ET Web (navigateur
-  WebGPU) + corpus; World Space (`WebCanvasNode` raycast plan) pas encore
-  couvert par une preuve dédiée.
+  WebGPU) + corpus. World Space : la géométrie du raycast de panneau 3D est
+  extraite dans `ui/WorldPanelGeometry` (`raycastWorldPanel`, partagée souris +
+  rayon XR) et prouvée par `saida_ui_worldspace_tests` (centre/coins/y-bas,
+  rejets, panneaux translatés/pivotés). Le compositing GPU world-space reste
+  exercé desktop, non asserté en pixels.
 - [~] Unifier hit-test, focus, clavier, souris, scroll, touch et capture UI.
   Hit-test, souris (hover/press/click) et capture unifiés sur un seul chemin
   canonique `UIInteractionSystem` et prouvés sans GPU par
