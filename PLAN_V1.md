@@ -459,7 +459,7 @@ Gate : une release peut être reproduite, identifiée, diagnostiquée et retiré
   lancement depuis le Hub qui passait un dossier à `--project`. Prouvé le
   2026-07-20 par `saida_project_rename_tests` (53 checks : succès bout-en-bout,
   normalisation, refus sans mutation, hub sans entrée correspondante, rollback
-  Windows sur dossier verrouillé) et 66/66 CTest.
+  Windows sur dossier verrouillé) et 66/66 CTest, commit `d0ed5c9`.
 - [x] Finir la migration des behaviours built-in vers réflexion/registre unique.
   `ScriptBehaviour` et `LODGroupBehaviour` gagnent un descripteur réfléchi sans
   propriétés (sérialisation manuscrite et noms `"ScriptBehaviour"`/`"LOD Group"`
