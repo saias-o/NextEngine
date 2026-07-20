@@ -37,7 +37,9 @@ public:
 
     VkImageView imageView() const { return imageView_; }
     VkSampler sampler() const { return sampler_; }
-    
+    uint32_t width() const { return width_; }
+    uint32_t height() const { return height_; }
+
     // Updates the texture content dynamically (e.g. for UI)
     void updatePixels(const uint8_t* pixels, size_t size);
     

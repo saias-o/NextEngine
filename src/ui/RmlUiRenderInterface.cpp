@@ -122,8 +122,7 @@ Rml::TextureHandle RmlUiRenderInterface::LoadTexture(Rml::Vector2i& textureDimen
     stbi_uc* loaded = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
     if (!loaded) {
         Log::warn("[RmlUi] texture not found: ", source);
-        textureDimensions = {0, 0};
-        return 0;
+        return addMissingTexturePlaceholder(textureDimensions);
     }
 
     std::vector<uint8_t> pixels(static_cast<size_t>(width) * height * 4);
@@ -249,11 +248,13 @@ void RmlUiRenderInterface::drawTriangle(const Rml::Vertex& a, const Rml::Vertex&
             color.b = clampByte(a.colour.blue * w0 + b.colour.blue * w1 + c.colour.blue * w2);
             color.a = clampByte(a.colour.alpha * w0 + b.colour.alpha * w1 + c.colour.alpha * w2);
 
+            // Vertex colours and texels are both premultiplied (Rml::Vertex uses
+            // ColourbPremultiplied): modulation is a plain component-wise product.
             Pixel src;
             src.a = static_cast<uint8_t>((static_cast<uint16_t>(texel.a) * color.a) / 255u);
-            src.r = static_cast<uint8_t>((static_cast<uint32_t>(texel.r) * color.r * color.a) / (255u * 255u));
-            src.g = static_cast<uint8_t>((static_cast<uint32_t>(texel.g) * color.g * color.a) / (255u * 255u));
-            src.b = static_cast<uint8_t>((static_cast<uint32_t>(texel.b) * color.b * color.a) / (255u * 255u));
+            src.r = static_cast<uint8_t>((static_cast<uint16_t>(texel.r) * color.r) / 255u);
+            src.g = static_cast<uint8_t>((static_cast<uint16_t>(texel.g) * color.g) / 255u);
+            src.b = static_cast<uint8_t>((static_cast<uint16_t>(texel.b) * color.b) / 255u);
             blendPixel(x, y, src);
         }
     }
@@ -266,6 +267,26 @@ void RmlUiRenderInterface::blendPixel(int x, int y, Pixel src) {
     premultipliedPixels_[index + 1] = static_cast<uint8_t>(std::min<uint16_t>(255u, src.g + (premultipliedPixels_[index + 1] * invSrcAlpha) / 255u));
     premultipliedPixels_[index + 2] = static_cast<uint8_t>(std::min<uint16_t>(255u, src.b + (premultipliedPixels_[index + 2] * invSrcAlpha) / 255u));
     premultipliedPixels_[index + 3] = static_cast<uint8_t>(std::min<uint16_t>(255u, src.a + (premultipliedPixels_[index + 3] * invSrcAlpha) / 255u));
+}
+
+// Même contrat visuel que ResourceManager::missingTexture : une image UI
+// introuvable rend le damier magenta au lieu d'un quad blanc silencieux.
+Rml::TextureHandle RmlUiRenderInterface::addMissingTexturePlaceholder(Rml::Vector2i& textureDimensions) {
+    constexpr int kExtent = 16;
+    constexpr int kCell = 4;
+    std::vector<uint8_t> checker(static_cast<size_t>(kExtent) * kExtent * 4);
+    for (int y = 0; y < kExtent; ++y) {
+        for (int x = 0; x < kExtent; ++x) {
+            const bool magenta = ((x / kCell) + (y / kCell)) % 2 == 0;
+            const size_t i = (static_cast<size_t>(y) * kExtent + x) * 4;
+            checker[i + 0] = magenta ? 255 : 24;
+            checker[i + 1] = magenta ? 0 : 24;
+            checker[i + 2] = magenta ? 255 : 24;
+            checker[i + 3] = 255;
+        }
+    }
+    textureDimensions = {kExtent, kExtent};
+    return addTexture(textureDimensions, std::move(checker), false);
 }
 
 Rml::TextureHandle RmlUiRenderInterface::addTexture(Rml::Vector2i size, std::vector<uint8_t> pixels, bool premultiplied) {

@@ -303,11 +303,16 @@ Engine::~Engine() {
     scene_.reset();
     sceneOverride_ = nullptr;
     sceneTree_.reset();
+    // Every RmlUi context must die before Rml::Shutdown(): the scene's
+    // WebCanvasNodes went with scene_, and the renderer's UI HUD context goes
+    // with renderer_. Wait for the GPU first so nothing is still sampling the
+    // renderer's resources, then drop it while the device is still alive.
+    vkDeviceWaitIdle(device_->device());
+    renderer_.reset();
     RmlUiRuntime::shutdown();
     AudioManager::get().shutdown();
-    vkDeviceWaitIdle(device_->device());
-    // Subsystems are torn down by their unique_ptr destructors, in reverse
-    // declaration order, while device_ is still alive (renderer_ before imgui_,
+    // Remaining subsystems are torn down by their unique_ptr destructors, in
+    // reverse declaration order, while device_ is still alive (imgui_,
     // swapchain_ and device_).
 }
 

@@ -1,17 +1,13 @@
 #pragma once
 
 #include "rhi/Rhi.hpp"
+#include "ui/HudRasterizer.hpp"
 
 #include <glm/glm.hpp>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
-
-namespace Rml {
-class Context;
-class ElementDocument;
-}
 
 namespace saida {
 
@@ -20,6 +16,7 @@ class Scene;
 class UINode;
 class WebCanvasNode;
 class UICanvasNode;
+class Texture;
 
 struct UIDrawCmd {
     glm::vec2 position;
@@ -49,31 +46,31 @@ public:
                         glm::vec2 viewportSize = glm::vec2(0.0f));
 
 private:
+#ifndef SAIDA_RHI_WEBGPU
     void traverseUI(UINode* node);
-#ifdef SAIDA_RHI_WEBGPU
-    void gatherLegacyWebUI(UICanvasNode& canvas, glm::vec2 viewportSize);
 #endif
+    // Rasterize the UICanvas text HUD via the shared CPU RmlUi path and push a
+    // fullscreen composite draw. Runs on desktop and Web so both show identical
+    // HUD text (visual-parity invariant); the texture upload is the only
+    // platform-specific step.
+    void gatherHud(UICanvasNode& canvas, glm::vec2 viewportSize);
 
     rhi::Device& device_;
     ResourceManager& resources_;
-    
+
     std::unique_ptr<rhi::Pipeline> pipeline_;
 
     std::vector<UIDrawCmd> drawCmds_;
     std::vector<WebCanvasNode*> webNodesToUpdate_;
     bool loggedWebCanvasGather_ = false;
 
+    HudRasterizer hud_;
 #ifdef SAIDA_RHI_WEBGPU
     std::unique_ptr<rhi::BindGroupLayout> textureLayout_;
-    std::unique_ptr<rhi::Texture> legacyUiTexture_;
-    std::unique_ptr<rhi::BindGroup> legacyUiTextureGroup_;
-    std::string legacyContextName_;
-    Rml::Context* legacyContext_ = nullptr;
-    Rml::ElementDocument* legacyDocument_ = nullptr;
-    uint64_t legacyUiHash_ = 0;
-    uint32_t legacyUiWidth_ = 0;
-    uint32_t legacyUiHeight_ = 0;
-    bool loggedLegacyUiRaster_ = false;
+    std::unique_ptr<rhi::Texture> hudTexture_;
+    std::unique_ptr<rhi::BindGroup> hudTextureGroup_;
+#else
+    std::unique_ptr<Texture> hudTexture_;
 #endif
 };
 

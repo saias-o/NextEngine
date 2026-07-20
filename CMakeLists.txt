@@ -393,6 +393,7 @@ add_library(saida_engine STATIC
     src/scripting/JsRuntime.cpp
     src/scripting/JsTimerBindings.cpp
     src/scripting/ScriptBehaviour.cpp
+    src/ui/HudRasterizer.cpp
     src/ui/RmlUiRenderInterface.cpp
     src/ui/RmlUiRuntime.cpp
     src/scene/Behaviour.cpp
@@ -892,6 +893,13 @@ if (BUILD_TESTING)
     target_link_libraries(saida_project_rename_tests PRIVATE saida_engine)
     target_compile_options(saida_project_rename_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_project_rename_tests COMMAND $<TARGET_FILE:saida_project_rename_tests>)
+
+    # Corpus UI V1 : rendu CPU RmlUi prouvé pixel par pixel sans GPU.
+    add_executable(saida_ui_corpus_tests tests/UiCorpusTests.cpp)
+    saida_test_target(saida_ui_corpus_tests)
+    target_link_libraries(saida_ui_corpus_tests PRIVATE saida_engine)
+    target_compile_options(saida_ui_corpus_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_ui_corpus_tests COMMAND $<TARGET_FILE:saida_ui_corpus_tests>)
 
     add_executable(saida_asset_loader_tests tests/AssetLoaderTests.cpp)
     saida_test_target(saida_asset_loader_tests)

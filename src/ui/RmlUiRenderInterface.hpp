@@ -52,6 +52,7 @@ private:
     void drawTriangle(const Rml::Vertex& a, const Rml::Vertex& b, const Rml::Vertex& c,
                       Rml::Vector2f translation, Rml::TextureHandle texture);
     void blendPixel(int x, int y, Pixel src);
+    Rml::TextureHandle addMissingTexturePlaceholder(Rml::Vector2i& textureDimensions);
     Rml::TextureHandle addTexture(Rml::Vector2i size, std::vector<uint8_t> pixels, bool premultiplied);
 
     uint32_t width_ = 0;

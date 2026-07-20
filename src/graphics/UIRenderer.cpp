@@ -4,8 +4,8 @@
 #include "graphics/Pipeline.hpp"
 #include "scene/Scene.hpp"
 #include "scene/UICanvasNode.hpp"
-#include "scene/UITextNode.hpp"
 #ifndef SAIDA_RHI_WEBGPU
+#include "graphics/Texture.hpp"
 #include "scene/UIColorNode.hpp"
 #include "scene/UIImageNode.hpp"
 #include "scene/UIButtonNode.hpp"
@@ -18,17 +18,11 @@
 #include <algorithm>
 #include <cmath>
 
-#ifdef SAIDA_RHI_WEBGPU
-#include "ui/RmlUiRenderInterface.hpp"
-#include "ui/RmlUiRuntime.hpp"
-
-#include <RmlUi/Core.h>
-
-#include <iomanip>
-#include <sstream>
-#endif
-
 namespace saida {
+
+// The HUD composite draws over every other UI quad; text belongs on top of any
+// background panels rasterized by traverseUI.
+constexpr int kHudSortOrder = 1 << 20;
 
 struct UIPushConstants {
     glm::vec2 position;
@@ -70,187 +64,65 @@ UIRenderer::UIRenderer(rhi::Device& device, ResourceManager& resources, rhi::For
     Log::info("UIRenderer: pipeline created");
 }
 
-UIRenderer::~UIRenderer() {
-#ifdef SAIDA_RHI_WEBGPU
-    if (legacyContext_) {
-        legacyContext_->UnloadAllDocuments();
-        legacyContext_->Update();
-        Rml::RemoveContext(legacyContextName_);
-    }
-#endif
-}
+UIRenderer::~UIRenderer() = default;
+
+void UIRenderer::gatherHud(UICanvasNode& canvas, glm::vec2 viewportSize) {
+    if (viewportSize.x <= 0.0f || viewportSize.y <= 0.0f) return;
+    const HudRasterizer::Frame frame = hud_.rasterize(canvas, viewportSize);
+    if (!frame.hasContent) return;  // no text: nothing to composite
+
+    const uint32_t width = frame.width;
+    const uint32_t height = frame.height;
 
 #ifdef SAIDA_RHI_WEBGPU
-namespace {
-
-std::string escapeRmlText(const std::string& text) {
-    std::string escaped;
-    escaped.reserve(text.size());
-    for (char c : text) {
-        switch (c) {
-        case '&': escaped += "&amp;"; break;
-        case '<': escaped += "&lt;"; break;
-        case '>': escaped += "&gt;"; break;
-        case '"': escaped += "&quot;"; break;
-        default: escaped += c; break;
-        }
-    }
-    return escaped;
-}
-
-uint64_t fnv1a(const std::string& value) {
-    uint64_t hash = 1469598103934665603ull;
-    for (unsigned char c : value) {
-        hash ^= c;
-        hash *= 1099511628211ull;
-    }
-    return hash;
-}
-
-void appendTextElements(Node& parent, std::ostringstream& out) {
-    for (const auto& child : parent.children()) {
-        if (!child->isActiveInHierarchy()) continue;
-        if (auto* text = dynamic_cast<UITextNode*>(child.get())) {
-            float x = 0.0f, y = 0.0f, width = 0.0f, height = 0.0f;
-            text->getGlobalRect(x, y, width, height);
-            const glm::vec4 color = glm::clamp(text->color(), glm::vec4(0.0f), glm::vec4(1.0f));
-            out << "<div style=\"position:absolute;left:" << x << "px;top:" << y
-                << "px;width:" << width << "px;height:" << height
-                << "px;font-family:NextSans;font-size:" << text->fontSize()
-                << "px;line-height:" << height << "px;color:rgba("
-                << static_cast<int>(std::round(color.r * 255.0f)) << ','
-                << static_cast<int>(std::round(color.g * 255.0f)) << ','
-                << static_cast<int>(std::round(color.b * 255.0f)) << ','
-                << static_cast<int>(std::round(color.a * 255.0f))
-                << ");overflow:hidden;\">"
-                << escapeRmlText(text->text()) << "</div>";
-        }
-        appendTextElements(*child, out);
-    }
-}
-
-} // namespace
-
-void UIRenderer::gatherLegacyWebUI(UICanvasNode& canvas, glm::vec2 viewportSize) {
-    const uint32_t width = std::max(1u, static_cast<uint32_t>(std::round(viewportSize.x)));
-    const uint32_t height = std::max(1u, static_cast<uint32_t>(std::round(viewportSize.y)));
-
-    for (auto& child : canvas.children()) {
-        if (auto* uiChild = dynamic_cast<UINode*>(child.get())) {
-            uiChild->updateTransforms(0.0f, 0.0f,
-                                      static_cast<float>(width), static_cast<float>(height));
-        }
-    }
-
-    std::ostringstream markup;
-    markup << std::fixed << std::setprecision(3)
-           << "<rml><head><style>body{margin:0;width:100%;height:100%;background:transparent;}"
-              "div{box-sizing:border-box;}</style></head><body>";
-    appendTextElements(canvas, markup);
-    markup << "</body></rml>";
-    const std::string documentMarkup = markup.str();
-    uint64_t contentHash = fnv1a(documentMarkup);
-    contentHash ^= static_cast<uint64_t>(width) << 32;
-    contentHash ^= height;
-
-    if (!RmlUiRuntime::ensureInitialized()) return;
-    auto* context = legacyContext_;
-    if (!context) {
-        std::ostringstream name;
-        name << "LegacyWebUI_" << reinterpret_cast<uintptr_t>(this);
-        legacyContextName_ = name.str();
-        context = Rml::CreateContext(legacyContextName_,
-                                     {static_cast<int>(width), static_cast<int>(height)},
-                                     RmlUiRuntime::renderInterface());
-        legacyContext_ = context;
-        legacyUiHash_ = 0;
-    } else if (legacyUiWidth_ != width || legacyUiHeight_ != height) {
-        context->SetDimensions({static_cast<int>(width), static_cast<int>(height)});
-        legacyUiHash_ = 0;
-    }
-    if (!context) {
-        Log::error("UIRenderer: failed to create the Web RmlUi context");
-        return;
-    }
-
-    const bool needsRaster = contentHash != legacyUiHash_ || !legacyUiTexture_ ||
-        legacyUiTexture_->width() != width || legacyUiTexture_->height() != height;
-    if (contentHash != legacyUiHash_) {
-        if (legacyDocument_) {
-            context->UnloadDocument(legacyDocument_);
-            legacyDocument_ = nullptr;
-        }
-        Rml::ElementDocument* document =
-            context->LoadDocumentFromMemory(documentMarkup, "<legacy-ui>");
-        if (!document) {
-            Log::error("UIRenderer: failed to build the legacy UI document");
-            return;
-        }
-        document->Show();
-        legacyDocument_ = document;
-        legacyUiHash_ = contentHash;
-        legacyUiWidth_ = width;
-        legacyUiHeight_ = height;
-    }
-
-    if (needsRaster) {
-        context->Update();
-        RmlUiRenderInterface* rasterizer = RmlUiRuntime::renderer();
-        if (!rasterizer) return;
-        rasterizer->beginFrame(width, height);
-        context->Render();
-        rasterizer->endFrame();
-        const std::vector<uint8_t>& pixels = rasterizer->pixels();
-        if (pixels.empty()) return;
-
-        if (!loggedLegacyUiRaster_) {
-            size_t visiblePixels = 0;
-            uint32_t minX = width, minY = height, maxX = 0, maxY = 0;
-            for (uint32_t y = 0; y < height; ++y) {
-                for (uint32_t x = 0; x < width; ++x) {
-                    const size_t i = (static_cast<size_t>(y) * width + x) * 4 + 3;
-                    if (pixels[i] == 0) continue;
-                    ++visiblePixels;
-                    minX = std::min(minX, x);
-                    minY = std::min(minY, y);
-                    maxX = std::max(maxX, x);
-                    maxY = std::max(maxY, y);
-                }
-            }
-            Log::info("UIRenderer: Web RmlUi raster contains ", visiblePixels,
-                      " visible pixel(s), bbox=", minX, ",", minY, " -> ", maxX,
-                      ",", maxY, " at ", width, "x", height);
-            loggedLegacyUiRaster_ = true;
-        }
-
-        if (!legacyUiTexture_ || legacyUiTexture_->width() != width || legacyUiTexture_->height() != height) {
-            legacyUiTexture_ = std::make_unique<rhi::Texture>(
-                device_, pixels.data(), width, height, rhi::Format::RGBA8Unorm, false);
-            legacyUiTextureGroup_.reset();
+    if (frame.changed && frame.pixels) {
+        if (!hudTexture_ || hudTexture_->width() != width || hudTexture_->height() != height) {
+            hudTexture_ = std::make_unique<rhi::Texture>(
+                device_, frame.pixels->data(), width, height, rhi::Format::RGBA8Unorm, false);
+            hudTextureGroup_.reset();
         } else {
-            legacyUiTexture_->updatePixels(pixels.data(), pixels.size());
+            hudTexture_->updatePixels(frame.pixels->data(), frame.pixels->size());
         }
-        if (!legacyUiTextureGroup_) {
+        if (!hudTextureGroup_) {
             rhi::BindGroupEntry textureEntry;
             textureEntry.binding = 0;
-            textureEntry.view = legacyUiTexture_->imageView();
+            textureEntry.view = hudTexture_->imageView();
             rhi::BindGroupEntry samplerEntry;
             samplerEntry.binding = 1;
-            samplerEntry.sampler = legacyUiTexture_->sampler();
-            legacyUiTextureGroup_ = std::make_unique<rhi::BindGroup>(
+            samplerEntry.sampler = hudTexture_->sampler();
+            hudTextureGroup_ = std::make_unique<rhi::BindGroup>(
                 *textureLayout_, std::vector<rhi::BindGroupEntry>{textureEntry, samplerEntry});
         }
     }
+    if (!hudTextureGroup_) return;
 
     UIDrawCmd cmd{};
-    cmd.position = {0.0f, 0.0f};
     cmd.size = {static_cast<float>(width), static_cast<float>(height)};
     cmd.color = glm::vec4(1.0f);
     cmd.hasTexture = 1;
-    cmd.textureGroup = legacyUiTextureGroup_.get();
+    cmd.sortOrder = kHudSortOrder;
+    cmd.textureGroup = hudTextureGroup_.get();
     drawCmds_.push_back(cmd);
-}
+#else
+    if (frame.changed && frame.pixels) {
+        if (!hudTexture_ || hudTexture_->width() != width || hudTexture_->height() != height) {
+            hudTexture_ = std::make_unique<Texture>(
+                resources_.device(), frame.pixels->data(), width, height, rhi::Format::RGBA8Unorm, false);
+        } else {
+            hudTexture_->updatePixels(frame.pixels->data(), frame.pixels->size());
+        }
+    }
+    if (!hudTexture_) return;
+
+    UIDrawCmd cmd{};
+    cmd.size = {static_cast<float>(width), static_cast<float>(height)};
+    cmd.color = glm::vec4(1.0f);
+    cmd.hasTexture = 1;
+    cmd.sortOrder = kHudSortOrder;
+    cmd.textureId = resources_.ensureBindlessTextureIndex(hudTexture_.get());
+    drawCmds_.push_back(cmd);
 #endif
+}
 
 void UIRenderer::gatherUI(Scene& scene, glm::vec2 viewportSize) {
     SAIDA_PROFILE_FUNCTION();
@@ -299,15 +171,17 @@ void UIRenderer::gatherUI(Scene& scene, glm::vec2 viewportSize) {
 #endif
 
     if (canvas && canvas->isActiveInHierarchy()) {
-#ifdef SAIDA_RHI_WEBGPU
-        gatherLegacyWebUI(*canvas, viewportSize);
-#else
+#ifndef SAIDA_RHI_WEBGPU
+        // Desktop draws the non-text UI nodes (colour/image/button/toggle) as
+        // bindless quads; the Web player V1 contract registers only Canvas+Text.
         for (auto& child : canvas->children()) {
             if (UINode* uiChild = dynamic_cast<UINode*>(child.get())) {
                 traverseUI(uiChild);
             }
         }
 #endif
+        // Text HUD via the shared CPU RmlUi rasterizer on both platforms.
+        gatherHud(*canvas, viewportSize);
     }
 
     std::stable_sort(drawCmds_.begin(), drawCmds_.end(), [](const UIDrawCmd& a, const UIDrawCmd& b) {

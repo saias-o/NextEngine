@@ -634,15 +634,34 @@ réseau ou système implicite. Le contenu auteur ne doit pas dépendre d'ImGui.
 
 ### 8.3 État réel
 
-Le desktop possède RmlUi CPU fonctionnel mais la complétude du rendu, des fonts,
-du world-space, de l'interaction et des outils auteur reste à prouver sur le
-corpus UI. Un backend GPU/Vulkan RmlUi est une optimisation future, pas une
-condition si le backend CPU tient la charge V1.
+Le backend CPU RmlUi est prouvé par le corpus headless `saida_ui_corpus_tests`
+(sans GPU) : géométrie pleine, alpha blending (couleurs de sommet
+prémultipliées), glyphes des fonts par défaut, feuille de style projet chargée
+du disque avec propriété web filtrée, image projet décodée, image manquante →
+damier magenta (même convention que `ResourceManager::missingTexture`),
+`overflow:hidden` réellement scissoré, `transform` CSS, resize et ratio DPI.
+Un backend GPU/Vulkan RmlUi reste une optimisation future, pas une condition
+si le backend CPU tient la charge V1.
 
-Le player Web enregistre `UICanvasNode`/`UITextNode`, rasterise leur HUD avec le
-backend CPU RmlUi puis compose la texture dans le pass WebGPU. `setText/getText`
-utilisent les vrais nœuds et WitnessGame atteint `[E2E] PASS`. Les autres nœuds
-UI et `WebCanvasNode` restent refusés tant que leur backend Web n'est pas porté.
+Le HUD texte (`UICanvasNode`/`UITextNode`) est rasterisé par le module partagé
+`ui/HudRasterizer` : desktop et player Web construisent le même markup et le
+même pixel buffer RGBA8 par le backend CPU, puis chaque plateforme le compose
+via son RHI (quad bindless Vulkan, texture+bindgroup WebGPU) — c'est
+l'invariant de parité visuelle appliqué au HUD. Sur desktop, les nœuds UI hors
+texte (couleur/image/bouton/toggle) restent des quads bindless via
+`UIRenderer::traverseUI`; le player Web V1 n'enregistre que `UICanvasNode`/
+`UITextNode` et refuse les autres nœuds UI et `WebCanvasNode` tant que leur
+backend Web n'est pas porté. `setText/getText` opèrent sur les vrais nœuds;
+WitnessGame atteint `[E2E] PASS` avec un HUD réellement rasterisé
+(`[HUD] rasterized N visible pixel(s)`) en éditeur, desktop packagé et Web.
+
+Les fonts par défaut du moteur (`ui/RmlUiRuntime` : `kEngineFonts`) sont
+résolues par fichier sous `assets/fonts/` (bundle packagé ou racine runtime)
+puis le checkout dev; une font requise absente est loggée en erreur explicite
+et un échec total de chargement est signalé. Le `BuildExporter` embarque ces
+fichiers sous `assets/fonts/` dans les packages desktop et Web (NotoEmoji
+volontairement hors bundle web). Le world-space, l'interaction complète et les
+outils auteur restent à prouver sur le corpus.
 
 Le niveau V1 exige : fonts/assets robustes, screen-space, world-space,
 clipping/scissor, resize/DPI, input clavier/souris/touch, fallback XR, bridge
@@ -715,7 +734,9 @@ intermédiaire reste chargeable et tout échec restaure l'état antérieur. Le n
 est validé comme composant de chemin sûr, un registre Hub corrompu ou un
 document projet legacy/futur refuse l'opération, et `Project::load` accepte
 désormais le dossier du projet (résolution du `.saidaproj` unique) — le chemin
-que le Hub stocke et passe à `--project`.
+que le Hub stocke et passe à `--project`. Le champ « Project Name » des réglages
+de l'éditeur est en lecture seule et renvoie au Hub : un renommage cohérent
+exige le projet fermé (renommage du dossier tenu ouvert par l'éditeur).
 
 Le MCP natif expose des outils aux agents. Le contrat cible exige permissions
 par outil, validation, dry-run/diff, transactions groupées, snapshot/rollback et
