@@ -1542,11 +1542,15 @@ void EditorUI::drawSettingsWindow(Project* project) {
             
             if (ImGui::BeginTabItem("General")) {
                 ImGui::Spacing();
+                // Le renommage change le dossier, le .saidaproj et hub.json
+                // ensemble (renameProjectDirectory); il n'est sûr que projet
+                // fermé, donc il appartient au Hub, pas à un projet ouvert.
                 char nameBuf[128];
                 std::snprintf(nameBuf, sizeof(nameBuf), "%s", project->name().c_str());
-                if (ImGui::InputText("Project Name", nameBuf, sizeof(nameBuf))) {
-                    project->setName(nameBuf);
-                }
+                ImGui::BeginDisabled();
+                ImGui::InputText("Project Name", nameBuf, sizeof(nameBuf), ImGuiInputTextFlags_ReadOnly);
+                ImGui::EndDisabled();
+                ImGui::TextDisabled("Rename from the Hub (project must be closed).");
                 
                 ImGui::SeparatorText("Performance");
                 int maxFps = project->maxFps();
