@@ -1,4 +1,4 @@
-#include "scene/SpawnerBehaviour.hpp"
+#include "behaviours/SpawnerBehaviour.hpp"
 
 #include "scene/Node.hpp"
 #include "scene/SceneTree.hpp"

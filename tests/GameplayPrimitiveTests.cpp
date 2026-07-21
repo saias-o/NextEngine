@@ -5,7 +5,7 @@
 #include "scene/Blackboard.hpp"
 #include "scene/Node.hpp"
 #include "scene/ReflectedTypes.hpp"
-#include "scene/StateMachineBehaviour.hpp"
+#include "behaviours/StateMachineBehaviour.hpp"
 
 #include "nlohmann/json.hpp"
 

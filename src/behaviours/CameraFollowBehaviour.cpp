@@ -1,4 +1,4 @@
-#include "scene/CameraFollowBehaviour.hpp"
+#include "behaviours/CameraFollowBehaviour.hpp"
 
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"

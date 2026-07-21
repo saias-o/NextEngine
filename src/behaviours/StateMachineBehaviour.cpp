@@ -1,4 +1,4 @@
-#include "scene/StateMachineBehaviour.hpp"
+#include "behaviours/StateMachineBehaviour.hpp"
 
 #include "core/Reflection.hpp"
 #include "scene/Blackboard.hpp"

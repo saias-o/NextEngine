@@ -3,7 +3,7 @@
 
 #include "core/Reflection.hpp"
 #include "scene/Node.hpp"
-#include "scene/RotatorBehaviour.hpp"
+#include "behaviours/RotatorBehaviour.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SignalWiring.hpp"
 #include "scene/ReflectedTypes.hpp"

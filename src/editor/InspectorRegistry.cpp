@@ -3,9 +3,9 @@
 
 #include "scene/Behaviour.hpp"
 #include "scene/Node.hpp"
-#include "scene/CharacterBehaviour.hpp"
-#include "scene/CameraFollowBehaviour.hpp"
-#include "scene/SpawnerBehaviour.hpp"
+#include "behaviours/CharacterBehaviour.hpp"
+#include "behaviours/CameraFollowBehaviour.hpp"
+#include "behaviours/SpawnerBehaviour.hpp"
 #include "audio/AudioSourceBehaviour.hpp"
 #include "physics/CharacterBodyNode.hpp"
 #include "scripting/ScriptBehaviour.hpp"

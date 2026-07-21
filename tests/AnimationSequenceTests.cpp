@@ -8,7 +8,7 @@
 #include "scene/LightNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/ReflectedTypes.hpp"
-#include "scene/RotatorBehaviour.hpp"
+#include "behaviours/RotatorBehaviour.hpp"
 #include "scene/animation/AnimationClip.hpp"
 #include "scene/animation/AnimationSequence.hpp"
 #include "scene/animation/Animator.hpp"

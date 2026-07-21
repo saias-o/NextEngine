@@ -6,7 +6,7 @@
 // navigateur de WitnessGame (PASS émis après flush, save relue au reload).
 #include "scene/Node.hpp"
 #include "scene/ReflectedTypes.hpp"
-#include "scene/RotatorBehaviour.hpp"
+#include "behaviours/RotatorBehaviour.hpp"
 #include "scripting/JsContext.hpp"
 #include "scripting/JsEngineBindings.hpp"
 #include "scripting/JsRuntime.hpp"

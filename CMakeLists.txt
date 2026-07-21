@@ -400,12 +400,12 @@ add_library(saida_engine STATIC
     src/scene/Behaviour.cpp
     src/scene/MeshNode.cpp
     src/scene/MeshLod.cpp
-    src/scene/LODGroupBehaviour.cpp
+    src/behaviours/LODGroupBehaviour.cpp
     src/scene/LightNode.cpp
     src/scene/ParticleSystemNode.cpp
     src/scene/CameraNode.cpp
     src/render/CameraDirector.cpp
-    src/scene/CameraFollowBehaviour.cpp
+    src/behaviours/CameraFollowBehaviour.cpp
     src/scene/Scene.cpp
     src/scene/SceneTree.cpp
     src/scene/SceneTimerQueue.cpp
@@ -495,13 +495,13 @@ add_library(saida_engine STATIC
     src/cli/AutoLODBridge.cpp
     src/audio/AudioUsage.cpp
     src/audio/AudioSourceBehaviour.cpp
-    src/scene/CharacterBehaviour.cpp
-    src/scene/HealthBehaviour.cpp
+    src/behaviours/CharacterBehaviour.cpp
+    src/behaviours/HealthBehaviour.cpp
     src/scene/WaterNode.cpp
-    src/scene/SpawnerBehaviour.cpp
-    src/scene/RotatorBehaviour.cpp
+    src/behaviours/SpawnerBehaviour.cpp
+    src/behaviours/RotatorBehaviour.cpp
     src/scene/Blackboard.cpp
-    src/scene/StateMachineBehaviour.cpp
+    src/behaviours/StateMachineBehaviour.cpp
     src/scenario/ScenarioAsset.cpp
     src/scenario/ScenarioRegistry.cpp
     src/scenario/ScenarioAnchor.cpp

@@ -1,4 +1,4 @@
-#include "scene/RotatorBehaviour.hpp"
+#include "behaviours/RotatorBehaviour.hpp"
 
 #include "scene/Node.hpp"
 

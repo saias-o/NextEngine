@@ -1,4 +1,4 @@
-#include "scene/LODGroupBehaviour.hpp"
+#include "behaviours/LODGroupBehaviour.hpp"
 
 #include "core/Reflection.hpp"
 

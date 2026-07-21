@@ -1,4 +1,4 @@
-#include "scene/HealthBehaviour.hpp"
+#include "behaviours/HealthBehaviour.hpp"
 
 #include "scene/Node.hpp"
 #include "physics/CharacterBodyNode.hpp"

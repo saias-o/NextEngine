@@ -20,7 +20,7 @@
 
 #include "scene/BehaviourRegistry.hpp"
 #include "scene/BVHLoader.hpp"
-#include "scene/LODGroupBehaviour.hpp"
+#include "behaviours/LODGroupBehaviour.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/AnimationClip.hpp"
 

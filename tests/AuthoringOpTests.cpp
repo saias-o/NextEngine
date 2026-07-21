@@ -10,7 +10,7 @@
 #include "scene/MeshNode.hpp"
 #include "scene/NodeRegistry.hpp"
 #include "scene/ParticleSystemNode.hpp"
-#include "scene/RotatorBehaviour.hpp"
+#include "behaviours/RotatorBehaviour.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SceneSerializer.hpp"
 #include "scene/WaterNode.hpp"

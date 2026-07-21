@@ -3,12 +3,12 @@
 
 #include "core/Reflection.hpp"
 #include "audio/AudioSourceBehaviour.hpp"
-#include "scene/CameraFollowBehaviour.hpp"
+#include "behaviours/CameraFollowBehaviour.hpp"
 #include "scene/NodeRegistry.hpp"
 #include "scene/ParticleSystemNode.hpp"
 #include "scene/ReflectedTypes.hpp"
-#include "scene/RotatorBehaviour.hpp"
-#include "scene/SpawnerBehaviour.hpp"
+#include "behaviours/RotatorBehaviour.hpp"
+#include "behaviours/SpawnerBehaviour.hpp"
 #include "scene/animation/Timeline.hpp"
 
 #include <nlohmann/json.hpp>

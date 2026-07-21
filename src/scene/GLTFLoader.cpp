@@ -4,7 +4,7 @@
 #include "scene/Scene.hpp"
 #include "scene/MeshNode.hpp"
 #include "scene/MeshLod.hpp"
-#include "scene/LODGroupBehaviour.hpp"
+#include "behaviours/LODGroupBehaviour.hpp"
 #include "scene/Node.hpp"
 #include "graphics/Mesh.hpp"
 #include "graphics/ResourceManager.hpp"

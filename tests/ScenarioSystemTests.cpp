@@ -1,5 +1,5 @@
 #include "scene/ReflectedTypes.hpp"
-#include "scene/RotatorBehaviour.hpp"
+#include "behaviours/RotatorBehaviour.hpp"
 #include "scene/Scene.hpp"
 #include "scenario/ScenarioAsset.hpp"
 #include "scenario/ScenarioRunnerBehaviour.hpp"

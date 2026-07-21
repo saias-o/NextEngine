@@ -1,5 +1,5 @@
 #include "scene/MeshNode.hpp"
-#include "scene/LODGroupBehaviour.hpp"
+#include "behaviours/LODGroupBehaviour.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Material.hpp"
 #include <nlohmann/json.hpp>

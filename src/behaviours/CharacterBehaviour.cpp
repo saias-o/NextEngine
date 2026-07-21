@@ -1,4 +1,4 @@
-#include "scene/CharacterBehaviour.hpp"
+#include "behaviours/CharacterBehaviour.hpp"
 #include "scene/Node.hpp"
 #include "scene/SceneTree.hpp"
 #include "physics/CharacterBodyNode.hpp"
