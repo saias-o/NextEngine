@@ -18,7 +18,9 @@ Il n'existe que deux documents de vérité en plus de ce README :
 
 Le guide opérationnel [support et retrait d'une release](docs/release-support.md)
 publie la matrice qualifiée, les prérequis de promotion et la procédure de
-rollback sans créer une troisième source de vérité produit.
+rollback sans créer une troisième source de vérité produit. Le backlog de
+qualité du code ([AUDIT_V1.md](AUDIT_V1.md)) catalogue la dette structurelle
+connue ; il oriente le travail sans être non plus une source de vérité produit.
 
 La plateforme web, le backend et l'exploitation vivent dans
 [`saias-o/saida`](https://github.com/saias-o/saida). Son `PLAN_V1.md` porte le
