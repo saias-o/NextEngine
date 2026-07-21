@@ -790,9 +790,15 @@ test matériel.
 ## 11. Éditeur, MCP et IA
 
 L'éditeur fournit arbre de scène, inspector réfléchi, file browser, gizmos,
-Play/Stop et undo/redo. Certaines mutations restent seulement dirty, notamment
-scripts WebCanvas et changements de CollisionShape avec `resetAuto`; elles
-doivent devenir des commandes undoables.
+Play/Stop et undo/redo. Toutes les mutations durables de l'inspector passent
+par des commandes undoables (`SetPropertyCommand` : résolution par NodeId,
+snapshots avant/après). Les listes (scripts de démarrage WebCanvas) commitent
+un snapshot complet de la liste, donc les indices restent cohérents en
+undo/redo LIFO. Le changement de type de CollisionShape et « Recompute from
+mesh » capturent l'état durable complet (type + paramètres); rejouer un état
+qui entre en Auto ré-arme la détection (`resetAuto`), tandis que l'undo
+restaure les paramètres sans la ré-armer — le cache de détection encore valide
+les garde gelés. Prouvé headless par `saida_editor_command_tests`.
 
 Le renommage de projet passe par `renameProjectDirectory`
 (`src/project/ProjectRename.*`) : le dossier, le fichier `.saidaproj` (nom et

@@ -366,12 +366,20 @@ void InspectorPanel::draw(EditorUI* editor) {
         ImGui::SeparatorText("Web Canvas");
         PropertyEditor pe(*editor, node);
 
-        int w = webNode->width();
-        int h = webNode->height();
-        if (ImGui::DragInt("Width", &w, 1, 1, 8192) || ImGui::DragInt("Height", &h, 1, 1, 8192)) {
-            webNode->resize(static_cast<uint32_t>(w), static_cast<uint32_t>(h));
-            editor->markDirty();
-        }
+        pe.dragInt("Width",
+                   [](Node& n) { return static_cast<int>(static_cast<WebCanvasNode&>(n).width()); },
+                   [](Node& n, int v) {
+                       auto& w = static_cast<WebCanvasNode&>(n);
+                       w.resize(static_cast<uint32_t>(std::max(v, 1)), w.height());
+                   },
+                   1, 1, 8192);
+        pe.dragInt("Height",
+                   [](Node& n) { return static_cast<int>(static_cast<WebCanvasNode&>(n).height()); },
+                   [](Node& n, int v) {
+                       auto& w = static_cast<WebCanvasNode&>(n);
+                       w.resize(w.width(), static_cast<uint32_t>(std::max(v, 1)));
+                   },
+                   1, 1, 8192);
 
         pe.combo("Mode",
                  [](Node& n) { return static_cast<int>(static_cast<WebCanvasNode&>(n).mode()); },
@@ -387,7 +395,10 @@ void InspectorPanel::draw(EditorUI* editor) {
                 const char* path = (const char*)payload->Data;
                 std::string url = "file:///" + std::string(path);
                 std::replace(url.begin(), url.end(), '\\', '/');
-                webNode->setUrl(url); editor->markDirty();
+                pe.push<std::string>("Set WebCanvas URL",
+                    [](Node& n) { return static_cast<WebCanvasNode&>(n).url(); },
+                    [](Node& n, std::string v) { static_cast<WebCanvasNode&>(n).setUrl(v); },
+                    url);
             }
             ImGui::EndDragDropTarget();
         }
@@ -416,33 +427,66 @@ void InspectorPanel::draw(EditorUI* editor) {
         }
         ImGui::Separator();
         ImGui::Text("Startup Scripts");
-        
-        auto& scripts = const_cast<std::vector<std::string>&>(webNode->startupScripts());
-        
+
+        // Every list mutation is one undoable command on a full-list snapshot:
+        // element indices then stay meaningful across undo/redo (LIFO restores
+        // the exact list an edit was made against).
+        const auto scriptsGet = [](Node& n) -> std::vector<std::string> {
+            return static_cast<WebCanvasNode&>(n).startupScripts();
+        };
+        const auto scriptsSet = [](Node& n, std::vector<std::string> v) {
+            static_cast<WebCanvasNode&>(n).setStartupScripts(std::move(v));
+        };
+
+        static ImGuiID scriptEditId = 0;
+        static std::vector<std::string> scriptEditOld;
+        const std::vector<std::string>& scripts = webNode->startupScripts();
+        int removeIndex = -1;
         for (size_t i = 0; i < scripts.size(); ++i) {
             ImGui::PushID(static_cast<int>(i));
-            
+
             char buffer[1024];
             strncpy(buffer, scripts[i].c_str(), sizeof(buffer) - 1);
             buffer[sizeof(buffer) - 1] = '\0';
-            
-            // Startup-script list edits are collection mutations, not yet
-            // undoable; they mark the document dirty (full treatment: later lot).
+
             if (ImGui::InputText("##script", buffer, sizeof(buffer))) {
-                scripts[i] = buffer; editor->markDirty();
+                std::vector<std::string> edited = scripts;
+                edited[i] = buffer;
+                webNode->setStartupScripts(std::move(edited));  // live feedback
+            }
+            const ImGuiID id = ImGui::GetItemID();
+            if (ImGui::IsItemActivated()) {
+                scriptEditId = id;
+                scriptEditOld = scripts;
+            }
+            if (ImGui::IsItemDeactivatedAfterEdit() && scriptEditId == id) {
+                const std::vector<std::string> oldScripts = scriptEditOld;
+                const std::vector<std::string> newScripts = webNode->startupScripts();
+                scriptEditId = 0;
+                scriptEditOld.clear();
+                const NodeId nodeId = webNode->id();
+                editor->execute(std::make_unique<SetPropertyCommand>(
+                    nodeId, "Edit WebCanvas Script",
+                    [scriptsSet, oldScripts](Node& n) { scriptsSet(n, oldScripts); },
+                    [scriptsSet, newScripts](Node& n) { scriptsSet(n, newScripts); }));
             }
 
             ImGui::SameLine();
-            if (ImGui::Button("X")) {
-                scripts.erase(scripts.begin() + i);
-                --i;
-                editor->markDirty();
-            }
+            if (ImGui::Button("X")) removeIndex = static_cast<int>(i);
             ImGui::PopID();
+        }
+        if (removeIndex >= 0) {
+            std::vector<std::string> without = scripts;
+            without.erase(without.begin() + removeIndex);
+            pe.push<std::vector<std::string>>("Remove WebCanvas Script",
+                                              scriptsGet, scriptsSet, without);
         }
 
         if (ImGui::Button("Add Script")) {
-            webNode->addStartupScript(""); editor->markDirty();
+            std::vector<std::string> withNew = scripts;
+            withNew.emplace_back();
+            pe.push<std::vector<std::string>>("Add WebCanvas Script",
+                                              scriptsGet, scriptsSet, withNew);
         }
         
         ImGui::Separator();
@@ -763,23 +807,56 @@ void InspectorPanel::drawCollisionShape(CollisionShapeNode* shape, EditorUI* edi
     // Editing a shape field rebuilds the owning body (on undo too).
     auto rebuild = [](Node& n) { markOwningBodyDirty(&n); };
 
-    // Shape type changes have resetAuto side effects, so they are not command-backed yet.
+    // A shape-type change and "Recompute" both funnel through Auto detection,
+    // which rewrites the manual parameters; their commands therefore snapshot
+    // the full durable state (type + parameters), and replaying a state that
+    // enters Auto re-arms detection (resetAuto) exactly like the live edit.
+    struct ShapeState {
+        CollisionShapeType type;
+        glm::vec3 halfExtents;
+        float radius;
+        float height;
+        int axis;
+        glm::vec3 offset;
+    };
+    const auto captureShape = [](const CollisionShapeNode& s) {
+        return ShapeState{s.shapeType, s.halfExtents, s.radius, s.height, s.axis, s.offset};
+    };
+    const auto applyShape = [](Node& n, const ShapeState& s, bool rearmAuto) {
+        auto& node = static_cast<CollisionShapeNode&>(n);
+        node.shapeType = s.type;
+        node.halfExtents = s.halfExtents;
+        node.radius = s.radius;
+        node.height = s.height;
+        node.axis = s.axis;
+        node.offset = s.offset;
+        if (rearmAuto && s.type == CollisionShapeType::Auto) node.resetAuto();
+        markOwningBodyDirty(&node);
+    };
+
     const char* kinds[] = {"Auto", "Box", "Sphere", "Capsule", "ConvexHull", "Mesh"};
     int current = static_cast<int>(shape->shapeType);
-    if (ImGui::Combo("Shape", &current, kinds, IM_ARRAYSIZE(kinds))) {
-        shape->shapeType = static_cast<CollisionShapeType>(current);
-        if (shape->shapeType == CollisionShapeType::Auto)
-            shape->resetAuto();  // detect once, now, then freeze
-        markOwningBodyDirty(shape);
-        editor->markDirty();
+    if (ImGui::Combo("Shape", &current, kinds, IM_ARRAYSIZE(kinds)) &&
+        current != static_cast<int>(shape->shapeType)) {
+        ShapeState before = captureShape(*shape);
+        ShapeState after = before;
+        after.type = static_cast<CollisionShapeType>(current);
+        editor->execute(std::make_unique<SetPropertyCommand>(
+            shape->id(), "Set Collision Shape Type",
+            // Undo re-applies the captured parameters without re-arming Auto:
+            // the frozen detection stays frozen on the restored values.
+            [applyShape, before](Node& n) { applyShape(n, before, false); },
+            [applyShape, after](Node& n) { applyShape(n, after, true); }));
     }
 
     if (shape->shapeType == CollisionShapeType::Auto) {
         ImGui::TextDisabled("Detected: %s (frozen)", toString(shape->resolvedType()));
         if (ImGui::Button("Recompute from mesh")) {
-            shape->resetAuto();
-            markOwningBodyDirty(shape);
-            editor->markDirty();
+            ShapeState before = captureShape(*shape);
+            editor->execute(std::make_unique<SetPropertyCommand>(
+                shape->id(), "Recompute Collision Shape",
+                [applyShape, before](Node& n) { applyShape(n, before, false); },
+                [applyShape, before](Node& n) { applyShape(n, before, true); }));
         }
     } else if (shape->shapeType == CollisionShapeType::Box) {
         pe.dragFloat3("Half Extents",

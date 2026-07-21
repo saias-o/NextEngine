@@ -106,6 +106,9 @@ public:
     bool lastLoadOk() const { return lastLoadOk_; }
 
     void addStartupScript(const std::string& script) { startupScripts_.push_back(script); }
+    // Replace the whole list (editor undo/redo works on full snapshots). The
+    // scripts run at the next document (re)load, so no reload is forced here.
+    void setStartupScripts(std::vector<std::string> scripts) { startupScripts_ = std::move(scripts); }
     const std::vector<std::string>& startupScripts() const { return startupScripts_; }
 
     void updateTextureIfNeededAsync(rhi::vulkan::CommandEncoder& encoder);

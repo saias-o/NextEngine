@@ -1,6 +1,6 @@
 # SaidaEngine - Plan unique vers la V1
 
-Mise à jour : 2026-07-20.
+Mise à jour : 2026-07-21.
 
 **Verdict : NO-GO pour une V1 publique.** Ce fichier est l'unique todolist du
 moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
@@ -69,19 +69,17 @@ correspondante.
 L'atomicité du renommage Hub est également fermée (voir la case P1 : opération
 `renameProjectDirectory` avec rollback, testée par `saida_project_rename_tests`).
 
-P0.3 UI est entamé (session 2026-07-20) : rendu CPU desktop finalisé et prouvé,
-HUD unifié desktop/Web par `HudRasterizer`, fonts déclarées/packagées, corpus
-headless `saida_ui_corpus_tests`. Restent dans P0.3 : contrat auteur Rml/CSS/JS
-stabilisé, indirection AssetRegistry des assets UI, World Space prouvé,
-unification hit-test/focus/input, lifecycle Play/Stop/reload, inspector/picking/
-undo UI, corpus XR et mesure CPU→décision backend GPU.
+**P0.3 UI est fermée** (sessions 2026-07-20/21) : rendu CPU desktop prouvé, HUD
+unifié desktop/Web par `HudRasterizer` (prouvé en navigateur WebGPU),
+interaction unifiée, World Space, undo complet WebCanvas/CollisionShape dans
+l'inspector, décisions V1 documentées (assets UI par chemin projet, pas de
+backend GPU RmlUi, UI XR en fallback déclaré). Preuves dans la section P0.3.
 
-Prochain chantier autonome conseillé, hors UI : compléments physique
-(diagnostics, puis slider/cône/moteurs/breakables), rendu/lightmaps, puis LTO
-seulement après stabilité. À réserver à une session assistée séparée : la suite
-de P0.3 UI (adaptation visuelle des prompts, undo éditeur, World Space,
-lifecycle), pads physiques Xbox/PlayStation, signature Authenticode avec
-la clé de publication, validations XR/casques et benchmarks sur GPU physique.
+Prochain chantier autonome conseillé : compléments physique (diagnostics, puis
+slider/cône/moteurs/breakables), rendu/lightmaps, puis LTO seulement après
+stabilité. À réserver à une session assistée séparée : adaptation visuelle des
+prompts (P0.6), pads physiques Xbox/PlayStation, signature Authenticode avec la
+clé de publication, validations XR/casques et benchmarks sur GPU physique.
 Lavapipe peut qualifier les contrats et le packaging CI, pas remplacer une
 preuve matérielle. Toute case cochée doit conserver dans ce fichier le commit/run
 ou le corpus exact qui la prouve.
@@ -215,13 +213,20 @@ deux runtimes annoncés compatibles.
   Play/Stop/reload (HUD restauré après redémarrage desktop et reload Web). Le
   hot reload transactionnel `WebCanvasNode` (garde l'ancien document si le
   nouveau échoue) est desktop, exercé en éditeur. SPEC §8.3.
-- [~] Ajouter inspector, picking et édition de chemins/modes avec undo/redo.
-  Fait : l'inspector édite les propriétés réfléchies via `SetPropertyCommand`
-  undoable (round-trip prouvé par `saida_editor_command_tests`), et le picking
-  d'un nœud UI est le hit-test canonique ci-dessus. Reste : l'édition undoable
-  des chemins/modes `WebCanvasNode` (aujourd'hui `markDirty` non-undoable) —
-  c'est exactement l'item P1 « rendre undoables WebCanvas et CollisionShape
-  resetAuto » — et le picking en viewport (GUI éditeur).
+- [x] Ajouter inspector, picking et édition de chemins/modes avec undo/redo.
+  L'inspector édite les propriétés réfléchies via `SetPropertyCommand` undoable
+  et le picking d'un nœud UI est le hit-test canonique ci-dessus. L'édition des
+  chemins/modes `WebCanvasNode` est désormais entièrement undoable : URL saisie
+  et drag-drop, mode, taille, world width, interactive, render order, hot reload
+  et les scripts de démarrage (ajout/édition/suppression en snapshots de liste
+  complets — indices cohérents en undo/redo LIFO); le `const_cast` de mutation
+  directe est supprimé. Le combo Shape et « Recompute from mesh » de
+  CollisionShape sont aussi undoables (snapshot type+paramètres, ré-armement
+  Auto au replay mais pas à l'undo — le cache de détection garde les valeurs
+  restaurées gelées). Prouvé headless par `saida_editor_command_tests`
+  (WebCanvas : add/edit/remove/URL avec pile LIFO; CollisionShape : switch de
+  type et Recompute avec re-détection simulée puis undo stable). Voir la case
+  P1 correspondante pour le commit.
 - [x] Créer un corpus UI desktop/Web. `saida_ui_corpus_tests` couvre le backend
   CPU partagé desktop/Web avec des assertions de pixels calculées (plus robustes
   que des captures golden), dont la parité HUD `HudRasterizer` (prouvée en
@@ -270,16 +275,13 @@ pixel(s) at 1280x720` (fonts depuis `/assets/assets/fonts/`) puis
 Gate : WitnessGame et le corpus UI rendent et interagissent correctement sur
 desktop et Web; l'absence XR éventuelle est un fallback déclaré.
 
-**État de la gate (2026-07-21)** : la condition cœur est prouvée — WitnessGame
-et le corpus UI rendent et interagissent sur desktop (éditeur `--play` +
-packagé) et Web (navigateur WebGPU), et l'UI XR est un fallback déclaré. 9 des
-10 items sont fermés (preuves headless + décisions V1 documentées). Reste **un
-seul item** ouvert (`[~]`) : l'édition undoable des chemins/modes `WebCanvasNode`
-dans l'éditeur — qui est exactement l'item P1 « rendre undoables WebCanvas ».
-Décision produit à trancher : accepter que ce raffinement d'outillage éditeur
-vive en P1 (la gate cœur étant tenue) et cocher P0.3, ou le traiter avant de
-fermer la gate. Aucune preuve n'est inventée : le reste est soit prouvé, soit
-une décision de périmètre explicite.
+**Gate fermée le 2026-07-21.** Les 10 items sont cochés : condition cœur
+prouvée — WitnessGame et le corpus UI rendent et interagissent sur desktop
+(éditeur `--play` + packagé) et Web (navigateur WebGPU) —, l'UI XR est un
+fallback déclaré, et le dernier item (édition undoable WebCanvas/CollisionShape
+dans l'inspector, partagé avec la case P1) est prouvé par
+`saida_editor_command_tests`. Chaque case est soit une preuve, soit une
+décision de périmètre V1 explicitement documentée dans SPEC §8.3.
 
 ## P0.4 - API gameplay et stockage
 
@@ -554,7 +556,19 @@ Gate : une release peut être reproduite, identifiée, diagnostiquée et retiré
 
 - [ ] XR : valider casques/runtimes ciblés, contrôleurs et hand tracking.
 - [ ] XR : MSAA multiview/resolve, overlay ImGui et backend d'anchors réel.
-- [ ] Éditeur : rendre undoables WebCanvas et `CollisionShape resetAuto`.
+- [x] Éditeur : rendre undoables WebCanvas et `CollisionShape resetAuto`.
+  Inspector WebCanvas : URL (saisie + drag-drop), taille, mode, world width,
+  interactive, render order, hot reload et scripts de démarrage
+  (add/edit/remove) passent tous par `SetPropertyCommand`; les mutations de
+  liste commitent des snapshots complets (indices cohérents en pile LIFO) et le
+  `const_cast` de mutation directe est supprimé (`WebCanvasNode` gagne le
+  setter `setStartupScripts`). CollisionShape : le combo Shape et « Recompute
+  from mesh » capturent l'état durable complet (type + paramètres); un replay
+  qui entre en Auto ré-arme `resetAuto`, l'undo restaure les paramètres sans
+  ré-armer — le cache de détection (`resolveAutoFrom`) garde les valeurs
+  restaurées gelées. Prouvé headless par `saida_editor_command_tests` (pile
+  LIFO WebCanvas complète; switch de type et Recompute avec re-détection
+  simulée entre execute et undo). Suite 69/69.
 - [x] Hub : garantir renommage dossier, entrée Hub et `.saidaproj` atomique.
   `renameProjectDirectory` (`src/project/ProjectRename.*`) renomme ensemble le
   dossier, le `.saidaproj` (fichier + champ `name`) et l'entrée `hub.json`,
