@@ -9,6 +9,7 @@
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
 
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -388,6 +389,55 @@ void testHudRasterizerEmptyCanvasHasNoContent() {
     require(!frame.hasContent, "text-less HUD reports no content (no wasted draw)");
 }
 
+// ── Mesure du backend CPU → décision de backend GPU ──────────────────────────
+//
+// Le choix « pas de backend GPU RmlUi en V1 » (SPEC §8.3) doit reposer sur une
+// mesure, pas une intuition. On rasterise un HUD réaliste (plusieurs lignes) en
+// 1080p, contenu changé à chaque itération pour forcer un vrai re-render, et on
+// publie le coût par frame. Ce coût n'est payé QUE lorsque le HUD change (le
+// rasterizer saute un contenu identique), pas à chaque frame. Le chiffre imprimé
+// ici est une mesure Debug (le build de dev); la donnée de perf livrable est le
+// hitchMax Release du harnais Witness (~0,05 s sous charge complète). Le plafond
+// ci-dessous est un simple garde anti-régression Debug, pas un budget de perf.
+
+void testCpuRasterizationCostIsBudgeted() {
+    auto canvas = std::make_unique<UICanvasNode>();
+    for (int line = 0; line < 6; ++line) {
+        auto* text = static_cast<UITextNode*>(canvas->addChild(std::make_unique<UITextNode>()));
+        text->setAnchor(0.0f, 0.0f);
+        text->setPivot(0.0f, 0.0f);
+        text->setPosition(24.0f, 24.0f + static_cast<float>(line) * 40.0f);
+        text->setSize(600.0f, 36.0f);
+        text->setFontSize(28.0f);
+    }
+    auto* firstLine = static_cast<UITextNode*>(canvas->children().front().get());
+
+    HudRasterizer hud;
+    constexpr int kFrames = 120;
+    // Warm-up: build the context and first document outside the timed loop.
+    firstLine->setText("warmup");
+    hud.rasterize(*canvas, glm::vec2(1920.0f, 1080.0f));
+
+    const auto start = std::chrono::steady_clock::now();
+    int rasterized = 0;
+    for (int i = 0; i < kFrames; ++i) {
+        firstLine->setText("Score " + std::to_string(i) + "  |  Health 100  |  Ammo 24");
+        HudRasterizer::Frame frame = hud.rasterize(*canvas, glm::vec2(1920.0f, 1080.0f));
+        if (frame.changed) ++rasterized;
+    }
+    const auto end = std::chrono::steady_clock::now();
+
+    require(rasterized == kFrames, "each changed HUD re-rasterizes (no stale skip)");
+    const double totalMs = std::chrono::duration<double, std::milli>(end - start).count();
+    const double perFrameMs = totalMs / kFrames;
+    std::cout << "[ui-corpus] CPU HUD raster: " << perFrameMs
+              << " ms/frame at 1920x1080 (6 lines, Debug; content-change only)\n";
+    // Debug regression guard only (a Release build and content that rarely
+    // changes are both far cheaper); the perf basis for deferring a GPU backend
+    // is the Witness Release hitchMax, not this Debug number.
+    require(perFrameMs < 250.0, "CPU HUD rasterization has not regressed catastrophically");
+}
+
 } // namespace
 
 int main() {
@@ -401,6 +451,7 @@ int main() {
     testDpRatioScalesDpUnits();
     testHudRasterizerRendersCanvasText();
     testHudRasterizerEmptyCanvasHasNoContent();
+    testCpuRasterizationCostIsBudgeted();
 
     RmlUiRuntime::shutdown();
     std::cout << "[ui-corpus] PASS (" << gChecks << " checks)\n";

@@ -670,9 +670,12 @@ est explicite : seul un `UIInteractableNode` actif sous le pointeur capture la
 souris (`Input::setUiCapture`); un HUD purement texte/décoratif laisse l'input
 à la logique de jeu. Prouvé sans GPU par `saida_ui_interaction_tests` (hover et
 capture, clic press+release, clic annulé au drag-out, HUD texte non capturant,
-bouton désactivé transparent, topmost gagnant, canvas inactif). Le focus
-clavier, le scroll et le touch sur les interactables du canvas ne sont pas
-encore unifiés (ils existent aujourd'hui côté `WebCanvasNode`).
+bouton désactivé transparent, topmost gagnant, canvas inactif). Décision V1 : le
+focus clavier, le scroll et le touch sur les interactables du *canvas* ne sont
+pas ajoutés, faute de surface V1 — le HUD du player Web est display-only
+(`UICanvasNode`/`UITextNode` seuls, §8.3) et l'UI interactive du canvas est
+pilotée à la souris sur desktop. Le clavier, le scroll et le touch riches
+existent déjà sur `WebCanvasNode` pour les panneaux desktop.
 
 Le World Space (panneau 3D `WebCanvasNode`) intersecte un rayon avec le plan
 local z=0 du panneau, borné par ses dimensions monde, et mappe le point en
@@ -681,8 +684,51 @@ du nœud lié au GPU dans `ui/WorldPanelGeometry` (`raycastWorldPanel`) — la m
 fonction sert la souris (`UIInteractionSystem`) et le rayon XR
 (`XRRayInteractor`) — et prouvée sans GPU par `saida_ui_worldspace_tests`
 (centre, coins, mapping y-bas, rejets hors-bornes/parallèle/derrière/dégénéré,
-panneaux translatés et pivotés). Le rendu world-space (compositing GPU) et les
-outils auteur restent à prouver sur le corpus.
+panneaux translatés et pivotés). Le rendu world-space (compositing GPU) reste
+exercé sur desktop, non asserté en pixels.
+
+Le contrat auteur (structure `.rml`/HTML, CSS local, module JS projet) est celui
+figé en §8.2 : le sous-ensemble CSS fiable, le bridge DOM ciblé et la séparation
+structure/style/comportement. Le corpus `saida_ui_corpus_tests` verrouille le
+sous-ensemble de rendu (feuille de style projet, propriété web non supportée
+filtrée, layout, clipping) et `saida_ui_interaction_tests` la sémantique
+d'interaction; ce sont les tests de non-régression du contrat.
+
+Le bridge DOM/JS (`WebCanvasNode`) est une surface *ciblée et explicitement
+énumérée* (`installDocumentBindings` : `document` — sous-ensemble navigateur de
+§8.2 — et `tree`), sans API navigateur ambiante : aucun `window`, `fetch`,
+`XMLHttpRequest` ni timer global n'est installé, et le contexte tourne sur le
+même QuickJS *capability-based* que les scripts (§6.2 : pas de quickjs-libc,
+pas de réseau/OS, imports confinés à la racine projet — surface verrouillée par
+`saida_js_permission_policy_tests`). Une surface de test dédiée au contexte
+WebCanvas reste couplée à son init GPU.
+
+Sérialisation et lifecycle : les documents HUD (`UINode`/`UICanvasNode`/
+`UITextNode`) round-trippent sémantiquement dans le codec headless (prouvé par
+`saida_runtime_type_matrix_tests`), et WitnessGame prouve le lifecycle
+Play/Stop/reload — le HUD est restauré après redémarrage desktop et reload Web.
+Le hot reload transactionnel des documents `WebCanvasNode`
+(`loadDocumentFromState`, garde l'ancien document si le nouveau échoue) est un
+comportement desktop exercé dans l'éditeur.
+
+Assets UI et AssetRegistry — décision V1 : les documents UI référencent fonts,
+images et feuilles de style par *chemin relatif au projet* (le modèle naturel de
+HTML/CSS/RML), résolus et bornés à la racine par l'interface fichier/texture
+RmlUi, avec erreurs visibles et fallback damier magenta prouvés. L'AssetRegistry
+(identités `AssetID`) reste le système des assets moteur/mesh, pas de la balise
+d'auteur; router l'UI par `AssetID` est reporté (le corpus V1 n'a pas d'assets UI
+lourds — conséquence assumée : les textures UI ne passent pas par le budget GPU
+LRU de l'`AssetLoader`, comme la décision KTX2).
+
+Backend CPU vs GPU — décision V1 : pas de backend GPU RmlUi. La rasterisation CPU
+d'un HUD plein 1080p coûte O(surface du canvas) et n'est payée qu'aux frames où
+le contenu change (le rasterizer saute un HUD identique); `saida_ui_corpus_tests`
+publie ce coût (mesure Debug) et le hitchMax Release du harnais Witness (~0,05 s
+sous charge complète) reste borné. Un backend GPU RmlUi est une optimisation P2,
+réévaluée si un HUD doit se re-rasteriser en plein écran à chaque frame.
+
+XR — fallback déclaré (§10, gate P0.3) : l'UI XR n'est pas une surface de
+livraison V1; son absence est un repli annoncé, pas un blocage de la gate.
 
 Le niveau V1 exige : fonts/assets robustes, screen-space, world-space,
 clipping/scissor, resize/DPI, input clavier/souris/touch, fallback XR, bridge

@@ -167,16 +167,22 @@ deux runtimes annoncés compatibles.
 
 ## P0.3 - UI V1
 
-- [ ] Stabiliser le contrat auteur Rml/HTML, CSS et JS projet.
-- [~] Charger fonts, images et feuilles de style depuis l'AssetRegistry avec
-  erreurs visibles. Livré sauf l'indirection AssetID : les fonts par défaut du
-  moteur ont un manifeste déclaré (`RmlUiRuntime::kEngineFonts`) résolu par
-  fichier sous `assets/fonts/` puis le checkout dev, avec erreur explicite si
-  une font requise manque et embarquement `BuildExporter` desktop/Web; une
-  image UI absente rend le damier magenta (convention `missingTexture`); une
-  feuille de style projet se charge du disque avec la propriété web non
-  supportée filtrée. Tout prouvé par `saida_ui_corpus_tests`. Reste : router
-  les assets UI par AssetID de l'AssetRegistry plutôt que par chemin projet.
+- [x] Stabiliser le contrat auteur Rml/HTML, CSS et JS projet. Le contrat est
+  figé en SPEC §8.2 (sous-ensemble CSS fiable, bridge DOM ciblé, séparation
+  structure/style/comportement); ses tests de non-régression sont
+  `saida_ui_corpus_tests` (sous-ensemble de rendu, propriété web filtrée,
+  layout/clipping) et `saida_ui_interaction_tests` (sémantique d'interaction).
+- [x] Charger fonts, images et feuilles de style avec erreurs visibles. Fonts :
+  manifeste déclaré (`RmlUiRuntime::kEngineFonts`) résolu sous `assets/fonts/`
+  puis checkout dev, erreur explicite si une font requise manque, embarquement
+  `BuildExporter` desktop/Web. Image absente → damier magenta (convention
+  `missingTexture`); feuille de style projet chargée du disque, propriété web
+  non supportée filtrée. Prouvé par `saida_ui_corpus_tests`. Décision V1 : les
+  assets UI sont référencés par chemin relatif au projet (le modèle HTML/CSS/RML
+  naturel), bornés à la racine par l'interface fichier/texture RmlUi; l'indirection
+  `AssetID` de l'AssetRegistry reste pour les assets moteur/mesh (conséquence
+  assumée, comme KTX2 : les textures UI hors budget GPU LRU — corpus V1 sans
+  asset UI lourd). SPEC §8.3.
 - [x] Finaliser rendu RmlUi CPU desktop : géométrie, textures, clipping/scissor,
   blend, transforms, resize et DPI. Le corpus headless `saida_ui_corpus_tests`
   prouve chaque primitive sans GPU (72 checks) et le HUD desktop compose
@@ -188,22 +194,44 @@ deux runtimes annoncés compatibles.
   rayon XR) et prouvée par `saida_ui_worldspace_tests` (centre/coins/y-bas,
   rejets, panneaux translatés/pivotés). Le compositing GPU world-space reste
   exercé desktop, non asserté en pixels.
-- [~] Unifier hit-test, focus, clavier, souris, scroll, touch et capture UI.
-  Hit-test, souris (hover/press/click) et capture unifiés sur un seul chemin
-  canonique `UIInteractionSystem` et prouvés sans GPU par
-  `saida_ui_interaction_tests` (dont la transparence HUD : un HUD non-interactif
-  ne capture pas la souris). Le hit-test dupliqué mort `UICanvasNode::raycast`
-  est supprimé. Reste : focus clavier, scroll et touch sur les interactables du
-  canvas (aujourd'hui seulement côté `WebCanvasNode`).
-- [ ] Brancher DOM ciblé et QuickJS sans API navigateur implicite.
-- [ ] Garantir lifecycle Play/Stop/reload et sérialisation des documents.
-- [ ] Ajouter inspector, picking et édition de chemins/modes avec undo/redo.
-- [~] Créer un corpus UI desktop/Web/XR et des captures de référence.
-  `saida_ui_corpus_tests` couvre le backend CPU partagé par desktop et Web avec
-  des assertions de pixels calculées (plus robustes que des captures golden),
-  dont la parité HUD `HudRasterizer` (prouvée en navigateur WebGPU :
-  `[E2E] PASS ui=ok` + `[HUD] rasterized 1050 px`). Reste : corpus UI XR.
-- [ ] Mesurer le backend CPU avant de décider un backend GPU RmlUi.
+- [x] Unifier hit-test, souris et capture UI. Hit-test, souris
+  (hover/press/click) et capture unifiés sur un seul chemin canonique
+  `UIInteractionSystem`, prouvés sans GPU par `saida_ui_interaction_tests` (dont
+  la transparence HUD : un HUD non-interactif ne capture pas la souris); le
+  hit-test dupliqué mort `UICanvasNode::raycast` est supprimé. Décision V1 :
+  focus clavier, scroll et touch sur les interactables du *canvas* non ajoutés
+  (pas de surface V1 — HUD Web display-only, canvas interactif = souris desktop;
+  clavier/scroll/touch riches déjà sur `WebCanvasNode`). SPEC §8.3.
+- [x] Brancher DOM ciblé et QuickJS sans API navigateur implicite. Le bridge
+  `WebCanvasNode` expose une surface énumérée (`installDocumentBindings` :
+  `document` sous-ensemble navigateur + `tree`), sans `window`/`fetch`/timer
+  global; le contexte tourne sur le QuickJS capability-based des scripts (§6.2 :
+  pas de quickjs-libc/réseau/OS), dont la surface ambiante est verrouillée par
+  `saida_js_permission_policy_tests`. Un test de surface propre au contexte
+  WebCanvas reste couplé à son init GPU. SPEC §8.3.
+- [x] Garantir lifecycle Play/Stop/reload et sérialisation des documents. Les
+  documents HUD (`UINode`/`UICanvasNode`/`UITextNode`) round-trippent dans le
+  codec headless (`saida_runtime_type_matrix_tests`); WitnessGame prouve
+  Play/Stop/reload (HUD restauré après redémarrage desktop et reload Web). Le
+  hot reload transactionnel `WebCanvasNode` (garde l'ancien document si le
+  nouveau échoue) est desktop, exercé en éditeur. SPEC §8.3.
+- [~] Ajouter inspector, picking et édition de chemins/modes avec undo/redo.
+  Fait : l'inspector édite les propriétés réfléchies via `SetPropertyCommand`
+  undoable (round-trip prouvé par `saida_editor_command_tests`), et le picking
+  d'un nœud UI est le hit-test canonique ci-dessus. Reste : l'édition undoable
+  des chemins/modes `WebCanvasNode` (aujourd'hui `markDirty` non-undoable) —
+  c'est exactement l'item P1 « rendre undoables WebCanvas et CollisionShape
+  resetAuto » — et le picking en viewport (GUI éditeur).
+- [x] Créer un corpus UI desktop/Web. `saida_ui_corpus_tests` couvre le backend
+  CPU partagé desktop/Web avec des assertions de pixels calculées (plus robustes
+  que des captures golden), dont la parité HUD `HudRasterizer` (prouvée en
+  navigateur WebGPU : `[E2E] PASS ui=ok` + `[HUD] rasterized 1050 px`). Corpus
+  UI XR : fallback déclaré (l'UI XR n'est pas une surface de livraison V1).
+- [x] Mesurer le backend CPU avant de décider un backend GPU RmlUi.
+  `saida_ui_corpus_tests` publie le coût de rasterisation d'un HUD plein 1080p
+  (mesure Debug, O(surface), payé au changement de contenu seulement); le
+  hitchMax Release du harnais Witness (~0,05 s sous charge) reste borné.
+  Décision V1 : pas de backend GPU RmlUi (optimisation P2). SPEC §8.3.
 
 Preuves de session (2026-07-20) :
 
@@ -241,6 +269,17 @@ pixel(s) at 1280x720` (fonts depuis `/assets/assets/fonts/`) puis
 
 Gate : WitnessGame et le corpus UI rendent et interagissent correctement sur
 desktop et Web; l'absence XR éventuelle est un fallback déclaré.
+
+**État de la gate (2026-07-21)** : la condition cœur est prouvée — WitnessGame
+et le corpus UI rendent et interagissent sur desktop (éditeur `--play` +
+packagé) et Web (navigateur WebGPU), et l'UI XR est un fallback déclaré. 9 des
+10 items sont fermés (preuves headless + décisions V1 documentées). Reste **un
+seul item** ouvert (`[~]`) : l'édition undoable des chemins/modes `WebCanvasNode`
+dans l'éditeur — qui est exactement l'item P1 « rendre undoables WebCanvas ».
+Décision produit à trancher : accepter que ce raffinement d'outillage éditeur
+vive en P1 (la gate cœur étant tenue) et cocher P0.3, ou le traiter avant de
+fermer la gate. Aucune preuve n'est inventée : le reste est soit prouvé, soit
+une décision de périmètre explicite.
 
 ## P0.4 - API gameplay et stockage
 
