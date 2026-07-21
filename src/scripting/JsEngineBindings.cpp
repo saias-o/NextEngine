@@ -901,6 +901,24 @@ JSValue jsInputLastActiveDevice(JSContext* ctx, JSValueConst, int,
     return JS_NewString(ctx, Input::deviceName(Input::lastActiveDevice()));
 }
 
+// Test/CI only, like input.inject: simulates device activity so adaptive-prompt
+// proofs can drive lastActiveDevice without physical hardware.
+JSValue jsInputInjectDevice(JSContext* ctx, JSValueConst, int argc,
+                            JSValueConst* argv) {
+    std::string name;
+    if (!readActionName(ctx, argc, argv, 0, name))
+        return JS_ThrowTypeError(ctx, "input.injectDevice(deviceName)");
+    for (InputDevice device : {InputDevice::None, InputDevice::KeyboardMouse,
+                               InputDevice::Gamepad, InputDevice::Touch}) {
+        if (name == Input::deviceName(device)) {
+            Input::injectDeviceActivity(device);
+            return JS_NewBool(ctx, true);
+        }
+    }
+    return JS_ThrowTypeError(ctx, "input.injectDevice: unknown device '%s'",
+                             name.c_str());
+}
+
 JSValue jsInputRumble(JSContext* ctx, JSValueConst, int argc,
                       JSValueConst* argv) {
     if (argc < 3)
@@ -1716,6 +1734,8 @@ void JsEngineBindings::installForBehaviour(JsContext& context, Behaviour& behavi
     JS_SetPropertyStr(ctx, input, "axis", JS_NewCFunction(ctx, jsInputAxis, "axis", 2));
     JS_SetPropertyStr(ctx, input, "vector", JS_NewCFunction(ctx, jsInputVector, "vector", 4));
     JS_SetPropertyStr(ctx, input, "inject", JS_NewCFunction(ctx, jsInputInject, "inject", 2));
+    JS_SetPropertyStr(ctx, input, "injectDevice",
+                      JS_NewCFunction(ctx, jsInputInjectDevice, "injectDevice", 1));
     JS_SetPropertyStr(ctx, input, "mousePosition", JS_NewCFunction(ctx, jsInputMousePosition, "mousePosition", 0));
     JS_SetPropertyStr(ctx, input, "mouseDelta", JS_NewCFunction(ctx, jsInputMouseDelta, "mouseDelta", 0));
     JS_SetPropertyStr(ctx, input, "rebindKey", JS_NewCFunction(ctx, jsInputRebindKey, "rebindKey", 3));

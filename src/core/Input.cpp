@@ -801,6 +801,10 @@ void Input::clearInjectedActions() {
     g_injectedActions.clear();
 }
 
+void Input::injectDeviceActivity(InputDevice device) {
+    g_lastActiveDevice = device;
+}
+
 bool Input::isActionJustPressed(const std::string& action) {
     return aggregateActionStrength(action, false) > 0.5f &&
            aggregateActionStrength(action, true) <= 0.5f;

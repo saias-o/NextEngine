@@ -151,6 +151,15 @@ def hud(prefix, label):
                          x=24.0, y=24.0, width=600.0, height=48.0,
                          anchorX=0.0, anchorY=0.0, pivotX=0.0, pivotY=0.0,
                          behaviours=[script("scripts/hud.js")]),
+                    # Prompt adaptatif (P0.6) : le label du binding de
+                    # mouvement suit input.lastActiveDevice.
+                    node(f"{prefix}/hud/prompt", "UITextNode", "PromptText",
+                         groups=["witness_prompt"],
+                         text="Move: ?", fontSize=22.0,
+                         color=[0.85, 0.9, 1.0, 1.0],
+                         x=24.0, y=76.0, width=600.0, height=36.0,
+                         anchorX=0.0, anchorY=0.0, pivotX=0.0, pivotY=0.0,
+                         behaviours=[script("scripts/prompt.js")]),
                 ])
 
 

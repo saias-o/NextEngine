@@ -481,10 +481,16 @@ l'AssetLoader avec consommateurs non bloquants sur desktop et Web.
   backend canvas Web start/move/end/cancel, zones normalisées, press/tap/swipes,
   seuil de distance, profils JSON et API C++/QuickJS. Tests purs et preuve
   navigateur `touch=yes`.
-- [ ] Détecter le dernier périphérique actif et adapter les prompts UI.
-  Le cœur est livré : transitions clavier/souris, manette anti-drift et touch
-  alimentent `Input::lastActiveDevice` / `input.lastActiveDevice()`. L'adaptation
-  des prompts reste réservée à la session assistée UI.
+- [x] Détecter le dernier périphérique actif et adapter les prompts UI.
+  Détection : transitions clavier/souris, manette anti-drift et touch
+  alimentent `Input::lastActiveDevice` / `input.lastActiveDevice()`. Adaptation
+  branchée : le HUD WitnessGame porte un `PromptText` (`scripts/prompt.js`) qui
+  affiche le label du binding de mouvement selon le périphérique (`Move: WASD`
+  / `Move: Left Stick` / `Move: Swipe`, défaut clavier avant toute activité).
+  Preuve sans matériel : `input.injectDevice` (test/CI, comme `inject`) pilote
+  `lastActiveDevice`; le driver E2E vérifie la séquence défaut → manette →
+  clavier (`adaptive prompts ok`) — traversée par les harnais desktop, éditeur
+  `--play` et navigateur.
 - [x] Ajouter haptique standard lorsque disponible : player Web branché sur
   `GamepadHapticActuator.playEffect('dual-rumble')`/`reset`, API C++ et QuickJS,
   bornes W3C et retour `false` si l'actuateur manque. Desktop reste explicitement

@@ -40,6 +40,11 @@ let restartMode = false;
 let restartRelics = 0;
 let restartHudSeen = false;
 let restartSeqSeen = false;
+// Phase 1.4 : prompts adaptatifs (P0.6) — le PromptText suit le périphérique
+// injecté; la fenêtre du harnais est cachée, donc aucune activité réelle ne
+// vient écraser l'injection entre deux ticks du script de prompt.
+let promptState = 0;
+let promptT = 0;
 // Phase 1.5 : budget GPU mi-scène (P0.5).
 let budgetState = 0;   // 0 = attendre la sonde résidente, 1 = attendre l'éviction LRU
 let budgetValue = 0;
@@ -53,6 +58,11 @@ let lowFrameRelicFallbackFrames = 0;
 function hudText() {
     const hud = tree.firstInGroup("witness_hud");
     return hud === null ? null : String(hud.getText());
+}
+
+function promptText() {
+    const prompt = tree.firstInGroup("witness_prompt");
+    return prompt === null ? null : String(prompt.getText());
 }
 
 function finish(verdict) {
@@ -287,8 +297,8 @@ function onUpdate(dt) {
             input.inject("MoveForward", 0);
             if (checkPhysicsApi() !== true) return;  // verdict déjà posé
             if (checkGameplayApi() !== true) return;
-            phase = 1.5;
-            console.log("[E2E] phase 1 ok — UI updated, relic collected, checking gpu budget");
+            phase = 1.4;
+            console.log("[E2E] phase 1 ok — UI updated, relic collected, checking prompts");
             return;
         }
         // The frame that arms the software-rendering fallback may itself take
@@ -298,6 +308,39 @@ function onUpdate(dt) {
             (!lowFrameRelicFallback || lowFrameRelicFallbackFrames >= 4)) {
             finish("FAIL: no relic collected within " + TIMEOUT + "s");
         }
+        return;
+    }
+
+    // Phase 1.4 — prompts adaptatifs (P0.6) : sans activité réelle le prompt
+    // affiche le défaut clavier; l'injection de périphérique de test doit le
+    // faire basculer manette puis revenir clavier (le script de prompt tourne
+    // sur un time.every(0.1), d'où la petite machine à états).
+    if (phase === 1.4) {
+        promptT += dt;
+        if (promptT > 10)
+            return finish("FAIL: adaptive prompt phase timed out (state=" +
+                          promptState + ", got " + promptText() + ")");
+        const label = promptText();
+        if (label === null) return finish("FAIL: PromptText missing from the HUD");
+        if (promptState === 0) {
+            // MoveForward a été injecté par action (pas par périphérique) :
+            // lastActiveDevice est encore "none" → défaut clavier.
+            if (label !== "Move: WASD") return;
+            if (input.injectDevice("gamepad") !== true)
+                return finish("FAIL: input.injectDevice(gamepad) rejected");
+            promptState = 1;
+            return;
+        }
+        if (promptState === 1) {
+            if (label !== "Move: Left Stick") return;
+            if (input.injectDevice("keyboard-mouse") !== true)
+                return finish("FAIL: input.injectDevice(keyboard-mouse) rejected");
+            promptState = 2;
+            return;
+        }
+        if (label !== "Move: WASD") return;
+        console.log("[E2E] adaptive prompts ok (default -> gamepad -> keyboard)");
+        phase = 1.5;
         return;
     }
 

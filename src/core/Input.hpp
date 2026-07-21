@@ -141,6 +141,10 @@ public:
     // jusqu'au prochain injectAction/clearInjectedActions.
     static void injectAction(const std::string& action, float strength);
     static void clearInjectedActions();
+    // Simule l'activité d'un périphérique pour les preuves de prompts
+    // adaptatifs : pose lastActiveDevice comme le ferait une vraie transition.
+    // Une activité réelle ultérieure reprend naturellement la main.
+    static void injectDeviceActivity(InputDevice device);
 
     static float getAxis(const std::string& negativeAction, const std::string& positiveAction);
     static glm::vec2 getVector(const std::string& left, const std::string& right, const std::string& down, const std::string& up);

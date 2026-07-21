@@ -399,8 +399,13 @@ profil sérialisé et sont disponibles en C++ comme via `input.rebindTouch`.
 `Input::lastActiveDevice` / `input.lastActiveDevice()` publie `none`,
 `keyboard-mouse`, `gamepad` ou `touch`. La récence se fonde sur les transitions,
 pas sur un contrôle maintenu; sticks et triggers filtrent le drift au repos.
-Cette donnée est prête pour les prompts adaptatifs, qui ne sont pas encore
-branchés dans l'UI.
+Les prompts adaptatifs consomment cette donnée côté jeu : un script UI lit
+`input.lastActiveDevice()` et pose le label du binding courant (le HUD de
+WitnessGame affiche `Move: WASD` / `Move: Left Stick` / `Move: Swipe`, défaut
+clavier avant toute activité). Pour les preuves sans matériel,
+`Input::injectDeviceActivity` / `input.injectDevice(name)` simulent l'activité
+d'un périphérique — réservés aux tests/CI, comme `injectAction`; une activité
+réelle ultérieure reprend naturellement la main.
 
 La V1 ne promet ni multi-joueur local ni sélection de périphérique par joueur.
 Sur Web, `Input::rumble` / `input.rumble(low, high, durationMs)` utilise
