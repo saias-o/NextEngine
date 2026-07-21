@@ -5,7 +5,7 @@
 #include "physics/CollisionShapeNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
-#include "scene/WebCanvasNode.hpp"
+#include "nodes/WebCanvasNode.hpp"
 #include "ui/RmlUiRuntime.hpp"
 
 #include <cassert>

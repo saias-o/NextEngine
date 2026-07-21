@@ -1,4 +1,4 @@
-#include "scene/MeshNode.hpp"
+#include "nodes/MeshNode.hpp"
 #include "behaviours/LODGroupBehaviour.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Material.hpp"

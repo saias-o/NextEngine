@@ -1,6 +1,6 @@
 #include "fx/ParticleEffect.hpp"
 #include "fx/ParticleQuality.hpp"
-#include "scene/ParticleSystemNode.hpp"
+#include "nodes/ParticleSystemNode.hpp"
 
 #include <nlohmann/json.hpp>
 

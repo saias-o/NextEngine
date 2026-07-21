@@ -1,9 +1,9 @@
 #include "ui/HudRasterizer.hpp"
 
 #include "core/Log.hpp"
-#include "scene/UICanvasNode.hpp"
-#include "scene/UINode.hpp"
-#include "scene/UITextNode.hpp"
+#include "nodes/UICanvasNode.hpp"
+#include "nodes/UINode.hpp"
+#include "nodes/UITextNode.hpp"
 #include "ui/RmlUiRenderInterface.hpp"
 #include "ui/RmlUiRuntime.hpp"
 

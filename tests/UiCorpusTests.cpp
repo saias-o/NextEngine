@@ -1,5 +1,5 @@
-#include "scene/UICanvasNode.hpp"
-#include "scene/UITextNode.hpp"
+#include "nodes/UICanvasNode.hpp"
+#include "nodes/UITextNode.hpp"
 #include "ui/HudRasterizer.hpp"
 #include "ui/RmlUiRenderInterface.hpp"
 #include "ui/RmlUiRuntime.hpp"

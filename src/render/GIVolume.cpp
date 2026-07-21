@@ -10,7 +10,7 @@
 #include "graphics/GpuProfiler.hpp"
 #include "graphics/ComputePipeline.hpp"
 #include "scene/Scene.hpp"
-#include "scene/MeshNode.hpp"
+#include "nodes/MeshNode.hpp"
 #include "core/Paths.hpp"
 #include "core/Log.hpp"
 

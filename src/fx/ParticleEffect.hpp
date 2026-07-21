@@ -1,6 +1,6 @@
 #pragma once
 
-#include "scene/ParticleSystemNode.hpp"
+#include "nodes/ParticleSystemNode.hpp"
 
 #include <nlohmann/json.hpp>
 

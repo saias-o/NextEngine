@@ -1,14 +1,14 @@
 #include "scene/Scene.hpp"
 #include "scene/Behaviour.hpp"
 #include "core/Profiler.hpp"
-#include "scene/MeshNode.hpp"
-#include "scene/LightNode.hpp"
-#include "scene/WaterNode.hpp"  // water renders on web too (BeachDemo)
-#include "scene/UICanvasNode.hpp"
+#include "nodes/MeshNode.hpp"
+#include "nodes/LightNode.hpp"
+#include "nodes/WaterNode.hpp"  // water renders on web too (BeachDemo)
+#include "nodes/UICanvasNode.hpp"
 #ifndef SAIDA_RHI_WEBGPU
-#include "scene/WebCanvasNode.hpp"
+#include "nodes/WebCanvasNode.hpp"
 #endif
-#include "scene/ParticleSystemNode.hpp"
+#include "nodes/ParticleSystemNode.hpp"
 #include "scene/SerializationHelpers.hpp"
 #include "graphics/ResourceManager.hpp"
 #ifndef SAIDA_NO_PHYSICS

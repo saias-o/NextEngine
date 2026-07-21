@@ -8,7 +8,7 @@
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SceneTree.hpp"
-#include "scene/WebCanvasNode.hpp"
+#include "nodes/WebCanvasNode.hpp"
 #include "core/Log.hpp"
 
 #include <glm/glm.hpp>

@@ -1,4 +1,4 @@
-#include "scene/LightNode.hpp"
+#include "nodes/LightNode.hpp"
 
 namespace saida {
 

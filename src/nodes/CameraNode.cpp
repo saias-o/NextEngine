@@ -1,4 +1,4 @@
-#include "scene/CameraNode.hpp"
+#include "nodes/CameraNode.hpp"
 
 #include <nlohmann/json.hpp>
 

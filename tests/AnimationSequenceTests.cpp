@@ -5,7 +5,7 @@
 // relais des signaux, fail-closed sur séquence invalide ou cible manquante).
 
 #include "core/Paths.hpp"
-#include "scene/LightNode.hpp"
+#include "nodes/LightNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/ReflectedTypes.hpp"
 #include "behaviours/RotatorBehaviour.hpp"

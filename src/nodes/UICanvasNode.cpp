@@ -1,4 +1,4 @@
-#include "scene/UICanvasNode.hpp"
+#include "nodes/UICanvasNode.hpp"
 #include <nlohmann/json.hpp>
 
 namespace saida {

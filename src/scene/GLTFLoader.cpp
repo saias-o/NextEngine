@@ -2,7 +2,7 @@
 #include "scene/GltfMeshopt.hpp"
 #include "core/Profiler.hpp"
 #include "scene/Scene.hpp"
-#include "scene/MeshNode.hpp"
+#include "nodes/MeshNode.hpp"
 #include "scene/MeshLod.hpp"
 #include "behaviours/LODGroupBehaviour.hpp"
 #include "scene/Node.hpp"

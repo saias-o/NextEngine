@@ -20,7 +20,7 @@
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SceneTree.hpp"
-#include "scene/UITextNode.hpp"
+#include "nodes/UITextNode.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/SequenceDirectorBehaviour.hpp"
 #include "scripting/JsContext.hpp"

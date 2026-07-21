@@ -1,4 +1,4 @@
-#include "scene/UIInteractableNode.hpp"
+#include "nodes/UIInteractableNode.hpp"
 #include <nlohmann/json.hpp>
 
 namespace saida {

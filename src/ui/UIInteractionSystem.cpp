@@ -3,9 +3,9 @@
 #include "core/Camera.hpp"
 #include "core/Input.hpp"
 #include "scene/Scene.hpp"
-#include "scene/UICanvasNode.hpp"
-#include "scene/UIInteractableNode.hpp"
-#include "scene/WebCanvasNode.hpp"
+#include "nodes/UICanvasNode.hpp"
+#include "nodes/UIInteractableNode.hpp"
+#include "nodes/WebCanvasNode.hpp"
 
 #include <RmlUi/Core/Input.h>
 

@@ -1,4 +1,4 @@
-#include "scene/WaterNode.hpp"
+#include "nodes/WaterNode.hpp"
 
 #include <filesystem>
 #include <fstream>

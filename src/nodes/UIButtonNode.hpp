@@ -1,6 +1,6 @@
 #pragma once
 
-#include "scene/UIInteractableNode.hpp"
+#include "nodes/UIInteractableNode.hpp"
 #include <glm/glm.hpp>
 
 namespace saida {

@@ -1,5 +1,5 @@
-#include "scene/UINode.hpp"
-#include "scene/UICanvasNode.hpp"
+#include "nodes/UINode.hpp"
+#include "nodes/UICanvasNode.hpp"
 #include <nlohmann/json.hpp> // Pour remonter la hiérarchie
 
 namespace saida {

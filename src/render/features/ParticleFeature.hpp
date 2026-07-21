@@ -4,7 +4,7 @@
 #include "fx/ParticleRuntime.hpp"
 #include "graphics/Pipeline.hpp"
 #include "render/RenderFeature.hpp"
-#include "scene/ParticleSystemNode.hpp"
+#include "nodes/ParticleSystemNode.hpp"
 
 #include <glm/glm.hpp>
 

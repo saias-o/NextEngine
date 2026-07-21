@@ -1,4 +1,4 @@
-#include "scene/ParticleSystemNode.hpp"
+#include "nodes/ParticleSystemNode.hpp"
 
 #include "core/Log.hpp"
 #include "fx/ParticleEffect.hpp"

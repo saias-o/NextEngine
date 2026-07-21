@@ -1,6 +1,6 @@
 #include "fx/ParticleQuality.hpp"
 
-#include "scene/ParticleSystemNode.hpp"
+#include "nodes/ParticleSystemNode.hpp"
 
 #include <algorithm>
 

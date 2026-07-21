@@ -5,7 +5,7 @@
 #include "audio/AudioSourceBehaviour.hpp"
 #include "behaviours/CameraFollowBehaviour.hpp"
 #include "scene/NodeRegistry.hpp"
-#include "scene/ParticleSystemNode.hpp"
+#include "nodes/ParticleSystemNode.hpp"
 #include "scene/ReflectedTypes.hpp"
 #include "behaviours/RotatorBehaviour.hpp"
 #include "behaviours/SpawnerBehaviour.hpp"

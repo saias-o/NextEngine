@@ -22,11 +22,11 @@
 #include "core/FormatVersions.hpp"
 #include "core/Reflection.hpp"
 #include "core/Time.hpp"
-#include "scene/CameraNode.hpp"
-#include "scene/LightNode.hpp"
-#include "scene/MeshNode.hpp"
-#include "scene/ParticleSystemNode.hpp"
-#include "scene/WaterNode.hpp"
+#include "nodes/CameraNode.hpp"
+#include "nodes/LightNode.hpp"
+#include "nodes/MeshNode.hpp"
+#include "nodes/ParticleSystemNode.hpp"
+#include "nodes/WaterNode.hpp"
 #include "scene/Scene.hpp"
 
 #include <nlohmann/json.hpp>

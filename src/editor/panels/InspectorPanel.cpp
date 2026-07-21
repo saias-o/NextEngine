@@ -5,9 +5,9 @@
 #include "core/Reflection.hpp"
 #include "scene/Scene.hpp"
 #include "scene/Node.hpp"
-#include "scene/MeshNode.hpp"
-#include "scene/LightNode.hpp"
-#include "scene/CameraNode.hpp"
+#include "nodes/MeshNode.hpp"
+#include "nodes/LightNode.hpp"
+#include "nodes/CameraNode.hpp"
 #include "physics/CollisionObjectNode.hpp"
 #include "physics/CollisionShapeNode.hpp"
 #include "physics/RigidBodyNode.hpp"
@@ -15,7 +15,7 @@
 #include "physics/CharacterBodyNode.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "project/Project.hpp"
-#include "scene/ParticleSystemNode.hpp"
+#include "nodes/ParticleSystemNode.hpp"
 #include "project/AssetRegistry.hpp"
 
 #include "scene/BehaviourRegistry.hpp"
@@ -24,13 +24,13 @@
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/AnimationClip.hpp"
 
-#include "scene/UICanvasNode.hpp"
-#include "scene/UIColorNode.hpp"
-#include "scene/UIImageNode.hpp"
-#include "scene/UITextNode.hpp"
-#include "scene/UIButtonNode.hpp"
-#include "scene/UIToggleNode.hpp"
-#include "scene/WebCanvasNode.hpp"
+#include "nodes/UICanvasNode.hpp"
+#include "nodes/UIColorNode.hpp"
+#include "nodes/UIImageNode.hpp"
+#include "nodes/UITextNode.hpp"
+#include "nodes/UIButtonNode.hpp"
+#include "nodes/UIToggleNode.hpp"
+#include "nodes/WebCanvasNode.hpp"
 
 #include <imgui.h>
 #include <array>

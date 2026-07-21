@@ -1,6 +1,6 @@
 #pragma once
 
-#include "scene/UINode.hpp"
+#include "nodes/UINode.hpp"
 #include <string>
 #include <glm/glm.hpp>
 

@@ -1,9 +1,9 @@
 #include "core/Camera.hpp"
 #include "core/Input.hpp"
 #include "scene/Scene.hpp"
-#include "scene/UIButtonNode.hpp"
-#include "scene/UICanvasNode.hpp"
-#include "scene/UITextNode.hpp"
+#include "nodes/UIButtonNode.hpp"
+#include "nodes/UICanvasNode.hpp"
+#include "nodes/UITextNode.hpp"
 #include "ui/UIInteractionSystem.hpp"
 
 #include <cstdlib>

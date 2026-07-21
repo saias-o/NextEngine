@@ -9,8 +9,8 @@
 #include "scene/NodeRegistry.hpp"
 #include "scene/RuntimeTypeMatrix.hpp"
 #include "scene/Scene.hpp"
-#include "scene/UICanvasNode.hpp"
-#include "scene/UITextNode.hpp"
+#include "nodes/UICanvasNode.hpp"
+#include "nodes/UITextNode.hpp"
 
 #include <cassert>
 #include <memory>

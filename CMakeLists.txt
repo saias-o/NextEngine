@@ -398,12 +398,12 @@ add_library(saida_engine STATIC
     src/ui/RmlUiRuntime.cpp
     src/ui/WorldPanelGeometry.cpp
     src/scene/Behaviour.cpp
-    src/scene/MeshNode.cpp
+    src/nodes/MeshNode.cpp
     src/scene/MeshLod.cpp
     src/behaviours/LODGroupBehaviour.cpp
-    src/scene/LightNode.cpp
-    src/scene/ParticleSystemNode.cpp
-    src/scene/CameraNode.cpp
+    src/nodes/LightNode.cpp
+    src/nodes/ParticleSystemNode.cpp
+    src/nodes/CameraNode.cpp
     src/render/CameraDirector.cpp
     src/behaviours/CameraFollowBehaviour.cpp
     src/scene/Scene.cpp
@@ -416,15 +416,15 @@ add_library(saida_engine STATIC
     src/scene/NodeRegistry.cpp
     src/scene/GltfMeshopt.cpp
     src/cli/MeshoptGlbExporter.cpp
-    src/scene/WebCanvasNode.cpp
-    src/scene/UINode.cpp
-    src/scene/UICanvasNode.cpp
-    src/scene/UIColorNode.cpp
-    src/scene/UIImageNode.cpp
-    src/scene/UITextNode.cpp
-    src/scene/UIInteractableNode.cpp
-    src/scene/UIButtonNode.cpp
-    src/scene/UIToggleNode.cpp
+    src/nodes/WebCanvasNode.cpp
+    src/nodes/UINode.cpp
+    src/nodes/UICanvasNode.cpp
+    src/nodes/UIColorNode.cpp
+    src/nodes/UIImageNode.cpp
+    src/nodes/UITextNode.cpp
+    src/nodes/UIInteractableNode.cpp
+    src/nodes/UIButtonNode.cpp
+    src/nodes/UIToggleNode.cpp
     src/scene/animation/Pose.cpp
     src/scene/animation/AnimationClip.cpp
     src/scene/animation/Rig.cpp
@@ -497,7 +497,7 @@ add_library(saida_engine STATIC
     src/audio/AudioSourceBehaviour.cpp
     src/behaviours/CharacterBehaviour.cpp
     src/behaviours/HealthBehaviour.cpp
-    src/scene/WaterNode.cpp
+    src/nodes/WaterNode.cpp
     src/behaviours/SpawnerBehaviour.cpp
     src/behaviours/RotatorBehaviour.cpp
     src/scene/Blackboard.cpp

@@ -1,8 +1,8 @@
 #include "scene/SceneTree.hpp"
 
 #include "scene/Scene.hpp"
-#include "scene/MeshNode.hpp"
-#include "scene/UIImageNode.hpp"
+#include "nodes/MeshNode.hpp"
+#include "nodes/UIImageNode.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scene/SceneSerializer.hpp"
 #include "scene/BehaviourRegistry.hpp"

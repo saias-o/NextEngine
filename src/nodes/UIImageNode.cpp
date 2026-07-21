@@ -1,4 +1,4 @@
-#include "scene/UIImageNode.hpp"
+#include "nodes/UIImageNode.hpp"
 #include <nlohmann/json.hpp>
 
 namespace saida {

@@ -23,11 +23,11 @@
 #include "core/Reflection.hpp"
 #include "scene/NodeRegistry.hpp"
 
-#include "scene/CameraNode.hpp"
-#include "scene/LightNode.hpp"
+#include "nodes/CameraNode.hpp"
+#include "nodes/LightNode.hpp"
 #include "scene/Node.hpp"
-#include "scene/ParticleSystemNode.hpp"
-#include "scene/WaterNode.hpp"
+#include "nodes/ParticleSystemNode.hpp"
+#include "nodes/WaterNode.hpp"
 
 namespace saida {
 namespace {

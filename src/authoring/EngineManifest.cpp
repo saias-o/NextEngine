@@ -4,10 +4,10 @@
 #include "core/FormatVersions.hpp"
 #include "core/Reflection.hpp"
 #include "scenario/ScenarioRegistry.hpp"
-#include "scene/LightNode.hpp"
-#include "scene/ParticleSystemNode.hpp"
+#include "nodes/LightNode.hpp"
+#include "nodes/ParticleSystemNode.hpp"
 #include "scene/RuntimeTypeMatrix.hpp"
-#include "scene/WaterNode.hpp"
+#include "nodes/WaterNode.hpp"
 
 #ifndef __EMSCRIPTEN__
 #include "scene/ReflectedTypes.hpp"

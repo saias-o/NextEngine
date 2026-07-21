@@ -7,14 +7,14 @@
 #include "graphics/ResourceManager.hpp"
 #include "scene/Behaviour.hpp"
 #include "scene/BehaviourRegistry.hpp"
-#include "scene/LightNode.hpp"
-#include "scene/MeshNode.hpp"
+#include "nodes/LightNode.hpp"
+#include "nodes/MeshNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/NodeRegistry.hpp"
-#include "scene/ParticleSystemNode.hpp"
+#include "nodes/ParticleSystemNode.hpp"
 #include "scene/ReflectedTypes.hpp"
 #include "scene/Scene.hpp"
-#include "scene/WaterNode.hpp"
+#include "nodes/WaterNode.hpp"
 
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>

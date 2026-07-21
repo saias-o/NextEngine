@@ -1,4 +1,4 @@
-#include "scene/WebCanvasNode.hpp"
+#include "nodes/WebCanvasNode.hpp"
 
 #include "core/Profiler.hpp"
 

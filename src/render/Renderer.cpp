@@ -15,7 +15,7 @@
 #include "render/GIVolume.hpp"
 #include "render/PostProcessor.hpp"
 #include "graphics/UIRenderer.hpp"
-#include "scene/LightNode.hpp"
+#include "nodes/LightNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
 #include "core/Time.hpp"
@@ -29,11 +29,11 @@
 #include "rhi/vulkan/Format.hpp"
 #endif
 
-#include "scene/LightNode.hpp"
-#include "scene/MeshNode.hpp"
+#include "nodes/LightNode.hpp"
+#include "nodes/MeshNode.hpp"
 #include "scene/MeshLod.hpp"
 #ifndef SAIDA_RHI_WEBGPU
-#include "scene/WebCanvasNode.hpp"
+#include "nodes/WebCanvasNode.hpp"
 #endif
 #include "scene/animation/Animator.hpp"
 #ifdef SAIDA_ENABLE_XR

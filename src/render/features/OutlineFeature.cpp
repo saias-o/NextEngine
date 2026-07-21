@@ -3,7 +3,7 @@
 #include "core/Paths.hpp"
 #include "graphics/Mesh.hpp"
 #include "rhi/vulkan/Format.hpp"
-#include "scene/MeshNode.hpp"
+#include "nodes/MeshNode.hpp"
 
 #include <algorithm>
 #include <vector>

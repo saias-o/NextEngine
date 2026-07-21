@@ -1,4 +1,4 @@
-#include "scene/UITextNode.hpp"
+#include "nodes/UITextNode.hpp"
 #include <nlohmann/json.hpp>
 
 namespace saida {

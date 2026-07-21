@@ -2,7 +2,7 @@
 
 #include "graphics/Material.hpp"
 #include "graphics/ResourceManager.hpp"
-#include "scene/MeshNode.hpp"
+#include "nodes/MeshNode.hpp"
 #include "xr/toolkit/XRInput.hpp"
 
 #include <glm/gtc/constants.hpp>

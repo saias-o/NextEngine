@@ -8,7 +8,7 @@
 #endif
 #include "scene/Scene.hpp"
 #include "scene/Node.hpp"
-#include "scene/WaterNode.hpp"
+#include "nodes/WaterNode.hpp"
 
 #include <glm/gtc/constants.hpp>
 
