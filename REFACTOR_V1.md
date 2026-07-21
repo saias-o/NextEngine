@@ -146,10 +146,16 @@ vérificateur.
 
 Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
 
-- **Phase 0 — Garde-fous.** Script de métriques (LOC/tailles/longueurs), 69/69 +
-  Witness verts en baseline. Déplacements de dossiers (§3) par `git mv` purs +
-  `#include`/CMake, zéro logique. *Filet : la suite complète doit rester
-  identique.*
+- **Phase 0 — Garde-fous. ✅ Fait (2026-07-22).** Script de métriques
+  [`tools/code_metrics.sh`](tools/code_metrics.sh) (baseline : 497 fichiers,
+  73 215 LOC, 17 fichiers > 600 l.). Baseline verte confirmée (build natif propre,
+  69/69 CTest). Déplacements de dossiers (§3) faits par `git mv` purs +
+  réécriture `#include`/CMake, zéro logique, chacun revérifié build + 69/69 :
+  `src/tools`→`src/cli` ; split de `src/scene/` (130 → 88 fichiers) en
+  `scene/` (graphe core), `nodes/` (14 types de nœuds), `behaviours/` (7
+  behaviours concrets), `animation/` (déjà là). *Vérifié via build + CTest ; les
+  moves étant des relocalisations sans changement de logique, les harnais Witness
+  lourds n'ont pas été rejoués.*
 - **Phase 1 — ResourceManager (§5.3).** La plus isolée et le plus gros gain de
   dédup (`AsyncAssetCache<T>`). *Filet : `saida_asset_loader_tests`,
   `saida_hostile_asset_tests`, cycles mémoire Witness desktop/Web.*
