@@ -3,27 +3,31 @@
 Mise à jour : 2026-07-21.
 
 **Verdict : NO-GO pour une V1 publique.** Ce fichier ne liste que ce qui reste
-**ouvert**. Les gates P0.1 à P0.5 sont fermées ; leurs preuves vivent dans
+**ouvert**. Les gates P0.1 à P0.6 sont fermées ; leurs preuves vivent dans
 l'historique Git et les contrats correspondants dans [SPEC.md](SPEC.md). La
 dette de qualité connue est dans [AUDIT_V1.md](AUDIT_V1.md).
 
-Il ne reste que **deux interventions P0**, toutes deux assistées (matériel et
-clé de signature). Aucune gate n'est cochée sans le run, le commit ou le corpus
-exact qui la prouve.
+Il ne reste qu'**une intervention P0** : la signature de l'installeur (clé de
+publication). Aucune gate n'est cochée sans le run, le commit ou le corpus exact
+qui la prouve.
 
-## P0.6 — Manette physique
+## P0.6 — Manette physique (fermée)
 
-- [ ] Tester le backend desktop avec des manettes physiques Xbox/PlayStation
-  reconnues par GLFW.
+- [x] Tester le backend desktop avec des manettes physiques Xbox/PlayStation
+  reconnues par GLFW. **Validé le 2026-07-21** : une manette physique en mode
+  XInput (`isGamepad=YES`, nom `XInput Gamepad (GLFW)`) exercée par
+  [`tools/gamepad_probe.cpp`](tools/gamepad_probe.cpp) — qui appelle exactement
+  le chemin GLFW du moteur (`glfwJoystickIsGamepad` → `glfwGetGamepadState` →
+  `glfwGetGamepadName` de `src/core/Input.cpp`, ordre de mapping = miroir 1:1 de
+  `GamepadButton`/`GamepadAxis`) — a fait remonter au bon label standard les 14
+  boutons mappables et les 6 axes (sticks pleine amplitude −1..+1, gâchettes
+  analogiques). Guide non exposé par XInput (attendu, non bloquant).
 
-Le reste de l'input est fermé : backend navigateur Gamepad API, mapping standard
-normalisé (dont triggers) et hotplug, rebinding runtime et profils JSON
+Le reste de l'input était déjà fermé : backend navigateur Gamepad API, mapping
+standard normalisé (dont triggers) et hotplug, rebinding runtime et profils JSON
 validés/appliqués atomiquement, mono-joueur assumé, touch en zones/gestes,
 détection du dernier périphérique actif avec prompts UI adaptatifs, haptique Web
-standard. Ne manque que la passe sur du matériel physique reconnu par GLFW
-(chemin `glfwJoystickIsGamepad` → `glfwGetGamepadState` → `glfwGetGamepadName`
-de `src/core/Input.cpp`) ; aucun pad physique compatible n'est connecté à la
-machine de CI.
+standard.
 
 ## P0.7 — Signature de l'installeur
 
