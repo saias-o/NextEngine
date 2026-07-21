@@ -415,7 +415,7 @@ add_library(saida_engine STATIC
     src/scene/BehaviourRegistry.cpp
     src/scene/NodeRegistry.cpp
     src/scene/GltfMeshopt.cpp
-    src/tools/MeshoptGlbExporter.cpp
+    src/cli/MeshoptGlbExporter.cpp
     src/scene/WebCanvasNode.cpp
     src/scene/UINode.cpp
     src/scene/UICanvasNode.cpp
@@ -492,7 +492,7 @@ add_library(saida_engine STATIC
     src/graphics/TinyObjUsage.cpp
     src/graphics/cgltf_impl.cpp
     src/scene/GLTFLoader.cpp
-    src/tools/AutoLODBridge.cpp
+    src/cli/AutoLODBridge.cpp
     src/audio/AudioUsage.cpp
     src/audio/AudioSourceBehaviour.cpp
     src/scene/CharacterBehaviour.cpp
@@ -1049,7 +1049,7 @@ endif()
 # (EngineManifest / SaidaOp). Socle des workers Temporal (describe/validate/
 # apply-ops). Never opens a Vulkan context — safe to run in CI/headless.
 add_executable(saida_tool
-    src/tools/saida_tool_main.cpp
+    src/cli/saida_tool_main.cpp
     # export-game réutilise l'exporteur du bouton Build (pas de dépendance UI).
     src/editor/BuildExporter.cpp
     src/editor/ExeMetadata.cpp

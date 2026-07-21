@@ -1,5 +1,5 @@
 #include "editor/panels/ModelImporterPanel.hpp"
-#include "tools/MeshoptGlbExporter.hpp"
+#include "cli/MeshoptGlbExporter.hpp"
 #include "editor/EditorUI.hpp"
 #include "scene/Scene.hpp"
 #include "scene/animation/Animator.hpp"

@@ -1,4 +1,4 @@
-#include "tools/MeshoptGlbExporter.hpp"
+#include "cli/MeshoptGlbExporter.hpp"
 #include "core/Log.hpp"
 #include "scene/GltfMeshopt.hpp"
 

@@ -3,7 +3,7 @@
 // cgltf -> decodeMeshoptBuffers -> read accessors back -> compare geometry.
 // Proves the EXT_meshopt_compression encode+decode loop end to end (Étape 16).
 
-#include "tools/MeshoptGlbExporter.hpp"
+#include "cli/MeshoptGlbExporter.hpp"
 #include "scene/GltfMeshopt.hpp"
 #include "graphics/Mesh.hpp"
 

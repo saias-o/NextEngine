@@ -12,7 +12,7 @@
 #include "scene/animation/AnimationClip.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/ClipNode.hpp"
-#include "tools/AutoLODBridge.hpp"
+#include "cli/AutoLODBridge.hpp"
 #include "core/Log.hpp"
 
 #include <cgltf.h>

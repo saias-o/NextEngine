@@ -1,4 +1,4 @@
-#include "tools/AutoLODBridge.hpp"
+#include "cli/AutoLODBridge.hpp"
 
 #include "core/Log.hpp"
 #include "core/Paths.hpp"
