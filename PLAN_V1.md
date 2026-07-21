@@ -527,13 +527,15 @@ valeur neutre trompeuse.
   manifest moteur ainsi que la recette Witness l'inventorient.
 - [x] Générer SBOM, inventaire licences/assets/modèles et notices GPL/SPDX.
   `tools/generate_release_compliance.ps1` produit un document SPDX 2.3, les
-  notices complètes, l'inventaire hashé de 23 assets/modèles et un manifeste
+  notices complètes, l'inventaire hashé des assets/modèles et un manifeste
   déterministe. Les 19 composants (moteur inclus), chaque racine
-  `third_party` et chaque extension d'asset suivie sont couverts en fail-closed;
-  quatre assets legacy sans provenance sont `distribution:false` et le
-  DamagedHelmet CC-BY-NC est signalé non commercial. Le bundle exact est inclus
-  dans le release manifest moteur, les archives Witness et un artefact CI
-  épinglé au SHA.
+  `third_party` et chaque extension d'asset suivie sont couverts en fail-closed.
+  Purge open-source du 2026-07-21 : les projets legacy sans provenance
+  (`GTAClone/`, `MyGame/`, 4 assets `NOASSERTION`) et le DamagedHelmet
+  CC-BY-NC sont retirés du dépôt (la scène de test XR vit désormais sous
+  `assets/scenes/XRSetup.scene`) — l'inventaire régénéré compte 18 assets
+  suivis, 18 distribuables, 0 exclu. Le bundle exact est inclus dans le release
+  manifest moteur, les archives Witness et un artefact CI épinglé au SHA.
 - [x] Tester le bouton Build et les packages sur runners propres.
   Preuve commune : commit `6ec91c2`, workflow
   [Saida Engine CI #29742700718](https://github.com/saias-o/NextEngine/actions/runs/29742700718).

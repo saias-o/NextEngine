@@ -94,7 +94,7 @@ def write_sky_png(path, w=1024, h=512):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Scene helpers (mirrors GTAClone/gen_scene.py conventions).
+# Scene helpers (same conventions as WitnessGame/gen_witness.py).
 # ─────────────────────────────────────────────────────────────────────────────
 IDENT = [0.0, 0.0, 0.0, 1.0]
 SAND_SLOPE = 0.05  # must match the WaterNode shoreSlope: keeps the visible sand on the

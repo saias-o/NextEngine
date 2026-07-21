@@ -779,7 +779,8 @@ téléportation, anchors abstraits, passthrough selon extension et hand tracking
 `XR_EXT_hand_tracking`. Les mains procédurales servent de fallback sans asset.
 
 L'aperçu XR est un processus séparé `--xr` car OpenXR doit créer le device
-Vulkan dès le démarrage. La scène de test est `MyGame/scenes/XRSetup.scene`.
+Vulkan dès le démarrage. La scène de test est `assets/scenes/XRSetup.scene`
+(passée via `--xr --scene <chemin>`).
 Quest Link et le runtime Meta/Oculus doivent être actifs pour un test Quest.
 
 Limites : MSAA multiview/resolve, overlay ImGui XR, backend d'anchors réel et
@@ -1000,10 +1001,11 @@ fixtures.
 `compliance/components.json` et `compliance/assets.json`. Le contrôle est
 fail-closed : chaque racine de `third_party` doit être déclarée exactement une
 fois, chaque asset suivi doit posséder licence, provenance et décision de
-distribution, et aucun asset `NOASSERTION` ne peut être distribué. Les quatre
-assets legacy sans provenance sont marqués `distribution: false`.
-`assets/models/DamagedHelmet.glb`, sous CC-BY-NC-4.0, reste distribuable
-uniquement hors produit commercial.
+distribution, et aucun asset `NOASSERTION` ne peut être distribué. Depuis la
+purge open-source du 2026-07-21, le dépôt ne contient plus aucun asset
+non distribuable : les projets legacy sans provenance (`GTAClone/`, `MyGame/`)
+et le DamagedHelmet CC-BY-NC sont retirés — 18 assets suivis, 18 distribuables,
+0 exclu.
 
 La matrice GPU/OS/navigateur, les exclusions et la procédure de retrait sont
 publiées dans [docs/release-support.md](docs/release-support.md). La promotion
@@ -1062,9 +1064,10 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
   de Vulkan 1.3 reste un prérequis machine.
 - Crash reporter Windows avec minidump et bundle de symboles déterministe lié
   au commit; collecte distante des rapports hors périmètre moteur.
-- Licences, notices et SBOM générés en mode fail-closed; quatre assets legacy
-  sans provenance sont explicitement exclus des bundles V1 et le Damaged
-  Helmet CC-BY-NC reste interdit aux produits commerciaux.
+- Licences, notices et SBOM générés en mode fail-closed; depuis la purge
+  open-source du 2026-07-21, tout asset suivi du dépôt est distribuable sous sa
+  licence déclarée (les projets legacy sans provenance et le DamagedHelmet
+  CC-BY-NC sont retirés).
 
 ## 15. Positionnement public
 

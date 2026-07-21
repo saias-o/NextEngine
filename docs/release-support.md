@@ -98,9 +98,10 @@ celui-ci avec `verify_release_symbols.ps1` avant toute analyse.
 
 `tools/generate_release_compliance.ps1` produit le SBOM SPDX 2.3, les notices,
 l'inventaire hashé des assets/modèles et leur manifeste. Les entrées
-`distribution: false` sont exclues des bundles V1 jusqu'à résolution de leur
-provenance. `assets/models/DamagedHelmet.glb` est sous CC-BY-NC-4.0 et ne doit
-pas entrer dans un produit commercial.
+`distribution: false` seraient exclues des bundles V1; depuis la purge
+open-source du 2026-07-21 (retrait des projets legacy sans provenance et du
+DamagedHelmet CC-BY-NC), le dépôt n'en contient plus aucune — tout asset suivi
+est distribuable sous sa licence déclarée.
 
 Le bundle de conformité est inclus dans le manifeste moteur et dans les
 archives Witness. Ajouter une racine sous `third_party` ou un asset d'une

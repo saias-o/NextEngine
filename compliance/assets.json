@@ -30,16 +30,6 @@
       "provenance": "First-party editor artwork tracked in the Saida Engine repository."
     },
     {
-      "path": "assets/models/DamagedHelmet.glb",
-      "kind": "model",
-      "distribution": true,
-      "license": "CC-BY-NC-4.0",
-      "copyrightText": "Copyright 2018 ctxwing; Copyright 2016 theblueturtle_",
-      "provenance": "Khronos glTF Sample Assets, Damaged Helmet.",
-      "source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/DamagedHelmet",
-      "note": "Non-commercial asset; do not include it in a commercial binary bundle."
-    },
-    {
       "path": "assets/textures/checker.png",
       "kind": "image",
       "distribution": true,
@@ -54,42 +44,6 @@
       "license": "GPL-3.0-only",
       "copyrightText": "Copyright Saida Engine contributors",
       "provenance": "First-party BeachDemo sky asset introduced in repository commit a3b57fa5."
-    },
-    {
-      "path": "GTAClone/ui/hud/star.png",
-      "kind": "image",
-      "distribution": false,
-      "license": "NOASSERTION",
-      "copyrightText": "NOASSERTION",
-      "provenance": "Legacy development project; provenance is not recorded.",
-      "note": "Excluded from V1 release bundles until provenance is documented."
-    },
-    {
-      "path": "MyGame/assets/models/Zleda_walk.glb",
-      "kind": "model",
-      "distribution": false,
-      "license": "NOASSERTION",
-      "copyrightText": "NOASSERTION",
-      "provenance": "Legacy development project; the GLB contains no copyright metadata.",
-      "note": "Excluded from V1 release bundles until provenance is documented."
-    },
-    {
-      "path": "MyGame/assets/sounds/big_band_banger.ogg",
-      "kind": "audio",
-      "distribution": false,
-      "license": "NOASSERTION",
-      "copyrightText": "NOASSERTION",
-      "provenance": "Legacy development project; the Ogg file contains no attribution tags.",
-      "note": "Excluded from V1 release bundles until provenance is documented."
-    },
-    {
-      "path": "MyGame/assets/textures/hdri_sky_809.jpg",
-      "kind": "image",
-      "distribution": false,
-      "license": "NOASSERTION",
-      "copyrightText": "NOASSERTION",
-      "provenance": "Legacy development project; provenance is not recorded.",
-      "note": "Excluded from V1 release bundles until provenance is documented."
     },
     {
       "path": "tests/fixtures/animation/bad_graph.sgraph",
