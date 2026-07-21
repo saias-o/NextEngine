@@ -11,7 +11,7 @@ OUT="${1:-$ROOT/build/witness-e2e}"
 rm -rf "$OUT"
 
 ./build/bin/saida_tool.exe export-game WitnessGame/WitnessGame.saidaproj \
-    --out "$OUT" --version 0.1.0 --company Saida > /dev/null
+    --out "$OUT" --version 1.0.0 --company Saida > /dev/null
 
 cd "$OUT"
 # Les jeux packagés persistent leurs saves sous le dossier utilisateur de l'OS.

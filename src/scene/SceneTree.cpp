@@ -281,7 +281,7 @@ bool SceneTree::registerAutoloadScene(const std::string& name, const std::string
     // Validate eagerly so a required singleton cannot disappear while the
     // player still reports a successful boot.
     if (!SceneSerializer::loadNodeFromSceneFile(scenePath, resources_)) {
-        Log::error("autoload '", name, "': failed compatibility preflight for '", scenePath, "'");
+        Log::error("autoload '", name, "': failed scene contract preflight for '", scenePath, "'");
         return false;
     }
     setAutoloadDef(name, [this, name, scenePath] {

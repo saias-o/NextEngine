@@ -23,12 +23,12 @@ void testBootManifestParse() {
 }
 
 void testBootManifestErrors() {
-    std::istringstream noProject("main_scene=scenes/main.scene\n");
+    std::istringstream noProject("schema=1\nmain_scene=scenes/main.scene\n");
     auto r1 = saida::parseBootManifest(noProject);
     assert(!r1.ok);
     assert(r1.error.find("project") != std::string::npos);
 
-    std::istringstream noScene("project=MyGame.saidaproj\n");
+    std::istringstream noScene("schema=1\nproject=MyGame.saidaproj\n");
     auto r2 = saida::parseBootManifest(noScene);
     assert(!r2.ok);
     assert(r2.error.find("main_scene") != std::string::npos);

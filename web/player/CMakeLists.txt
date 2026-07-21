@@ -137,7 +137,6 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/scripting/ScriptBehaviour.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimBlackboard.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimGraphAsset.cpp
-    ${SAIDA_ROOT}/src/scene/animation/AnimGraphParser.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimationAssetDecoders.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimStateMachine.cpp
     ${SAIDA_ROOT}/src/scene/animation/AnimationClip.cpp

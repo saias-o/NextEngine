@@ -4,7 +4,7 @@ param(
     [string]$OutputPath = 'build/release/witness-installer/WitnessGame-Setup.exe',
     [string]$ManifestPath = '',
     [string]$Makensis = '',
-    [string]$Version = '0.1.0',
+    [string]$Version = '1.0.0',
     [switch]$AllowDirty,
     [switch]$SkipVerify
 )

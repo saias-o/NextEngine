@@ -283,42 +283,6 @@ void Scene::deserialize(const nlohmann::json& j, ResourceManager& resources) {
         if (js.contains("bloomRadius")) settings_.bloomRadius = js["bloomRadius"].get<float>();
         if (js.contains("changeRenderingAtLoad")) settings_.changeRenderingAtLoad = js["changeRenderingAtLoad"].get<bool>();
     }
-
-    // Backwards compatibility for old SceneSettingsBehaviour
-    if (j.contains("behaviours") && j["behaviours"].is_array()) {
-        for (const auto& bj : j["behaviours"]) {
-            if (bj.contains("type") && bj["type"].get<std::string>() == "SceneSettings") {
-                if (bj.contains("ambient")) settings_.ambientLight = glm::vec4(jsonToVec3(bj["ambient"], glm::vec3(0.1f)), 1.0f);
-                if (bj.contains("clearColor")) settings_.clearColor = glm::vec4(jsonToVec3(bj["clearColor"], glm::vec3(0.0f)), 1.0f);
-                if (bj.contains("postProcessing")) settings_.enablePostProcessing = bj["postProcessing"].get<bool>();
-                if (bj.contains("lightingMode")) settings_.lightingMode = static_cast<LightingMode>(bj["lightingMode"].get<int>());
-                if (bj.contains("skyboxTexture")) {
-                    if (bj["skyboxTexture"].is_number_integer()) {
-                        settings_.skyboxTexture = bj["skyboxTexture"].get<AssetID>();
-                    } else if (bj["skyboxTexture"].is_string()) {
-                        settings_.skyboxTexture = resources.getOrRegister(bj["skyboxTexture"].get<std::string>(), AssetType::Texture);
-                    }
-                }
-                if (bj.contains("skyboxExposure")) settings_.skyboxExposure = bj["skyboxExposure"].get<float>();
-                if (bj.contains("skyboxRotation")) settings_.skyboxRotation = bj["skyboxRotation"].get<float>();
-                if (bj.contains("iblEnabled")) settings_.iblEnabled = bj["iblEnabled"].get<bool>();
-                if (bj.contains("iblDiffuseIntensity")) settings_.iblDiffuseIntensity = bj["iblDiffuseIntensity"].get<float>();
-                if (bj.contains("iblSpecularIntensity")) settings_.iblSpecularIntensity = bj["iblSpecularIntensity"].get<float>();
-                if (bj.contains("aoEnabled")) settings_.aoEnabled = bj["aoEnabled"].get<bool>();
-                if (bj.contains("aoRadius")) settings_.aoRadius = bj["aoRadius"].get<float>();
-                if (bj.contains("aoIntensity")) settings_.aoIntensity = bj["aoIntensity"].get<float>();
-                if (bj.contains("aoPower")) settings_.aoPower = bj["aoPower"].get<float>();
-                if (bj.contains("fogEnabled")) settings_.fogEnabled = bj["fogEnabled"].get<bool>();
-                if (bj.contains("fogColor")) settings_.fogColor = glm::vec4(jsonToVec3(bj["fogColor"], glm::vec3(settings_.fogColor)), 1.0f);
-                if (bj.contains("fogStart")) settings_.fogStart = bj["fogStart"].get<float>();
-                if (bj.contains("fogDensity")) settings_.fogDensity = bj["fogDensity"].get<float>();
-                if (bj.contains("bloomEnabled")) settings_.bloomEnabled = bj["bloomEnabled"].get<bool>();
-                if (bj.contains("bloomThreshold")) settings_.bloomThreshold = bj["bloomThreshold"].get<float>();
-                if (bj.contains("bloomIntensity")) settings_.bloomIntensity = bj["bloomIntensity"].get<float>();
-                if (bj.contains("bloomRadius")) settings_.bloomRadius = bj["bloomRadius"].get<float>();
-            }
-        }
-    }
 }
 
 } // namespace saida

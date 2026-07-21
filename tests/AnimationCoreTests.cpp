@@ -221,7 +221,7 @@ void testClipViewRoundtrip() {
     future["schema"] = saida::kClipViewSchema + 1;
     auto rejected = saida::ClipView::parse(future);
     assert(!rejected.ok);
-    assert(hasDiagnostic(rejected.diagnostics, "clipview.schema.newer"));
+    assert(hasDiagnostic(rejected.diagnostics, "clipview.schema.unsupported"));
 
     auto empty = saida::ClipView::parse(nlohmann::json::object());
     assert(!empty.ok);

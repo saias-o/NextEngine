@@ -1,9 +1,4 @@
-// Corpus de rétrocompatibilité.
-//
-// Charge à chaque build les fixtures *figés* de tests/fixtures/compat/ avec les
-// vrais chargeurs du moteur. Deux garanties : un ancien document se charge
-// toujours (ou échoue avec un diagnostic, jamais de corruption silencieuse),
-// et un simple chargement ne réécrit jamais le fichier source.
+// Corpus figé des formats de la V1.
 
 #include "project/AssetRegistry.hpp"
 #include "project/Project.hpp"
@@ -27,12 +22,12 @@ namespace {
 
 void require(bool condition, const char* what) {
     if (!condition) {
-        std::fprintf(stderr, "compat corpus FAILED: %s\n", what);
+        std::fprintf(stderr, "V1 format corpus FAILED: %s\n", what);
         std::abort();
     }
 }
 
-fs::path corpusDir() { return fs::path(SAIDA_COMPAT_CORPUS_DIR); }
+fs::path corpusDir() { return fs::path(SAIDA_V1_CORPUS_DIR); }
 
 std::string readAll(const fs::path& path) {
     std::ifstream file(path, std::ios::binary);
@@ -51,7 +46,7 @@ public:
     }
     ~FrozenFile() {
         if (readAll(path_) != before_) {
-            std::fprintf(stderr, "compat corpus FAILED: fixture rewritten: %s\n",
+            std::fprintf(stderr, "V1 format corpus FAILED: fixture rewritten: %s\n",
                          path_.string().c_str());
             std::abort();
         }
@@ -66,8 +61,8 @@ private:
 void testProjects() {
     // Project::load initialise un asset_registry dans la racine du projet :
     // on charge une copie temporaire pour ne jamais toucher au corpus.
-    const fs::path tmp = fs::temp_directory_path() / "SaidaCompatCorpusTests";
-    for (const char* name : {"project_v0.saidaproj", "project_v1.saidaproj"}) {
+    const fs::path tmp = fs::temp_directory_path() / "SaidaV1FormatCorpusTests";
+    for (const char* name : {"project_v1.saidaproj"}) {
         FrozenFile frozen(corpusDir() / name);
         const fs::path root = tmp / fs::path(name).stem();
         fs::remove_all(root);
@@ -76,11 +71,11 @@ void testProjects() {
 
         saida::Project project;
         require(project.load((root / name).string()), name);
-        require(!project.name().empty(), "project name must survive migration");
+        require(!project.name().empty(), "project name must load");
         require(project.mainScene() == "scenes/main.scene",
-                "project main scene must survive migration");
+                "project main scene must load");
         require(project.autoloads().at("GameState") == "scripts/game_state.mjs",
-                "project autoloads must survive migration");
+                "project autoloads must load");
     }
     fs::remove_all(tmp);
 }
@@ -88,8 +83,8 @@ void testProjects() {
 void testAssetRegistries() {
     // AssetRegistry::load attend un fichier nommé asset_registry.json à la
     // racine d'un projet : on copie le fixture dans un dossier temporaire.
-    const fs::path tmp = fs::temp_directory_path() / "SaidaCompatCorpusTests";
-    for (const char* name : {"asset_registry_v0.json", "asset_registry_v1.json"}) {
+    const fs::path tmp = fs::temp_directory_path() / "SaidaV1FormatCorpusTests";
+    for (const char* name : {"asset_registry_v1.json"}) {
         FrozenFile frozen(corpusDir() / name);
         const fs::path root = tmp / fs::path(name).stem();
         fs::remove_all(root);
@@ -99,15 +94,15 @@ void testAssetRegistries() {
         saida::AssetRegistry registry;
         require(registry.load(root.string()), name);
         require(registry.getID("scenes/main.scene") != saida::kAssetInvalid,
-                "registry asset ids must survive migration");
+                "registry asset ids must load");
         require(registry.getID("assets/textures/checker.png") != saida::kAssetInvalid,
-                "registry paths must survive migration");
+                "registry paths must load");
     }
     fs::remove_all(tmp);
 }
 
 void testScenes() {
-    for (const char* name : {"scene_v0.scene", "scene_v2.scene"}) {
+    for (const char* name : {"scene_v2.scene"}) {
         FrozenFile frozen(corpusDir() / name);
         require(saida::SceneSerializer::validateSceneDocumentFile(frozen.path().string()),
                 name);
@@ -115,34 +110,34 @@ void testScenes() {
 }
 
 void testScenarios() {
-    for (const char* name : {"scenario_v0.saidascenario", "scenario_v1.saidascenario"}) {
+    for (const char* name : {"scenario_v1.saidascenario"}) {
         FrozenFile frozen(corpusDir() / name);
         std::ifstream file(frozen.path());
         nlohmann::json doc = nlohmann::json::parse(file);
         saida::ScenarioAsset asset;
         std::vector<saida::ScenarioIssue> issues;
         require(saida::ScenarioAsset::parse(doc, asset, &issues), name);
-        require(!asset.id.empty(), "scenario id must survive migration");
+        require(!asset.id.empty(), "scenario id must load");
     }
 }
 
 void testBootManifests() {
-    for (const char* name : {"game_v0.saida", "game_v1.saida"}) {
+    for (const char* name : {"game_v1.saida"}) {
         FrozenFile frozen(corpusDir() / name);
         const auto result = saida::loadBootManifest(frozen.path().string());
         require(result.ok, name);
-        require(result.manifest.project == "CompatCorpus.saidaproj",
-                "boot manifest project must survive migration");
+        require(result.manifest.project == "V1FormatCorpus.saidaproj",
+                "boot manifest project must load");
         require(result.manifest.mainScene == "scenes/main.scene",
-                "boot manifest scene must survive migration");
+                "boot manifest scene must load");
     }
 }
 
 // WitnessGame gelé : les artefacts durables réels du jeu témoin V1. Toute
 // dérive de format qui empêcherait de recharger le jeu livré est capturée ici,
-// à côté des fixtures synthétiques v0/v1.
+// à côté des fixtures synthétiques du schéma courant.
 void testWitnessGame() {
-    const fs::path tmp = fs::temp_directory_path() / "SaidaCompatCorpusTests";
+    const fs::path tmp = fs::temp_directory_path() / "SaidaV1FormatCorpusTests";
 
     // Projet : Project::load initialise un asset_registry dans la racine, on
     // charge une copie temporaire pour ne jamais toucher au corpus.

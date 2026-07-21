@@ -168,7 +168,7 @@ void Hub::drawUI() {
     ImGui::SetWindowFontScale(1.4f);
     ImGui::TextColored(ImVec4(0.4f, 0.6f, 0.95f, 1.0f), "SaidaEngine");
     ImGui::SetWindowFontScale(1.0f);
-    ImGui::TextDisabled("Hub v0.1");
+    ImGui::TextDisabled("Hub v1.0");
     
     ImGui::Spacing();
     ImGui::Spacing();

@@ -154,13 +154,7 @@ bool ScenarioAsset::parse(const json& doc, ScenarioAsset& out, std::vector<Scena
             issue(local, "$.schema", envelope);
             out.version = format::kScenarioVersion;
         } else {
-            out.version = format::readSchema(doc, format::kLegacyVersion);
-            if (!format::hasIntegerSchema(doc)) {
-                Log::info("ScenarioAsset: migrated legacy schema v", out.version,
-                          " -> v", format::kScenarioVersion);
-                if (out.version == format::kLegacyVersion)
-                    out.version = format::kScenarioVersion;
-            }
+            out.version = format::kScenarioVersion;
         }
         out.id = doc.value("id", std::string());
         out.blackboard = doc.value("blackboard", json::object());

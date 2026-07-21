@@ -13,8 +13,6 @@
 namespace saida {
 namespace {
 
-// Marks a document as one of our envelopes. A legacy raw payload is arbitrary
-// game JSON that never carries this key, so detection is unambiguous.
 constexpr const char* kMarker = "__saidaStore";
 
 std::int64_t nowUnixSeconds() {
@@ -176,16 +174,13 @@ StorageResult PlayerStorage::load(StorageKind kind, const std::string& slot) con
     }
     result.found = true;
 
-    // Detect our envelope; anything else is a legacy raw payload (schema 0).
     nlohmann::json doc = nlohmann::json::parse(raw, nullptr, /*allow_exceptions=*/false);
     const bool isEnvelope = doc.is_object() && doc.contains(kMarker) &&
                             doc[kMarker].is_boolean() && doc[kMarker].get<bool>() &&
                             doc.contains("payload") && doc["payload"].is_string();
     if (!isEnvelope) {
-        // Legacy migration: hand the bytes back verbatim, tag as schema 0.
-        result.payload = raw;
-        result.meta.schema = 0;
-        result.meta.bytes = static_cast<std::int64_t>(raw.size());
+        result.status = StorageStatus::Corrupt;
+        result.error = "save document is not a Saida storage envelope";
         return result;
     }
 
@@ -199,7 +194,7 @@ StorageResult PlayerStorage::load(StorageKind kind, const std::string& slot) con
     }
 
     result.payload = doc["payload"].get<std::string>();
-    result.meta.schema = format::readSchema(doc, kSaveEnvelopeVersion);
+    result.meta.schema = kSaveEnvelopeVersion;
     result.meta.bytes = static_cast<std::int64_t>(result.payload.size());
     if (doc.contains("dataVersion") && doc["dataVersion"].is_number_integer())
         result.meta.dataVersion = doc["dataVersion"].get<int>();

@@ -23,6 +23,7 @@ std::string writeScenario(const json& doc, const std::string& name) {
 
 json baseScenario() {
     return {
+        {"schema", 1},
         {"version", 1},
         {"id", "test.scenario"},
         {"roles", json::object()},

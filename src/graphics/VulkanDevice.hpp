@@ -1,9 +1,9 @@
 #pragma once
 
-#include "graphics/RenderCapabilities.hpp"
 #include "graphics/VmaFwd.hpp"
+#include "rhi/Capabilities.hpp"
 
-#include <vulkan/vulkan.h>  // was pulled in transitively via RenderCapabilities before 16.3
+#include <vulkan/vulkan.h>
 
 #include <functional>
 #include <optional>
@@ -61,7 +61,7 @@ public:
     float maxAnisotropy() const;
 
     // Supported/enabled GPU features.
-    const RenderCapabilities& capabilities() const { return capabilities_; }
+    const rhi::Capabilities& capabilities() const { return capabilities_; }
 
     QueueFamilyIndices findQueueFamilies() const { return findQueueFamilies(physicalDevice_); }
     SwapChainSupportDetails querySwapChainSupport() const { return querySwapChainSupport(physicalDevice_); }
@@ -113,7 +113,7 @@ private:
     VkCommandPool computeCommandPool_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     VkPipelineCache pipelineCache_ = VK_NULL_HANDLE;
-    RenderCapabilities capabilities_;
+    rhi::Capabilities capabilities_;
     bool validationEnabled_ = false;
     VulkanDeviceCreator* creator_ = nullptr;  // non-null → custom/OpenXR-driven init
 };

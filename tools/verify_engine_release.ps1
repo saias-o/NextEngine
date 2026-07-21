@@ -8,7 +8,7 @@ param(
     [string]$AuthoringRuntimeDir = 'build-web',
     [string]$ComplianceDir = 'build/release/engine/compliance',
     [string]$SymbolsDir = 'build/release/engine/windows-symbols',
-    [string]$FixturesDir = 'tests/fixtures/compat'
+    [string]$FixturesDir = 'tests/fixtures/v1-format'
 )
 
 # Recomputes every hash in an engine release manifest and, when a saida_tool is

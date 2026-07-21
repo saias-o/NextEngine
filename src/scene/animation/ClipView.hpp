@@ -55,8 +55,8 @@ struct ClipViewParseResult;
 
 class ClipView {
 public:
-    // Parse strict : un JSON invalide ou d'un schéma plus récent produit des
-    // diagnostics et ok=false. Un schéma plus ancien passe par migrate().
+    // Parse strict : un JSON invalide ou d'un autre schéma produit des
+    // diagnostics et ok=false.
     static ClipViewParseResult parse(const nlohmann::json& j);
     static ClipViewParseResult loadFile(const std::string& path);
 
@@ -84,11 +84,6 @@ public:
     float speed = 1.0f;
     std::vector<ClipViewEvent> events;
 
-private:
-    // Fait évoluer un document d'un schéma ancien vers kClipViewSchema.
-    // Retourne false (avec diagnostic) si aucune migration n'existe.
-    static bool migrate(nlohmann::json& j, int fromSchema,
-                        std::vector<AssetDiagnostic>& diagnostics);
 };
 
 struct ClipViewParseResult {

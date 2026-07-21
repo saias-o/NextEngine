@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/EngineVersion.hpp"
 #include "project/AssetRegistry.hpp"
 #include "audio/AudioManager.hpp"
 
@@ -10,7 +11,7 @@ namespace saida {
 
 // Represents a SaidaEngine project on disk. A project is a directory containing
 // a JSON `.saidaproj` file plus standard sub-folders (assets/, scenes/, scripts/,
-// shaders/). Legacy key=value `.saidaproj` files are still accepted on load.
+// shaders/).
 // The Project class manages creation, loading, and saving of this structure.
 //
 // When no project is loaded, `isLoaded()` returns false and the editor should
@@ -108,7 +109,7 @@ private:
     std::string name_;
     std::string rootPath_;
     std::string filePath_;
-    std::string engineVersion_ = "0.1.0";
+    std::string engineVersion_ = kEngineVersion;
     std::string mainScene_;
     int maxFps_ = kDefaultMaxFps; // 0 means unlimited
     bool vSync_ = kDefaultVSync;

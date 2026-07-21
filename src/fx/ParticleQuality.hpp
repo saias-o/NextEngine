@@ -1,6 +1,6 @@
 #pragma once
 
-#include "graphics/RenderCapabilities.hpp"
+#include "rhi/Capabilities.hpp"
 
 #include <cstdint>
 

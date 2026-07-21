@@ -22,10 +22,6 @@ struct AudioInstance {
     bool isFinished = false;
 };
 
-static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
-    // Used if we did low-level stuff, but ma_engine manages its own device.
-}
-
 bool AudioManager::init() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (state_) return true;
@@ -118,7 +114,8 @@ AudioID AudioManager::play(const std::string& audioName) {
     return play(audioName, defaultSettings_, "Master", nullptr);
 }
 
-AudioID AudioManager::play(const std::string& audioName, const AudioSettings& settings, const std::string& bus, Node* node) {
+AudioID AudioManager::play(const std::string& audioName, const AudioSettings& settings,
+                           const std::string& /*bus*/, Node* node) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!state_ || !state_->initialized) return kInvalidAudioID;
 

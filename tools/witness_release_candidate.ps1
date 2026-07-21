@@ -34,13 +34,15 @@ try {
     $commit = (& git rev-parse HEAD).Trim()
     $commitTime = (& git show -s --format=%cI HEAD).Trim()
 
+    # Packaging also needs MinGW tools such as objcopy, even when compilation
+    # is skipped because the native and Web builds were already verified.
+    New-Item -ItemType Directory -Force -Path build/tmp | Out-Null
+    $env:PATH = 'C:\Python313;C:\msys64\usr\bin;C:\msys64\ucrt64\bin;' + $env:PATH
+    $env:TMPDIR = (Resolve-Path build/tmp).Path
+    $env:TMP = $env:TMPDIR
+    $env:TEMP = $env:TMPDIR
+
     if (-not $SkipBuild) {
-        New-Item -ItemType Directory -Force -Path build/tmp, build/msys_home | Out-Null
-        $env:PATH = 'C:\Python313;C:\msys64\usr\bin;C:\msys64\ucrt64\bin;' + $env:PATH
-        $env:HOME = (Resolve-Path build/msys_home).Path
-        $env:TMPDIR = (Resolve-Path build/tmp).Path
-        $env:TMP = $env:TMPDIR
-        $env:TEMP = $env:TMPDIR
         & cmake --build build --parallel 4
         if ($LASTEXITCODE -ne 0) { throw "Native build failed" }
         & ctest --test-dir build --output-on-failure
@@ -97,7 +99,7 @@ try {
         SourceDir = $windowsDir
         OutputPath = $installerPath
         ManifestPath = $installerManifestPath
-        Version = '0.1.0'
+        Version = '1.0.0'
         SkipVerify = $true
     }
     if ($Makensis) { $installerArgs['Makensis'] = $Makensis }
@@ -156,7 +158,7 @@ try {
         schema = 1
         engineCommit = $commit
         dirty = $dirty
-        version = '0.1.0'
+        version = '1.0.0'
         generatedAtUtc = ([DateTimeOffset]::Parse($commitTime).UtcDateTime.ToString('o'))
         project = 'WitnessGame/WitnessGame.saidaproj'
         artifacts = [ordered]@{

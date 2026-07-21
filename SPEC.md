@@ -1,6 +1,6 @@
 # SaidaEngine - Spécification canonique
 
-Mise à jour : 2026-07-19. Ce document est la vérité technique du moteur. Il
+Mise à jour : 2026-07-21. Ce document est la vérité technique du moteur. Il
 décrit ce qui existe réellement, les contrats candidats V1 et les limites. Les
 travaux à effectuer vivent uniquement dans [PLAN_V1.md](PLAN_V1.md).
 
@@ -124,6 +124,10 @@ Le player Web n'annonce que les backends réellement linkés.
 Un `.saidaproj` décrit notamment le nom, la scène principale, les autoloads,
 les aliases audio et les fichiers du projet. L'AssetRegistry associe un AssetID
 stable à un chemin relatif. Les caches locaux ne sont pas une source de vérité.
+L'identité publique du moteur est définie une seule fois dans
+`core/EngineVersion.hpp` (`1.0.0`). Tout projet V1 enregistre cette version. Les
+documents sans enveloppe courante ou produits par une préversion sont refusés :
+aucune branche de migration ni de rétrocompatibilité n'existe avant publication.
 
 Les autoloads peuvent être des scènes, des behaviours natifs ou des scripts
 `.js`/`.mjs`. Le `World` persiste entre les changements de scène. Les nœuds
@@ -182,7 +186,7 @@ matrice rend chaque divergence explicite, elle ne donne pas la permission de
 perdre du contenu.
 
 Le test `saida_runtime_type_matrix_tests` construit le corpus headless depuis la
-matrice : 17 types de nœuds (joints physiques inclus), 18 behaviours et les 161
+matrice : 17 types de nœuds (joints physiques inclus), 15 behaviours et les 137
 propriétés réfléchies reçoivent des valeurs non triviales, puis un cycle
 serialize/load/serialize doit rester sémantiquement identique. Il couvre aussi
 les données manuscrites du HUD, des corps/colliders, de `Blackboard`, de la FSM
@@ -190,11 +194,11 @@ et de `ScriptBehaviour`. L'authoring Web exécute son snapshot contractuel avant
 de publier `ready`.
 
 `RuntimeRoundTripContract` construit de la même manière un corpus en mémoire.
-Le serializer complet couvre le natif (29 nœuds, 22 behaviours, 161 propriétés
+Le serializer complet couvre le natif (29 nœuds, 19 behaviours, 137 propriétés
 dans le build XR courant) via `SaidaEngine --verify-runtime-contract`, et le
 player Web (18/10/130) via le paramètre `verify-runtime-contract`. Le codec
 snapshot, désormais sans `ResourceManager`, couvre l'authoring Web (9/0/90) avant
-son passage à `ready` et le headless (17/18/161). Tous exigent une identité JSON
+son passage à `ready` et le headless (17/15/137). Tous exigent une identité JSON
 sémantique après reconstruction et exposent le verdict `[CONTRACT] PASS`.
 
 `saida_tool verify-manifest` ferme la boucle depuis le binaire réellement livré :
@@ -437,13 +441,13 @@ durabilité :
 - **Enveloppe versionnée.** Chaque slot est écrit dans une enveloppe JSON
   `{schema, version, __saidaStore, kind, dataVersion, savedAt, bytes, payload}`
   (schéma courant 1). `storage.save(slot, json, dataVersion?)` accepte une
-  version applicative optionnelle pour les migrations côté jeu. Une enveloppe de
-  schéma futur ou incohérente (`schema`≠`version`) est refusée via le garde
+  version applicative appartenant au jeu, sans modifier le format moteur. Toute
+  enveloppe dont le schéma n'est pas exactement le schéma courant ou dont
+  `schema`≠`version` est refusée via le garde
   partagé `format::schemaEnvelopeError` : `load` renvoie `null` et pose
   `storage.lastError()` au lieu de mal relire la donnée.
-- **Migration des saves V0.** Une sauvegarde héritée sans enveloppe (chaîne brute
-  écrite avant ce contrat) charge verbatim (schéma 0) puis est promue en
-  enveloppe à la prochaine écriture, sans perte de contenu.
+- **Format strict.** Une sauvegarde sans enveloppe complète et courante est
+  invalide. Le runtime ne tente ni détection historique, ni promotion implicite.
 - **Metadata de slot.** `storage.info(slot)` renvoie `{kind, bytes, savedAt,
   dataVersion, schema}` sans lire le payload; `storage.list()` énumère les slots
   d'un namespace.
@@ -811,7 +815,7 @@ Le renommage de projet passe par `renameProjectDirectory`
 champ `name`) et l'entrée `hub.json` sont modifiés ensemble, chaque étape
 intermédiaire reste chargeable et tout échec restaure l'état antérieur. Le nom
 est validé comme composant de chemin sûr, un registre Hub corrompu ou un
-document projet legacy/futur refuse l'opération, et `Project::load` accepte
+document projet non courant refuse l'opération, et `Project::load` accepte
 désormais le dossier du projet (résolution du `.saidaproj` unique) — le chemin
 que le Hub stocke et passe à `--project`. Le champ « Project Name » des réglages
 de l'éditeur est en lecture seule et renvoie au Hub : un renommage cohérent
@@ -957,35 +961,37 @@ parcourt les tables d'imports normale et différée; il couvre ainsi également
 l'exécutable dont VERSIONINFO/icône ont été réécrits par l'API Windows, sans
 dépendre de l'acceptation de cette réécriture par un désassembleur tiers.
 
-## 13. Compatibilité persistante
+## 13. Formats persistants V1
 
 | Surface | Schéma | Politique |
 |---|---:|---|
-| `game.saida` | 1 | candidat V1, migration obligatoire |
-| `.saidaproj` | 1 | candidat V1, migration obligatoire |
-| `asset_registry.json` | 1 | candidat V1, AssetID stable visé |
-| `.scene` | 2 | candidat V1, migration obligatoire |
-| `.saidascenario` | 1 | candidat V1, migration obligatoire |
-| `.sclip` | 1 | candidat V1, migration obligatoire |
-| `.sgraph` | 2 | candidat V1, migration obligatoire |
-| `.sretarget` | 2 | candidat V1, migration obligatoire |
-| `.srig` | 1 | candidat V1, migration obligatoire |
-| `.sseq` | 1 | candidat V1, migration obligatoire |
+| `game.saida` | 1 | schéma exact requis |
+| `.saidaproj` | 1 | schéma exact requis |
+| `asset_registry.json` | 1 | schéma exact requis, AssetID stable |
+| `.scene` | 2 | schéma exact requis |
+| `.saidascenario` | 1 | schéma exact requis |
+| `.sclip` | 1 | schéma exact requis |
+| `.sgraph` | 2 | schéma exact requis |
+| `.sretarget` | 2 | schéma exact requis |
+| `.srig` | 1 | schéma exact requis |
+| `.sseq` | 1 | schéma exact requis |
 | `.sanimc` | interne | cache régénérable |
 | `asset_registry.local.json` | interne | cache local régénérable |
 | `pipeline_cache.bin` | interne | cache GPU régénérable |
 
-Les formes historiques sans enveloppe ou sans `schema` sont les V0 de
-référence. Un simple chargement ne réécrit jamais le source. Les fixtures sous
-`tests/fixtures/compat` sont immuables et chargées par
-`saida_compat_corpus_tests`. Le fixture `fold-determinism` prouve un fold
-byte-identique Windows/Linux sur son corpus, pas l'équivalence exhaustive de
-toutes les scènes.
+Chaque document durable doit contenir `schema` et `version`, entiers, égaux et
+strictement identiques à la version courante de sa surface. Toute autre forme est
+refusée sans réécriture. Les fixtures sous `tests/fixtures/v1-format` sont
+immuables et chargées par `saida_v1_format_corpus_tests`. Le fixture
+`fold-determinism` prouve un fold byte-identique Windows/Linux sur son corpus,
+pas l'équivalence exhaustive de toutes les scènes.
 
-Tout changement stable fournit : incrément de schéma, migrations supportées,
-fixture ancien, test de chargement/refus futur et note de version. La stabilité
-publique exige aussi un corpus de round-trip cross-runtime et un release
-manifest liant hashes du player Web, authoring WASM, binaire headless et formats.
+Avant la première publication, tout changement de format remplace directement
+le schéma, ses producteurs et son corpus : aucune migration de préversion n'est
+conservée. Une fois une version publique livrée, toute nouvelle politique devra
+être décidée explicitement. La stabilité publique exige aussi un corpus de
+round-trip cross-runtime et un release manifest liant hashes du player Web,
+authoring WASM, binaire headless et formats.
 
 `tools/engine_release_manifest.ps1` produit ce release manifest
 (`build/release/engine/release-manifest.json`, schéma 1) : le commit moteur, les
@@ -1008,7 +1014,7 @@ fail-closed : chaque racine de `third_party` doit être déclarée exactement un
 fois, chaque asset suivi doit posséder licence, provenance et décision de
 distribution, et aucun asset `NOASSERTION` ne peut être distribué. Depuis la
 purge open-source du 2026-07-21, le dépôt ne contient plus aucun asset
-non distribuable : les projets legacy sans provenance (`GTAClone/`, `MyGame/`)
+non distribuable : les anciens projets sans provenance (`GTAClone/`, `MyGame/`)
 et le DamagedHelmet CC-BY-NC sont retirés — 18 assets suivis, 18 distribuables,
 0 exclu.
 
@@ -1017,9 +1023,9 @@ publiées dans [docs/release-support.md](docs/release-support.md). La promotion
 s'effectue par manifeste, SHA de commit et digest immuables; `latest` n'est
 jamais une identité de release.
 
-Inventaire immuable actuel : `project_v0/v1.saidaproj`,
-`asset_registry_v0/v1.json`, `scene_v0/scene_v2.scene`,
-`scenario_v0/v1.saidascenario`, `game_v0/v1.saida` et le jeu témoin gelé
+Inventaire immuable actuel : `project_v1.saidaproj`,
+`asset_registry_v1.json`, `scene_v2.scene`, `scenario_v1.saidascenario`,
+`game_v1.saida` et le jeu témoin gelé
 `witness_v1.saidaproj`, `witness_v1_asset_registry.json`,
 `witness_v1_hub.scene`, `witness_v1_arena.scene` — copies exactes des artefacts
 durables de WitnessGame chargées par leurs vrais loaders (le HUD UI, la physique
@@ -1071,7 +1077,7 @@ régénère qu'avec un bump de format, jamais pour masquer une divergence.
   au commit; collecte distante des rapports hors périmètre moteur.
 - Licences, notices et SBOM générés en mode fail-closed; depuis la purge
   open-source du 2026-07-21, tout asset suivi du dépôt est distribuable sous sa
-  licence déclarée (les projets legacy sans provenance et le DamagedHelmet
+  licence déclarée (les anciens projets sans provenance et le DamagedHelmet
   CC-BY-NC sont retirés).
 
 ## 15. Positionnement public

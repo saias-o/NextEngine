@@ -231,7 +231,7 @@ BuildExporter::Result BuildExporter::exportWindowsBuild(const Project& project,
     {
         ExeMetadata meta;
         meta.productName = project.name().empty() ? gameName : project.name();
-        meta.version = options.productVersion.empty() ? "0.1.0" : options.productVersion;
+        meta.version = options.productVersion.empty() ? "1.0.0" : options.productVersion;
         meta.companyName = options.companyName;
         if (!options.iconPath.empty()) {
             fs::path icon = fs::path(options.iconPath);

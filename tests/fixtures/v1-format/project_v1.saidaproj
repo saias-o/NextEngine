@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "version": 1,
-  "name": "CompatCorpusV1",
-  "engineVersion": "0.1.0",
+  "name": "V1FormatCorpus",
+  "engineVersion": "1.0.0",
   "mainScene": "scenes/main.scene",
   "runtime": {
     "maxFps": 60,

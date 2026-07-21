@@ -77,26 +77,18 @@ bool AssetRegistry::load(const std::string& projectRoot) {
             return false;
         }
 
-        const bool legacyShape = !j.contains("assets");
-        if (!legacyShape) {
-            if (const std::string envelope = format::schemaEnvelopeError(
-                    j, format::kAssetRegistryVersion, "asset registry");
-                !envelope.empty()) {
-                Log::error("AssetRegistry: ", envelope, ": ", path.string());
-                return false;
-            }
-        }
-        const int version = legacyShape ? format::kLegacyVersion
-                                        : format::readSchema(j, format::kLegacyVersion);
-        if (legacyShape) {
-            Log::info("AssetRegistry: migrated legacy registry format v0 -> v",
-                      format::kAssetRegistryVersion, " in memory: ", path.string());
-        } else if (version < format::kAssetRegistryVersion) {
-            Log::info("AssetRegistry: migrated registry format v", version, " -> v",
-                      format::kAssetRegistryVersion, " in memory: ", path.string());
+        if (const std::string envelope = format::schemaEnvelopeError(
+                j, format::kAssetRegistryVersion, "asset registry");
+            !envelope.empty()) {
+            Log::error("AssetRegistry: ", envelope, ": ", path.string());
+            return false;
         }
 
-        const json* assetsJson = legacyShape ? &j : &j["assets"];
+        if (!j.contains("assets")) {
+            Log::error("AssetRegistry: missing 'assets': ", path.string());
+            return false;
+        }
+        const json* assetsJson = &j["assets"];
         if (!assetsJson->is_object()) {
             Log::error("AssetRegistry: 'assets' must be an object: ", path.string());
             return false;

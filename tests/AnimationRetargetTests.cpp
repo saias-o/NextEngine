@@ -143,8 +143,8 @@ void testSemanticMappingAndCorrections() {
     assert(reparsed.profile.corrections.size() == 2);
     assert(near(reparsed.profile.translationScale, 0.5f));
 
-    nlohmann::json legacy = {{"schema", 1}, {"name", "Old"}, {"map", {{"Hips", "pelvis"}}}};
-    assert(saida::RetargetProfile::parse(legacy).ok);
+    nlohmann::json wrongSchema = {{"schema", 1}, {"name", "Old"}, {"map", {{"Hips", "pelvis"}}}};
+    assert(!saida::RetargetProfile::parse(wrongSchema).ok);
 
     // Application par l'Animator : le clip source anime la colonne à SA rest
     // pose (90°) et translate le bassin de 2 m — la cible doit rester à sa

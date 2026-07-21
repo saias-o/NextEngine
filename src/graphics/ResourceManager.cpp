@@ -62,7 +62,7 @@ struct DecodedImage {
 
 // Décodage stbi pur CPU — exécuté hors du thread principal sur desktop. Le
 // HDR (.hdr → RGBA32F) n'est décodé en float que sur desktop ; le backend web
-// suit son comportement historique (stbi convertit en LDR).
+// utilise volontairement la conversion LDR de stbi.
 AssetDecoder makeImageDecoder() {
     return [](std::vector<uint8_t>&& bytes, AssetDecodeResult& out, std::string& error) {
         auto image = std::make_shared<DecodedImage>();

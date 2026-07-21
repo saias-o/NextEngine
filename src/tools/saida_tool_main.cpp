@@ -28,6 +28,7 @@
 #include <glm/glm.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -330,7 +331,7 @@ int cmdValidateScenario(const std::vector<std::string>& args) {
 }
 
 void walkSceneNode(const json& n, const std::string& path, json& issues,
-                   std::unordered_set<long long>& ids, std::size_t& nodeCount) {
+                   std::unordered_set<std::string>& ids, std::size_t& nodeCount) {
     auto issue = [&](const std::string& msg) {
         issues.push_back(json{{"path", path}, {"message", msg}});
     };
@@ -344,10 +345,18 @@ void walkSceneNode(const json& n, const std::string& path, json& issues,
     if (!n.contains("name") || !n["name"].is_string())
         issue("node needs a string 'name'");
     if (n.contains("id")) {
-        if (!n["id"].is_number_integer()) {
-            issue("'id' must be an integer");
-        } else if (!ids.insert(n["id"].get<long long>()).second) {
-            issue("duplicate node id " + std::to_string(n["id"].get<long long>()));
+        if (!n["id"].is_string()) {
+            issue("'id' must be a non-zero decimal string");
+        } else {
+            const std::string id = n["id"].get<std::string>();
+            std::uint64_t parsed = 0;
+            const auto result = std::from_chars(id.data(), id.data() + id.size(), parsed);
+            if (id.empty() || result.ec != std::errc{} ||
+                result.ptr != id.data() + id.size() || parsed == 0) {
+                issue("'id' must be a non-zero decimal string");
+            } else if (!ids.insert(id).second) {
+                issue("duplicate node id " + id);
+            }
         }
     }
     if (auto t = n.find("transform"); t != n.end()) {
@@ -407,7 +416,7 @@ int cmdValidateScene(const std::vector<std::string>& args) {
     }
 
     json issues = json::array();
-    std::unordered_set<long long> ids;
+    std::unordered_set<std::string> ids;
     std::size_t nodeCount = 0;
     if (!doc.is_object() || !doc.contains("scene") || !doc["scene"].is_object()) {
         issues.push_back(json{{"path", ""}, {"message", "document needs a 'scene' object"}});

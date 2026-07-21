@@ -54,6 +54,7 @@ fs::path makeProject(const fs::path& parent, const std::string& name) {
     json doc;
     format::writeSchema(doc, format::kProjectVersion);
     doc["name"] = name;
+    doc["engineVersion"] = kEngineVersion;
     writeFile(root / (name + ".saidaproj"), doc.dump(2) + "\n");
     return root;
 }
@@ -179,17 +180,6 @@ void testRefusalsLeaveDiskUntouched() {
                                     hub.string())
                  .ok,
             "missing project directory refused");
-
-    // A legacy (non-JSON) project file is refused instead of being converted.
-    const fs::path legacyRoot = sandbox / "Legacy";
-    fs::create_directories(legacyRoot);
-    writeFile(legacyRoot / "Legacy.saidaproj",
-              "[SaidaEngine Project]\nname=Legacy\n");
-    require(!renameProjectDirectory(legacyRoot.string(), "Modern", "").ok,
-            "legacy project file refused");
-    require(readFile(legacyRoot / "Legacy.saidaproj") ==
-                "[SaidaEngine Project]\nname=Legacy\n",
-            "legacy project file untouched");
 
     // A corrupt hub registry refuses the rename before any mutation.
     const fs::path badHub = sandbox / "bad-hub.json";

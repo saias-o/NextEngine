@@ -5,7 +5,8 @@ sur desktop, WebGPU via WebAssembly dans le navigateur et OpenXR pour la VR/AR.
 Le projet vise un moteur léger, lisible et pilotable par des humains comme par
 des assistants IA, sans multiplier les implémentations de gameplay.
 
-**Statut au 2026-07-16 : Alpha, non publiable comme V1 stable.**
+**Statut au 2026-07-21 : candidat V1.0 local, NO-GO pour publication tant que
+les manettes physiques et la signature Authenticode ne sont pas qualifiées.**
 
 ## Documents canoniques
 
@@ -54,7 +55,7 @@ web/
   player/      player de jeu WASM/WebGPU
   runtime/     runtime d'authoring WASM/WebGPU
 WitnessGame/   jeu témoin de la V1
-tests/         tests natifs et corpus de compatibilité
+tests/         tests natifs et corpus figé des formats V1
 tools/         harnais d'export et de smoke
 ```
 
@@ -328,8 +329,8 @@ cmake --build build/autolod --parallel
   commentaire de code n'est utile que pour expliquer un invariant, une
   contrainte externe ou une décision non évidente; il ne renvoie pas vers les
   documents Markdown.
-- Ne jamais réécrire un ancien fixture de compatibilité; ajouter une migration
-  et un nouveau fixture.
+- Les loaders n'acceptent que le schéma courant exact. Un changement de format
+  avant publication remplace le fixture V1 et adapte tous ses producteurs.
 - Après un changement de contrat d'authoring, reconstruire natif, authoring WASM
   et player Web.
 - Ne pas modifier les sources vendues sous `third_party` pour contourner un

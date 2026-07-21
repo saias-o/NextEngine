@@ -87,6 +87,12 @@ bool failBoot(const std::string& error) {
     return false;
 }
 
+bool hasSuffix(const std::string& value, const char* suffix) {
+    const std::size_t suffixLength = std::char_traits<char>::length(suffix);
+    return value.size() > suffixLength &&
+           value.compare(value.size() - suffixLength, suffixLength, suffix) == 0;
+}
+
 bool bootGame() {
     // Le package du jeu est monté dans MEMFS sous /project (même contrat que le
     // dossier de l'exe desktop) : game.saida, .saidaproj, scènes et assets.
@@ -139,23 +145,19 @@ bool bootGame() {
     auto scene = std::make_unique<Scene>();
     const std::string scenePath = "/project/" + boot.manifest.mainScene;
     if (!SceneSerializer::loadIntoScene(*scene, *gApp.resources, scenePath)) {
-        return failBoot("failed compatibility preflight for main scene " + scenePath);
+        return failBoot("failed scene contract preflight for main scene " + scenePath);
     }
 
     // Monte le World persistant — même séquence que Engine::mountWorld().
     gApp.tree = std::make_unique<SceneTree>(*gApp.resources);
     gApp.tree->setProjectRoot(gApp.project->rootPath());
     for (const auto& [name, value] : gApp.project->autoloads()) {
-        auto endsWith = [&value](const char* suffix) {
-            const size_t n = std::char_traits<char>::length(suffix);
-            return value.size() > n && value.compare(value.size() - n, n, suffix) == 0;
-        };
-        if (endsWith(".scene")) {
+        if (hasSuffix(value, ".scene")) {
             if (!gApp.tree->registerAutoloadScene(
                     name, gApp.project->rootPath() + "/" + value))
-                return failBoot("autoload '" + name + "' is incompatible");
+                return failBoot("autoload '" + name + "' violates the runtime contract");
         }
-        else if (endsWith(".js") || endsWith(".mjs"))
+        else if (hasSuffix(value, ".js") || hasSuffix(value, ".mjs"))
             gApp.tree->registerAutoloadScript(name, value);
         else if (!gApp.tree->registerAutoloadType(name, value))
             return failBoot("autoload '" + name + "' requires unsupported behaviour '" +

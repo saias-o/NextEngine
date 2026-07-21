@@ -126,6 +126,7 @@ nlohmann::json buildEngineManifest() {
     m["opAddressing"] = {
         {"kind", "stable-node-id"},
         {"nodeIdJsonType", "decimal-string"},
+        {"snapshotNodeIdJsonType", "decimal-string"},
         {"rootParent", "omitted-parentId"},
         {"createNodeId", "optional-client-supplied"},
     };

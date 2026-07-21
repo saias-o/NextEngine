@@ -288,8 +288,6 @@ void Node::deserialize(const nlohmann::json& j, ResourceManager& resources) {
         for (const auto& bj : j["behaviours"]) {
             if (!bj.contains("type")) continue;
             std::string tn = bj["type"].get<std::string>();
-            if (tn == "SceneSettings") continue; // Handled by Scene::deserialize for backwards compatibility
-            
             if (auto b = BehaviourRegistry::instance().create(tn)) {
                 if (bj.contains("enabled")) {
                     b->setEnabled(bj["enabled"].get<bool>());

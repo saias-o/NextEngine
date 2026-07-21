@@ -1,6 +1,5 @@
 #include "graphics/Mesh.hpp"
 
-#include "core/Log.hpp"
 #include "core/Profiler.hpp"
 #include "graphics/Buffer.hpp"
 #include "tiny_obj_loader.h"
@@ -12,10 +11,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
 #include <istream>
 #include <limits>
-#include <stdexcept>
 #include <streambuf>
 #include <unordered_map>
 
@@ -228,33 +225,6 @@ bool Mesh::parseObjBytes(const uint8_t* data, size_t size, MeshData& out, std::s
     }
 
     return true;
-}
-
-std::unique_ptr<Mesh> Mesh::fromObjFile(GeometryRegistry& registry, const std::string& path,
-                                        bool generateLightmapUVs) {
-    SAIDA_PROFILE_SCOPE("Resource/LoadObjMesh");
-    (void)generateLightmapUVs; // Kept for API compatibility; UV unwrap baking was removed.
-
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) throw std::runtime_error("failed to open model '" + path + "'");
-    const std::streamoff size = file.tellg();
-    std::vector<uint8_t> bytes(static_cast<size_t>(std::max<std::streamoff>(size, 0)));
-    file.seekg(0, std::ios::beg);
-    if (!bytes.empty() && !file.read(reinterpret_cast<char*>(bytes.data()), size))
-        throw std::runtime_error("failed to read model '" + path + "'");
-
-    MeshData data;
-    std::string error;
-    if (!parseObjBytes(bytes.data(), bytes.size(), data, error))
-        throw std::runtime_error("failed to load model '" + path + "': " + error);
-
-    Log::info("loaded '", path, "': ", data.vertices.size(), " vertices, ",
-              data.indices.size() / 3, " triangles");
-    Log::warn(".obj is deprecated: heavy, uncompressed, web-hostile. "
-              "Re-export as meshopt GLB (Build Settings / exportMeshoptGlb) — "
-              "same loader, ~10-20x smaller.");
-
-    return std::make_unique<Mesh>(registry, data.vertices, data.indices);
 }
 
 void Mesh::bind(rhi::RenderPassEncoder& rp) const {

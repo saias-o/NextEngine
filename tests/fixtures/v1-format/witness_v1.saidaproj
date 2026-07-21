@@ -2,7 +2,7 @@
   "schema": 1,
   "version": 1,
   "name": "Witness Game",
-  "engineVersion": "0.1.0",
+  "engineVersion": "1.0.0",
   "mainScene": "scenes/hub.scene",
   "runtime": {
     "maxFps": 144,

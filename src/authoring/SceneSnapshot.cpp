@@ -33,6 +33,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include <charconv>
 #include <exception>
 #include <memory>
 #include <stdexcept>
@@ -48,6 +49,18 @@ json transformToJson(const Transform& t) {
         {"rotation", json::array({t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w})},
         {"scale", vec3ToJson(t.scale)},
     };
+}
+
+bool snapshotNodeIdFromJson(const json& value, NodeId& out) {
+    if (!value.is_string()) return false;
+    const std::string text = value.get<std::string>();
+    NodeId parsed = kNodeInvalid;
+    const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed);
+    if (text.empty() || result.ec != std::errc{} ||
+        result.ptr != text.data() + text.size() || parsed == kNodeInvalid)
+        return false;
+    out = parsed;
+    return true;
 }
 
 void ensureHeadlessRegistries() {
@@ -131,7 +144,7 @@ json serializeNodeWithoutResources(const Node& node, const std::string& path,
 
     json out;
     out["type"] = type;
-    out["id"] = node.id();
+    out["id"] = std::to_string(node.id());
     out["name"] = node.name();
     out["enabled"] = node.enabled();
     out["transform"] = transformToJson(node.transform());
@@ -291,8 +304,8 @@ json serializeSceneWithoutResources(Scene& scene) {
     if (!scene.connections().empty()) {
         json conns = json::array();
         for (const auto& c : scene.connections())
-            conns.push_back({{"from", c.from}, {"signal", c.signal},
-                             {"to", c.to}, {"slot", c.slot}});
+            conns.push_back({{"from", std::to_string(c.from)}, {"signal", c.signal},
+                             {"to", std::to_string(c.to)}, {"slot", c.slot}});
         root["connections"] = std::move(conns);
     }
     return root;
@@ -323,8 +336,14 @@ std::unique_ptr<Node> makeHeadlessNode(const std::string& type,
 // Children are handled by the caller so the root Scene can reuse this too.
 bool loadNodeFields(Node& node, const json& j, const std::string& path,
                     std::string& error) {
-    if (auto it = j.find("id"); it != j.end() && it->is_number_integer())
-        node.assignSerializedId(it->get<NodeId>());
+    if (auto it = j.find("id"); it != j.end()) {
+        NodeId id = kNodeInvalid;
+        if (!snapshotNodeIdFromJson(*it, id)) {
+            error = path + ".id: expected a non-zero decimal string";
+            return false;
+        }
+        node.assignSerializedId(id);
+    }
     node.setName(j.value("name", node.name()));
     node.setEnabled(j.value("enabled", true));
 
@@ -448,7 +467,6 @@ bool loadNodeFields(Node& node, const json& j, const std::string& path,
                 return false;
             }
             const std::string tn = bj["type"].get<std::string>();
-            if (tn == "SceneSettings") continue;  // legacy; handled by scene settings
             if (!isSupportedHeadlessBehaviourType(tn)) {
                 error = behaviourPath + ": unsupported behaviour type '" + tn +
                         "' in headless snapshot";
@@ -596,7 +614,31 @@ bool deserializeSceneSnapshot(const json& doc, Scene& out, std::string* error) {
             }
         }
 
-        out.readConnections(root);
+        if (auto connections = root.find("connections"); connections != root.end()) {
+            if (!connections->is_array()) return fail("scene.connections: expected an array");
+            for (std::size_t i = 0; i < connections->size(); ++i) {
+                const json& connection = (*connections)[i];
+                const std::string path =
+                    "scene.connections[" + std::to_string(i) + "]";
+                if (!connection.is_object()) return fail(path + ": expected an object");
+                NodeId from = kNodeInvalid;
+                NodeId to = kNodeInvalid;
+                if (!connection.contains("from") ||
+                    !snapshotNodeIdFromJson(connection["from"], from))
+                    return fail(path + ".from: expected a non-zero decimal string");
+                if (!connection.contains("to") ||
+                    !snapshotNodeIdFromJson(connection["to"], to))
+                    return fail(path + ".to: expected a non-zero decimal string");
+                if (!connection.contains("signal") || !connection["signal"].is_string() ||
+                    connection["signal"].get_ref<const std::string&>().empty())
+                    return fail(path + ".signal: expected a non-empty string");
+                if (!connection.contains("slot") || !connection["slot"].is_string() ||
+                    connection["slot"].get_ref<const std::string&>().empty())
+                    return fail(path + ".slot: expected a non-empty string");
+                out.connections().push_back({from, connection["signal"].get<std::string>(),
+                                             to, connection["slot"].get<std::string>()});
+            }
+        }
         Node::g_hierarchyVersion++;
         Node::g_transformVersion++;
         return true;

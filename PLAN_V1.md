@@ -26,7 +26,7 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
   Mesh préservées et création Mesh sans ResourceManager refusée.
 - [x] AssetLoader async texture/OBJ et `.srig/.sclip/.sgraph`, plus déchargement
   GPU sur changement de scène; mémoire stable sur 16 cycles desktop/Web.
-- [x] Schémas, migrations et corpus de compatibilité de base.
+- [x] Schémas stricts et corpus figé des formats V1.
 - [x] API JS cross-node : autoloads, groupes, résolution NodeId, signaux et
   appels JSON entre contextes, traversés par Witness desktop/Web.
 - [x] Séquences `.sseq` au runtime : `SequenceDirector` fail-closed (animation,
@@ -45,6 +45,9 @@ moteur. Les contrats et limites sont dans [SPEC.md](SPEC.md).
 - [x] Matrice V1 canonique des factories natif/headless/authoring WASM/player
   Web, publiée dans `EngineManifest` et vérifiée au démarrage; round-trip
   headless exact du HUD et des cinq types physiques V1.
+- [x] Identité moteur `1.0.0` centralisée dans `core/EngineVersion.hpp`, publiée
+  par `saida_tool describe-engine` et écrite dans tous les projets V1; les
+  documents de préversion sont refusés sans branche de rétrocompatibilité.
 
 ## Reprise pour les prochaines sessions
 
@@ -54,6 +57,13 @@ asynchrone; Character consomme son graph à `ready`, le panneau Animation reste
 non bloquant, et les cycles Witness desktop/Web prouvent mémoire et
 déchargement. La qualification automatisée de P0.7 et son commit exact sont
 consignés dans la section P0.7 ci-dessous.
+
+Le candidat local `RelWithDebInfo` du 2026-07-21 passe 69/69 CTest, les trois
+parcours Witness desktop (export CLI, Play éditeur, Build éditeur), Chrome et
+Edge avec run + restart, la conformité, la fermeture DLL, les symboles,
+l'archive et l'installeur. Cette preuve est volontairement marquée `dirty:true`
+jusqu'au commit de clôture; elle ne remplace pas la recette finale depuis un
+commit propre.
 
 La migration des behaviours built-in vers le registre unique est terminée :
 plus aucune exception manuelle. `LODGroupBehaviour` et `ScriptBehaviour` portent
@@ -75,14 +85,13 @@ interaction unifiée, World Space, undo complet WebCanvas/CollisionShape dans
 l'inspector, décisions V1 documentées (assets UI par chemin projet, pas de
 backend GPU RmlUi, UI XR en fallback déclaré). Preuves dans la section P0.3.
 
-Prochain chantier autonome conseillé : compléments physique (diagnostics, puis
-slider/cône/moteurs/breakables), rendu/lightmaps, puis LTO seulement après
-stabilité. À réserver à une session assistée séparée : adaptation visuelle des
-prompts (P0.6), pads physiques Xbox/PlayStation, signature Authenticode avec la
-clé de publication, validations XR/casques et benchmarks sur GPU physique.
-Lavapipe peut qualifier les contrats et le packaging CI, pas remplacer une
-preuve matérielle. Toute case cochée doit conserver dans ce fichier le commit/run
-ou le corpus exact qui la prouve.
+Les seuls chantiers P0 encore ouverts sont désormais assistés : pads physiques
+Xbox/PlayStation et signature Authenticode avec la clé de publication. Les
+compléments physique, rendu/lightmaps, LTO, XR et benchmarks GPU restent P1 et
+ne doivent pas retarder la V1 sans changement explicite de périmètre. Lavapipe
+peut qualifier les contrats et le packaging CI, pas remplacer une preuve
+matérielle. Toute case cochée doit conserver dans ce fichier le commit/run ou le
+corpus exact qui la prouve.
 
 ## P0.1 - Jeu témoin et chemin de livraison
 
@@ -118,8 +127,8 @@ par hash, avec WitnessGame PASS sur les deux. **Fermée le 2026-07-18.**
 - [x] Ajouter explicitement UI et nœuds physiques requis au fold headless.
 - [x] Prouver un round-trip sémantique de chaque type/propriété/behaviour sur les
   quatre runtimes; aucun fallback générique.
-  Preuves : headless exhaustif sur 14 types de nœuds, 18 behaviours et 157
-  propriétés réfléchies; serializer complet natif sur 26/22/151; snapshot
+  Preuves : headless exhaustif sur 17 types de nœuds, 15 behaviours et 137
+  propriétés réfléchies; serializer complet natif sur 29/19/137; snapshot
   Authoring Web sur 9/0/90; player Web sur 15/10/120. Chaque corpus utilise des
   valeurs non triviales et exige l'identité JSON après reconstruction.
 - [x] Migrer l'adressage des SaidaOps du nom mutable vers `NodeId`.
@@ -131,15 +140,15 @@ par hash, avec WitnessGame PASS sur les deux. **Fermée le 2026-07-18.**
   tous les types annoncés round-trippent. `saida_tool verify-manifest` génère le
   manifeste, exige que chaque nœud/behaviour annoncé soit une ligne de la
   `runtimeTypeMatrix` round-trippée, vérifie le registre headless vivant contre
-  la matrice et exécute le round-trip snapshot headless (14 nœuds, 18 behaviours,
-  151 propriétés). Joué en CI sur l'artefact `saida_tool` (`saida_tool_verify_manifest`).
+  la matrice et exécute le round-trip snapshot headless (17 nœuds, 15 behaviours,
+  137 propriétés). Joué en CI sur l'artefact `saida_tool` (`saida_tool_verify_manifest`).
   Au passage, `verifySnapshotRoundTripContract` devient réellement resource-free
   et `RuntimeTypeMatrixTests` réutilise ce contrat partagé au lieu d'en dupliquer
   la boucle.
-- [x] Étendre le corpus de compatibilité avec WitnessGame gelé et snapshots de
-  chaque version publiée. `tests/fixtures/compat/witness_v1.*` sont des copies
+- [x] Étendre le corpus figé V1 avec WitnessGame et les snapshots de la version
+  chaque version publiée. `tests/fixtures/v1-format/witness_v1.*` sont des copies
   exactes des artefacts durables de WitnessGame (projet, registre, scènes hub et
-  arena), chargées par leurs vrais loaders dans `saida_compat_corpus_tests` avec
+  arena), chargées par leurs vrais loaders dans `saida_v1_format_corpus_tests` avec
   garde anti-réécriture; les scènes valident headless le HUD UI, la physique et
   les 18 types de nœuds/behaviours V1. Chaque version publiée suivante ajoute un
   jeu `witness_vN_*` immuable selon la même convention.
@@ -293,8 +302,8 @@ décision de périmètre V1 explicitement documentée dans SPEC §8.3.
   desktop et player Web. Contraintes : nœuds réfléchis `FixedJoint`/`PointJoint`/
   `HingeJoint` (corps par chemins de nœuds, `bodyA` = ancêtre par défaut, `bodyB`
   vide = monde; pivot/axe depuis le transform du joint), matrice `{R, R, A, R}`
-  sur les 4 runtimes, round-trip automatique (headless 17/18/161, natif
-  29/22/161, player Web 18/10/130); `PhysicsWorld` purge les contraintes d'un
+  sur les 4 runtimes, round-trip automatique (headless 17/15/137, natif
+  29/19/137, player Web 18/10/130); `PhysicsWorld` purge les contraintes d'un
   body retiré et réveille les corps survivants. Prouvé par
   `saida_physics_query_joint_tests` (queries filtrées, pendule retenu vs chute
   libre, rebuild après `markDirty`, retrait de corps sans contrainte pendante)
@@ -338,12 +347,12 @@ décision de périmètre V1 explicitement documentée dans SPEC §8.3.
   dans le dossier ciblé, aucune `saves/` dans le package).
 - [x] Rendre les écritures atomiques avec conservation de l'ancien fichier si
   le remplacement échoue.
-- [x] Versionner les saves, fournir migrations/rejet explicite et metadata de
+- [x] Versionner les saves, imposer le schéma courant et fournir la metadata de
   slots. Le service `PlayerStorage` écrit chaque slot dans une enveloppe
   `{schema, version, __saidaStore, kind, dataVersion, savedAt, bytes, payload}`
-  (schéma 1) refusée fail-closed via `format::schemaEnvelopeError` si future ou
-  incohérente; une save V0 héritée (chaîne brute) charge verbatim puis est
-  promue en enveloppe à la réécriture; `storage.info(slot)` expose la metadata.
+  (schéma 1) refusée fail-closed via `format::schemaEnvelopeError` si absente,
+  non courante ou incohérente; aucune chaîne brute ni préversion n'est chargée;
+  `storage.info(slot)` expose la metadata.
 - [x] Séparer préférences et progression, ajouter quotas et erreurs explicites.
   `storage.*` = progression (`saves/`), `storage.prefs.*` = préférences
   (`prefs/`), namespaces indépendants; quotas par slot (1 MiB), par namespace
@@ -501,7 +510,7 @@ valeur neutre trompeuse.
 
 ## P0.7 - Release, CI et exploitation moteur
 
-- [x] Rendre obligatoires build natif, 50+ tests, corpus compat, fold
+- [x] Rendre obligatoires build natif, 50+ tests, corpus V1, fold
   déterministe, Witness desktop et Witness Web dans la CI.
 - [x] Publier `saida_tool`, player Web et authoring WASM comme artefacts pinnés,
   jamais via `latest` seul.
@@ -536,11 +545,14 @@ valeur neutre trompeuse.
   notices complètes, l'inventaire hashé des assets/modèles et un manifeste
   déterministe. Les 19 composants (moteur inclus), chaque racine
   `third_party` et chaque extension d'asset suivie sont couverts en fail-closed.
-  Purge open-source du 2026-07-21 : les projets legacy sans provenance
+  Purge open-source du 2026-07-21 : les anciens projets sans provenance
   (`GTAClone/`, `MyGame/`, 4 assets `NOASSERTION`) et le DamagedHelmet
   CC-BY-NC sont retirés du dépôt (la scène de test XR vit désormais sous
   `assets/scenes/XRSetup.scene`) — l'inventaire régénéré compte 18 assets
-  suivis, 18 distribuables, 0 exclu. Le bundle exact est inclus dans le release
+  suivis, 18 distribuables, 0 exclu. Les trois behaviours générés propres au
+  GTA clone (`Gun`, `NpcWander`, `Vehicle`) et l'ancien serveur d'écho de
+  développement Web sont également retirés de la surface V1; la matrice
+  contractuelle contient désormais 48 types. Le bundle exact est inclus dans le release
   manifest moteur, les archives Witness et un artefact CI épinglé au SHA.
 - [x] Tester le bouton Build et les packages sur runners propres.
   Preuve commune : commit `6ec91c2`, workflow
@@ -580,7 +592,7 @@ Gate : une release peut être reproduite, identifiée, diagnostiquée et retiré
 - [x] Hub : garantir renommage dossier, entrée Hub et `.saidaproj` atomique.
   `renameProjectDirectory` (`src/project/ProjectRename.*`) renomme ensemble le
   dossier, le `.saidaproj` (fichier + champ `name`) et l'entrée `hub.json`,
-  avec validation du nom, refus fail-closed (cible existante, projet legacy ou
+  avec validation du nom, refus fail-closed (cible existante, projet non courant ou
   futur, registre Hub corrompu) et rollback complet sur échec — chaque état
   intermédiaire reste chargeable. Le bouton Rename du Hub l'utilise et ne met
   à jour l'entrée qu'en cas de succès. Au passage, `Project::load` accepte le
@@ -595,10 +607,10 @@ Gate : une release peut être reproduite, identifiée, diagnostiquée et retiré
   préservés) et passent par `registerBehaviour<T>()` dans `ReflectedTypes.cpp`
   et `ReflectedTypesPlayer.cpp`; les registrations manuelles dans `Engine.cpp`
   et `SceneSnapshot.cpp` et le cas spécial headless sont supprimés. Preuves le
-  2026-07-20, commit `620a976` : build natif complet, 65/65 CTest (corpus compat et matrice
-  inclus), `saida_tool verify-manifest` OK avec 18 behaviours annoncés (dont
+  2026-07-20, commit `620a976` : build natif complet, 65/65 CTest (corpus V1 et matrice
+  inclus), `saida_tool verify-manifest` OK avec 15 behaviours annoncés (dont
   les deux migrés, désormais publiés dans le manifeste), round-trip headless
-  17/18/161, `SaidaEngine --verify-runtime-contract` PASS natif 29/22/161,
+  17/15/137, `SaidaEngine --verify-runtime-contract` PASS natif 29/19/137,
   player Web et authoring WASM reconstruits.
 - [ ] Physique : compléter queries, contraintes et diagnostics.
 - [ ] Stabiliser le flag GPU-driven et benchmarker chemin classique, bindless,

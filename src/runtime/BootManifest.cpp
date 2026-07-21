@@ -49,11 +49,14 @@ BootManifestResult parseBootManifest(std::istream& in) {
         else if (key == "main_scene") result.manifest.mainScene = value;
     }
 
-    if (!schemaSeen) result.manifest.schema = format::kLegacyVersion;
-    if (result.manifest.schema > format::kBootManifestVersion) {
-        result.error = "boot manifest: schema " + std::to_string(result.manifest.schema) +
-                       " is newer than supported " +
-                       std::to_string(format::kBootManifestVersion);
+    if (!schemaSeen) {
+        result.error = "boot manifest: missing 'schema='";
+        return result;
+    }
+    if (result.manifest.schema != format::kBootManifestVersion) {
+        result.error = "boot manifest: unsupported schema " +
+                       std::to_string(result.manifest.schema) + " (expected " +
+                       std::to_string(format::kBootManifestVersion) + ")";
         return result;
     }
 

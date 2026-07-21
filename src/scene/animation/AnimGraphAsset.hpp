@@ -3,8 +3,7 @@
 // AnimGraphAsset — l'asset persistant de logique de lecture (.sgraph, JSON).
 // L'éditeur visuel et les outils LLM manipulent ce document ; le runtime
 // n'évalue jamais le JSON — build() le compile en AnimStateMachine et
-// AnimationProgram::compile() en programme data-oriented. Le DSL texte
-// d'AnimGraphParser reste un chemin legacy.
+// AnimationProgram::compile() en programme data-oriented.
 //
 // Schéma JSON (schema == kAnimGraphSchema) :
 //   {
@@ -22,10 +21,6 @@
 //     ]
 //   }
 //
-// Le schéma 1 reste lisible tel quel : le schéma 2 n'ajoute que des champs
-// optionnels (type "trigger", speed d'état, exitTime/syncPhase de transition,
-// condition {param} abrégée pour les triggers).
-
 #include "scene/animation/ClipView.hpp"  // AssetDiagnostic
 
 #include <functional>

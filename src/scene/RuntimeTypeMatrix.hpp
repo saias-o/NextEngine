@@ -44,7 +44,7 @@ constexpr RuntimeTypeAvailability O = RuntimeTypeAvailability::Optional;
 
 // Rows are sorted by category then public serialized name. XR factories are
 // optional in the native target because they depend on SAIDA_ENABLE_XR.
-inline constexpr std::array<RuntimeTypeRow, 51> kRuntimeTypeMatrix{{
+inline constexpr std::array<RuntimeTypeRow, 48> kRuntimeTypeMatrix{{
     {"Area", RuntimeTypeCategory::Node, {R, R, A, R}},
     {"Camera", RuntimeTypeCategory::Node, {R, R, R, R}},
     {"CharacterBody", RuntimeTypeCategory::Node, {R, R, A, R}},
@@ -80,10 +80,8 @@ inline constexpr std::array<RuntimeTypeRow, 51> kRuntimeTypeMatrix{{
     {"Blackboard", RuntimeTypeCategory::Behaviour, {R, R, A, R}},
     {"CameraFollow", RuntimeTypeCategory::Behaviour, {R, R, A, R}},
     {"Character", RuntimeTypeCategory::Behaviour, {R, R, A, R}},
-    {"Gun", RuntimeTypeCategory::Behaviour, {R, R, A, A}},
     {"Health", RuntimeTypeCategory::Behaviour, {R, R, A, A}},
     {"LOD Group", RuntimeTypeCategory::Behaviour, {R, R, A, A}},
-    {"NpcWander", RuntimeTypeCategory::Behaviour, {R, R, A, A}},
     {"Rotator", RuntimeTypeCategory::Behaviour, {R, R, A, R}},
     {"ScenarioAnchor", RuntimeTypeCategory::Behaviour, {R, R, A, A}},
     {"ScenarioDirector", RuntimeTypeCategory::Behaviour, {R, R, A, A}},
@@ -92,7 +90,6 @@ inline constexpr std::array<RuntimeTypeRow, 51> kRuntimeTypeMatrix{{
     {"SequenceDirector", RuntimeTypeCategory::Behaviour, {R, R, A, R}},
     {"Spawner", RuntimeTypeCategory::Behaviour, {R, R, A, R}},
     {"StateMachine", RuntimeTypeCategory::Behaviour, {R, R, A, R}},
-    {"Vehicle", RuntimeTypeCategory::Behaviour, {R, R, A, A}},
     {"XRDirectInteractor", RuntimeTypeCategory::Behaviour, {O, A, A, A}},
     {"XRGrabbable", RuntimeTypeCategory::Behaviour, {O, A, A, A}},
     {"XRRayInteractor", RuntimeTypeCategory::Behaviour, {O, A, A, A}},

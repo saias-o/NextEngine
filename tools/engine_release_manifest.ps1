@@ -6,7 +6,7 @@ param(
     [string]$WebPlayerDir = 'build-web-player',
     [string]$AuthoringWasmDir = 'build-authoring-wasm',
     [string]$AuthoringRuntimeDir = 'build-web',
-    [string]$FixturesDir = 'tests/fixtures/compat',
+    [string]$FixturesDir = 'tests/fixtures/v1-format',
     [switch]$AllowDirty,
     [switch]$SkipVerify
 )
@@ -15,7 +15,7 @@ param(
 # one engine bundle. It pins the format/contract versions (read from the shipped
 # saida_tool, the single source of truth) plus the SHA-256 of saida_tool, the
 # desktop runtime, the Web player, the authoring WASM surfaces and every frozen
-# compatibility fixture. The Saida platform pins this manifest so its Docker
+# V1 format fixture. The Saida platform pins this manifest so its Docker
 # tool, its served Web bundle and its fixtures cannot silently diverge.
 
 $ErrorActionPreference = 'Stop'

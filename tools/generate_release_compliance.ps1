@@ -101,7 +101,7 @@ try {
     }
 
     # Tracked media/animation assets are also fail-closed: additions require an
-    # explicit row, including a distribution decision for unresolved legacy data.
+    # explicit row, including a distribution decision for unresolved data.
     $extensions = @($assetConfig.trackedExtensions | ForEach-Object {
         ([string]$_).ToLowerInvariant()
     })

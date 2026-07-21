@@ -81,11 +81,6 @@ public:
     // Ne résout pas les .mtl (les matériaux du moteur viennent des scènes).
     static bool parseObjBytes(const uint8_t* data, size_t size, MeshData& out, std::string& error);
 
-    // Loads an .obj. generateLightmapUVs is retained for compatibility and is
-    // currently ignored; the secondary UV set mirrors the texture UVs.
-    static std::unique_ptr<Mesh> fromObjFile(GeometryRegistry& registry, const std::string& path,
-                                             bool generateLightmapUVs = false);
-
     void bind(rhi::RenderPassEncoder& rp) const;
     void draw(rhi::RenderPassEncoder& rp) const;
 

@@ -25,9 +25,6 @@
 #include "scenario/ScenarioAnchor.hpp"
 #include "scenario/ScenarioDirector.hpp"
 #include "scenario/ScenarioRunnerBehaviour.hpp"
-#include "generated/VehicleBehaviour.hpp"
-#include "generated/NpcWanderBehaviour.hpp"
-#include "generated/GunBehaviour.hpp"
 // <<SAIDA_MCP_INCLUDES>>  (write_cpp_behaviour inserts generated #includes above this line)
 
 namespace saida {
@@ -78,11 +75,6 @@ void registerReflectedTypes() {
     registerBehaviour<ScenarioAnchor>();
     registerBehaviour<ScenarioDirector>();
     registerBehaviour<ScenarioRunnerBehaviour>();
-    // GTA-clone gameplay (drivable cars + wandering NPCs).
-    registerBehaviour<VehicleBehaviour>();
-    registerBehaviour<NpcWanderBehaviour>();
-    registerBehaviour<GunBehaviour>();
-
     registerNode<LightNode>();
     registerNode<WaterNode>();
     registerNode<ParticleSystemNode>();

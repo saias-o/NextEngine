@@ -92,10 +92,10 @@ AnimGraphParseResult AnimGraphAsset::parse(const nlohmann::json& j) {
                               "'schema' must be a positive integer"));
         return result;
     }
-    if (schema > kAnimGraphSchema) {
-        diags.push_back(error("animgraph.schema.newer", "/schema",
-                              "schema " + std::to_string(schema) + " is newer than supported " +
-                                  std::to_string(kAnimGraphSchema)));
+    if (schema != kAnimGraphSchema) {
+        diags.push_back(error("animgraph.schema.unsupported", "/schema",
+                              "unsupported schema " + std::to_string(schema) +
+                                  " (expected " + std::to_string(kAnimGraphSchema) + ")"));
         return result;
     }
 

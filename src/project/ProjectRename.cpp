@@ -106,15 +106,12 @@ ProjectRenameResult renameProjectDirectory(const std::string& rootPath,
         return failure;
     }
 
-    // The project file must be a current JSON document: rewriting a legacy or
-    // future schema here would silently convert durable data.
+    // The project file must be a current JSON document.
     std::string originalBytes;
     if (!readFileBytes(oldProjPath, originalBytes, failure.error)) return failure;
     json doc = json::parse(originalBytes, nullptr, /*allow_exceptions=*/false);
     if (doc.is_discarded() || !doc.is_object()) {
-        failure.error = "project file is not a JSON document (a legacy project "
-                        "must be re-saved by the editor before a rename): " +
-                        oldProjPath.string();
+        failure.error = "project file is not a JSON document: " + oldProjPath.string();
         return failure;
     }
     if (const std::string envelope =

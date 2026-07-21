@@ -41,10 +41,11 @@ RetargetProfileParseResult RetargetProfile::parse(const nlohmann::json& j) {
                               "'schema' must be a positive integer"));
         return result;
     }
-    if (schema > kRetargetProfileSchema) {
-        diags.push_back(error("retarget.schema.newer", "/schema",
-                              "schema " + std::to_string(schema) + " is newer than supported " +
-                                  std::to_string(kRetargetProfileSchema)));
+    if (schema != kRetargetProfileSchema) {
+        diags.push_back(error("retarget.schema.unsupported", "/schema",
+                              "unsupported schema " + std::to_string(schema) +
+                                  " (expected " +
+                                  std::to_string(kRetargetProfileSchema) + ")"));
         return result;
     }
 

@@ -454,9 +454,12 @@ void testStableNodeIdAddressing() {
 void testManifestContainsReflectedProperties() {
     json manifest = saida::authoring::buildEngineManifest();
     json manifestAgain = saida::authoring::buildEngineManifest();
+    require(manifest["engineVersion"] == saida::authoring::kEngineVersion);
+    require(manifest["engineVersion"] == "1.0.0");
     require(manifest["opVersion"].get<int>() == saida::authoring::kOpVersion);
     require(manifest["opAddressing"]["kind"] == "stable-node-id");
     require(manifest["opAddressing"]["nodeIdJsonType"] == "decimal-string");
+    require(manifest["opAddressing"]["snapshotNodeIdJsonType"] == "decimal-string");
     require(manifest == manifestAgain);
     require(manifest["properties"]["LightNode"].is_array());
     require(manifest["properties"]["Water"].is_array());
@@ -556,6 +559,8 @@ void testSnapshotReflectsAppliedOps() {
     const json& child = snapshot["scene"]["children"][0];
     require(child["type"] == "LightNode");
     require(child["name"] == "SnapshotSun");
+    require(child["id"].is_string());
+    require(child["id"] == nodeRef(snapshotSun->id()));
     require(close(child["intensity"].get<float>(), 2.25f));
     require(child["transform"]["position"].is_array());
 }
@@ -645,7 +650,7 @@ void testHeadlessSnapshotFailsClosed() {
     json unknownNode = valid;
     unknownNode["scene"]["children"].push_back({
         {"type", "MissingNode"},
-        {"id", 999},
+        {"id", "999"},
         {"name", "Unsupported"},
         {"enabled", true},
         {"transform", {{"position", {0, 0, 0}},
@@ -671,11 +676,15 @@ void testHeadlessSnapshotFailsClosed() {
     require(error.find("unsupported behaviour type") != std::string::npos);
     require(out.children().empty());
 
-    // The compatibility boundary is explicit: old version-only documents still
-    // load, while contradictory or future contracts are refused.
-    json legacyShape = valid;
-    legacyShape.erase("schema");
-    require(saida::authoring::deserializeSceneSnapshot(legacyShape, out, &error));
+    json missingSchema = valid;
+    missingSchema.erase("schema");
+    require(!saida::authoring::deserializeSceneSnapshot(missingSchema, out, &error));
+    require(error.find("schema is required") != std::string::npos);
+
+    json numericId = valid;
+    numericId["scene"]["id"] = 42;
+    require(!saida::authoring::deserializeSceneSnapshot(numericId, out, &error));
+    require(error.find("decimal string") != std::string::npos);
 
     json mismatch = valid;
     mismatch["version"] = saida::format::kSceneVersion - 1;
@@ -734,16 +743,17 @@ void testMeshResourceRefsRoundTrip() {
     // Document source : un MeshNode « riche » comme en produirait le format
     // complet (refs numériques AssetID + chemin string + params matériau).
     json doc = {
+        {"schema", saida::format::kSceneVersion},
         {"version", saida::format::kSceneVersion},
         {"snapshotMode", "authoring-headless"},
         {"scene", {
-            {"type", "Scene"}, {"id", 1}, {"name", "Root"}, {"enabled", true},
+            {"type", "Scene"}, {"id", "1"}, {"name", "Root"}, {"enabled", true},
             {"transform", {{"position", {0.0f, 0.0f, 0.0f}},
                            {"rotation", {0.0f, 0.0f, 0.0f, 1.0f}},
                            {"scale", {1.0f, 1.0f, 1.0f}}}},
             {"behaviours", json::array()},
             {"children", json::array({json{
-                {"type", "MeshNode"}, {"id", 2}, {"name", "Palm_A"}, {"enabled", true},
+                {"type", "MeshNode"}, {"id", "2"}, {"name", "Palm_A"}, {"enabled", true},
                 {"transform", {{"position", {1.0f, 2.0f, 3.0f}},
                                {"rotation", {0.0f, 0.0f, 0.0f, 1.0f}},
                                {"scale", {1.0f, 1.0f, 1.0f}}}},
@@ -953,6 +963,8 @@ void testSignalConnectionOps() {
     json snap = json::parse(saida::authoring::serializeSceneSnapshot(scene, nullptr));
     require(snap["scene"].contains("connections"));
     require(snap["scene"]["connections"].size() == 1);
+    require(snap["scene"]["connections"][0]["from"] == nodeRef(a->id()));
+    require(snap["scene"]["connections"][0]["to"] == nodeRef(b->id()));
     saida::Scene reloaded;
     std::string err;
     require(saida::authoring::deserializeSceneSnapshot(snap, reloaded, &err));

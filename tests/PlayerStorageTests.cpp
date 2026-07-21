@@ -37,12 +37,6 @@ PlayerStorage makeStore(const std::filesystem::path& root, StorageQuota quota = 
     return PlayerStorage(root / "saves", root / "prefs", quota);
 }
 
-std::string readFile(const std::filesystem::path& path) {
-    std::ifstream f(path, std::ios::binary);
-    std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-    return s;
-}
-
 // A save round-trips its opaque payload and metadata untouched.
 void testRoundTrip(const std::filesystem::path& root) {
     PlayerStorage store = makeStore(root);
@@ -89,25 +83,15 @@ void testNamespaceSeparation(const std::filesystem::path& root) {
     require(!std::filesystem::exists(root / "saves" / "game.json"), "progress file removed");
 }
 
-// Legacy raw-string saves (no envelope) load verbatim, then upgrade on rewrite.
-void testLegacyMigration(const std::filesystem::path& root) {
+void testRawSaveIsRejected(const std::filesystem::path& root) {
     PlayerStorage store = makeStore(root);
     std::filesystem::create_directories(root / "saves");
-    const std::string legacy = R"({"relics":1})";
-    { std::ofstream f(root / "saves" / "old.json", std::ios::binary); f << legacy; }
+    const std::string raw = R"({"relics":1})";
+    { std::ofstream f(root / "saves" / "old.json", std::ios::binary); f << raw; }
 
     StorageResult loaded = store.load(StorageKind::Progress, "old");
-    require(bool(loaded) && loaded.payload == legacy, "legacy payload verbatim");
-    require(loaded.meta.schema == 0, "legacy reports schema 0");
-
-    // Rewriting upgrades the file to the versioned envelope.
-    require(bool(store.save(StorageKind::Progress, "old", legacy)), "rewrite legacy");
-    json doc = json::parse(readFile(root / "saves" / "old.json"));
-    require(doc.contains("__saidaStore") && doc["__saidaStore"].get<bool>(),
-            "rewritten file is an envelope");
-    require(doc["schema"].get<int>() == kSaveEnvelopeVersion, "envelope schema");
-    require(store.load(StorageKind::Progress, "old").payload == legacy,
-            "payload preserved through upgrade");
+    require(loaded.status == StorageStatus::Corrupt, "raw save refused");
+    require(loaded.payload.empty(), "raw save payload hidden");
 }
 
 // A future or tampered envelope is refused, not silently misread.
@@ -266,7 +250,7 @@ int main() {
     testSaveLocationPolicy(root / "policy");
     testRoundTrip(root / "round");
     testNamespaceSeparation(root / "ns");
-    testLegacyMigration(root / "legacy");
+    testRawSaveIsRejected(root / "raw-save");
     testCorruptRefused(root / "corrupt");
     testQuotas(root / "quota");
     testInvalidAndMissing(root / "invalid");

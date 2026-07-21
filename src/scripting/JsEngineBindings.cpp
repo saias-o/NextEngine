@@ -147,8 +147,7 @@ JSValue jsAudioPlay(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) 
 //
 // storage.* opère sur la progression, storage.prefs.* sur les préférences.
 // Le dernier échec d'une opération non levée (quota, io, corruption) est
-// consultable via storage.lastError() ; save/remove renvoient un booléen pour
-// préserver le contrat historique.
+// consultable via storage.lastError() ; save/remove renvoient un booléen.
 
 // Dernier statut/diagnostic d'une opération storage du contexte courant.
 thread_local StorageStatus gLastStorageStatus = StorageStatus::Ok;
@@ -274,7 +273,7 @@ JSValue jsStorageSaveKind(JSContext* ctx, StorageKind kind, int argc,
     if (argc < 2) return JS_ThrowTypeError(ctx, "storage.save(slot, jsonString)");
     const char* value = JS_ToCString(ctx, argv[1]);
     if (!value) return JS_EXCEPTION;
-    // Version applicative optionnelle (migrations côté jeu), défaut 0.
+    // Version applicative optionnelle, défaut 0.
     int dataVersion = 0;
     if (argc >= 3 && !JS_IsUndefined(argv[2]) && !JS_IsNull(argv[2]))
         JS_ToInt32(ctx, &dataVersion, argv[2]);
@@ -431,7 +430,7 @@ JSValue jsAssetsStats(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     JS_SetPropertyStr(ctx, o, "budgetBytes",
                       JS_NewInt64(ctx, static_cast<int64_t>(stats.budgetBytes)));
     // Octets GPU des ressources résidentes (textures/meshes chargés par asset)
-    // — champ additif (compat OK), critère de fuite du chantier 3 en E2E.
+    // — critère de fuite du chantier 3 en E2E.
     JS_SetPropertyStr(ctx, o, "gpuResidentBytes",
                       JS_NewInt64(ctx, static_cast<int64_t>(tree->resources().gpuResidentBytes())));
     // Budget GPU mi-scène (P0.5) : plafond, évictions LRU cumulées.

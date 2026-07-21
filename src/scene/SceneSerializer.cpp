@@ -69,11 +69,8 @@ bool validateTypeContract(const json& node, const std::string& path,
                 return rejectTypeContract(behaviourPath + ".type must be a string", error);
             }
             const std::string behaviourType = behaviour["type"].get<std::string>();
-            // Legacy scene settings are migrated by loadIntoScene and are not
-            // instantiated as a runtime Behaviour.
-            if (behaviourType != "SceneSettings" &&
-                BehaviourRegistry::instance().factories().find(behaviourType) ==
-                    BehaviourRegistry::instance().factories().end()) {
+            if (BehaviourRegistry::instance().factories().find(behaviourType) ==
+                BehaviourRegistry::instance().factories().end()) {
                 return rejectTypeContract(behaviourPath + ": unsupported behaviour type '" +
                                               behaviourType + "'",
                                           error);
@@ -222,14 +219,6 @@ bool acceptSceneDocumentVersion(const json& doc, const std::string& context,
         return false;
     }
 
-    const int version = format::readSchema(doc, format::kLegacyVersion);
-    if (!format::hasIntegerSchema(doc)) {
-        Log::info(context, ": migrated legacy scene schema v", version, " -> v",
-                  format::kSceneVersion, " in memory: ", path);
-    } else if (version < format::kSceneVersion) {
-        Log::info(context, ": migrated scene format v", version, " -> v",
-                  format::kSceneVersion, " in memory: ", path);
-    }
     return true;
 }
 
@@ -392,35 +381,6 @@ bool SceneSerializer::loadIntoScene(Scene& scene, ResourceManager& resources,
 
         if (auto it = root.find("children"); it != root.end() && it->is_array()) {
             for (const json& cj : *it) {
-                // Backwards compatibility for old SceneSettingsBehaviour
-                if (cj.value("name", "") == "Settings") {
-                    if (auto bit = cj.find("behaviours"); bit != cj.end() && bit->is_array()) {
-                        for (const json& bj : *bit) {
-                            if (bj.value("type", "") == "SceneSettings") {
-                                scene.settings().ambientLight = glm::vec4(jsonToVec3(bj.value("ambient", json())), 0.0f);
-                                scene.settings().clearColor = glm::vec4(jsonToVec3(bj.value("clearColor", json())), 1.0f);
-                                scene.settings().enablePostProcessing = bj.value("postProcessing", true);
-                                scene.settings().iblEnabled = bj.value("iblEnabled", true);
-                                scene.settings().iblDiffuseIntensity = bj.value("iblDiffuseIntensity", 0.35f);
-                                scene.settings().iblSpecularIntensity = bj.value("iblSpecularIntensity", 1.0f);
-                                scene.settings().aoEnabled = bj.value("aoEnabled", true);
-                                scene.settings().aoRadius = bj.value("aoRadius", 0.75f);
-                                scene.settings().aoIntensity = bj.value("aoIntensity", 1.0f);
-                                scene.settings().aoPower = bj.value("aoPower", 1.35f);
-                                scene.settings().fogEnabled = bj.value("fogEnabled", false);
-                                if (bj.contains("fogColor"))
-                                    scene.settings().fogColor = glm::vec4(jsonToVec3(bj.value("fogColor", json())), 1.0f);
-                                scene.settings().fogStart = bj.value("fogStart", 8.0f);
-                                scene.settings().fogDensity = bj.value("fogDensity", 0.035f);
-                                scene.settings().bloomEnabled = bj.value("bloomEnabled", true);
-                                scene.settings().bloomThreshold = bj.value("bloomThreshold", 1.0f);
-                                scene.settings().bloomIntensity = bj.value("bloomIntensity", 0.25f);
-                                scene.settings().bloomRadius = bj.value("bloomRadius", 3.0f);
-                            }
-                        }
-                    }
-                    continue; // Skip creating the legacy node
-                }
                 auto child = deserializeNode(cj, resources, NodeIdPolicy::Preserve);
                 if (!child) {
                     Log::error("loadIntoScene: failed to deserialize a validated child: ", path);

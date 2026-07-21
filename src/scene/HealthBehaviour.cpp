@@ -27,7 +27,7 @@ void HealthBehaviour::die() {
     dead_ = true;
     health_ = 0.0f;
 
-    // Stop sliding and stop every other behaviour on this node (e.g. NpcWander).
+    // Stop sliding and stop every other behaviour on this node.
     if (CharacterBodyNode* body = node()->asCharacterBody()) body->velocity = glm::vec3(0.0f);
     for (const auto& b : node()->behaviours())
         if (b.get() != this) b->setEnabled(false);

@@ -41,14 +41,6 @@ bool hasErrors(const std::vector<AssetDiagnostic>& diagnostics) {
     return false;
 }
 
-bool ClipView::migrate(nlohmann::json&, int fromSchema,
-                       std::vector<AssetDiagnostic>& diagnostics) {
-    // Schéma 1 = premier schéma publié : rien à migrer pour l'instant.
-    diagnostics.push_back(error("clipview.schema.unknown", "/schema",
-                                "no migration from schema " + std::to_string(fromSchema)));
-    return false;
-}
-
 ClipViewParseResult ClipView::parse(const nlohmann::json& input) {
     ClipViewParseResult result;
     auto& diags = result.diagnostics;
@@ -66,13 +58,12 @@ ClipViewParseResult ClipView::parse(const nlohmann::json& input) {
                               "'schema' must be a positive integer"));
         return result;
     }
-    if (schema > kClipViewSchema) {
-        diags.push_back(error("clipview.schema.newer", "/schema",
-                              "schema " + std::to_string(schema) + " is newer than supported " +
-                                  std::to_string(kClipViewSchema)));
+    if (schema != kClipViewSchema) {
+        diags.push_back(error("clipview.schema.unsupported", "/schema",
+                              "unsupported schema " + std::to_string(schema) +
+                                  " (expected " + std::to_string(kClipViewSchema) + ")"));
         return result;
     }
-    if (schema < kClipViewSchema && !migrate(j, schema, diags)) return result;
 
     ClipView& v = result.view;
 

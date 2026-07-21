@@ -19,7 +19,7 @@ public:
         bool launchAfterBuild = false;    // "Build & Run"
 
         // Métadonnées de l'exécutable Windows (VERSIONINFO + icône).
-        std::string productVersion = "0.1.0";  // "a.b.c[.d]", champs ≤ 65535
+        std::string productVersion = "1.0.0";  // "a.b.c[.d]", champs ≤ 65535
         std::string companyName;               // optionnel
         std::string iconPath;                  // .ico, project-relative ou absolu; vide = aucun
     };

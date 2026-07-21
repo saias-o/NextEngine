@@ -33,14 +33,13 @@ public:
                                                        ResourceManager& resources,
                                                        NodeIdPolicy idPolicy = NodeIdPolicy::Regenerate);
 
-    // Headless check that a .scene document is parseable and its schema is
-    // accepted (legacy or ≤ current, never newer). No resources touched — used
-    // by the retro-compat corpus in CI.
+    // Headless check that a .scene document is parseable and uses the current
+    // schema. No resources are touched.
     static bool validateSceneDocumentFile(const std::string& path);
 
     // Validates that every serialized node and behaviour can be constructed by
     // the registries currently installed in this runtime. Player builds use
-    // this as a fail-closed compatibility boundary: unsupported content is
+    // this as a fail-closed contract boundary: unsupported content is
     // rejected instead of being silently replaced by a generic Node.
     static bool validateTypeContractJson(const std::string& json,
                                          std::string* error = nullptr);

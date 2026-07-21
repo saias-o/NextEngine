@@ -20,7 +20,7 @@
     ],
     "enabled": true,
     "id": 4242424242424242100,
-    "name": "CompatSceneV2",
+    "name": "V1FormatScene",
     "transform": {
       "position": [0.0, 0.0, 0.0],
       "rotation": [0.0, 0.0, 0.0, 1.0],

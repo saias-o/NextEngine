@@ -440,7 +440,6 @@ add_library(saida_engine STATIC
     src/scene/animation/AnimStateMachine.cpp
     src/scene/animation/Animator.cpp
     src/scene/animation/AnimBlackboard.cpp
-    src/scene/animation/AnimGraphParser.cpp
     src/scene/animation/AnimationAssetDecoders.cpp
     src/scene/animation/AnimationCache.cpp
     src/scene/animation/AnimationCooker.cpp
@@ -922,15 +921,14 @@ if (BUILD_TESTING)
     target_compile_options(saida_asset_loader_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_asset_loader_tests COMMAND $<TARGET_FILE:saida_asset_loader_tests>)
 
-    # Les fixtures de rétrocompatibilité sont figées et chargées à chaque build;
-    # toute rupture de chargement fait échouer la CI.
-    add_executable(saida_compat_corpus_tests tests/CompatCorpusTests.cpp)
-    saida_test_target(saida_compat_corpus_tests)
-    target_link_libraries(saida_compat_corpus_tests PRIVATE saida_engine)
-    target_compile_definitions(saida_compat_corpus_tests PRIVATE
-        SAIDA_COMPAT_CORPUS_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/compat")
-    target_compile_options(saida_compat_corpus_tests PRIVATE -Wall -Wextra)
-    add_test(NAME saida_compat_corpus_tests COMMAND $<TARGET_FILE:saida_compat_corpus_tests>)
+    # Les fixtures V1 sont figées et chargées à chaque build.
+    add_executable(saida_v1_format_corpus_tests tests/V1FormatCorpusTests.cpp)
+    saida_test_target(saida_v1_format_corpus_tests)
+    target_link_libraries(saida_v1_format_corpus_tests PRIVATE saida_engine)
+    target_compile_definitions(saida_v1_format_corpus_tests PRIVATE
+        SAIDA_V1_CORPUS_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/v1-format")
+    target_compile_options(saida_v1_format_corpus_tests PRIVATE -Wall -Wextra)
+    add_test(NAME saida_v1_format_corpus_tests COMMAND $<TARGET_FILE:saida_v1_format_corpus_tests>)
 
     # Métadonnées d'exe du Build (Étape 15) : VERSIONINFO + icône.
     add_executable(saida_exe_metadata_tests tests/ExeMetadataTests.cpp

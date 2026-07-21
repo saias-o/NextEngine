@@ -156,7 +156,7 @@ private:
         return value;
     }
 
-    static bool isIgnoredCompatibilityProperty(std::string name) {
+    static bool isUnsupportedWebCssProperty(std::string name) {
         std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
             return static_cast<char>(std::tolower(c));
         });
@@ -180,7 +180,7 @@ private:
             if (colon != std::string::npos && (openBrace == std::string::npos || openBrace < colon)) {
                 std::string name = token.substr(openBrace == std::string::npos ? 0 : openBrace + 1,
                                                 colon - (openBrace == std::string::npos ? 0 : openBrace + 1));
-                if (isIgnoredCompatibilityProperty(name)) {
+                if (isUnsupportedWebCssProperty(name)) {
                     out += "/* ignored unsupported web css: ";
                     out += trim(token);
                     out += " */";
@@ -249,7 +249,7 @@ constexpr const char* kEngineFontRoots[] = {
 };
 
 // Les familles génériques que les documents référencent; toutes pointent vers
-// les fichiers ci-dessus. "NextSans" est la famille historique des HUD.
+// les fichiers ci-dessus. "NextSans" est le nom public de la famille des HUD.
 constexpr const char* kSansSerifAliases[] = {"NextSans", "Arial", "Helvetica", "sans-serif"};
 
 bool isFontRequiredHere(const EngineFontSpec& spec) {

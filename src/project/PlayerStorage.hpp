@@ -19,9 +19,7 @@
 //   - byte and slot quotas with typed errors, so a runaway save fails loudly
 //     rather than filling the disk.
 //
-// Legacy raw-string saves written before the envelope existed load transparently
-// (schema 0) and are upgraded to an envelope on the next save. PlayerStorage is
-// pure filesystem logic with no engine dependency, so it is unit-tested headless
+// PlayerStorage is pure filesystem logic with no engine dependency, so it is unit-tested headless
 // and shared by desktop, the packaged runtime and the web player unchanged.
 namespace saida {
 
@@ -39,15 +37,15 @@ enum class StorageStatus {
 const char* toString(StorageStatus status);
 const char* toString(StorageKind kind);
 
-// Envelope schema written by this version. Bumped only with a migration path.
+// Envelope schema written by this version.
 constexpr int kSaveEnvelopeVersion = 1;
 
 struct StorageMeta {
     StorageKind kind = StorageKind::Progress;
     std::int64_t bytes = 0;    // payload length in bytes
-    std::int64_t savedAt = 0;  // unix seconds; 0 when unknown (legacy save)
-    int dataVersion = 0;       // app-supplied payload version (game migrations)
-    int schema = 0;            // envelope schema; 0 == legacy raw payload
+    std::int64_t savedAt = 0;
+    int dataVersion = 0;
+    int schema = 0;
 };
 
 struct StorageResult {

@@ -23,8 +23,8 @@ void testParseVersion() {
     unsigned short v[4];
     assert(saida::parseExeVersion("1.2.3.4", v));
     assert(v[0] == 1 && v[1] == 2 && v[2] == 3 && v[3] == 4);
-    assert(saida::parseExeVersion("0.1.0", v));
-    assert(v[0] == 0 && v[1] == 1 && v[2] == 0 && v[3] == 0);
+    assert(saida::parseExeVersion("1.0.0", v));
+    assert(v[0] == 1 && v[1] == 0 && v[2] == 0 && v[3] == 0);
     assert(saida::parseExeVersion("65535", v));
     assert(v[0] == 65535);
     assert(!saida::parseExeVersion("", v));
@@ -98,7 +98,7 @@ void testApplyMetadata(const char* selfPath) {
     }
 
     saida::ExeMetadata meta;
-    meta.productName = "Compat Witness";
+    meta.productName = "Metadata Witness";
     meta.version = "1.2.3.4";
     meta.companyName = "Saida";
     meta.iconPath = icon.string();
@@ -125,7 +125,7 @@ void testApplyMetadata(const char* selfPath) {
     assert(HIWORD(fixed->dwFileVersionLS) == 3);
     assert(LOWORD(fixed->dwFileVersionLS) == 4);
 
-    assert(queryString(block, L"ProductName") == "Compat Witness");
+    assert(queryString(block, L"ProductName") == "Metadata Witness");
     assert(queryString(block, L"CompanyName") == "Saida");
     assert(queryString(block, L"FileVersion") == "1.2.3.4");
     assert(queryString(block, L"OriginalFilename") == "PatchedGame.exe");

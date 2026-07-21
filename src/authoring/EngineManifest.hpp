@@ -3,6 +3,8 @@
 // Description stable du moteur pour les outils externes.
 // Garde l'authoring-core linke dans le build web afin que sa taille WASM soit reelle.
 
+#include "core/EngineVersion.hpp"
+
 #include <nlohmann/json.hpp>
 
 namespace saida::authoring {
@@ -11,8 +13,8 @@ namespace saida::authoring {
 //   scenario:{ actions:[...], conditions:[...] } }
 nlohmann::json buildEngineManifest();
 
-// Les snapshots assurent la compatibilite entre versions de contrat.
-constexpr const char* kEngineVersion = "0.1.0";
+// Les snapshots matérialisent la version courante du contrat d'authoring.
+constexpr const char* kEngineVersion = ::saida::kEngineVersion;
 constexpr int kOpVersion = 2;
 
 } // namespace saida::authoring
