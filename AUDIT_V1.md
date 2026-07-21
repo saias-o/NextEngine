@@ -137,8 +137,12 @@ vérifiée au boot, saves versionnées/quota-ées : sains et cohérents avec la 
 
 ## Ordre de traitement suggéré
 
+Le plan d'exécution détaillé (décompositions classe par classe, réorg des
+dossiers, phasage, règles) est dans [REFACTOR_V1.md](REFACTOR_V1.md). En bref :
+
 1. Trancher `SAIDA_ENABLE_MCP` (section E) — décision, pas du code.
-2. Découper `Renderer.cpp` (A + B) — le plus gros gain, débloque XR/GPU-driven.
-3. Source unique du registre de types (C) — supprime une classe entière de bugs
-   de parité.
-4. Reste des god classes (A) et magic numbers (D) au fil de l'eau.
+2. `ResourceManager` (C/§5.3) — le plus gros gain de déduplication.
+3. Source unique du registre de types (C/§5.5) — supprime une classe entière de
+   bugs de parité.
+4. Découper `Renderer.cpp` (A + B) — débloque XR/GPU-driven.
+5. Reste des god classes (A) et magic numbers (D) au fil de l'eau.
