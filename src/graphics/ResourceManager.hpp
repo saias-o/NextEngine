@@ -16,6 +16,7 @@
 #include "project/AssetLoader.hpp"
 #include "graphics/Material.hpp"
 #include "graphics/GeometryRegistry.hpp"
+#include "graphics/AsyncAssetCache.hpp"
 #include "rhi/Rhi.hpp"
 
 #ifdef SAIDA_RHI_WEBGPU
@@ -240,9 +241,11 @@ private:
     std::unordered_map<MaterialDesc, std::unique_ptr<Material>> materials_;
     std::unordered_map<AssetID, std::unique_ptr<Rig>> rigs_;
     std::unordered_map<AssetID, std::unique_ptr<AnimationClip>> animations_;
-    std::unordered_map<AssetID, std::unique_ptr<RigAsset>> rigAssets_;
-    std::unordered_map<AssetID, std::unique_ptr<ClipView>> clipViews_;
-    std::unordered_map<AssetID, std::unique_ptr<AnimGraphAsset>> animGraphs_;
+    // Standalone authoring animation assets, cached by AssetID via the shared
+    // async cache (identical load/get/state/error/finalize for all three).
+    AsyncAssetCache<RigAsset> rigAssetCache_;
+    AsyncAssetCache<ClipView> clipViewCache_;
+    AsyncAssetCache<AnimGraphAsset> animGraphCache_;
     std::unordered_map<const Mesh*, AssetID> reverseMeshMap_;  // mesh -> id
     
     std::unique_ptr<Texture> defaultWhiteTexture_;
@@ -259,12 +262,6 @@ private:
     std::unordered_set<AssetID> failedTextures_;
     // Proxies Mesh en attente de leur géométrie (parse .obj sur le worker).
     std::unordered_map<AssetID, AssetHandle> pendingMeshes_;
-    std::unordered_map<AssetID, AssetHandle> pendingRigAssets_;
-    std::unordered_map<AssetID, AssetHandle> pendingClipViews_;
-    std::unordered_map<AssetID, AssetHandle> pendingAnimGraphs_;
-    std::unordered_map<AssetID, std::string> failedRigAssets_;
-    std::unordered_map<AssetID, std::string> failedClipViews_;
-    std::unordered_map<AssetID, std::string> failedAnimGraphs_;
 
     // Objets GPU retirés mais possiblement encore lus par une frame en vol :
     // détruits (et leur index bindless recyclé) après kRetireFrames pumps.

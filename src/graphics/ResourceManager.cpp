@@ -110,8 +110,47 @@ AssetDecoder makeMeshDecoder() {
 }
 }
 
+namespace {
+// Shared by the three animation-asset extractors below.
+void logAnimationAssetDiagnostics(const char* type, const std::string& path,
+                                  const std::vector<AssetDiagnostic>& diagnostics) {
+    for (const AssetDiagnostic& diagnostic : diagnostics) {
+        if (diagnostic.severity == AssetDiagnostic::Severity::Error)
+            Log::error(type, " '", path, "': [", diagnostic.code, "] ",
+                       diagnostic.message);
+        else
+            Log::warn(type, " '", path, "': [", diagnostic.code, "] ",
+                      diagnostic.message);
+    }
+}
+} // namespace
+
 ResourceManager::ResourceManager(rhi::Device& device, AssetRegistry* registry)
-    : device_(device), registry_(registry) {
+    : device_(device), registry_(registry),
+      rigAssetCache_(AssetType::Rig, AssetPayloadKind::RigAsset, makeRigAssetDecoder,
+                     [](const std::shared_ptr<void>& p, const std::string& path)
+                         -> std::unique_ptr<RigAsset> {
+                         auto payload = std::static_pointer_cast<DecodedRigAsset>(p);
+                         if (!payload) return nullptr;
+                         logAnimationAssetDiagnostics("RigAsset", path, payload->diagnostics);
+                         return std::make_unique<RigAsset>(std::move(payload->asset));
+                     }),
+      clipViewCache_(AssetType::Animation, AssetPayloadKind::ClipView, makeClipViewDecoder,
+                     [](const std::shared_ptr<void>& p, const std::string& path)
+                         -> std::unique_ptr<ClipView> {
+                         auto payload = std::static_pointer_cast<DecodedClipView>(p);
+                         if (!payload) return nullptr;
+                         logAnimationAssetDiagnostics("ClipView", path, payload->diagnostics);
+                         return std::make_unique<ClipView>(std::move(payload->view));
+                     }),
+      animGraphCache_(AssetType::Animation, AssetPayloadKind::AnimGraph, makeAnimGraphDecoder,
+                      [](const std::shared_ptr<void>& p, const std::string& path)
+                          -> std::unique_ptr<AnimGraphAsset> {
+                          auto payload = std::static_pointer_cast<DecodedAnimGraph>(p);
+                          if (!payload) return nullptr;
+                          logAnimationAssetDiagnostics("AnimGraph", path, payload->diagnostics);
+                          return std::make_unique<AnimGraphAsset>(std::move(payload->graph));
+                      }) {
     assetLoader_ = std::make_unique<AssetLoader>(registry_);
     geometryRegistry_ = std::make_unique<GeometryRegistry>(device_);
 #ifdef SAIDA_RHI_WEBGPU
@@ -145,9 +184,6 @@ ResourceManager::~ResourceManager() {
     assetLoader_.reset();
     pendingTextures_.clear();
     pendingMeshes_.clear();
-    pendingRigAssets_.clear();
-    pendingClipViews_.clear();
-    pendingAnimGraphs_.clear();
     // Clear caches first (resource destructors run while the device is alive),
     // then the descriptor objects they were allocated from. The graveyard goes
     // with them (retired bind groups were allocated from the same layout/pool).
@@ -157,9 +193,9 @@ ResourceManager::~ResourceManager() {
     meshes_.clear();
     rigs_.clear();
     animations_.clear();
-    rigAssets_.clear();
-    clipViews_.clear();
-    animGraphs_.clear();
+    rigAssetCache_.clear();
+    clipViewCache_.clear();
+    animGraphCache_.clear();
     materialSetLayout_.reset();
 #ifndef SAIDA_RHI_WEBGPU
     if (globalMaterialSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), globalMaterialSetLayout_, nullptr);
@@ -637,18 +673,12 @@ void ResourceManager::trimUnused(const AssetUsage& used) {
         if (used.animations.count(it->second.get())) ++it;
         else it = animations_.erase(it);
     }
-    const size_t rigAssetsSwept = rigAssets_.size();
-    const size_t viewsSwept = clipViews_.size();
-    const size_t graphsSwept = animGraphs_.size();
-    rigAssets_.clear();
-    clipViews_.clear();
-    animGraphs_.clear();
-    pendingRigAssets_.clear();
-    pendingClipViews_.clear();
-    pendingAnimGraphs_.clear();
-    failedRigAssets_.clear();
-    failedClipViews_.clear();
-    failedAnimGraphs_.clear();
+    const size_t rigAssetsSwept = rigAssetCache_.size();
+    const size_t viewsSwept = clipViewCache_.size();
+    const size_t graphsSwept = animGraphCache_.size();
+    rigAssetCache_.clear();
+    clipViewCache_.clear();
+    animGraphCache_.clear();
 
     const size_t evicted = (texturesBefore - textures_.size()) +
                            (meshesBefore - meshes_.size()) +
@@ -869,170 +899,57 @@ AssetID ResourceManager::registerMemoryMesh(const std::string& subPath,
 }
 
 AssetID ResourceManager::loadRigAsset(const std::string& path) {
-    if (!registry_ || path.empty()) return kAssetInvalid;
-    const AssetID id = registry_->registerAsset(path, AssetType::Rig);
-    if (id == kAssetInvalid || rigAssets_.count(id) || pendingRigAssets_.count(id)) return id;
-    failedRigAssets_.erase(id);
-    AssetHandle handle = assetLoader_->request(id, AssetLoadPriority::High,
-                                               AssetPayloadKind::RigAsset,
-                                               makeRigAssetDecoder());
-    if (!handle) return kAssetInvalid;
-    pendingRigAssets_.emplace(id, std::move(handle));
-    return id;
+    return rigAssetCache_.load(registry_, *assetLoader_, path);
 }
 
 const RigAsset* ResourceManager::getRigAsset(AssetID id) const {
-    auto it = rigAssets_.find(id);
-    return it != rigAssets_.end() ? it->second.get() : nullptr;
+    return rigAssetCache_.get(id);
 }
 
 AssetLoadState ResourceManager::rigAssetLoadState(AssetID id) const {
-    if (rigAssets_.count(id)) return AssetLoadState::Ready;
-    if (auto it = pendingRigAssets_.find(id); it != pendingRigAssets_.end())
-        return it->second.state();
-    return AssetLoadState::Failed;
+    return rigAssetCache_.loadState(id);
 }
 
 std::string ResourceManager::rigAssetLoadError(AssetID id) const {
-    if (auto it = failedRigAssets_.find(id); it != failedRigAssets_.end()) return it->second;
-    if (auto it = pendingRigAssets_.find(id); it != pendingRigAssets_.end())
-        return it->second.error();
-    return {};
+    return rigAssetCache_.loadError(id);
 }
 
 AssetID ResourceManager::loadClipView(const std::string& path) {
-    if (!registry_ || path.empty()) return kAssetInvalid;
-    const AssetID id = registry_->registerAsset(path, AssetType::Animation);
-    if (id == kAssetInvalid || clipViews_.count(id) || pendingClipViews_.count(id)) return id;
-    failedClipViews_.erase(id);
-    AssetHandle handle = assetLoader_->request(id, AssetLoadPriority::High,
-                                               AssetPayloadKind::ClipView,
-                                               makeClipViewDecoder());
-    if (!handle) return kAssetInvalid;
-    pendingClipViews_.emplace(id, std::move(handle));
-    return id;
+    return clipViewCache_.load(registry_, *assetLoader_, path);
 }
 
 const ClipView* ResourceManager::getClipView(AssetID id) const {
-    auto it = clipViews_.find(id);
-    return it != clipViews_.end() ? it->second.get() : nullptr;
+    return clipViewCache_.get(id);
 }
 
 AssetLoadState ResourceManager::clipViewLoadState(AssetID id) const {
-    if (clipViews_.count(id)) return AssetLoadState::Ready;
-    if (auto it = pendingClipViews_.find(id); it != pendingClipViews_.end())
-        return it->second.state();
-    return AssetLoadState::Failed;
+    return clipViewCache_.loadState(id);
 }
 
 std::string ResourceManager::clipViewLoadError(AssetID id) const {
-    if (auto it = failedClipViews_.find(id); it != failedClipViews_.end()) return it->second;
-    if (auto it = pendingClipViews_.find(id); it != pendingClipViews_.end())
-        return it->second.error();
-    return {};
+    return clipViewCache_.loadError(id);
 }
 
 AssetID ResourceManager::loadAnimGraph(const std::string& path) {
-    if (!registry_ || path.empty()) return kAssetInvalid;
-    const AssetID id = registry_->registerAsset(path, AssetType::Animation);
-    if (id == kAssetInvalid || animGraphs_.count(id) || pendingAnimGraphs_.count(id)) return id;
-    failedAnimGraphs_.erase(id);
-    AssetHandle handle = assetLoader_->request(id, AssetLoadPriority::High,
-                                               AssetPayloadKind::AnimGraph,
-                                               makeAnimGraphDecoder());
-    if (!handle) return kAssetInvalid;
-    pendingAnimGraphs_.emplace(id, std::move(handle));
-    return id;
+    return animGraphCache_.load(registry_, *assetLoader_, path);
 }
 
 const AnimGraphAsset* ResourceManager::getAnimGraph(AssetID id) const {
-    auto it = animGraphs_.find(id);
-    return it != animGraphs_.end() ? it->second.get() : nullptr;
+    return animGraphCache_.get(id);
 }
 
 AssetLoadState ResourceManager::animGraphLoadState(AssetID id) const {
-    if (animGraphs_.count(id)) return AssetLoadState::Ready;
-    if (auto it = pendingAnimGraphs_.find(id); it != pendingAnimGraphs_.end())
-        return it->second.state();
-    return AssetLoadState::Failed;
+    return animGraphCache_.loadState(id);
 }
 
 std::string ResourceManager::animGraphLoadError(AssetID id) const {
-    if (auto it = failedAnimGraphs_.find(id); it != failedAnimGraphs_.end()) return it->second;
-    if (auto it = pendingAnimGraphs_.find(id); it != pendingAnimGraphs_.end())
-        return it->second.error();
-    return {};
+    return animGraphCache_.loadError(id);
 }
 
 void ResourceManager::finalizePendingAnimationAssets() {
-    const auto logDiagnostics = [](const char* type, const std::string& path,
-                                   const std::vector<AssetDiagnostic>& diagnostics) {
-        for (const AssetDiagnostic& diagnostic : diagnostics) {
-            if (diagnostic.severity == AssetDiagnostic::Severity::Error)
-                Log::error(type, " '", path, "': [", diagnostic.code, "] ",
-                           diagnostic.message);
-            else
-                Log::warn(type, " '", path, "': [", diagnostic.code, "] ",
-                          diagnostic.message);
-        }
-    };
-
-    for (auto it = pendingRigAssets_.begin(); it != pendingRigAssets_.end();) {
-        const AssetLoadState state = it->second.state();
-        if (state == AssetLoadState::Queued || state == AssetLoadState::Loading) {
-            ++it;
-            continue;
-        }
-        const AssetID id = it->first;
-        if (state == AssetLoadState::Ready) {
-            if (auto payload = std::static_pointer_cast<DecodedRigAsset>(it->second.payload())) {
-                const std::string path = registry_ ? registry_->getPath(id) : std::string();
-                logDiagnostics("RigAsset", path, payload->diagnostics);
-                rigAssets_[id] = std::make_unique<RigAsset>(std::move(payload->asset));
-            }
-        } else {
-            failedRigAssets_[id] = it->second.error();
-        }
-        it = pendingRigAssets_.erase(it);
-    }
-
-    for (auto it = pendingClipViews_.begin(); it != pendingClipViews_.end();) {
-        const AssetLoadState state = it->second.state();
-        if (state == AssetLoadState::Queued || state == AssetLoadState::Loading) {
-            ++it;
-            continue;
-        }
-        const AssetID id = it->first;
-        if (state == AssetLoadState::Ready) {
-            if (auto payload = std::static_pointer_cast<DecodedClipView>(it->second.payload())) {
-                const std::string path = registry_ ? registry_->getPath(id) : std::string();
-                logDiagnostics("ClipView", path, payload->diagnostics);
-                clipViews_[id] = std::make_unique<ClipView>(std::move(payload->view));
-            }
-        } else {
-            failedClipViews_[id] = it->second.error();
-        }
-        it = pendingClipViews_.erase(it);
-    }
-
-    for (auto it = pendingAnimGraphs_.begin(); it != pendingAnimGraphs_.end();) {
-        const AssetLoadState state = it->second.state();
-        if (state == AssetLoadState::Queued || state == AssetLoadState::Loading) {
-            ++it;
-            continue;
-        }
-        const AssetID id = it->first;
-        if (state == AssetLoadState::Ready) {
-            if (auto payload = std::static_pointer_cast<DecodedAnimGraph>(it->second.payload())) {
-                const std::string path = registry_ ? registry_->getPath(id) : std::string();
-                logDiagnostics("AnimGraph", path, payload->diagnostics);
-                animGraphs_[id] = std::make_unique<AnimGraphAsset>(std::move(payload->graph));
-            }
-        } else {
-            failedAnimGraphs_[id] = it->second.error();
-        }
-        it = pendingAnimGraphs_.erase(it);
-    }
+    rigAssetCache_.finalize(registry_);
+    clipViewCache_.finalize(registry_);
+    animGraphCache_.finalize(registry_);
 }
 
 AssetID ResourceManager::registerMemoryRig(const std::string& path, std::unique_ptr<Rig> rig) {
