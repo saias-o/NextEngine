@@ -156,18 +156,59 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   behaviours concrets), `animation/` (déjà là). *Vérifié via build + CTest ; les
   moves étant des relocalisations sans changement de logique, les harnais Witness
   lourds n'ont pas été rejoués.*
-- **Phase 1 — ResourceManager (§5.3).** La plus isolée et le plus gros gain de
-  dédup (`AsyncAssetCache<T>`). *Filet : `saida_asset_loader_tests`,
-  `saida_hostile_asset_tests`, cycles mémoire Witness desktop/Web.*
-- **Phase 2 — Registre unique (§5.5).** Débloque l'ajout sûr de types. *Filet :
-  `runtimeTypeMatrix`, `verify-manifest`, corpus round-trip, 4 runtimes.*
-- **Phase 3 — Renderer (§5.1).** Débloque XR et GPU-driven (P1). *Filet : Witness
-  desktop + navigateur (HUD, rendu), budget hitch.*
-- **Phase 4 — EditorUI (§5.2).** *Filet : `witness_editor_play/build`,
-  `saida_editor_command_tests`.*
-- **Phase 5 — McpBridge (§5.4).** *Filet : tests d'outils MCP / vérif manuelle.*
-- **Phase 6 — Magic numbers (AUDIT §D) + polish final.** Constantes nommées,
-  passe de lisibilité, mise à jour d'`AUDIT_V1.md`.
+- **Phase 1 — ResourceManager (§5.3). 🟡 Entamée.** `AsyncAssetCache<T>` extrait
+  (commit `badcac3`) — la triplication rig/clip/graph est éliminée. **Restent**
+  BindlessTextureTable, MaterialTable, MeshCache, TextureCache, GpuBudget : plus
+  intriquées (index bindless, slots matériaux, graveyard, budget partagés). *Filet
+  suffisant : build natif + web, `saida_asset_loader_tests`,
+  `saida_hostile_asset_tests`, Witness E2E (rendu réel des textures/matériaux).*
+- **Phase 2 — Registre unique (§5.5). ⛔ Révisée : NE PAS faire tel quel.** Les
+  trois `ReflectedTypes*.cpp` diffèrent par **nécessité de build**, pas par
+  accident : le player web et le viewer d'authoring excluent délibérément des
+  sous-systèmes (physique/Jolt, audio, QuickJS, scénario) **non compilés/liés**
+  dans ces cibles — on ne peut pas les `#include` puis filtrer sans casser le link.
+  Une « source unique » forcerait des `#ifdef` par sous-système = moins lisible et
+  risqué. Le seul gain honnête ici : extraire les templates `registerBehaviour<T>`
+  /`registerNode<T>` (identiques dans les 3) vers un header partagé. Faible valeur.
+- **Phase 3 — Renderer (§5.1). ⚠️ Haut risque en autonome.** Débloque XR/GPU-driven
+  mais l'état (GI/shadow/tonemap/culling/XR) est très intriqué et le code a des
+  branches `#ifdef SAIDA_RHI_WEBGPU`/`SAIDA_ENABLE_XR`. **La correction pixel du
+  rendu n'est pas couverte par un test automatique** — Witness E2E vérifie que le
+  HUD/scène s'affichent, pas l'exactitude colorimétrique. À faire en session
+  supervisée, une unité à la fois (TonemapPass la plus séparable), en vérifiant
+  visuellement + build natif **et** web + (si dispo) XR.
+- **Phase 4 — EditorUI (§5.2). ⚠️ Éditeur-only (pas de risque web) mais GUI non
+  testée.** Aucun test automatique n'exerce les gizmos/panneaux/dialogues.
+  `witness_editor_play` couvre le mode --play, pas l'édition. Extractions à faire
+  en session supervisée avec vérification manuelle de l'éditeur. GizmoController
+  = l'unité la plus cohérente pour commencer.
+- **Phase 5 — McpBridge (§5.4). Éditeur-only, déplacement quasi pur.** Bouger les
+  ~45 fonctions `toolX(ToolCtx&, json&)` vers des modules `mcp/tools/` par domaine.
+  Sûr **si fait comme un pur move** (logique inchangée → compile+link dans
+  `saida_editor` = forte présomption de préservation), mais les outils MCP ne sont
+  pas testés automatiquement. Volumineux ; à faire d'un bloc pour ne pas laisser
+  un état mi-splitté.
+- **Phase 6 — Magic numbers (AUDIT §D) + polish.** Constantes nommées
+  (behavior-identique, sûr). Ex. sûrs déjà identifiés : `Input.cpp` 0.1f (deadzone
+  défaut), 0.99f (deadzone max, aussi dans `InputGamepad.hpp:102` → constante
+  partagée), 4096.0f (distance touch max px). Les coefficients de tonemap de
+  `Renderer.cpp` (1.2/1.5/2.4…) exigent le contexte shader pour un nom juste.
+
+## Exigences de vérification par phase (règle : ne jamais pousser du non-vérifié)
+
+Le net disponible et prouvé sur la machine de dev (2026-07-22) : build natif
+UCRT64 + `ctest` (69/69, ~5 s), **Witness E2E** `tools/witness_e2e.sh` (rendu +
+gameplay + save/restart réels, ~1-2 min), et les **3 builds web** emsdk
+(`build-web-player`/`build-web`/`build-authoring-wasm`, compile web, ~5-10 min).
+Ce net couvre : compilation (natif+web), logique headless, gameplay, rendu HUD.
+Il **ne couvre pas** automatiquement : exactitude pixel du rendu, GUI éditeur,
+outils MCP, XR. Toute phase touchant ces zones doit être vérifiée **manuellement**
+en plus du net, donc menée en session supervisée — pas en autonome.
+
+**Piège des déplacements de dossiers** (rencontré en Phase 0) : les cibles web ont
+des **listes de sources CMake séparées** (`web/*/CMakeLists.txt`) du `CMakeLists.txt`
+principal. Tout `git mv` doit mettre à jour **les deux**, sinon le build web casse
+sans que le build natif ne le voie. Toujours lancer un build web après un move.
 
 ## 7. Règles d'exécution (pour un LLM ou un contributeur)
 
