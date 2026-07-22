@@ -95,32 +95,32 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/scene/Behaviour.cpp
     ${SAIDA_ROOT}/src/scene/BehaviourRegistry.cpp
     ${SAIDA_ROOT}/src/scene/Blackboard.cpp
-    ${SAIDA_ROOT}/src/scene/CameraFollowBehaviour.cpp
-    ${SAIDA_ROOT}/src/scene/CameraNode.cpp
-    ${SAIDA_ROOT}/src/scene/CharacterBehaviour.cpp
+    ${SAIDA_ROOT}/src/behaviours/CameraFollowBehaviour.cpp
+    ${SAIDA_ROOT}/src/nodes/CameraNode.cpp
+    ${SAIDA_ROOT}/src/behaviours/CharacterBehaviour.cpp
     ${SAIDA_ROOT}/src/scene/GLTFLoader.cpp
     ${SAIDA_ROOT}/src/scene/GltfMeshopt.cpp
-    ${SAIDA_ROOT}/src/scene/LightNode.cpp
+    ${SAIDA_ROOT}/src/nodes/LightNode.cpp
     ${SAIDA_ROOT}/src/scene/MeshLod.cpp
-    ${SAIDA_ROOT}/src/scene/MeshNode.cpp
+    ${SAIDA_ROOT}/src/nodes/MeshNode.cpp
     ${SAIDA_ROOT}/src/scene/Node.cpp
     ${SAIDA_ROOT}/src/scene/NodeId.cpp
     ${SAIDA_ROOT}/src/scene/NodeRegistry.cpp
-    ${SAIDA_ROOT}/src/scene/ParticleSystemNode.cpp
+    ${SAIDA_ROOT}/src/nodes/ParticleSystemNode.cpp
     ${SAIDA_ROOT}/src/scene/ReflectedTypesPlayer.cpp
-    ${SAIDA_ROOT}/src/scene/RotatorBehaviour.cpp
+    ${SAIDA_ROOT}/src/behaviours/RotatorBehaviour.cpp
     ${SAIDA_ROOT}/src/scene/Scene.cpp
     ${SAIDA_ROOT}/src/scene/SceneSerializer.cpp
     ${SAIDA_ROOT}/src/scene/SceneTree.cpp
     ${SAIDA_ROOT}/src/scene/SceneTimerQueue.cpp
     ${SAIDA_ROOT}/src/scene/SignalWiring.cpp
-    ${SAIDA_ROOT}/src/scene/SpawnerBehaviour.cpp
-    ${SAIDA_ROOT}/src/scene/StateMachineBehaviour.cpp
+    ${SAIDA_ROOT}/src/behaviours/SpawnerBehaviour.cpp
+    ${SAIDA_ROOT}/src/behaviours/StateMachineBehaviour.cpp
     ${SAIDA_ROOT}/src/scene/Transform.cpp
-    ${SAIDA_ROOT}/src/scene/UINode.cpp
-    ${SAIDA_ROOT}/src/scene/UICanvasNode.cpp
-    ${SAIDA_ROOT}/src/scene/UITextNode.cpp
-    ${SAIDA_ROOT}/src/scene/WaterNode.cpp
+    ${SAIDA_ROOT}/src/nodes/UINode.cpp
+    ${SAIDA_ROOT}/src/nodes/UICanvasNode.cpp
+    ${SAIDA_ROOT}/src/nodes/UITextNode.cpp
+    ${SAIDA_ROOT}/src/nodes/WaterNode.cpp
     ${SAIDA_ROOT}/src/physics/CollisionObjectNode.cpp
     ${SAIDA_ROOT}/src/physics/CollisionShapeNode.cpp
     ${SAIDA_ROOT}/src/physics/CharacterBodyNode.cpp
@@ -151,7 +151,7 @@ add_executable(saida_player
     ${SAIDA_ROOT}/src/scene/animation/Rig.cpp
     ${SAIDA_ROOT}/src/scene/animation/RigAsset.cpp
     ${SAIDA_ROOT}/src/scene/animation/SequenceDirectorBehaviour.cpp
-    ${SAIDA_ROOT}/src/tools/AutoLODBridge.cpp
+    ${SAIDA_ROOT}/src/cli/AutoLODBridge.cpp
     # --- rendu (mêmes sources que le viewer web) ---
     ${SAIDA_ROOT}/src/graphics/GeometryRegistry.cpp
     ${SAIDA_ROOT}/src/graphics/Material.cpp

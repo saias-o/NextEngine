@@ -87,23 +87,23 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/scenario/ScenarioRegistry.cpp
     ${SAIDA_ROOT}/src/scene/Behaviour.cpp
     ${SAIDA_ROOT}/src/scene/BehaviourRegistry.cpp
-    ${SAIDA_ROOT}/src/scene/CameraNode.cpp
-    ${SAIDA_ROOT}/src/scene/LightNode.cpp
+    ${SAIDA_ROOT}/src/nodes/CameraNode.cpp
+    ${SAIDA_ROOT}/src/nodes/LightNode.cpp
     ${SAIDA_ROOT}/src/scene/MeshLod.cpp
-    ${SAIDA_ROOT}/src/scene/MeshNode.cpp
+    ${SAIDA_ROOT}/src/nodes/MeshNode.cpp
     ${SAIDA_ROOT}/src/scene/Node.cpp
     ${SAIDA_ROOT}/src/scene/NodeId.cpp
     # create_node op (SaidaOpApplier) builds reflected nodes by name via the
     # NodeRegistry; ReflectedTypesWeb.cpp registers the web-renderable subset.
     ${SAIDA_ROOT}/src/scene/NodeRegistry.cpp
     ${SAIDA_ROOT}/src/scene/ReflectedTypesWeb.cpp
-    ${SAIDA_ROOT}/src/scene/ParticleSystemNode.cpp
+    ${SAIDA_ROOT}/src/nodes/ParticleSystemNode.cpp
     ${SAIDA_ROOT}/src/scene/Scene.cpp
     ${SAIDA_ROOT}/src/scene/Transform.cpp
-    ${SAIDA_ROOT}/src/scene/UINode.cpp
-    ${SAIDA_ROOT}/src/scene/UICanvasNode.cpp
-    ${SAIDA_ROOT}/src/scene/UITextNode.cpp
-    ${SAIDA_ROOT}/src/scene/WaterNode.cpp
+    ${SAIDA_ROOT}/src/nodes/UINode.cpp
+    ${SAIDA_ROOT}/src/nodes/UICanvasNode.cpp
+    ${SAIDA_ROOT}/src/nodes/UITextNode.cpp
+    ${SAIDA_ROOT}/src/nodes/WaterNode.cpp
     ${SAIDA_ROOT}/src/ui/HudRasterizer.cpp
     ${SAIDA_ROOT}/src/ui/RmlUiRenderInterface.cpp
     ${SAIDA_ROOT}/src/ui/RmlUiRuntime.cpp
