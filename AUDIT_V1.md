@@ -24,6 +24,23 @@ s'impose déjà (README, « Règles de contribution ») : *« Scinder les classe
 omniscientes et les fichiers qui mélangent plusieurs domaines »* et *« Remplacer
 les nombres et chaînes magiques par des constantes nommées »*.
 
+## État de résolution après REFACTOR_V1
+
+- [x] `ResourceManager.cpp` : **1102 → 414 lignes**, caches et budget GPU
+  extraits avec ownership explicite.
+- [x] `EditorUI.cpp` : **1933 → 384 lignes**, shell et sept unités cohérentes.
+- [x] `McpBridge.cpp` : **1401 → 77 lignes**, 45 outils répartis par domaine
+  derrière un registre schéma/handler unique.
+- [x] MCP confirmé comme capacité V1 de l'atelier, conservé ON et couvert par un
+  test de catalogue ainsi qu'un smoke TCP réel.
+- [x] Limites Input et seuils Renderer sûrs remplacés par des constantes nommées.
+- [x] Registres de types distincts conservés par décision : les cibles ne lient
+  pas les mêmes sous-systèmes et la matrice runtime vérifie leur parité.
+- [ ] Renderer : extraction différée dans `TODO.md` jusqu'au filet golden-image.
+- [ ] Autres gros candidats (`JsEngineBindings`, `InspectorPanel`,
+  `WebCanvasNode`, `Input`) : hors périmètre de REFACTOR_V1, toujours visibles
+  dans les métriques.
+
 ## A. God classes / fichiers omniscients — priorité haute
 
 Les plus gros TU first-party portent plusieurs domaines dans un seul fichier :
@@ -86,29 +103,28 @@ authoring Web), tenus **synchronisés à la main**. C'est la source des
 désalignements de matrice de contrat déjà rencontrés en cours de route. Le
 garde-fou `runtimeTypeMatrix` (vérifié au démarrage) rattrape les oublis mais ne
 supprime pas le coût : ajouter un type impose d'éditer 2-3 listes parallèles sans
-en oublier. Piste : une **source unique déclarative** filtrée par runtime plutôt
-que trois listes jumelles.
+en oublier. L'étude d'exécution a toutefois montré que les cibles excluent
+volontairement des sous-systèmes différents et ne peuvent pas toutes lier une
+liste commune. Décision : conserver les trois listes lisibles, sans `#ifdef`
+dispersés, et garder `runtimeTypeMatrix` comme garde-fou automatique.
 
 ## D. Magic numbers — priorité basse
 
-`Renderer.cpp` porte des littéraux nus sans constante nommée : `25.0f`, `0.99f`,
-`1.2f`/`1.5f`/`2.4f` (coefficients de tonemap non nommés), `0.866f` (= √3/2,
-constante géométrique), `0.001f` (epsilons) ; `Input.cpp:738` porte `4096.0f`.
-Contraire à la règle « constantes nommées » du README. Impact faible mais nuit à
-la lisibilité et au réglage — à nommer (`kShadowBias`, `kTonemap*`, …).
+Résolu pour les valeurs sûres. `InputLimits.hpp` centralise deadzone par défaut,
+deadzone maximale et distance touch maximale entre bindings, backend et parser
+de profils. `Renderer.cpp` nomme la distance d'ombre par défaut, le seuil de
+colinéarité, les espacements de probes GI par tier, le plancher AO et les rayons
+de bounds. Correction de l'audit initial : `1.2f`/`1.5f`/`2.4f` sont des
+espacements de probes GI, pas des coefficients de tonemap.
 
 ## E. Surface & code mort
 
 La purge open-source récente (commit du 2026-07-21 + `7193c0d`) a retiré
 l'essentiel : behaviours GTA-clone générés, serveur d'écho web de dev,
-`AnimGraphParser`, `RenderCapabilities.hpp`. Un point reste à trancher
-explicitement :
-
-- `SAIDA_ENABLE_MCP` est **ON par défaut** ([CMakeLists.txt:281](CMakeLists.txt))
-  et lie `McpBridge`/`McpServer` (~1401 l.) dans `saida_editor`. Il faut confirmer
-  que c'est une **capacité V1 assumée** (assistant IA de l'atelier Saida) et non
-  de l'outillage de développement resté ON par inadvertance. S'il est V1, il
-  mérite le même traitement anti-god-class que la section A.
+`AnimGraphParser`, `RenderCapabilities.hpp`. `SAIDA_ENABLE_MCP` est confirmé
+comme **capacité V1 assumée** de l'atelier Saida et reste ON par défaut. Son
+traitement anti-god-class est terminé : `McpBridge.cpp` ne fait plus que 77
+lignes et le catalogue de 45 outils est couvert automatiquement.
 
 ## F. Hygiène (mineur)
 
@@ -135,14 +151,9 @@ Architecture two-repo, contrat SaidaOps → snapshot versionné, runtime unique
 QuickJS, fail-closed des loaders, corpus de formats figé, matrice de types
 vérifiée au boot, saves versionnées/quota-ées : sains et cohérents avec la V1.
 
-## Ordre de traitement suggéré
+## Disposition finale
 
-Le plan d'exécution détaillé (décompositions classe par classe, réorg des
-dossiers, phasage, règles) est dans [REFACTOR_V1.md](REFACTOR_V1.md). En bref :
-
-1. Trancher `SAIDA_ENABLE_MCP` (section E) — décision, pas du code.
-2. `ResourceManager` (C/§5.3) — le plus gros gain de déduplication.
-3. Source unique du registre de types (C/§5.5) — supprime une classe entière de
-   bugs de parité.
-4. Découper `Renderer.cpp` (A + B) — débloque XR/GPU-driven.
-5. Reste des god classes (A) et magic numbers (D) au fil de l'eau.
+Le plan exécuté et ses validations sont dans [REFACTOR_V1.md](REFACTOR_V1.md).
+Les éléments cochés ci-dessus sont clos. Renderer est transféré avec ses
+prérequis dans [TODO.md](TODO.md) ; les autres cases ouvertes restent un backlog
+explicite, pas une phase inachevée de REFACTOR_V1.

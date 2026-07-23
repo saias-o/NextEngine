@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/InputEnums.hpp"
+#include "core/InputLimits.hpp"
 
 #include <glm/glm.hpp>
 #include <string>
@@ -42,7 +43,7 @@ struct ActionBinding {
     bool isGamepadAxis = false;
     GamepadAxis padAxis = GamepadAxis::LeftX;
     float axisScale = 1.0f; // Multiplier (useful for inversion)
-    float deadzone = 0.1f;
+    float deadzone = input_detail::kDefaultGamepadDeadzone;
 
     bool isTouch = false;
     TouchGesture touchGesture = TouchGesture::Press;
@@ -107,7 +108,8 @@ public:
     static void rebindGamepadButton(const std::string& action, GamepadButton button,
                                     const InputContextID& context = kGlobalContext);
     static void rebindGamepadAxis(const std::string& action, GamepadAxis axis,
-                                  float scale = 1.0f, float deadzone = 0.1f,
+                                  float scale = 1.0f,
+                                  float deadzone = input_detail::kDefaultGamepadDeadzone,
                                   const InputContextID& context = kGlobalContext);
     static void bindTouch(const std::string& action, TouchGesture gesture,
                           glm::vec2 zoneMin = {0.0f, 0.0f},

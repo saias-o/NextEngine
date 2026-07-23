@@ -681,7 +681,8 @@ void Input::bindGamepadButton(const std::string& action, GamepadButton button,
 }
 
 void Input::bindGamepadAxis(const std::string& action, GamepadAxis axis, float scale, const InputContextID& context) {
-    bindGamepadAxis(action, axis, scale, 0.1f, context);
+    bindGamepadAxis(action, axis, scale,
+                    input_detail::kDefaultGamepadDeadzone, context);
 }
 
 void Input::bindGamepadAxis(const std::string& action, GamepadAxis axis, float scale,
@@ -692,7 +693,8 @@ void Input::bindGamepadAxis(const std::string& action, GamepadAxis axis, float s
     b.isGamepadAxis = true;
     b.padAxis = axis;
     b.axisScale = scale;
-    b.deadzone = std::clamp(deadzone, 0.0f, 0.99f);
+    b.deadzone =
+        std::clamp(deadzone, 0.0f, input_detail::kMaxGamepadDeadzone);
     g_bindings.push_back(b);
 }
 
@@ -735,7 +737,8 @@ void Input::bindTouch(const std::string& action, TouchGesture gesture,
         glm::clamp(zoneMax, glm::vec2(0.0f), glm::vec2(1.0f));
     binding.touchZoneMin = glm::min(clampedMin, clampedMax);
     binding.touchZoneMax = glm::max(clampedMin, clampedMax);
-    binding.touchMinDistance = std::clamp(minDistance, 0.0f, 4096.0f);
+    binding.touchMinDistance = std::clamp(
+        minDistance, 0.0f, input_detail::kMaxTouchGestureDistancePixels);
     g_bindings.push_back(std::move(binding));
 }
 

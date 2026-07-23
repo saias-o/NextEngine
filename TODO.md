@@ -6,7 +6,7 @@ filet de tests automatique**. Les faire à l'arrache créerait du spaghetti. Ce
 fichier dit *pourquoi*, et *ce qu'il faut mettre en place avant* pour que
 l'extraction soit vraiment propre et tienne à long terme.
 
-## Renderer (`src/render/Renderer.cpp`, 1957 l.) — décomposition différée
+## Renderer (`src/render/Renderer.cpp`, 1975 l.) — décomposition différée
 
 C'est le plus gros god class et la décomposition à plus forte valeur (elle
 débloque XR, le flag GPU-driven et les lightmaps en les rendant testables
@@ -71,13 +71,15 @@ isolément). Mais elle est différée : voir les risques ci-dessous.
 5. **Vérifier chaque unité** : build natif **+ web** + Witness E2E + **diff
    visuel** (le filet du point 1) + smoke XR si un casque est disponible.
 
-## Rappel : autres refactors à vérification manuelle
+## Rappel : vérifications manuelles encore utiles
 
-Restés dans REFACTOR_V1.md §6 mais soumis à la même prudence (session supervisée,
-pas d'autonome) :
+Les Phases 4 et 5 de REFACTOR_V1 sont terminées et automatisées autant que
+possible. Deux compléments restent utiles, sans rouvrir ces phases :
 
-- **EditorUI (Phase 4)** — GUI éditeur non testée automatiquement (`witness_editor_play`
-  ne couvre que le mode `--play`, pas l'édition). Vérification manuelle de l'éditeur.
-- **McpBridge (Phase 5)** — outils MCP non testés automatiquement. Sûr uniquement
-  comme *pur déplacement* (compile+link = présomption de préservation), à faire
-  d'un bloc.
+- **EditorUI** — `witness_editor_play` et `witness_editor_build` couvrent les
+  chemins Play/build, mais pas les clics ImGui en mode édition. Vérifier
+  manuellement gizmos, panneaux et dialogues au viewport lors d'une prochaine
+  session UI.
+- **McpBridge** — le catalogue, l'unicité, le dispatch d'erreur et un appel TCP
+  réel sont couverts. Ajouter progressivement des tests sémantiques par handler
+  de mutation quand ces outils évoluent.

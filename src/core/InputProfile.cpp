@@ -231,7 +231,8 @@ InputBindingProfileParseResult parseInputBindingProfile(const nlohmann::json& do
             if (!std::isfinite(binding.axisScale) || std::abs(binding.axisScale) > 10.0f)
                 return profileError(prefix + ".scale must be finite and within [-10, 10]");
             if (!std::isfinite(binding.deadzone) ||
-                binding.deadzone < 0.0f || binding.deadzone > 0.99f)
+                binding.deadzone < 0.0f ||
+                binding.deadzone > input_detail::kMaxGamepadDeadzone)
                 return profileError(prefix + ".deadzone must be within [0, 0.99]");
         } else if (device == "touch") {
             binding.isTouch = true;
@@ -268,7 +269,8 @@ InputBindingProfileParseResult parseInputBindingProfile(const nlohmann::json& do
             }
             if (!std::isfinite(binding.touchMinDistance) ||
                 binding.touchMinDistance < 0.0f ||
-                binding.touchMinDistance > 4096.0f) {
+                binding.touchMinDistance >
+                    input_detail::kMaxTouchGestureDistancePixels) {
                 return profileError(
                     prefix + ".minDistance must be within [0, 4096]");
             }

@@ -56,13 +56,21 @@ namespace saida {
 namespace {
 constexpr int kMaxFramesInFlight = 2;
 
-constexpr float kShadowOrthoHalfSize = 25.0f;
-constexpr float kShadowOrthoDepth = 100.0f;
+constexpr float kDefaultShadowDistance = 25.0f;
+constexpr float kSafeUpCollinearityThreshold = 0.99f;
+constexpr float kHighGiProbeSpacing = 1.2f;
+constexpr float kMediumGiProbeSpacing = 1.5f;
+constexpr float kLowGiProbeSpacing = 2.4f;
+constexpr float kMinAoPower = 0.001f;
+constexpr float kMinBoundsRadius = 0.001f;
+constexpr float kUnitCubeBoundsRadius = 0.866f; // approximately sqrt(3) / 2
 constexpr uint32_t kAllTextureLayers = ~0u;
 
 // Picks an up vector not colinear with the light direction.
 glm::vec3 safeUp(const glm::vec3& dir) {
-    return std::abs(dir.y) > 0.99f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+    return std::abs(dir.y) > kSafeUpCollinearityThreshold
+               ? glm::vec3(0.0f, 0.0f, 1.0f)
+               : glm::vec3(0.0f, 1.0f, 0.0f);
 }
 
 glm::mat4 directionalMatrix(const glm::vec3& dir, float distance) {
@@ -107,16 +115,19 @@ GIVolumeDesc giDescForTier(QualityTier tier) {
     switch (tier) {
         case QualityTier::Ultra:
         case QualityTier::High:
-            d.counts = {20, 10, 20}; d.spacing = glm::vec3(1.2f);
+            d.counts = {20, 10, 20};
+            d.spacing = glm::vec3(kHighGiProbeSpacing);
             d.raysPerProbe = 96; d.voxelResolution = 96;
             break;
         case QualityTier::Medium:
-            d.counts = {16, 8, 16}; d.spacing = glm::vec3(1.5f);
+            d.counts = {16, 8, 16};
+            d.spacing = glm::vec3(kMediumGiProbeSpacing);
             d.raysPerProbe = 64; d.voxelResolution = 80;
             break;
         case QualityTier::Low:
         default:
-            d.counts = {10, 5, 10}; d.spacing = glm::vec3(2.4f);
+            d.counts = {10, 5, 10};
+            d.spacing = glm::vec3(kLowGiProbeSpacing);
             d.raysPerProbe = 48; d.voxelResolution = 64;
             break;
     }
@@ -681,7 +692,7 @@ Renderer::TonemapPushConstants Renderer::tonemapPushConstants(
     push.aoParams = glm::vec4(settings.aoEnabled ? 1.0f : 0.0f,
                               std::max(settings.aoRadius, 0.0f),
                               std::max(settings.aoIntensity, 0.0f),
-                              std::max(settings.aoPower, 0.001f));
+                              std::max(settings.aoPower, kMinAoPower));
     push.fogColor = settings.fogColor;
     push.fogParams = glm::vec4(settings.fogEnabled ? 1.0f : 0.0f,
                                std::max(settings.fogStart, 0.0f),
@@ -742,7 +753,9 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
             (light->type == LightType::Directional || light->type == LightType::Spot);
         if (wantsShadow && shadowCount_ < kMaxShadowCasters) {
             glm::mat4 lightVP = light->type == LightType::Directional
-                ? directionalMatrix(worldDir, project ? project->shadowDistance() : 25.0f)
+                ? directionalMatrix(
+                      worldDir, project ? project->shadowDistance()
+                                        : kDefaultShadowDistance)
                 : spotMatrix(worldPos, worldDir, light->spotOuterAngle, light->range);
             shadowMatrices_[shadowCount_] = lightVP;
             ubo.shadowMatrices[shadowCount_] = lightVP;
@@ -859,7 +872,11 @@ void Renderer::gatherScene(LightingUBO& ubo, Scene& scene, const glm::vec3& came
                             glm::length(glm::vec3(world[2]))
                         });
                         const float localRadius = glm::length(drawMesh->bounds().extent()) * 0.5f;
-                        float radius = (localRadius > 0.001f ? localRadius : 0.866f) * maxScale;
+                        float radius =
+                            (localRadius > kMinBoundsRadius
+                                 ? localRadius
+                                 : kUnitCubeBoundsRadius) *
+                            maxScale;
                         glm::vec3 center = glm::vec3(world * glm::vec4(drawMesh->bounds().center(), 1.0f));
                         for (int i = 0; i < 6; ++i) {
                             if (glm::dot(glm::vec3(cullFrustum->planes[i]), center) +
@@ -942,7 +959,8 @@ void Renderer::uploadGpuDrivenDraws() {
         instance.model = draw.world;
         instance.boundingSphere = glm::vec4(
             bounds.center(),
-            std::max(glm::length(bounds.extent()) * 0.5f, 0.001f));
+            std::max(glm::length(bounds.extent()) * 0.5f,
+                     kMinBoundsRadius));
         instance.materialIndex = draw.material->bindlessIndex();
         instance.boneOffset = draw.boneOffset;
 

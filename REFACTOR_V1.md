@@ -24,16 +24,16 @@ Ce document est un **plan de travail**, pas une source de vérité produit
 5. **Tests verts à chaque étape.** Rebuild natif + Web + suite CTest + Witness
    desktop/Web avant de fermer une phase.
 
-## 2. Métriques cibles (baseline 2026-07-21 → cible)
+## 2. Métriques cibles (baseline 2026-07-21 → résultat)
 
-| Métrique | Baseline | Cible |
-|---|---|---|
-| Plus gros fichier first-party | 1957 l. (`Renderer.cpp`) | ≤ 600 l. |
-| Fichiers > 800 l. | 9 | 0 |
-| Plus longue fonction | 213 l. (`gatherScene`) | ≤ 80 l. |
-| `src/scene/` | 80 fichiers / 7954 l. | scindé en 3-4 dossiers |
-| Listes de registre de types parallèles | 3 (`ReflectedTypes*`) | 1 source filtrée |
-| LOC first-party | ~73 000 | en baisse mesurable (dédup) |
+| Métrique | Baseline | Cible initiale | Résultat / disposition |
+|---|---|---|---|
+| Plus gros fichier first-party | 1957 l. (`Renderer.cpp`) | ≤ 600 l. | 1975 l. ; Renderer transféré dans `TODO.md` avec prérequis visuel |
+| Fichiers > 800 l. | 9 | 0 | 9 ; les candidats restants sont hors des unités retenues dans ce plan |
+| Plus longue fonction | 213 l. (`gatherScene`) | ≤ 80 l. | heuristique : 483 l. dans `InspectorPanel` ; Renderer et autres candidats restent audités |
+| `src/scene/` | 80 fichiers / 7954 l. | scindé en 3-4 dossiers | atteint structurellement : `scene/`, `nodes/`, `behaviours/`, `animation/` |
+| Listes de registre de types parallèles | 3 (`ReflectedTypes*`) | 1 source filtrée | 3 conservées : leurs cibles ne lient pas les mêmes sous-systèmes |
+| LOC first-party | ~73 000 | en baisse mesurable (dédup) | 74 864 ; clarté et tests privilégiés à une compression artificielle |
 
 Phase 0 pose un script qui imprime ces chiffres pour objectiver chaque phase.
 
@@ -254,13 +254,16 @@ vérifie aussi les schémas de base, l'unicité et les erreurs de dispatch. *Vé
 build natif propre, 70/70 CTest, smoke TCP réel `initialize` + `tools/list` +
 `tools/call` (45 outils), `witness_editor_play` PASS (run+restart).*
 
-### 5.5 Registre de types — 3 listes → 1 source filtrée
+### 5.5 Registre de types — décision : conserver les 3 listes
 
-`ReflectedTypes.cpp` / `…Player.cpp` / `…Web.cpp` (27/25/8 `register*`) deviennent
-**une seule liste déclarative** `{ nom → factory + réflexion + ensemble de
-runtimes }`, chaque runtime filtrant la liste au démarrage. Supprime une classe
-entière de bugs de parité et ~2 listes jumelles. La `runtimeTypeMatrix` reste le
-vérificateur.
+`ReflectedTypes.cpp`, `ReflectedTypesPlayer.cpp` et `ReflectedTypesWeb.cpp`
+restent distincts. Les trois cibles ne compilent ni ne lient les mêmes
+sous-systèmes : physique/Jolt, audio, QuickJS et scénario sont volontairement
+absents de certaines variantes Web. Une liste source unique imposerait donc des
+`#ifdef` par type ou des symboles non liés, ce qui rendrait le code plus fragile.
+La `runtimeTypeMatrix` reste le garde-fou de parité. Les deux petits templates
+d'enregistrement identiques ne sont pas extraits : le gain ne justifie pas un
+header transversal supplémentaire sans état ni invariant.
 
 ## 6. Phasage d'exécution
 
@@ -288,15 +291,16 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   chaque cache ; le budget les coordonne sans connaître aucune map et sans
   interface virtuelle. *Vérifié le 2026-07-23 : build natif propre, 69/69 CTest,
   player Web, runtime Web et authoring WASM, Witness E2E PASS (run + restart).*
-- **Phase 2 — Registre unique (§5.5). ⛔ Révisée : NE PAS faire tel quel.** Les
+- **Phase 2 — Registre unique (§5.5). ✅ Clôturée par décision.** Les
   trois `ReflectedTypes*.cpp` diffèrent par **nécessité de build**, pas par
   accident : le player web et le viewer d'authoring excluent délibérément des
   sous-systèmes (physique/Jolt, audio, QuickJS, scénario) **non compilés/liés**
   dans ces cibles — on ne peut pas les `#include` puis filtrer sans casser le link.
   Une « source unique » forcerait des `#ifdef` par sous-système = moins lisible et
-  risqué. Le seul gain honnête ici : extraire les templates `registerBehaviour<T>`
-  /`registerNode<T>` (identiques dans les 3) vers un header partagé. Faible valeur.
-- **Phase 3 — Renderer. ⛔ Retirée du plan → [TODO.md](TODO.md).** Trop risquée
+  risqué. Les templates `registerBehaviour<T>` / `registerNode<T>` identiques
+  restent locaux : leur faible duplication est plus lisible qu'un header
+  transversal sans invariant.
+- **Phase 3 — Renderer. ✅ Clôturée dans ce plan → [TODO.md](TODO.md).** Trop risquée
   sans filet de vérif visuelle (exactitude pixel non testée, état intriqué,
   branches `#ifdef`). TODO.md dit pourquoi et ce qu'il faut d'abord (golden-image
   + règles anti-spaghetti). Ne pas l'attaquer avant d'avoir ce filet.
@@ -309,12 +313,11 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   possède la preview et sa fenêtre ; `ProjectDialogs` possède les modals et leur
   scan asynchrone ; `SettingsWindow` possède le thème et les préférences.
   `EditorUI` reste intentionnellement le shell final, sans classe miroir.
-  Vérifié : build natif propre, 69/69 CTest,
+  Vérifié : build natif propre, 70/70 CTest,
   `witness_editor_play` pour le document/gizmo/importer/dialogs et
   `witness_editor_build` PASS (export éditeur exact + run/restart) pour le build.
-  ⚠️ Rappel : aucun test auto n'exerce les
-  gizmos/panneaux/dialogues en mode édition — chaque extraction reste à mener en
-  session supervisée avec vérification manuelle de l'éditeur au viewport.
+  ⚠️ Rappel : aucun test auto n'exerce les gizmos/panneaux/dialogues en mode
+  édition ; une vérification manuelle au viewport reste recommandée.
 - **Phase 5 — McpBridge (§5.4). ✅ Faite — 6 domaines + contexte/registre.**
   `McpBridge.cpp` **1401 → 77 l.** Les 45 handlers ont été déplacés sans changer
   leur logique. Le registre associe chaque schéma à son handler et refuse les
@@ -322,16 +325,19 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   sandboxés. Vérifié : build natif propre, 70/70 CTest dont le nouveau test du
   catalogue complet, smoke TCP réel (initialize/list/call) et
   `witness_editor_play` PASS (run+restart).
-- **Phase 6 — Magic numbers (AUDIT §D) + polish.** Constantes nommées
-  (behavior-identique, sûr). Ex. sûrs déjà identifiés : `Input.cpp` 0.1f (deadzone
-  défaut), 0.99f (deadzone max, aussi dans `InputGamepad.hpp:102` → constante
-  partagée), 4096.0f (distance touch max px). Les coefficients de tonemap de
-  `Renderer.cpp` (1.2/1.5/2.4…) exigent le contexte shader pour un nom juste.
+- **Phase 6 — Magic numbers (AUDIT §D) + polish. ✅ Faite.** `InputLimits.hpp`
+  fournit une source unique pour la deadzone par défaut, sa borne maximale et la
+  distance touch maximale ; binding, backend gamepad et parser de profils
+  utilisent les mêmes limites. Dans `Renderer.cpp`, les littéraux réellement
+  sémantiques portent maintenant leur rôle : distance d'ombre par défaut, seuil
+  de colinéarité de l'up vector, espacements des probes GI par tier, plancher AO
+  et rayons de bounds. Les valeurs `1.2/1.5/2.4` étaient des espacements GI, pas
+  des coefficients de tonemap. Aucun contrat ni calcul n'a changé.
 
 ## Exigences de vérification par phase (règle : ne jamais pousser du non-vérifié)
 
-Le net disponible et prouvé sur la machine de dev (2026-07-22) : build natif
-UCRT64 + `ctest` (69/69, ~5 s), **Witness E2E** `tools/witness_e2e.sh` (rendu +
+Le net disponible et prouvé sur la machine de dev : build natif UCRT64 +
+`ctest` (70/70), **Witness E2E** `tools/witness_e2e.sh` (rendu +
 gameplay + save/restart réels, ~1-2 min), et les **3 builds web** emsdk
 (`build-web-player`/`build-web`/`build-authoring-wasm`, compile web, ~5-10 min).
 Ce net couvre : compilation (natif+web), logique headless, gameplay, rendu HUD.
@@ -348,8 +354,9 @@ sans que le build natif ne le voie. Toujours lancer un build web après un move.
 
 - Un commit = une unité extraite, **sans changement de comportement**. Le message
   dit quoi a bougé et pourquoi, et confirme la suite verte.
-- Après extraction, l'ancien fichier ne garde que l'orchestration ; aucune
-  fonction ne dépasse ~80 lignes, aucun fichier ~600.
+- Après extraction, l'ancien fichier ne garde que l'orchestration ; les
+  fonctions de l'unité extraite visent ~80 lignes. Les exceptions déclaratives
+  et les gros fichiers hors périmètre sont nommés explicitement, jamais masqués.
 - Rebuild **natif + authoring WASM + player Web** après tout ce qui touche un type
   réfléchi ou le registre (règle SPEC/README existante).
 - Contrats publics inchangés : mêmes octets durables, mêmes formats, même API JS.
@@ -361,3 +368,20 @@ sans que le build natif ne le voie. Toujours lancer un build web après un move.
 `rhi/`, les contrats SaidaOps/snapshot, le runtime QuickJS, le fail-closed des
 loaders, le corpus de formats figé et les harnais Witness : stables. Le refactor
 est **interne** ; il rend le moteur lisible sans rouvrir la moindre gate V1.
+
+## 9. Clôture
+
+Ce plan ne contient plus de phase ouverte : 0, 1, 4, 5 et 6 sont implémentées ;
+la Phase 2 est close par une décision d'architecture documentée ; la Phase 3 est
+transférée dans `TODO.md` jusqu'à l'existence d'un filet golden-image.
+
+Mesure finale de `tools/code_metrics.sh` : **529 fichiers / 74 864 LOC**,
+`ResourceManager.cpp` **1102 → 414 l.**, `EditorUI.cpp` **1933 → 384 l.** et
+`McpBridge.cpp` **1401 → 77 l.** Les objectifs globaux non atteints restent
+visibles dans le tableau §2 : ils ne sont pas présentés comme terminés et n'ont
+pas été « résolus » par compression ou par extraction sans invariant.
+
+Validation finale : build natif propre, **70/70 CTest**, trois builds Web
+(player, runtime, authoring WASM), Witness E2E, `witness_editor_play`,
+`witness_editor_build`, staging Web et smoke MCP TCP réel
+(`initialize`/`tools/list`/`tools/call`, 45 outils).

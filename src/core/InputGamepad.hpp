@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/InputEnums.hpp"
+#include "core/InputLimits.hpp"
 
 #include <algorithm>
 #include <array>
@@ -99,7 +100,7 @@ inline bool mapWebStandardGamepad(const WebStandardGamepadSample& sample,
 
 inline float applyDeadzone(float value, float deadzone) {
     value = std::clamp(value, -1.0f, 1.0f);
-    deadzone = std::clamp(deadzone, 0.0f, 0.99f);
+    deadzone = std::clamp(deadzone, 0.0f, kMaxGamepadDeadzone);
     const float magnitude = std::abs(value);
     if (magnitude <= deadzone) return 0.0f;
     return std::copysign((magnitude - deadzone) / (1.0f - deadzone), value);
