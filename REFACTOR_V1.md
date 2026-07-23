@@ -86,12 +86,12 @@ les risques, et surtout **ce qu'il faut mettre en place avant** (un filet de vé
 visuelle golden-image + les deux règles anti-spaghetti) pour que ce soit propre et
 tienne à long terme.
 
-### 5.2 `editor/EditorUI.cpp` (1933 → 1111 l., 31 → 20 méthodes) → shell + contrôleurs
+### 5.2 `editor/EditorUI.cpp` (1933 → 813 l., 31 → 15 méthodes) → shell + contrôleurs
 
 | Unité | Méthodes reprises | État |
 |---|---|---|
 | **EditorShell** — style + boucle de dessin, routage commandes | `applyEditorStyle`, `draw`, `canEdit`, `markDirty`, `execute`, `drawAboutWindow` | — |
-| **ProjectDialogs** | `drawNewProjectDialog`, `drawOpenProjectDialog`, `drawSaveSceneAsDialog`, `startProjectScan`, `loadProjectMainScene`, `resolveScenePath` | — |
+| **ProjectDialogs** | `drawNewProjectDialog`, `drawOpenProjectDialog`, `drawSaveSceneAsDialog`, `startProjectScan`, `loadProjectMainScene`, `resolveScenePath` | ✅ **Fait** |
 | **SceneDocumentActions** (étend `editor/SceneDocument`) | `saveScene`, `loadScene`, `copySelected`, `pasteClipboard`, `duplicateSelected` | ✅ **Fait** |
 | **BuildController** — UI + orchestration au-dessus de `BuildExporter` | `refreshBuildScenes_`, `executeBuild`, `runAutomatedBuild`, `drawBuildWindow` | ✅ **Fait** |
 | **GizmoController** — état de manipulation + rendu gizmo | `drawGizmo`, `updateGizmoHover`, `handleGizmoDrag`, `performRaycastSelection`, `renderGizmoRotationRings`, `renderGizmoTranslateScale`, `drawColliderGizmos` | ✅ **Fait** |
@@ -146,6 +146,16 @@ les panneaux appelants. La durée d'affichage du message d'export reste identiqu
 à l'ancien panneau recréé par frame. *Vérifié : build natif sans warning, 69/69
 CTest, `witness_editor_play` PASS (run+restart, UI incluse). La sélection de clip
 et le bouton d'export du panneau restent hors automatisation.*
+
+**`ProjectDialogs` (fait).** La classe possède les trois demandes d'ouverture,
+leurs buffers, le cache de projets et l'unique `future` de scan récursif.
+Invariant : le worker ne touche qu'à son argument racine et retourne une liste
+triée ; seul le thread UI remplace le cache une fois le future prêt. Les dialogs
+remontent des `Actions` (`browseRoot`, `sceneToSave`) au lieu d'accéder à
+`EditorUI`. La résolution déterministe de la scène principale est également
+centralisée (déclaration → `scenes/main.scene` → première scène triée).
+*Vérifié : build natif sans warning, 69/69 CTest, `witness_editor_play` PASS
+(run+restart, UI incluse). Les clics manuels des trois modals restent hors auto.*
 
 ### 5.3 `graphics/ResourceManager.cpp` (1102 → 414 l.) → façade + caches
 
@@ -266,16 +276,17 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   sans filet de vérif visuelle (exactitude pixel non testée, état intriqué,
   branches `#ifdef`). TODO.md dit pourquoi et ce qu'il faut d'abord (golden-image
   + règles anti-spaghetti). Ne pas l'attaquer avant d'avoir ce filet.
-- **Phase 4 — EditorUI (§5.2). 🟢 En cours — 4 unités extraites.**
-  `EditorUI.cpp` **1933 → 1111 l.** `GizmoController` possède l'état de
+- **Phase 4 — EditorUI (§5.2). 🟢 En cours — 5 unités extraites.**
+  `EditorUI.cpp` **1933 → 813 l.** `GizmoController` possède l'état de
   manipulation, le rendu gizmo et les wireframes colliders ;
   `BuildController` possède le modal et l'orchestration au-dessus de
   `BuildExporter`, avec un chemin unique bouton/`--build` ; `SceneDocument`
   possède les actions et l'état sérialisé du document ; `ModelImporterPanel`
-  possède la preview et sa fenêtre. Vérifié : build natif propre, 69/69 CTest,
-  `witness_editor_play` pour le document/gizmo/importer et
+  possède la preview et sa fenêtre ; `ProjectDialogs` possède les modals et leur
+  scan asynchrone. Vérifié : build natif propre, 69/69 CTest,
+  `witness_editor_play` pour le document/gizmo/importer/dialogs et
   `witness_editor_build` PASS (export éditeur exact + run/restart) pour le build.
-  **Restent** : ProjectDialogs, SettingsWindow, EditorShell.
+  **Restent** : SettingsWindow, EditorShell.
   ⚠️ Rappel : aucun test auto n'exerce les
   gizmos/panneaux/dialogues en mode édition — chaque extraction reste à mener en
   session supervisée avec vérification manuelle de l'éditeur au viewport.

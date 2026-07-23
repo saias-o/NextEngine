@@ -5,7 +5,6 @@
 #include "project/Project.hpp"
 
 #include <imgui.h>
-#include <cstdio>
 #include <filesystem>
 
 namespace saida {
@@ -14,11 +13,11 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene) {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Project...")) {
-                editor->showNewProjectDialog_ = true;
+                editor->projectDialogs_.requestNewProject();
             }
             if (ImGui::MenuItem("Open Project...")) {
-                editor->showOpenProjectDialog_ = true;
-                editor->openBrowsePath_ = std::string(SAIDA_PROJECT_ROOT);
+                editor->projectDialogs_.requestOpenProject(
+                    SAIDA_PROJECT_ROOT);
             }
             bool hasProject = project && project->isLoaded();
             if (ImGui::MenuItem("Save Project", nullptr, false, hasProject)) {
@@ -51,13 +50,12 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene) {
                 editor->saveScene(editor->resolveScenePath(project));
             }
             if (ImGui::MenuItem("Save Scene As...")) {
-                editor->showSaveSceneAsDialog_ = true;
                 std::string defaultName = "main.scene";
                 if (!editor->document_.currentPath().empty()) {
                     std::filesystem::path p(editor->document_.currentPath());
                     defaultName = p.filename().string();
                 }
-                std::snprintf(editor->saveScenePathBuf_, sizeof(editor->saveScenePathBuf_), "%s", defaultName.c_str());
+                editor->projectDialogs_.requestSaveSceneAs(defaultName);
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Quit", "Esc"))      { editor->quitRequested_ = true; }

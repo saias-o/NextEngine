@@ -5,13 +5,13 @@
 #include "editor/EditorEnums.hpp"
 #include "editor/GizmoController.hpp"
 #include "editor/panels/ModelImporterPanel.hpp"
+#include "editor/ProjectDialogs.hpp"
 #include "editor/SceneDocument.hpp"
 #include "editor/ThumbnailCache.hpp"
 #include "scene/animation/AnimationSequence.hpp"
 
 #include <any>
 #include <cstddef>
-#include <future>
 #include <memory>
 #include <string>
 #include <vector>
@@ -96,9 +96,6 @@ private:
 
     void drawAboutWindow();
     void drawSettingsWindow(Project* project);
-    void drawNewProjectDialog(Project* project);
-    void drawOpenProjectDialog(Project* project);
-    void drawSaveSceneAsDialog(Project* project);
     void applyEditorStyle();
 
     bool showSceneTree_   = true;
@@ -153,31 +150,16 @@ private:
     };
     FileListing fileListing_;
 
-    bool showNewProjectDialog_  = false;
-    bool showOpenProjectDialog_ = false;
-    bool showSaveSceneAsDialog_ = false;
     bool showAboutWindow_       = false;
     bool showSettingsWindow_    = false;
     bool useLightTheme_         = false;
-    char newProjectName_[128]   = "MyGame";
-    char newProjectPath_[512]   = "";
-    char saveScenePathBuf_[512] = "main.scene";
     void rebuildSceneHierarchy(Scene* scene);
 
     std::string resolveScenePath(Project* project) const;
 
-    void loadProjectMainScene(Project* project, Scene* scene, ResourceManager* resources);
-
-    // Scan asynchronously so opening the dialog never blocks on disk I/O.
-    void startProjectScan(const std::string& root);
-
-    std::string openBrowsePath_;
-    std::vector<std::string> openProjCache_;
-    std::future<std::vector<std::string>> openScanFuture_;
-    bool openScanDone_ = false;
-
     BuildController buildController_;
     ModelImporterPanel modelImporter_;
+    ProjectDialogs projectDialogs_;
 
     // Deferral avoids iterator invalidation during UI traversal.
     Node* nodeToDelete_ = nullptr;

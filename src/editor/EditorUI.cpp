@@ -1,7 +1,6 @@
 #include "editor/EditorUI.hpp"
 
 #include "core/Camera.hpp"
-#include "core/Log.hpp"
 #include "core/Paths.hpp"
 #include "core/Time.hpp"
 #include "editor/Command.hpp"
@@ -36,7 +35,6 @@
 #include "editor/EditorApp.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -76,15 +74,6 @@ void saveLightThemePreference(bool useLightTheme) {
 EditorUI::EditorUI() : history_(document_) {
     useLightTheme_ = loadLightThemePreference();
     applyEditorStyle();
-    // Default open path for the "Open Project" dialog.
-    std::strncpy(newProjectPath_, SAIDA_PROJECT_ROOT, sizeof(newProjectPath_) - 1);
-    newProjectPath_[sizeof(newProjectPath_) - 1] = '\0';
-    openBrowsePath_ = std::string(SAIDA_PROJECT_ROOT);
-
-    // Warm the project list in the background so the "Open Project" dialog is
-    // instant on first open (no disk walk on the UI thread).
-    startProjectScan(openBrowsePath_);
-
 #ifdef SAIDA_ENABLE_MCP
     // SAIDA_MCP_PORT; default 8765. Disabled entirely by SAIDA_MCP=0.
     const char* disabled = std::getenv("SAIDA_MCP");
@@ -227,7 +216,9 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
         propEditOld_.reset();
 
         // Auto-load the project's entry-point scene (sets the document path).
-        loadProjectMainScene(project, scene, resources);
+        const std::string mainScene =
+            projectDialogs_.findMainScene(project);
+        if (!mainScene.empty()) loadScene(mainScene);
     }
 
     selectedNode_ = document_.selectedNode();
@@ -371,9 +362,12 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     drawAboutWindow();
     buildController_.draw(project);
     drawSettingsWindow(project);
-    drawNewProjectDialog(project);
-    drawOpenProjectDialog(project);
-    drawSaveSceneAsDialog(project);
+    const ProjectDialogs::Actions dialogActions =
+        projectDialogs_.draw(project);
+    if (!dialogActions.browseRoot.empty())
+        currentBrowsePath_ = dialogActions.browseRoot;
+    if (!dialogActions.sceneToSave.empty())
+        saveScene(dialogActions.sceneToSave);
     document_.select(selectedNode_);
 }
 
@@ -429,297 +423,6 @@ void EditorUI::duplicateSelected() {
 
 void EditorUI::openModelImporter(const std::string& path, ResourceManager* resources) {
     modelImporter_.open(path, ctxProject_, resources);
-}
-
-// New Project dialog (modal popup)
-
-void EditorUI::drawNewProjectDialog(Project* project) {
-    if (showNewProjectDialog_) {
-        ImGui::OpenPopup("New Project");
-        showNewProjectDialog_ = false;
-    }
-
-    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(500, 0), ImGuiCond_Appearing);
-
-    if (ImGui::BeginPopupModal("New Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Create a new SaidaEngine project.");
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        ImGui::Text("Project Name:");
-        ImGui::SetNextItemWidth(-1);
-        ImGui::InputText("##projname", newProjectName_, sizeof(newProjectName_));
-
-        ImGui::Spacing();
-        ImGui::Text("Parent Directory:");
-        ImGui::SetNextItemWidth(-1);
-        ImGui::InputText("##projpath", newProjectPath_, sizeof(newProjectPath_));
-
-        ImGui::Spacing();
-
-        // Preview the full path.
-        namespace fs = std::filesystem;
-        fs::path fullPath = fs::path(newProjectPath_) / newProjectName_;
-        ImGui::TextDisabled("Will create: %s", fullPath.string().c_str());
-
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        bool nameValid = std::strlen(newProjectName_) > 0;
-        bool pathValid = std::strlen(newProjectPath_) > 0 && fs::is_directory(newProjectPath_);
-
-        if (!pathValid && std::strlen(newProjectPath_) > 0)
-            ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "Parent directory does not exist.");
-
-        if (ImGui::Button("Create", ImVec2(120, 0)) && nameValid && pathValid) {
-            if (project) {
-                project->create(newProjectPath_, newProjectName_);
-                currentBrowsePath_ = project->rootPath();
-            }
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120, 0)))
-            ImGui::CloseCurrentPopup();
-
-        ImGui::EndPopup();
-    }
-}
-
-// Project scene resolution
-
-void EditorUI::loadProjectMainScene(Project* project, Scene* scene, ResourceManager* resources) {
-    if (!project || !scene || !resources) return;
-
-    namespace fs = std::filesystem;
-
-    auto tryLoad = [&](const std::string& path) -> bool {
-        if (fs::exists(path)) {
-            loadScene(path);
-            return true;
-        }
-        return false;
-    };
-
-    // 1. Explicit main_scene declared in the .saidaproj (project-relative path).
-    if (!project->mainScene().empty()) {
-        if (tryLoad(project->rootPath() + "/" + project->mainScene()))
-            return;
-        Log::warn("Project '", project->name(), "': declared main_scene '",
-                  project->mainScene(), "' not found, falling back.");
-    }
-
-    // 2. Convention: scenes/main.scene.
-    if (tryLoad(project->scenesDir() + "/main.scene"))
-        return;
-
-    // 3. First .scene file found anywhere under scenes/, sorted for determinism.
-    fs::path scenesDir(project->scenesDir());
-    if (fs::exists(scenesDir)) {
-        std::vector<fs::path> found;
-        try {
-            for (auto& entry : fs::recursive_directory_iterator(
-                     scenesDir, fs::directory_options::skip_permission_denied)) {
-                if (entry.path().extension() == ".scene")
-                    found.push_back(entry.path());
-            }
-        } catch (const fs::filesystem_error& e) {
-            Log::warn("loadProjectMainScene: scene scan failed: ", e.what());
-        }
-        std::sort(found.begin(), found.end());
-        if (!found.empty()) {
-            loadScene(found.front().string());
-            return;
-        }
-    }
-
-    Log::info("Project '", project->name(), "': no scene found, starting with empty scene.");
-}
-
-// Open Project dialog (modal popup — background recursive .saidaproj scan)
-
-namespace {
-
-// Directory names never worth descending into when hunting for projects: build
-// artifacts, vendored deps and VCS metadata. Pruning these (and hidden dirs)
-// turns a multi-second walk of the repo into a few milliseconds.
-bool isPrunedScanDir(const std::string& name) {
-    return name == "build" || name == "third_party" || name == ".git" ||
-           name == "node_modules" || (!name.empty() && name[0] == '.');
-}
-
-// Recursively collect every .saidaproj path under `root`, skipping pruned subtrees.
-// Pure (no shared state) so it can run on a background thread.
-std::vector<std::string> scanProjectFiles(std::string root) {
-    namespace fs = std::filesystem;
-    std::vector<std::string> out;
-    std::error_code ec;
-
-    fs::recursive_directory_iterator it(
-        root, fs::directory_options::skip_permission_denied, ec);
-    const fs::recursive_directory_iterator end;
-    for (; !ec && it != end; it.increment(ec)) {
-        const fs::path& p = it->path();
-        if (it->is_directory(ec)) {
-            if (isPrunedScanDir(p.filename().string()))
-                it.disable_recursion_pending();
-            continue;
-        }
-        if (p.extension() == ".saidaproj") {
-            const std::string name = p.filename().string();
-            if (!name.empty() && name[0] != '.')
-                out.push_back(p.string());
-        }
-    }
-    std::sort(out.begin(), out.end());
-    return out;
-}
-
-} // namespace
-
-void EditorUI::startProjectScan(const std::string& root) {
-    // Skip if a scan of nothing-changed is already in flight; the running one
-    // already covers this root (callers only change root via the Scan button).
-    openScanFuture_ = std::async(std::launch::async, scanProjectFiles, root);
-}
-
-void EditorUI::drawOpenProjectDialog(Project* project) {
-    if (showOpenProjectDialog_) {
-        ImGui::OpenPopup("Open Project");
-        showOpenProjectDialog_ = false;
-        // Refresh in the background to pick up newly created projects; the cached
-        // list stays visible and clickable until the fresh scan lands.
-        if (!openScanFuture_.valid())
-            startProjectScan(openBrowsePath_);
-    }
-
-    // Collect a finished background scan (cheap poll; runs every frame the popup
-    // is open). Never blocks: we only swap in the result once it is ready.
-    if (openScanFuture_.valid() &&
-        openScanFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        openProjCache_ = openScanFuture_.get();
-        openScanDone_ = true;
-    }
-
-    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(620, 460), ImGuiCond_Appearing);
-
-    if (!ImGui::BeginPopupModal("Open Project", nullptr, ImGuiWindowFlags_None))
-        return;
-
-    namespace fs = std::filesystem;
-
-    ImGui::Text("Search root:");
-    ImGui::SameLine();
-    char rootBuf[512];
-    std::strncpy(rootBuf, openBrowsePath_.c_str(), sizeof(rootBuf) - 1);
-    rootBuf[sizeof(rootBuf) - 1] = '\0';
-    ImGui::SetNextItemWidth(-80.0f);
-    bool rescan = false;
-    if (ImGui::InputText("##RootPath", rootBuf, sizeof(rootBuf), ImGuiInputTextFlags_EnterReturnsTrue)) {
-        openBrowsePath_ = rootBuf;
-        rescan = true;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Scan")) {
-        openBrowsePath_ = rootBuf;
-        rescan = true;
-    }
-    if (rescan)
-        startProjectScan(openBrowsePath_);
-
-    ImGui::Separator();
-
-    const bool scanning = openScanFuture_.valid();
-    if (!openScanDone_ && scanning) {
-        ImGui::TextDisabled("Scanning for projects…");
-    } else if (openProjCache_.empty()) {
-        ImGui::TextDisabled("No .saidaproj files found under this directory.");
-    } else {
-        ImGui::Text("%zu project(s) found — double-click to open:%s",
-                    openProjCache_.size(), scanning ? "  (refreshing…)" : "");
-    }
-
-    ImGui::BeginChild("##OpenBrowse", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 4),
-                      ImGuiChildFlags_Borders);
-    for (const auto& projPath : openProjCache_) {
-        // Show path relative to scan root for readability.
-        std::string label;
-        try {
-            label = fs::relative(projPath, openBrowsePath_).string();
-        } catch (...) {
-            label = projPath;
-        }
-        // Normalise separators so it looks the same on all platforms.
-        for (char& ch : label) { if (ch == '\\') ch = '/'; }
-
-        if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
-            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                if (project) {
-                    project->load(projPath);
-                    currentBrowsePath_ = project->rootPath();
-                }
-                ImGui::CloseCurrentPopup();
-            }
-        }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", projPath.c_str());
-    }
-    ImGui::EndChild();
-
-    if (ImGui::Button("Cancel", ImVec2(120, 0)))
-        ImGui::CloseCurrentPopup();
-
-    ImGui::EndPopup();
-}
-
-void EditorUI::drawSaveSceneAsDialog(Project* project) {
-    if (showSaveSceneAsDialog_) {
-        ImGui::OpenPopup("Save Scene As");
-        showSaveSceneAsDialog_ = false;
-    }
-
-    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(400, 150), ImGuiCond_Appearing);
-
-    if (ImGui::BeginPopupModal("Save Scene As", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings)) {
-        ImGui::Text("Enter scene file name (e.g. level1.scene):");
-        ImGui::Spacing();
-        
-        ImGui::InputText("##SceneName", saveScenePathBuf_, sizeof(saveScenePathBuf_));
-
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        if (ImGui::Button("Save", ImVec2(120, 0))) {
-            std::string fileName = saveScenePathBuf_;
-            if (fileName.find(".scene") == std::string::npos && !fileName.empty()) {
-                fileName += ".scene";
-            }
-            
-            std::string savePath = fileName;
-            if (project && project->isLoaded()) {
-                savePath = project->scenesDir() + "/" + fileName;
-            }
-            
-            if (!fileName.empty()) {
-                saveScene(savePath);
-            }
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-            ImGui::CloseCurrentPopup();
-        }
-        
-        ImGui::EndPopup();
-    }
 }
 
 // About SaidaEngine dialog (modal popup)
@@ -1103,9 +806,8 @@ void EditorUI::drawSettingsWindow(Project* project) {
 }
 
 std::string EditorUI::resolveScenePath(Project* project) const {
-    if (!document_.currentPath().empty()) return document_.currentPath();
-    if (project && project->isLoaded()) return project->scenesDir() + "/main.scene";
-    return "scene.scene";
+    return projectDialogs_.resolveScenePath(
+        document_.currentPath(), project);
 }
 
 } // namespace saida
