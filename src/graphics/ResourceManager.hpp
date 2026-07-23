@@ -18,6 +18,7 @@
 #include "graphics/GeometryRegistry.hpp"
 #include "graphics/AsyncAssetCache.hpp"
 #include "graphics/BindlessTables.hpp"
+#include "graphics/GpuGraveyard.hpp"
 #include "rhi/Rhi.hpp"
 
 #ifdef SAIDA_RHI_WEBGPU
@@ -213,7 +214,6 @@ private:
     void finalizePendingMeshes();
     void finalizePendingAnimationAssets();
     void rebindMaterialsUsing(AssetID textureId);
-    void drainGraveyard();
 
     rhi::Device& device_;
     AssetRegistry* registry_;
@@ -252,18 +252,8 @@ private:
     std::unordered_map<AssetID, AssetHandle> pendingMeshes_;
 
     // Objets GPU retirés mais possiblement encore lus par une frame en vol :
-    // détruits (et leur index bindless recyclé) après kRetireFrames pumps.
-    static constexpr uint64_t kRetireFrames = 4;  // > frames en vol (2)
-    struct Retired {
-        std::unique_ptr<Texture> texture;
-        std::unique_ptr<Mesh> mesh;
-        std::unique_ptr<Material> material;
-        std::unique_ptr<rhi::BindGroup> bindGroup;
-        uint32_t bindlessIndex = ~0u;
-        uint32_t materialIndex = ~0u;
-        uint64_t frame = 0;
-    };
-    std::vector<Retired> graveyard_;
+    // détruits (et leurs slots bindless recyclés) après un délai (GpuGraveyard).
+    GpuGraveyard graveyard_;
     uint64_t frameClock_ = 0;
     uint64_t gpuResidentBytes_ = 0;
 

@@ -389,8 +389,7 @@ void ResourceManager::trimUnused(const AssetUsage& used) {
         r.bindlessIndex = it->second->bindlessIndex();
         gpuResidentBytes_ -= std::min(gpuResidentBytes_, it->second->gpuBytes());
         r.texture = std::move(it->second);
-        r.frame = frameClock_;
-        graveyard_.push_back(std::move(r));
+        graveyard_.retire(std::move(r), frameClock_);
         it = textures_.erase(it);
     }
 
@@ -405,8 +404,7 @@ void ResourceManager::trimUnused(const AssetUsage& used) {
         reverseMeshMap_.erase(it->second.get());
         Retired r;
         r.mesh = std::move(it->second);
-        r.frame = frameClock_;
-        graveyard_.push_back(std::move(r));
+        graveyard_.retire(std::move(r), frameClock_);
         it = meshes_.erase(it);
     }
 
@@ -424,8 +422,7 @@ void ResourceManager::trimUnused(const AssetUsage& used) {
         // être partagé par plusieurs matériaux, on ne le recycle jamais.
         if (r.materialIndex == 0) r.materialIndex = ~0u;
         r.material = std::move(it->second);
-        r.frame = frameClock_;
-        graveyard_.push_back(std::move(r));
+        graveyard_.retire(std::move(r), frameClock_);
         it = materials_.erase(it);
     }
 
@@ -468,35 +465,13 @@ void ResourceManager::trimUnused(const AssetUsage& used) {
 }
 
 void ResourceManager::retireBindGroup(std::unique_ptr<rhi::BindGroup> group) {
-    if (!group) return;
-    Retired r;
-    r.bindGroup = std::move(group);
-    r.frame = frameClock_;
-    graveyard_.push_back(std::move(r));
-}
-
-void ResourceManager::drainGraveyard() {
-    for (auto it = graveyard_.begin(); it != graveyard_.end();) {
-        if (frameClock_ - it->frame < kRetireFrames) {
-            ++it;
-            continue;
-        }
-        // Plus aucune frame en vol ne référence l'objet : l'index bindless
-        // repointe sur la texture blanche puis redevient allouable, le slot
-        // matériau retourne en freelist, et les destructeurs libèrent le GPU.
-        if (it->bindlessIndex != ~0u) {
-            bindlessTables_.recycleTextureIndex(
-                it->bindlessIndex,
-                bindlessTables_.active() ? defaultWhiteTexture() : nullptr);
-        }
-        if (it->materialIndex != ~0u) bindlessTables_.recycleMaterialSlot(it->materialIndex);
-        it = graveyard_.erase(it);
-    }
+    graveyard_.retireBindGroup(std::move(group), frameClock_);
 }
 
 void ResourceManager::pumpAssetLoads() {
     ++frameClock_;
-    drainGraveyard();
+    graveyard_.drain(frameClock_, bindlessTables_,
+                     bindlessTables_.active() ? defaultWhiteTexture() : nullptr);
     // pump() d'abord : sur le web (pas de worker) c'est lui qui exécute les
     // chargements — finaliser ensuite rend les assets prêts dès cette frame.
     assetLoader_->pump();
@@ -541,7 +516,6 @@ void ResourceManager::enforceGpuBudget() {
     for (const Candidate& c : candidates) {
         if (gpuResidentBytes_ <= gpuBudgetBytes_) break;
         Retired r;
-        r.frame = frameClock_;
         uint64_t bytes = 0;
         if (c.isMesh) {
             auto it = meshes_.find(c.id);
@@ -560,7 +534,7 @@ void ResourceManager::enforceGpuBudget() {
         gpuEvictedBytes_ += bytes;
         ++gpuEvictedCount_;
         lastUse_.erase(c.id);
-        graveyard_.push_back(std::move(r));
+        graveyard_.retire(std::move(r), frameClock_);
         Log::info("assets: gpu budget evicted ", c.isMesh ? "mesh" : "texture", " id=",
                   c.id, " (", bytes, " bytes, resident ", gpuResidentBytes_, "/",
                   gpuBudgetBytes_, ")");
