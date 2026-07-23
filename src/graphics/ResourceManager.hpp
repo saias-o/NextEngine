@@ -17,6 +17,7 @@
 #include "graphics/Material.hpp"
 #include "graphics/GeometryRegistry.hpp"
 #include "graphics/AsyncAssetCache.hpp"
+#include "graphics/BindlessTables.hpp"
 #include "rhi/Rhi.hpp"
 
 #ifdef SAIDA_RHI_WEBGPU
@@ -120,12 +121,13 @@ public:
 
     rhi::BindGroupLayout& materialSetLayout() const { return *materialSetLayout_; }
 
-    // Global bindless texture/material table. Pipelines choose the set index.
+    // Global bindless texture/material tables (owned by BindlessTables).
+    // Pipelines choose the set index.
 #ifndef SAIDA_RHI_WEBGPU
-    VkDescriptorSetLayout globalMaterialSetLayout() const { return globalMaterialSetLayout_; }
-    VkDescriptorSet globalMaterialSet() const { return globalMaterialSet_; }
+    VkDescriptorSetLayout globalMaterialSetLayout() const { return bindlessTables_.layout(); }
+    VkDescriptorSet globalMaterialSet() const { return bindlessTables_.set(); }
 #endif
-    Buffer* globalMaterialBuffer() const { return globalMaterialBuffer_.get(); }
+    Buffer* globalMaterialBuffer() const { return bindlessTables_.materialBuffer(); }
     
     GeometryRegistry& geometry() { return *geometryRegistry_; }
 
@@ -207,34 +209,20 @@ private:
     Mesh* createMesh(AssetID id, const std::vector<Vertex>& vertices,
                      const std::vector<uint32_t>& indices);
     void ensureDefaultTextures();
-    uint32_t getBindlessTextureIndex(Texture* texture);
     void finalizePendingTextures();
     void finalizePendingMeshes();
     void finalizePendingAnimationAssets();
     void rebindMaterialsUsing(AssetID textureId);
     void drainGraveyard();
-    void writeMaterialSlot(uint32_t index, const glm::vec4& baseColor, const glm::vec4& emissive,
-                           float metallic, float roughness, float ao,
-                           uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx, uint32_t emissiveIdx,
-                           MaterialType type);
 
     rhi::Device& device_;
     AssetRegistry* registry_;
     std::unique_ptr<rhi::BindGroupLayout> materialSetLayout_;
 
-#ifndef SAIDA_RHI_WEBGPU
-    // Global Bindless resources
-    VkDescriptorSetLayout globalMaterialSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool globalMaterialPool_ = VK_NULL_HANDLE;
-    VkDescriptorSet globalMaterialSet_ = VK_NULL_HANDLE;
-#endif
-    std::unique_ptr<Buffer> globalMaterialBuffer_;
-    uint32_t nextBindlessTextureIndex_ = 0;
-    uint32_t nextMaterialIndex_ = 0;
+    // Global bindless descriptor tables (texture array + material SSBO).
+    BindlessTables bindlessTables_;
 
     std::unique_ptr<GeometryRegistry> geometryRegistry_;
-
-    void createGlobalBindlessResources();
 
     std::unordered_map<AssetID, std::unique_ptr<Mesh>> meshes_;
     std::unordered_map<AssetID, std::unique_ptr<Texture>> textures_;
@@ -277,8 +265,6 @@ private:
     };
     std::vector<Retired> graveyard_;
     uint64_t frameClock_ = 0;
-    std::vector<uint32_t> freeBindlessIndices_;
-    std::vector<uint32_t> freeMaterialIndices_;
     uint64_t gpuResidentBytes_ = 0;
 
     // Budget GPU mi-scène (LRU mesuré). lastUse_ est daté par frameClock_ à

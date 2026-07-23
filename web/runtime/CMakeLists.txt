@@ -65,6 +65,7 @@ add_executable(saida_web
     ${SAIDA_ROOT}/src/graphics/Material.cpp
     ${SAIDA_ROOT}/src/graphics/Mesh.cpp
     ${SAIDA_ROOT}/src/graphics/Primitives.cpp
+    ${SAIDA_ROOT}/src/graphics/BindlessTables.cpp
     ${SAIDA_ROOT}/src/graphics/ResourceManager.cpp
     ${SAIDA_ROOT}/src/graphics/ShadowMap.cpp
     ${SAIDA_ROOT}/src/graphics/StbImageUsage.cpp

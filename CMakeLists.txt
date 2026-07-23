@@ -471,6 +471,7 @@ add_library(saida_engine STATIC
     src/graphics/ComputePipeline.cpp
     src/graphics/ShadowMap.cpp
     src/graphics/Texture.cpp
+    src/graphics/BindlessTables.cpp
     src/graphics/ResourceManager.cpp
     src/render/Renderer.cpp
     src/render/PostProcessor.cpp

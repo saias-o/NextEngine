@@ -34,19 +34,6 @@
 namespace saida {
 
 namespace {
-struct MaterialData {
-    glm::vec4 baseColor;
-    float metallic;
-    float roughness;
-    float ao;
-    uint32_t albedoTexIdx;
-    uint32_t normalTexIdx;
-    uint32_t mrTexIdx;
-    uint32_t emissiveTexIdx;
-    uint32_t materialType;
-    glm::vec4 emissive;
-};
-static_assert(sizeof(MaterialData) == 64, "MaterialData must match shader.frag std430 layout");
 
 // Image décodée sur le worker de l'AssetLoader : pixels RGBA prêts pour
 // l'upload GPU (fait sur le thread principal dans finalizePendingTextures).
@@ -127,6 +114,7 @@ void logAnimationAssetDiagnostics(const char* type, const std::string& path,
 
 ResourceManager::ResourceManager(rhi::Device& device, AssetRegistry* registry)
     : device_(device), registry_(registry),
+      bindlessTables_(device, kMaxBindlessTextures, kMaxBindlessMaterials),
       rigAssetCache_(AssetType::Rig, AssetPayloadKind::RigAsset, makeRigAssetDecoder,
                      [](const std::shared_ptr<void>& p, const std::string& path)
                          -> std::unique_ptr<RigAsset> {
@@ -175,7 +163,7 @@ ResourceManager::ResourceManager(rhi::Device& device, AssetRegistry* registry)
             {3, rhi::BindingType::UniformBuffer, rhi::ShaderStages::Fragment},         // params
             {4, rhi::BindingType::CombinedImageSampler, rhi::ShaderStages::Fragment},  // emissive
         });
-    createGlobalBindlessResources();
+    bindlessTables_.create();
 #endif
     ensureDefaultTextures();
 }
@@ -197,10 +185,8 @@ ResourceManager::~ResourceManager() {
     clipViewCache_.clear();
     animGraphCache_.clear();
     materialSetLayout_.reset();
-#ifndef SAIDA_RHI_WEBGPU
-    if (globalMaterialSetLayout_) vkDestroyDescriptorSetLayout(device_.device(), globalMaterialSetLayout_, nullptr);
-    if (globalMaterialPool_) vkDestroyDescriptorPool(device_.device(), globalMaterialPool_, nullptr);
-#endif
+    // bindlessTables_ (layout/pool/SSBO) destructs after this body, once every
+    // cache above has released its GPU objects — same order as before.
 }
 
 void ResourceManager::setRegistry(AssetRegistry* registry) {
@@ -208,232 +194,16 @@ void ResourceManager::setRegistry(AssetRegistry* registry) {
     assetLoader_->setRegistry(registry);
 }
 
-void ResourceManager::createGlobalBindlessResources() {
-#ifdef SAIDA_RHI_WEBGPU
-    return;
-#else
-    if (!device_.capabilities().descriptorIndexing) {
-        Log::warn("Descriptor Indexing not supported. GPU-driven rendering is disabled.");
-        return;
-    }
-
-    // Layout: Binding 0 = array of textures, Binding 1 = MaterialData SSBO
-    VkDescriptorSetLayoutBinding texturesBinding{};
-    texturesBinding.binding = 0;
-    texturesBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    texturesBinding.descriptorCount = kMaxBindlessTextures;
-    texturesBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding materialBufferBinding{};
-    materialBufferBinding.binding = 1;
-    materialBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    materialBufferBinding.descriptorCount = 1;
-    materialBufferBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
-
-    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {texturesBinding, materialBufferBinding};
-
-    VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
-    flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    std::array<VkDescriptorBindingFlags, 2> bindingFlags = {
-        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
-        0
-    };
-    flagsInfo.bindingCount = static_cast<uint32_t>(bindingFlags.size());
-    flagsInfo.pBindingFlags = bindingFlags.data();
-
-    VkDescriptorSetLayoutCreateInfo ci{};
-    ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    ci.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-    ci.bindingCount = static_cast<uint32_t>(bindings.size());
-    ci.pBindings = bindings.data();
-    ci.pNext = &flagsInfo;
-
-    if (vkCreateDescriptorSetLayout(device_.device(), &ci, nullptr, &globalMaterialSetLayout_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create global bindless descriptor set layout");
-
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
-    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[0].descriptorCount = kMaxBindlessTextures;
-    poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[1].descriptorCount = 1;
-
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-    poolInfo.maxSets = 1;
-    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-    poolInfo.pPoolSizes = poolSizes.data();
-
-    if (vkCreateDescriptorPool(device_.device(), &poolInfo, nullptr, &globalMaterialPool_) != VK_SUCCESS)
-        throw std::runtime_error("failed to create global bindless pool");
-
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = globalMaterialPool_;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &globalMaterialSetLayout_;
-
-    if (vkAllocateDescriptorSets(device_.device(), &allocInfo, &globalMaterialSet_) != VK_SUCCESS)
-        throw std::runtime_error("failed to allocate global bindless descriptor set");
-
-    // Create global MaterialData SSBO
-    VkDeviceSize ssboSize = kMaxBindlessMaterials * sizeof(MaterialData);
-    globalMaterialBuffer_ = std::make_unique<Buffer>(device_, ssboSize,
-        rhi::BufferUsage::Storage | rhi::BufferUsage::TransferDst,
-        MemoryUsage::HostVisible); // MemoryUsage::HostVisible for simple CPU-side mapping
-
-    // Write the SSBO to the descriptor set
-    VkDescriptorBufferInfo bufferInfo{};
-    bufferInfo.buffer = globalMaterialBuffer_->handle();
-    bufferInfo.offset = 0;
-    bufferInfo.range = VK_WHOLE_SIZE;
-
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = globalMaterialSet_;
-    write.dstBinding = 1;
-    write.dstArrayElement = 0;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    write.descriptorCount = 1;
-    write.pBufferInfo = &bufferInfo;
-
-    vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
-#endif
-}
-
-uint32_t ResourceManager::getBindlessTextureIndex(Texture* texture) {
-#ifdef SAIDA_RHI_WEBGPU
-    (void)texture;
-    return 0;
-#else
-    if (!globalMaterialSet_) return 0;
-    if (!texture) return 0;
-
-    // Réutilise un index recyclé par le graveyard avant d'étendre la table.
-    uint32_t index;
-    if (!freeBindlessIndices_.empty()) {
-        index = freeBindlessIndices_.back();
-        freeBindlessIndices_.pop_back();
-    } else {
-        if (nextBindlessTextureIndex_ >= kMaxBindlessTextures)
-            throw std::runtime_error("bindless texture table exhausted");
-        index = nextBindlessTextureIndex_++;
-    }
-
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = texture->imageView();
-    imageInfo.sampler = texture->sampler();
-
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = globalMaterialSet_;
-    write.dstBinding = 0;
-    write.dstArrayElement = index;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.descriptorCount = 1;
-    write.pImageInfo = &imageInfo;
-
-    vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
-    
-    return index;
-#endif
-}
-
 uint32_t ResourceManager::ensureBindlessTextureIndex(Texture* texture) {
-#ifdef SAIDA_RHI_WEBGPU
-    (void)texture;
-    return 0;
-#else
-    if (!texture) return 0;
-    if (!globalMaterialSet_) return 0;
-    if (texture->bindlessIndex() == ~0u) {
-        texture->setBindlessIndex(getBindlessTextureIndex(texture));
-    }
-    return texture->bindlessIndex();
-#endif
-}
-
-
-void ResourceManager::writeMaterialSlot(uint32_t index, const glm::vec4& baseColor,
-                                        const glm::vec4& emissive,
-                                        float metallic, float roughness, float ao,
-                                        uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx,
-                                        uint32_t emissiveIdx, MaterialType type) {
-#ifdef SAIDA_RHI_WEBGPU
-    (void)index;
-    (void)baseColor;
-    (void)emissive;
-    (void)metallic;
-    (void)roughness;
-    (void)ao;
-    (void)albedoIdx;
-    (void)normalIdx;
-    (void)mrIdx;
-    (void)emissiveIdx;
-    (void)type;
-#else
-    if (!globalMaterialBuffer_) return;
-
-    MaterialData data{};
-    data.baseColor = baseColor;
-    data.emissive = emissive;
-    data.metallic = metallic;
-    data.roughness = roughness;
-    data.ao = ao;
-    data.albedoTexIdx = albedoIdx;
-    data.normalTexIdx = normalIdx;
-    data.mrTexIdx = mrIdx;
-    data.emissiveTexIdx = emissiveIdx;
-    data.materialType = static_cast<uint32_t>(type);
-
-    void* mapped = globalMaterialBuffer_->mapped();
-    if (mapped) {
-        const uint64_t offset = uint64_t(index) * sizeof(MaterialData);
-        memcpy(static_cast<char*>(mapped) + offset, &data, sizeof(MaterialData));
-        // VMA allocations may be non-coherent; publishing material data without
-        // this flush made newly-created bindless materials platform-dependent.
-        globalMaterialBuffer_->flush(sizeof(MaterialData), offset);
-    }
-#endif
+    return bindlessTables_.ensureTextureIndex(texture);
 }
 
 uint32_t ResourceManager::registerMaterialData(const glm::vec4& baseColor, const glm::vec4& emissive,
                                                float metallic, float roughness, float ao,
                                                uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx,
                                                uint32_t emissiveIdx, MaterialType type) {
-#ifdef SAIDA_RHI_WEBGPU
-    (void)baseColor;
-    (void)emissive;
-    (void)metallic;
-    (void)roughness;
-    (void)ao;
-    (void)albedoIdx;
-    (void)normalIdx;
-    (void)mrIdx;
-    (void)emissiveIdx;
-    (void)type;
-    return 0;
-#else
-    if (!globalMaterialBuffer_) return 0;
-
-    // Réutilise un slot libéré par l'éviction d'un matériau avant d'étendre.
-    uint32_t index;
-    if (!freeMaterialIndices_.empty()) {
-        index = freeMaterialIndices_.back();
-        freeMaterialIndices_.pop_back();
-    } else {
-        index = nextMaterialIndex_++;
-        if (index >= kMaxBindlessMaterials) {
-            Log::warn("Global material buffer full! Cap is ", kMaxBindlessMaterials, ".");
-            return 0; // fallback to 0
-        }
-    }
-
-    writeMaterialSlot(index, baseColor, emissive, metallic, roughness, ao,
-                      albedoIdx, normalIdx, mrIdx, emissiveIdx, type);
-    return index;
-#endif
+    return bindlessTables_.allocMaterialSlot(baseColor, emissive, metallic, roughness, ao,
+                                             albedoIdx, normalIdx, mrIdx, emissiveIdx, type);
 }
 
 void ResourceManager::updateMaterialData(uint32_t index, const glm::vec4& baseColor,
@@ -441,8 +211,8 @@ void ResourceManager::updateMaterialData(uint32_t index, const glm::vec4& baseCo
                                          float metallic, float roughness, float ao,
                                          uint32_t albedoIdx, uint32_t normalIdx, uint32_t mrIdx,
                                          uint32_t emissiveIdx, MaterialType type) {
-    writeMaterialSlot(index, baseColor, emissive, metallic, roughness, ao,
-                      albedoIdx, normalIdx, mrIdx, emissiveIdx, type);
+    bindlessTables_.writeMaterialSlot(index, baseColor, emissive, metallic, roughness, ao,
+                                      albedoIdx, normalIdx, mrIdx, emissiveIdx, type);
 }
 
 Mesh* ResourceManager::createMesh(AssetID id, const std::vector<Vertex>& vertices,
@@ -715,27 +485,11 @@ void ResourceManager::drainGraveyard() {
         // repointe sur la texture blanche puis redevient allouable, le slot
         // matériau retourne en freelist, et les destructeurs libèrent le GPU.
         if (it->bindlessIndex != ~0u) {
-#ifndef SAIDA_RHI_WEBGPU
-            if (globalMaterialSet_) {
-                ensureDefaultTextures();
-                VkDescriptorImageInfo imageInfo{};
-                imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                imageInfo.imageView = defaultWhiteTexture_->imageView();
-                imageInfo.sampler = defaultWhiteTexture_->sampler();
-                VkWriteDescriptorSet write{};
-                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                write.dstSet = globalMaterialSet_;
-                write.dstBinding = 0;
-                write.dstArrayElement = it->bindlessIndex;
-                write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                write.descriptorCount = 1;
-                write.pImageInfo = &imageInfo;
-                vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
-            }
-#endif
-            freeBindlessIndices_.push_back(it->bindlessIndex);
+            bindlessTables_.recycleTextureIndex(
+                it->bindlessIndex,
+                bindlessTables_.active() ? defaultWhiteTexture() : nullptr);
         }
-        if (it->materialIndex != ~0u) freeMaterialIndices_.push_back(it->materialIndex);
+        if (it->materialIndex != ~0u) bindlessTables_.recycleMaterialSlot(it->materialIndex);
         it = graveyard_.erase(it);
     }
 }
