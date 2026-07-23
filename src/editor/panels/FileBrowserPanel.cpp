@@ -1,7 +1,6 @@
 #include "editor/panels/FileBrowserPanel.hpp"
 #include "editor/EditorUI.hpp"
 #include "project/Project.hpp"
-#include "scene/Scene.hpp"
 #include "graphics/ResourceManager.hpp"
 
 #include <imgui.h>
@@ -35,7 +34,7 @@ const char* fileIcon(const std::filesystem::path& path) {
 
 } // namespace
 
-void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, ResourceManager* resources) {
+void FileBrowserPanel::draw(EditorUI* editor, Project* project, ResourceManager* resources) {
     editor->thumbnails_.beginFrame();  // advance the cache clock / drain retired thumbnails
     ImGui::Begin("File Browser", &editor->showFileBrowser_);
 
@@ -246,7 +245,7 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                 } else if (ext == ".scene") {
                     ImGui::Button("[SCENE]", ImVec2(iconSize, iconSize));
                     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                        editor->loadScene(scene, resources, pathStr);
+                        editor->loadScene(pathStr);
                     }
                 } else if (ext == ".wav" || ext == ".mp3" || ext == ".ogg") {
                     ImGui::Button("[AUDIO]", ImVec2(iconSize, iconSize));
@@ -319,7 +318,7 @@ void FileBrowserPanel::draw(EditorUI* editor, Project* project, Scene* scene, Re
                     if (ImGui::Selectable(buffer, false, ImGuiSelectableFlags_AllowDoubleClick)) {
                         if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                             if (ext == ".scene") {
-                                editor->loadScene(scene, resources, pathStr);
+                                editor->loadScene(pathStr);
                             } else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".glb") {
                                 editor->openModelImporter(pathStr, resources);
                             }

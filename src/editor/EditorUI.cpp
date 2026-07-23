@@ -225,13 +225,11 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     if (project && project->version() != lastProjectVersion_) {
         lastProjectVersion_ = project->version();
         history_.clear();
-        clipboard_.clear();
-        currentScenePath_.clear();
-        document_.clearSelection();
+        document_.clearSessionReferences();
         propEditId_ = 0;
         propEditOld_.reset();
 
-        // Auto-load the project's entry-point scene (sets currentScenePath_).
+        // Auto-load the project's entry-point scene (sets the document path).
         loadProjectMainScene(project, scene, resources);
     }
 
@@ -259,15 +257,15 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     if (io.KeyCtrl && !io.WantTextInput) {
         // Copy and Save are read-only and stay available in Play; the mutating
         // shortcuts (undo/redo/paste/duplicate) are gated on canEdit().
-        if (ImGui::IsKeyPressed(ImGuiKey_C)) copySelected(resources);
+        if (ImGui::IsKeyPressed(ImGuiKey_C)) copySelected();
         if (ImGui::IsKeyPressed(ImGuiKey_S)) {
-            saveScene(scene, resources, resolveScenePath(project));
+            saveScene(resolveScenePath(project));
         }
         if (canEdit()) {
             if (ImGui::IsKeyPressed(ImGuiKey_Z) && history_.canUndo()) { history_.undo(); selectedNode_ = nullptr; }
             if (ImGui::IsKeyPressed(ImGuiKey_Y) && history_.canRedo()) { history_.redo(); selectedNode_ = nullptr; }
-            if (ImGui::IsKeyPressed(ImGuiKey_V)) pasteClipboard(scene, resources);
-            if (ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelected(resources);
+            if (ImGui::IsKeyPressed(ImGuiKey_V)) pasteClipboard();
+            if (ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelected();
         }
     }
 
@@ -337,7 +335,7 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     ImGui::End();  // DockSpaceHost
 
     MenuBarPanel menuBarPanel;
-    menuBarPanel.draw(this, project, scene, resources);
+    menuBarPanel.draw(this, project, scene);
 
     if (showSceneTree_) {
         SceneHierarchyPanel hierarchyPanel;
@@ -351,7 +349,7 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     
     if (showFileBrowser_) {
         FileBrowserPanel fileBrowserPanel;
-        fileBrowserPanel.draw(this, project, scene, resources);
+        fileBrowserPanel.draw(this, project, resources);
     }
 
     if (showModelImporter_) {
@@ -381,7 +379,7 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     drawSettingsWindow(project);
     drawNewProjectDialog(project);
     drawOpenProjectDialog(project);
-    drawSaveSceneAsDialog(project, scene, resources);
+    drawSaveSceneAsDialog(project);
     document_.select(selectedNode_);
 }
 
@@ -407,49 +405,32 @@ void EditorUI::execute(std::unique_ptr<Command> command) {
     history_.execute(std::move(command));
 }
 
-void EditorUI::saveScene(Scene* scene, ResourceManager* resources, const std::string& path) {
-    if (!scene || !resources) return;
-    if (SceneSerializer::saveToFile(*scene, *resources, path)) {
-        currentScenePath_ = path;
-        document_.markSaved();
-    }
+void EditorUI::saveScene(const std::string& path) {
+    document_.save(path);
 }
 
-void EditorUI::loadScene(Scene* scene, ResourceManager* resources, const std::string& path) {
-    if (!scene || !resources) return;
-    if (SceneSerializer::loadIntoScene(*scene, *resources, path)) {
-        currentScenePath_ = path;
-        document_.markLoaded();
+void EditorUI::loadScene(const std::string& path) {
+    if (document_.load(path)) {
         selectedNode_ = nullptr;
         history_.clear();
     }
 }
 
-void EditorUI::copySelected(ResourceManager* resources) {
-    if (selectedNode_ && resources)
-        clipboard_ = SceneSerializer::nodeToJson(*selectedNode_, *resources);
+void EditorUI::copySelected() {
+    document_.copy(selectedNode_);
 }
 
-void EditorUI::pasteClipboard(Scene* scene, ResourceManager* resources) {
-    if (clipboard_.empty() || !resources) return;
-    Node* parent = selectedNode_ ? selectedNode_ : scene;
-    if (!parent) return;
-    if (auto node = SceneSerializer::nodeFromJson(clipboard_, *resources)) {
-        NodeId addedId = node->id();
-        execute(std::make_unique<AddNodeCommand>(parent->id(), std::move(node)));
-        selectedNode_ = document_.find(addedId);
-    }
+void EditorUI::pasteClipboard() {
+    if (!canEdit()) return;
+    Node* parent = selectedNode_ ? selectedNode_ : document_.scene();
+    if (Node* pasted = document_.paste(parent, history_))
+        selectedNode_ = pasted;
 }
 
-void EditorUI::duplicateSelected(ResourceManager* resources) {
-    if (!selectedNode_ || !resources || !selectedNode_->parent()) return;
-    std::string json = SceneSerializer::nodeToJson(*selectedNode_, *resources);
-    if (auto node = SceneSerializer::nodeFromJson(json, *resources)) {
-        NodeId addedId = node->id();
-        NodeId parentId = selectedNode_->parent()->id();
-        execute(std::make_unique<AddNodeCommand>(parentId, std::move(node)));
-        selectedNode_ = document_.find(addedId);
-    }
+void EditorUI::duplicateSelected() {
+    if (!canEdit()) return;
+    if (Node* duplicate = document_.duplicate(selectedNode_, history_))
+        selectedNode_ = duplicate;
 }
 
 void EditorUI::openModelImporter(const std::string& path, ResourceManager* resources) {
@@ -544,7 +525,7 @@ void EditorUI::loadProjectMainScene(Project* project, Scene* scene, ResourceMana
 
     auto tryLoad = [&](const std::string& path) -> bool {
         if (fs::exists(path)) {
-            loadScene(scene, resources, path);
+            loadScene(path);
             return true;
         }
         return false;
@@ -577,7 +558,7 @@ void EditorUI::loadProjectMainScene(Project* project, Scene* scene, ResourceMana
         }
         std::sort(found.begin(), found.end());
         if (!found.empty()) {
-            loadScene(scene, resources, found.front().string());
+            loadScene(found.front().string());
             return;
         }
     }
@@ -723,7 +704,7 @@ void EditorUI::drawOpenProjectDialog(Project* project) {
     ImGui::EndPopup();
 }
 
-void EditorUI::drawSaveSceneAsDialog(Project* project, Scene* scene, ResourceManager* resources) {
+void EditorUI::drawSaveSceneAsDialog(Project* project) {
     if (showSaveSceneAsDialog_) {
         ImGui::OpenPopup("Save Scene As");
         showSaveSceneAsDialog_ = false;
@@ -755,7 +736,7 @@ void EditorUI::drawSaveSceneAsDialog(Project* project, Scene* scene, ResourceMan
             }
             
             if (!fileName.empty()) {
-                saveScene(scene, resources, savePath);
+                saveScene(savePath);
             }
             ImGui::CloseCurrentPopup();
         }
@@ -1149,7 +1130,7 @@ void EditorUI::drawSettingsWindow(Project* project) {
 }
 
 std::string EditorUI::resolveScenePath(Project* project) const {
-    if (!currentScenePath_.empty()) return currentScenePath_;
+    if (!document_.currentPath().empty()) return document_.currentPath();
     if (project && project->isLoaded()) return project->scenesDir() + "/main.scene";
     return "scene.scene";
 }

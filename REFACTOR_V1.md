@@ -86,13 +86,13 @@ les risques, et surtout **ce qu'il faut mettre en place avant** (un filet de vé
 visuelle golden-image + les deux règles anti-spaghetti) pour que ce soit propre et
 tienne à long terme.
 
-### 5.2 `editor/EditorUI.cpp` (1933 → 1157 l., 31 → 21 méthodes) → shell + contrôleurs
+### 5.2 `editor/EditorUI.cpp` (1933 → 1138 l., 31 → 21 méthodes) → shell + contrôleurs
 
 | Unité | Méthodes reprises | État |
 |---|---|---|
 | **EditorShell** — style + boucle de dessin, routage commandes | `applyEditorStyle`, `draw`, `canEdit`, `markDirty`, `execute`, `drawAboutWindow` | — |
 | **ProjectDialogs** | `drawNewProjectDialog`, `drawOpenProjectDialog`, `drawSaveSceneAsDialog`, `startProjectScan`, `loadProjectMainScene`, `resolveScenePath` | — |
-| **SceneDocumentActions** (étend `editor/SceneDocument`) | `saveScene`, `loadScene`, `copySelected`, `pasteClipboard`, `duplicateSelected` | — |
+| **SceneDocumentActions** (étend `editor/SceneDocument`) | `saveScene`, `loadScene`, `copySelected`, `pasteClipboard`, `duplicateSelected` | ✅ **Fait** |
 | **BuildController** — UI + orchestration au-dessus de `BuildExporter` | `refreshBuildScenes_`, `executeBuild`, `runAutomatedBuild`, `drawBuildWindow` | ✅ **Fait** |
 | **GizmoController** — état de manipulation + rendu gizmo | `drawGizmo`, `updateGizmoHover`, `handleGizmoDrag`, `performRaycastSelection`, `renderGizmoRotationRings`, `renderGizmoTranslateScale`, `drawColliderGizmos` | ✅ **Fait** |
 | **SettingsWindow** | `drawSettingsWindow` (découpée par section) | — |
@@ -126,6 +126,16 @@ demander l'ouverture au contrôleur. Les deux anciens booléens de scène jamais
 ont été supprimés. *Vérifié : build natif propre, 69/69 CTest,
 `witness_editor_build` PASS sur le chemin éditeur exact puis run+restart de
 l'artefact. Reste hors auto : navigation et édition manuelles du modal ImGui.*
+
+**`SceneDocumentActions` (fait).** `SceneDocument` possède maintenant le chemin
+courant, le presse-papiers sérialisé et les opérations save/load/copy ainsi que
+paste/duplicate via `CommandHistory`. Invariant : sélection et commandes
+continuent de cibler des `NodeId` stables ; aucun nœud du presse-papiers ou de
+l'historique n'est conservé par pointeur brut. Les façades `EditorUI` ne font plus
+que préserver le verrou Play et synchroniser son pointeur de sélection legacy.
+Les panneaux ne transportent plus de `Scene*`/`ResourceManager*` inutiles pour ces
+actions. *Vérifié : build natif sans warning, 69/69 CTest,
+`witness_editor_play` PASS (run+restart, UI incluse).*
 
 ### 5.3 `graphics/ResourceManager.cpp` (1102 → 414 l.) → façade + caches
 
@@ -246,15 +256,16 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   sans filet de vérif visuelle (exactitude pixel non testée, état intriqué,
   branches `#ifdef`). TODO.md dit pourquoi et ce qu'il faut d'abord (golden-image
   + règles anti-spaghetti). Ne pas l'attaquer avant d'avoir ce filet.
-- **Phase 4 — EditorUI (§5.2). 🟢 En cours — 2 contrôleurs extraits.**
-  `EditorUI.cpp` **1933 → 1157 l.** `GizmoController` possède l'état de
+- **Phase 4 — EditorUI (§5.2). 🟢 En cours — 3 unités extraites.**
+  `EditorUI.cpp` **1933 → 1138 l.** `GizmoController` possède l'état de
   manipulation, le rendu gizmo et les wireframes colliders ;
   `BuildController` possède le modal et l'orchestration au-dessus de
-  `BuildExporter`, avec un chemin unique bouton/`--build`. Vérifié : build natif
-  propre, 69/69 CTest, `witness_editor_play` pour le gizmo et
+  `BuildExporter`, avec un chemin unique bouton/`--build` ; `SceneDocument`
+  possède les actions et l'état sérialisé du document. Vérifié : build natif
+  propre, 69/69 CTest, `witness_editor_play` pour le document/gizmo et
   `witness_editor_build` PASS (export éditeur exact + run/restart) pour le build.
-  **Restent** : ProjectDialogs, SceneDocumentActions, SettingsWindow,
-  ModelImporterPanel, EditorShell. ⚠️ Rappel : aucun test auto n'exerce les
+  **Restent** : ProjectDialogs, SettingsWindow, ModelImporterPanel, EditorShell.
+  ⚠️ Rappel : aucun test auto n'exerce les
   gizmos/panneaux/dialogues en mode édition — chaque extraction reste à mener en
   session supervisée avec vérification manuelle de l'éditeur au viewport.
 - **Phase 5 — McpBridge (§5.4). Éditeur-only, déplacement quasi pur.** Bouger les

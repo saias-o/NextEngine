@@ -4,12 +4,11 @@ namespace saida {
 
 class EditorUI;
 class Project;
-class Scene;
 class ResourceManager;
 
 class FileBrowserPanel {
 public:
-    void draw(EditorUI* editor, Project* project, Scene* scene, ResourceManager* resources);
+    void draw(EditorUI* editor, Project* project, ResourceManager* resources);
 };
 
 } // namespace saida

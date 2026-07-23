@@ -626,7 +626,7 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
     if (isNestedScene && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && editor->ctxResources_ && editor->ctxProject_) {
         std::string absPath = editor->ctxResources_->getRegistry()->getAbsolutePath(static_cast<Scene*>(node)->prefabAssetId());
         if (!absPath.empty()) {
-            editor->loadScene(editor->ctxScene_, editor->ctxResources_, absPath);
+            editor->loadScene(absPath);
         }
     }
 
@@ -800,7 +800,7 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
 
         ImGui::Separator();
         if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
-            editor->duplicateSelected(editor->ctxResources_);
+            editor->duplicateSelected();
         }
         
         bool canDelete = node->parent() != nullptr;

@@ -5,11 +5,10 @@ namespace saida {
 class EditorUI;
 class Project;
 class Scene;
-class ResourceManager;
 
 class MenuBarPanel {
 public:
-    void draw(EditorUI* editor, Project* project, Scene* scene, ResourceManager* resources);
+    void draw(EditorUI* editor, Project* project, Scene* scene);
 };
 
 } // namespace saida

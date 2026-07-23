@@ -3,8 +3,6 @@
 #include "editor/EditorApp.hpp"
 #include "scene/Scene.hpp"
 #include "project/Project.hpp"
-#include "graphics/ResourceManager.hpp"
-#include "scene/SceneSerializer.hpp"
 
 #include <imgui.h>
 #include <cstdio>
@@ -12,7 +10,7 @@
 
 namespace saida {
 
-void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, ResourceManager* resources) {
+void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene) {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Project...")) {
@@ -38,25 +36,25 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
                 if (scene) {
                     scene->clearChildren();
                     editor->selectedNode_ = nullptr;
-                    editor->currentScenePath_.clear();
+                    editor->document_.clearCurrentPath();
                     editor->history_.clear();
                 }
             }
             if (ImGui::MenuItem("Reload Scene", "F5", false, canEdit)) {
-                editor->loadScene(scene, resources, editor->resolveScenePath(project));
+                editor->loadScene(editor->resolveScenePath(project));
             }
             if (ImGui::MenuItem("Open Scene...", nullptr, false, canEdit)) {
-                editor->loadScene(scene, resources, editor->resolveScenePath(project));
+                editor->loadScene(editor->resolveScenePath(project));
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
-                editor->saveScene(scene, resources, editor->resolveScenePath(project));
+                editor->saveScene(editor->resolveScenePath(project));
             }
             if (ImGui::MenuItem("Save Scene As...")) {
                 editor->showSaveSceneAsDialog_ = true;
                 std::string defaultName = "main.scene";
-                if (!editor->currentScenePath_.empty()) {
-                    std::filesystem::path p(editor->currentScenePath_);
+                if (!editor->document_.currentPath().empty()) {
+                    std::filesystem::path p(editor->document_.currentPath());
                     defaultName = p.filename().string();
                 }
                 std::snprintf(editor->saveScenePathBuf_, sizeof(editor->saveScenePathBuf_), "%s", defaultName.c_str());
@@ -76,13 +74,14 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Copy", "Ctrl+C", false, editor->selectedNode_ != nullptr)) {
-                editor->copySelected(resources);
+                editor->copySelected();
             }
-            if (ImGui::MenuItem("Paste", "Ctrl+V", false, canEdit && !editor->clipboard_.empty())) {
-                editor->pasteClipboard(scene, resources);
+            if (ImGui::MenuItem("Paste", "Ctrl+V", false,
+                                canEdit && editor->document_.hasClipboard())) {
+                editor->pasteClipboard();
             }
             if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, canEdit && editor->selectedNode_ != nullptr)) {
-                editor->duplicateSelected(resources);
+                editor->duplicateSelected();
             }
             ImGui::EndMenu();
         }
@@ -152,7 +151,7 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
         if (ImGui::BeginMenu("Build")) {
             if (ImGui::MenuItem("Build Project...")) {
                 if (project && project->isLoaded()) {
-                    editor->saveScene(scene, resources, editor->resolveScenePath(project));
+                    editor->saveScene(editor->resolveScenePath(project));
                     editor->buildController_.requestOpen();
                 }
             }

@@ -90,17 +90,17 @@ private:
     // Play mode rejects edits so the live scene cannot diverge from the document.
     void execute(std::unique_ptr<Command> command);
 
-    void saveScene(Scene* scene, ResourceManager* resources, const std::string& path);
-    void loadScene(Scene* scene, ResourceManager* resources, const std::string& path);
-    void copySelected(ResourceManager* resources);
-    void pasteClipboard(Scene* scene, ResourceManager* resources);
-    void duplicateSelected(ResourceManager* resources);
+    void saveScene(const std::string& path);
+    void loadScene(const std::string& path);
+    void copySelected();
+    void pasteClipboard();
+    void duplicateSelected();
 
     void drawAboutWindow();
     void drawSettingsWindow(Project* project);
     void drawNewProjectDialog(Project* project);
     void drawOpenProjectDialog(Project* project);
-    void drawSaveSceneAsDialog(Project* project, Scene* scene, ResourceManager* resources);
+    void drawSaveSceneAsDialog(Project* project);
     void applyEditorStyle();
 
     bool showSceneTree_   = true;
@@ -220,8 +220,6 @@ private:
 
     // A project change invalidates history and clipboard node references.
     uint64_t lastProjectVersion_ = 0;
-    std::string clipboard_;
-    std::string currentScenePath_;
     EditorApp* app_ = nullptr;
     Scene* ctxScene_ = nullptr;
     Camera* ctxCamera_ = nullptr;
