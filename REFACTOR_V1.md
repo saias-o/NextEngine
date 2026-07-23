@@ -86,14 +86,14 @@ les risques, et surtout **ce qu'il faut mettre en place avant** (un filet de vé
 visuelle golden-image + les deux règles anti-spaghetti) pour que ce soit propre et
 tienne à long terme.
 
-### 5.2 `editor/EditorUI.cpp` (1933 → 1470 l., 31 → 24 méthodes) → shell + contrôleurs
+### 5.2 `editor/EditorUI.cpp` (1933 → 1157 l., 31 → 21 méthodes) → shell + contrôleurs
 
 | Unité | Méthodes reprises | État |
 |---|---|---|
 | **EditorShell** — style + boucle de dessin, routage commandes | `applyEditorStyle`, `draw`, `canEdit`, `markDirty`, `execute`, `drawAboutWindow` | — |
 | **ProjectDialogs** | `drawNewProjectDialog`, `drawOpenProjectDialog`, `drawSaveSceneAsDialog`, `startProjectScan`, `loadProjectMainScene`, `resolveScenePath` | — |
 | **SceneDocumentActions** (étend `editor/SceneDocument`) | `saveScene`, `loadScene`, `copySelected`, `pasteClipboard`, `duplicateSelected` | — |
-| **BuildController** — UI + orchestration au-dessus de `BuildExporter` | `refreshBuildScenes_`, `executeBuild`, `runAutomatedBuild`, `drawBuildWindow` | — |
+| **BuildController** — UI + orchestration au-dessus de `BuildExporter` | `refreshBuildScenes_`, `executeBuild`, `runAutomatedBuild`, `drawBuildWindow` | ✅ **Fait** |
 | **GizmoController** — état de manipulation + rendu gizmo | `drawGizmo`, `updateGizmoHover`, `handleGizmoDrag`, `performRaycastSelection`, `renderGizmoRotationRings`, `renderGizmoTranslateScale`, `drawColliderGizmos` | ✅ **Fait** |
 | **SettingsWindow** | `drawSettingsWindow` (découpée par section) | — |
 | **ModelImporterPanel** | `openModelImporter`, `closeModelImporter` | — |
@@ -113,6 +113,19 @@ mécanique pur (logique inchangée). *Vérifié : build natif propre (`-Wall -We
 zéro warning), 69/69 CTest, `witness_editor_play` PASS (run+restart). Reste non
 couvert par l'auto — l'interaction gizmo en mode Scene (drag T/R/S, clic-sélection,
 wireframe colliders) demande une vérif manuelle au viewport.*
+
+**`BuildController` (fait).** Nouvelle classe
+`editor/BuildController.{hpp,cpp}`, sans référence vers `EditorUI` et sans
+`friend`. Elle possède l'intégralité de l'état du modal (plateforme,
+configuration, chemins/métadonnées, scènes, résultat et demande d'ouverture).
+Invariant : le clic interactif et `--build` convergent vers le même
+`executeBuild()` ; la sélection de scène, les options `BuildExporter` et le
+reporting ne peuvent donc pas diverger. `EditorUI` ne garde qu'une façade
+`runAutomatedBuild` pour son contrat avec `EditorApp`, et le menu ne fait que
+demander l'ouverture au contrôleur. Les deux anciens booléens de scène jamais lus
+ont été supprimés. *Vérifié : build natif propre, 69/69 CTest,
+`witness_editor_build` PASS sur le chemin éditeur exact puis run+restart de
+l'artefact. Reste hors auto : navigation et édition manuelles du modal ImGui.*
 
 ### 5.3 `graphics/ResourceManager.cpp` (1102 → 414 l.) → façade + caches
 
@@ -233,12 +246,14 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   sans filet de vérif visuelle (exactitude pixel non testée, état intriqué,
   branches `#ifdef`). TODO.md dit pourquoi et ce qu'il faut d'abord (golden-image
   + règles anti-spaghetti). Ne pas l'attaquer avant d'avoir ce filet.
-- **Phase 4 — EditorUI (§5.2). 🟢 Démarrée — GizmoController extrait.**
-  `EditorUI.cpp` **1933 → 1470 l.** `GizmoController` (état de manipulation +
-  rendu gizmo + wireframe colliders) sorti dans `editor/GizmoController.{hpp,cpp}`,
-  move mécanique pur avec un invariant de drag propre (détail §5.2). Vérifié :
-  build natif propre, 69/69 CTest, `witness_editor_play` PASS. **Restent** :
-  BuildController, ProjectDialogs, SceneDocumentActions, SettingsWindow,
+- **Phase 4 — EditorUI (§5.2). 🟢 En cours — 2 contrôleurs extraits.**
+  `EditorUI.cpp` **1933 → 1157 l.** `GizmoController` possède l'état de
+  manipulation, le rendu gizmo et les wireframes colliders ;
+  `BuildController` possède le modal et l'orchestration au-dessus de
+  `BuildExporter`, avec un chemin unique bouton/`--build`. Vérifié : build natif
+  propre, 69/69 CTest, `witness_editor_play` pour le gizmo et
+  `witness_editor_build` PASS (export éditeur exact + run/restart) pour le build.
+  **Restent** : ProjectDialogs, SceneDocumentActions, SettingsWindow,
   ModelImporterPanel, EditorShell. ⚠️ Rappel : aucun test auto n'exerce les
   gizmos/panneaux/dialogues en mode édition — chaque extraction reste à mener en
   session supervisée avec vérification manuelle de l'éditeur au viewport.

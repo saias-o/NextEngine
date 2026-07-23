@@ -5,8 +5,6 @@
 #include "core/Paths.hpp"
 #include "core/Time.hpp"
 #include "editor/Command.hpp"
-#include "editor/BuildExporter.hpp"
-#include "editor/ExeMetadata.hpp"
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Texture.hpp"
 #include "project/Project.hpp"
@@ -379,7 +377,7 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
 
     // Modal dialogs.
     drawAboutWindow();
-    drawBuildWindow(project);
+    buildController_.draw(project);
     drawSettingsWindow(project);
     drawNewProjectDialog(project);
     drawOpenProjectDialog(project);
@@ -391,6 +389,13 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
 
 bool EditorUI::canEdit() const {
     return !(app_ && app_->isPlayMode());
+}
+
+bool EditorUI::runAutomatedBuild(Project* project, bool web,
+                                 const std::string& outputDir,
+                                 std::string* message) {
+    return buildController_.runAutomatedBuild(
+        project, web, outputDir, message);
 }
 
 void EditorUI::markDirty() {
@@ -832,324 +837,6 @@ void EditorUI::drawAboutWindow() {
         ImGui::Spacing();
 
         // Close button aligned nicely
-        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 116.0f);
-        if (ImGui::Button("Close", ImVec2(100, 0))) {
-            ImGui::CloseCurrentPopup();
-        }
-
-        ImGui::EndPopup();
-    }
-}
-
-// Build Settings dialog (modal popup)
-
-void EditorUI::refreshBuildScenes_(Project* project) {
-    buildScenes_.clear();
-    if (!project || !project->isLoaded()) return;
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    const fs::path scenesDir = project->scenesDir();
-    if (fs::exists(scenesDir, ec)) {
-        for (const auto& entry : fs::directory_iterator(scenesDir, ec)) {
-            if (!entry.is_regular_file()) continue;
-            if (entry.path().extension() == ".scene")
-                buildScenes_.push_back("scenes/" + entry.path().filename().string());
-        }
-        std::sort(buildScenes_.begin(), buildScenes_.end());
-    }
-    // Default selection: the project's main scene, else scenes/main.scene,
-    // else the first scene.
-    buildMainSceneIndex_ = 0;
-    const std::string preferred[] = {project->mainScene(), "scenes/main.scene"};
-    for (const std::string& want : preferred) {
-        if (want.empty()) continue;
-        bool found = false;
-        for (size_t i = 0; i < buildScenes_.size(); ++i) {
-            if (buildScenes_[i] == want) {
-                buildMainSceneIndex_ = static_cast<int>(i);
-                found = true;
-                break;
-            }
-        }
-        if (found) break;
-    }
-}
-
-// Chemin unique du bouton Build : construit les Options depuis l'état du
-// dialogue et exécute l'export. Utilisé par le clic ET par --build (CLI).
-void EditorUI::executeBuild(Project* project, bool web, bool launchAfter) {
-    BuildExporter::Options opt;
-    opt.outputDir = buildOutputPath_;
-    opt.mainScene = buildScenes_.empty()
-        ? std::string("scenes/main.scene")
-        : buildScenes_[buildMainSceneIndex_];
-    opt.launchAfterBuild = launchAfter && !web;
-    opt.productVersion = buildVersion_;
-    opt.companyName = buildCompany_;
-    opt.iconPath = buildIconPath_;
-    BuildExporter::Result res = web
-        ? BuildExporter::exportWebBuild(*project, opt)
-        : BuildExporter::exportWindowsBuild(*project, opt);
-    buildHasResult_      = true;
-    buildLastSuccess_    = res.success;
-    buildLastError_      = res.error;
-    buildLastLog_        = res.log;
-    buildLastOutputDir_  = res.outputDir;
-    buildLastExe_        = res.gameExe;
-}
-
-// Clic Build automatisé (--build) : même initialisation que l'ouverture du
-// dialogue, puis exactement executeBuild(). outputDir vide = défaut du dialogue.
-bool EditorUI::runAutomatedBuild(Project* project, bool web,
-                                 const std::string& outputDir, std::string* message) {
-    if (!project || !project->isLoaded()) {
-        if (message) *message = "no loaded project";
-        return false;
-    }
-    buildHasResult_ = false;
-    refreshBuildScenes_(project);
-    if (buildScenes_.empty()) {
-        if (message) *message = "no .scene files under scenes/";
-        return false;
-    }
-    if (!outputDir.empty())
-        std::snprintf(buildOutputPath_, sizeof(buildOutputPath_), "%s", outputDir.c_str());
-    selectedBuildPlatform_ = web ? BuildPlatform::WebGL : BuildPlatform::Windows;
-    executeBuild(project, web, /*launchAfter=*/false);
-    if (message) *message = buildLastSuccess_ ? buildLastOutputDir_ : buildLastError_;
-    return buildLastSuccess_;
-}
-
-void EditorUI::drawBuildWindow(Project* project) {
-    if (showBuildWindow_) {
-        ImGui::OpenPopup("Build Settings");
-        showBuildWindow_ = false;
-        buildHasResult_ = false;
-        refreshBuildScenes_(project);
-    }
-
-    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(680, 560), ImGuiCond_Appearing);
-
-    if (ImGui::BeginPopupModal("Build Settings", nullptr, ImGuiWindowFlags_None)) {
-        if (project && project->isLoaded()) {
-            ImGui::Text("Configure build settings for project: %s", project->name().c_str());
-        } else {
-            ImGui::Text("Configure build targets, platforms, and optimization parameters.");
-        }
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        // Reserve vertical space at the bottom for the footer (one button row)
-        // plus the result panel when a build has run, so the columns shrink and
-        // nothing overflows the modal.
-        float bottomReserve = ImGui::GetFrameHeightWithSpacing() + 10.0f;
-        if (buildHasResult_)
-            bottomReserve += 90.0f + ImGui::GetFrameHeightWithSpacing() * 2.0f + 16.0f;
-
-        // Left Column: Platform List Sidebar
-        ImGui::BeginChild("##PlatformList", ImVec2(200, -bottomReserve), ImGuiChildFlags_Borders);
-        {
-            const char* platforms[] = { "Windows (Direct3D/Vulkan)", "Meta Quest (XR SDK)", "Linux (Vulkan)", "WebGL (WebAssembly)" };
-            for (int i = 0; i < 4; ++i) {
-                ImGui::PushID(i);
-                bool isSelected = (static_cast<int>(selectedBuildPlatform_) == i);
-                
-                // Platforms customized with badges
-                char label[64];
-                if (i == 0) std::snprintf(label, sizeof(label), " [Win] %s", platforms[i]);
-                else if (i == 1) std::snprintf(label, sizeof(label), " [XR]  %s", platforms[i]);
-                else if (i == 2) std::snprintf(label, sizeof(label), " [Tux] %s", platforms[i]);
-                else std::snprintf(label, sizeof(label), " [Web] %s", platforms[i]);
-
-                if (ImGui::Selectable(label, isSelected, ImGuiSelectableFlags_None, ImVec2(0, 32))) {
-                    selectedBuildPlatform_ = static_cast<BuildPlatform>(i);
-                }
-                ImGui::PopID();
-            }
-        }
-        ImGui::EndChild();
-
-        ImGui::SameLine();
-
-        // Right Column: Dynamic Settings Pane
-        ImGui::BeginChild("##PlatformSettings", ImVec2(0, -bottomReserve), ImGuiChildFlags_Borders);
-        {
-            ImGui::SeparatorText("Startup Scene");
-            if (buildScenes_.empty()) {
-                ImGui::TextColored(ImVec4(0.85f, 0.55f, 0.20f, 1.0f),
-                    "No .scene files found under scenes/. Save a scene first.");
-            } else {
-                if (buildMainSceneIndex_ < 0 ||
-                    buildMainSceneIndex_ >= static_cast<int>(buildScenes_.size()))
-                    buildMainSceneIndex_ = 0;
-                ImGui::Text("Scene launched when the game starts:");
-                ImGui::SetNextItemWidth(-1);
-                const char* preview = buildScenes_[buildMainSceneIndex_].c_str();
-                if (ImGui::BeginCombo("##MainScene", preview)) {
-                    for (int i = 0; i < static_cast<int>(buildScenes_.size()); ++i) {
-                        bool sel = (i == buildMainSceneIndex_);
-                        if (ImGui::Selectable(buildScenes_[i].c_str(), sel))
-                            buildMainSceneIndex_ = i;
-                        if (sel) ImGui::SetItemDefaultFocus();
-                    }
-                    ImGui::EndCombo();
-                }
-            }
-            ImGui::Spacing();
-            ImGui::Separator();
-
-            if (selectedBuildPlatform_ == BuildPlatform::Windows) {
-                // Windows Platform Settings
-                ImGui::SeparatorText("Windows Build Settings");
-                
-                ImGui::Text("Target Architecture: x86_64 (Direct3D 12 & Vulkan)");
-                ImGui::Spacing();
-
-                ImGui::Text("Build Configuration:");
-                if (ImGui::RadioButton("Debug##win", buildConfiguration_ == BuildConfig::Debug)) buildConfiguration_ = BuildConfig::Debug; 
-                ImGui::SameLine();
-                if (ImGui::RadioButton("Release##win", buildConfiguration_ == BuildConfig::Release)) buildConfiguration_ = BuildConfig::Release; 
-                ImGui::SameLine();
-                if (ImGui::RadioButton("Profile##win", buildConfiguration_ == BuildConfig::Profile)) buildConfiguration_ = BuildConfig::Profile;
-                
-                ImGui::Spacing();
-                ImGui::Text("Output Binary Directory:");
-                ImGui::SetNextItemWidth(-1);
-                ImGui::InputText("##WinOutputPath", buildOutputPath_, sizeof(buildOutputPath_));
-
-                ImGui::Spacing();
-                ImGui::Text("Product Version (a.b.c[.d]):");
-                ImGui::SetNextItemWidth(160.0f);
-                ImGui::InputText("##WinVersion", buildVersion_, sizeof(buildVersion_));
-                {
-                    unsigned short parsed[4];
-                    if (!saida::parseExeVersion(buildVersion_, parsed)) {
-                        ImGui::SameLine();
-                        ImGui::TextColored(ImVec4(0.90f, 0.40f, 0.40f, 1.0f),
-                                           "invalid — expected e.g. 1.0.0");
-                    }
-                }
-                ImGui::Text("Company (optional):");
-                ImGui::SetNextItemWidth(-1);
-                ImGui::InputText("##WinCompany", buildCompany_, sizeof(buildCompany_));
-                ImGui::Text("Icon .ico (optional, project-relative):");
-                ImGui::SetNextItemWidth(-1);
-                ImGui::InputText("##WinIcon", buildIconPath_, sizeof(buildIconPath_));
-
-                ImGui::Spacing();
-                ImGui::Checkbox("Copy assets/ directory to output path", &buildCopyAssets_);
-                ImGui::Checkbox("Enable Link-Time Optimization (LTO / -O3)", &buildEnableLto_);
-            }
-            else if (selectedBuildPlatform_ == BuildPlatform::MetaQuest) {
-                // Meta Quest (XR) Settings
-                ImGui::SeparatorText("Meta Quest (XR) Settings");
-                
-                ImGui::TextColored(ImVec4(0.412f, 0.714f, 0.184f, 1.0f), "[Meta OpenXR Core SDK v62.0]");
-                ImGui::Spacing();
-
-                ImGui::Text("Graphics API: Vulkan 1.3 (Stereo Foveated Rendering)");
-                ImGui::Spacing();
-
-                static int questTarget = 2; // Quest 3
-                ImGui::Text("Target Hardware Device:");
-                ImGui::RadioButton("Quest 2", &questTarget, 0); ImGui::SameLine();
-                ImGui::RadioButton("Quest Pro", &questTarget, 1); ImGui::SameLine();
-                ImGui::RadioButton("Quest 3", &questTarget, 2);
-
-                ImGui::Spacing();
-                static bool questHandTracking = true;
-                ImGui::Checkbox("High-Frequency Hand Tracking (60Hz tracking)", &questHandTracking);
-                
-                static bool questFoveated = true;
-                ImGui::Checkbox("Enable Foveation (Fixed/Dynamic Level High)", &questFoveated);
-
-                static bool questMultiview = true;
-                ImGui::Checkbox("Optimize through Mobile Multi-view (OVR_multiview2)", &questMultiview);
-
-                ImGui::Spacing();
-                ImGui::TextDisabled("Note: Meta Quest target builds require Android NDK (Clang compiler) and Vulkan mobile SPIR-V shaders compilation pipeline.");
-            }
-            else if (selectedBuildPlatform_ == BuildPlatform::Linux) {
-                // Linux Build Settings
-                ImGui::SeparatorText("Linux Build Settings");
-
-                ImGui::Text("Target Architecture: x86_64 & AArch64 (GCC/Clang)");
-                ImGui::Spacing();
-
-                ImGui::Text("Build Configuration:");
-                if (ImGui::RadioButton("Debug##lin", buildConfiguration_ == BuildConfig::Debug)) buildConfiguration_ = BuildConfig::Debug; 
-                ImGui::SameLine();
-                if (ImGui::RadioButton("Release##lin", buildConfiguration_ == BuildConfig::Release)) buildConfiguration_ = BuildConfig::Release; 
-                ImGui::SameLine();
-                if (ImGui::RadioButton("Profile##lin", buildConfiguration_ == BuildConfig::Profile)) buildConfiguration_ = BuildConfig::Profile;
-
-                ImGui::Spacing();
-                ImGui::Checkbox("Statically link GCC runtime libraries (libstdc++/libgcc)", &buildCopyAssets_);
-                ImGui::Checkbox("Strip local debugging symbols to reduce binary size", &buildEnableLto_);
-            }
-            else if (selectedBuildPlatform_ == BuildPlatform::WebGL) {
-                ImGui::SeparatorText("Web (WebGPU / WebAssembly) Settings");
-
-                ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.20f, 1.0f),
-                                   "[WebGPU via Emscripten — rhi/webgpu backend]");
-                ImGui::Spacing();
-                ImGui::Text("Compiler backend: Emscripten (wasm32) + emdawnwebgpu");
-                ImGui::Spacing();
-                ImGui::Text("Output Directory:");
-                ImGui::SetNextItemWidth(-1);
-                ImGui::InputText("##WebOutputPath", buildOutputPath_, sizeof(buildOutputPath_));
-                ImGui::Spacing();
-                ImGui::TextWrapped(
-                    "Export copies the compiled game player (build-web-player/) plus the "
-                    "COOP/COEP dev server. Compile it first from a shell with emsdk:");
-                ImGui::TextDisabled("  ./web/build_web_player.sh   (then Export here)");
-                ImGui::TextDisabled("  python web/serve.py <out>/web  ->  http://localhost:8080");
-            }
-        }
-        ImGui::EndChild();
-
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        if (buildHasResult_) {
-            if (buildLastSuccess_) {
-                ImGui::TextColored(ImVec4(0.40f, 0.80f, 0.40f, 1.0f),
-                    "Build succeeded: %s", buildLastExe_.c_str());
-                if (ImGui::Button("Open Folder")) {
-                    BuildExporter::openInExplorer(buildLastOutputDir_);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Run Game")) {
-                    BuildExporter::launch(buildLastExe_);
-                }
-            } else {
-                ImGui::TextColored(ImVec4(0.90f, 0.40f, 0.40f, 1.0f),
-                    "Build failed: %s", buildLastError_.c_str());
-            }
-            ImGui::BeginChild("##BuildLog", ImVec2(0, 90), ImGuiChildFlags_Borders);
-            ImGui::TextUnformatted(buildLastLog_.c_str());
-            ImGui::EndChild();
-            ImGui::Spacing();
-        }
-
-        const bool isWindows = (selectedBuildPlatform_ == BuildPlatform::Windows);
-        const bool isWeb = (selectedBuildPlatform_ == BuildPlatform::WebGL);
-        const bool canBuild =
-            (isWindows || isWeb) && project && project->isLoaded() && !buildScenes_.empty();
-
-        if (!isWindows && !isWeb) {
-            ImGui::TextDisabled("This platform is not available yet — Windows and Web only.");
-        }
-
-        ImGui::BeginDisabled(!canBuild);
-        if (ImGui::Button("Build", ImVec2(100, 0))) executeBuild(project, isWeb, false);
-        ImGui::SameLine();
-        if (ImGui::Button("Build & Run", ImVec2(120, 0))) executeBuild(project, isWeb, true);
-        ImGui::EndDisabled();
-
-        ImGui::SameLine();
         ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 116.0f);
         if (ImGui::Button("Close", ImVec2(100, 0))) {
             ImGui::CloseCurrentPopup();

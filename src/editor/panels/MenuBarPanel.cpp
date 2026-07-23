@@ -153,12 +153,12 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene, Resour
             if (ImGui::MenuItem("Build Project...")) {
                 if (project && project->isLoaded()) {
                     editor->saveScene(scene, resources, editor->resolveScenePath(project));
-                    editor->showBuildWindow_ = true;
+                    editor->buildController_.requestOpen();
                 }
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Build Settings...", "Ctrl+Shift+B")) {
-                editor->showBuildWindow_ = true;
+                editor->buildController_.requestOpen();
             }
             ImGui::EndMenu();
         }

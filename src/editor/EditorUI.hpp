@@ -1,5 +1,6 @@
 #pragma once
 
+#include "editor/BuildController.hpp"
 #include "editor/CommandHistory.hpp"
 #include "editor/EditorEnums.hpp"
 #include "editor/GizmoController.hpp"
@@ -96,8 +97,6 @@ private:
     void duplicateSelected(ResourceManager* resources);
 
     void drawAboutWindow();
-    void drawBuildWindow(Project* project);
-    void executeBuild(Project* project, bool web, bool launchAfter);
     void drawSettingsWindow(Project* project);
     void drawNewProjectDialog(Project* project);
     void drawOpenProjectDialog(Project* project);
@@ -161,7 +160,6 @@ private:
     bool showOpenProjectDialog_ = false;
     bool showSaveSceneAsDialog_ = false;
     bool showAboutWindow_       = false;
-    bool showBuildWindow_       = false;
     bool showSettingsWindow_    = false;
     bool useLightTheme_         = false;
     char newProjectName_[128]   = "MyGame";
@@ -181,26 +179,7 @@ private:
     std::future<std::vector<std::string>> openScanFuture_;
     bool openScanDone_ = false;
 
-    BuildPlatform selectedBuildPlatform_ = BuildPlatform::Windows;
-    BuildConfig buildConfiguration_ = BuildConfig::Release;
-    char buildOutputPath_[512] = "build/export";
-    char buildVersion_[32] = "1.0.0";
-    char buildCompany_[256] = "";
-    char buildIconPath_[512] = "";
-    bool buildCopyAssets_ = true;
-    bool buildEnableLto_ = false;
-    bool buildSceneMainChecked_ = true;
-    bool buildSceneDemoChecked_ = false;
-
-    std::vector<std::string> buildScenes_;
-    int buildMainSceneIndex_ = 0;
-    bool buildHasResult_ = false;
-    bool buildLastSuccess_ = false;
-    std::string buildLastError_;
-    std::string buildLastLog_;
-    std::string buildLastOutputDir_;
-    std::string buildLastExe_;
-    void refreshBuildScenes_(Project* project);
+    BuildController buildController_;
 
     // Deferral avoids iterator invalidation during UI traversal.
     Node* nodeToDelete_ = nullptr;
