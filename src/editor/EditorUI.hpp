@@ -4,6 +4,7 @@
 #include "editor/CommandHistory.hpp"
 #include "editor/EditorEnums.hpp"
 #include "editor/GizmoController.hpp"
+#include "editor/panels/ModelImporterPanel.hpp"
 #include "editor/SceneDocument.hpp"
 #include "editor/ThumbnailCache.hpp"
 #include "scene/animation/AnimationSequence.hpp"
@@ -30,7 +31,6 @@ class SceneHierarchyPanel;
 class InspectorPanel;
 class FileBrowserPanel;
 class ViewportPanel;
-class ModelImporterPanel;
 class ProfilerPanel;
 class AnimationPanel;
 class McpBridge;
@@ -43,7 +43,6 @@ class EditorUI {
     friend class InspectorPanel;
     friend class FileBrowserPanel;
     friend class ViewportPanel;
-    friend class ModelImporterPanel;
     friend class ProfilerPanel;
     friend class AnimationPanel;
     friend class PropertyEditor;
@@ -75,10 +74,9 @@ public:
     glm::vec2 viewportSize() const { return viewportSize_; }
 
     void openModelImporter(const std::string& path, ResourceManager* resources);
-    void closeModelImporter();
 
-    bool isPreviewMode() const { return isPreviewMode_; }
-    Scene* previewScene() const { return previewScene_.get(); }
+    bool isPreviewMode() const { return modelImporter_.active(); }
+    Scene* previewScene() const { return modelImporter_.previewScene(); }
 
     // Play is inspectable but read-only: no editor mutation may touch the live
     // World sub-scene. Every command and inspector edit is gated on this.
@@ -107,7 +105,6 @@ private:
     bool showInspector_   = true;
     bool showFileBrowser_ = true;
     bool showViewportOverlay_ = true;
-    bool showModelImporter_ = false;
     bool showProfiler_ = false;
     bool showAnimation_ = false;
 
@@ -180,6 +177,7 @@ private:
     bool openScanDone_ = false;
 
     BuildController buildController_;
+    ModelImporterPanel modelImporter_;
 
     // Deferral avoids iterator invalidation during UI traversal.
     Node* nodeToDelete_ = nullptr;
@@ -227,10 +225,6 @@ private:
     Project* ctxProject_ = nullptr;
     ThumbnailCache thumbnails_;
     ThumbnailCache brandingImages_;
-
-    bool isPreviewMode_ = false;
-    std::string previewModelPath_;
-    std::unique_ptr<Scene> previewScene_;
 
 #ifdef SAIDA_ENABLE_MCP
     std::unique_ptr<McpBridge> mcp_;

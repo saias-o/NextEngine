@@ -86,7 +86,7 @@ les risques, et surtout **ce qu'il faut mettre en place avant** (un filet de vé
 visuelle golden-image + les deux règles anti-spaghetti) pour que ce soit propre et
 tienne à long terme.
 
-### 5.2 `editor/EditorUI.cpp` (1933 → 1138 l., 31 → 21 méthodes) → shell + contrôleurs
+### 5.2 `editor/EditorUI.cpp` (1933 → 1111 l., 31 → 20 méthodes) → shell + contrôleurs
 
 | Unité | Méthodes reprises | État |
 |---|---|---|
@@ -96,7 +96,7 @@ tienne à long terme.
 | **BuildController** — UI + orchestration au-dessus de `BuildExporter` | `refreshBuildScenes_`, `executeBuild`, `runAutomatedBuild`, `drawBuildWindow` | ✅ **Fait** |
 | **GizmoController** — état de manipulation + rendu gizmo | `drawGizmo`, `updateGizmoHover`, `handleGizmoDrag`, `performRaycastSelection`, `renderGizmoRotationRings`, `renderGizmoTranslateScale`, `drawColliderGizmos` | ✅ **Fait** |
 | **SettingsWindow** | `drawSettingsWindow` (découpée par section) | — |
-| **ModelImporterPanel** | `openModelImporter`, `closeModelImporter` | — |
+| **ModelImporterPanel** | `openModelImporter`, `closeModelImporter` | ✅ **Fait** |
 
 **`GizmoController` (fait).** Nouvelle classe `editor/GizmoController.{hpp,cpp}`. Elle
 **possède** l'état de manipulation (le drag transactionnel `grabbedAxis_` +
@@ -136,6 +136,16 @@ que préserver le verrou Play et synchroniser son pointeur de sélection legacy.
 Les panneaux ne transportent plus de `Scene*`/`ResourceManager*` inutiles pour ces
 actions. *Vérifié : build natif sans warning, 69/69 CTest,
 `witness_editor_play` PASS (run+restart, UI incluse).*
+
+**`ModelImporterPanel` (fait).** Le panneau persistant possède désormais
+`active_`, le chemin source, la scène de preview, la vitesse d'animation et son
+état d'export. Invariant : `active() == true` implique que `previewScene()` est la
+scène exacte installée comme override par `EditorApp`; `close()` détruit cette
+scène et désactive l'override. `EditorUI` ne conserve qu'une façade `open` pour
+les panneaux appelants. La durée d'affichage du message d'export reste identique
+à l'ancien panneau recréé par frame. *Vérifié : build natif sans warning, 69/69
+CTest, `witness_editor_play` PASS (run+restart, UI incluse). La sélection de clip
+et le bouton d'export du panneau restent hors automatisation.*
 
 ### 5.3 `graphics/ResourceManager.cpp` (1102 → 414 l.) → façade + caches
 
@@ -256,15 +266,16 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   sans filet de vérif visuelle (exactitude pixel non testée, état intriqué,
   branches `#ifdef`). TODO.md dit pourquoi et ce qu'il faut d'abord (golden-image
   + règles anti-spaghetti). Ne pas l'attaquer avant d'avoir ce filet.
-- **Phase 4 — EditorUI (§5.2). 🟢 En cours — 3 unités extraites.**
-  `EditorUI.cpp` **1933 → 1138 l.** `GizmoController` possède l'état de
+- **Phase 4 — EditorUI (§5.2). 🟢 En cours — 4 unités extraites.**
+  `EditorUI.cpp` **1933 → 1111 l.** `GizmoController` possède l'état de
   manipulation, le rendu gizmo et les wireframes colliders ;
   `BuildController` possède le modal et l'orchestration au-dessus de
   `BuildExporter`, avec un chemin unique bouton/`--build` ; `SceneDocument`
-  possède les actions et l'état sérialisé du document. Vérifié : build natif
-  propre, 69/69 CTest, `witness_editor_play` pour le document/gizmo et
+  possède les actions et l'état sérialisé du document ; `ModelImporterPanel`
+  possède la preview et sa fenêtre. Vérifié : build natif propre, 69/69 CTest,
+  `witness_editor_play` pour le document/gizmo/importer et
   `witness_editor_build` PASS (export éditeur exact + run/restart) pour le build.
-  **Restent** : ProjectDialogs, SettingsWindow, ModelImporterPanel, EditorShell.
+  **Restent** : ProjectDialogs, SettingsWindow, EditorShell.
   ⚠️ Rappel : aucun test auto n'exerce les
   gizmos/panneaux/dialogues en mode édition — chaque extraction reste à mener en
   session supervisée avec vérification manuelle de l'éditeur au viewport.

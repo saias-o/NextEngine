@@ -1,6 +1,10 @@
 #include "editor/panels/ModelImporterPanel.hpp"
+
 #include "cli/MeshoptGlbExporter.hpp"
-#include "editor/EditorUI.hpp"
+#include "graphics/ResourceManager.hpp"
+#include "nodes/LightNode.hpp"
+#include "project/Project.hpp"
+#include "scene/GLTFLoader.hpp"
 #include "scene/Scene.hpp"
 #include "scene/animation/Animator.hpp"
 #include "scene/animation/AnimStateMachine.hpp"
@@ -16,26 +20,54 @@
 
 namespace saida {
 
-void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::string& modelPath) {
-    if (!editor->showModelImporter_) return;
+ModelImporterPanel::~ModelImporterPanel() = default;
 
-    bool open = editor->showModelImporter_;
+void ModelImporterPanel::open(const std::string& path, Project* project,
+                              ResourceManager* resources) {
+    active_ = true;
+    modelPath_ = path;
+    previewScene_ = std::make_unique<Scene>();
+
+    auto light = previewScene_->createChild<LightNode>("PreviewLight");
+    light->transform().position = glm::vec3(2.0f, 2.0f, 2.0f);
+    light->direction =
+        glm::normalize(glm::vec3(0.0f) - light->transform().position);
+
+    if (resources) {
+        GLTFLoadOptions options;
+        if (project) options.autoMeshLods = project->autoMeshLods();
+        GLTFLoader::load(path, *previewScene_, *resources, options);
+    }
+}
+
+void ModelImporterPanel::close() {
+    active_ = false;
+    previewScene_.reset();
+}
+
+void ModelImporterPanel::draw() {
+    if (!active_) return;
+
+    // The panel used to be recreated every frame; preserve the result message's
+    // one-frame lifetime while moving the actual preview lifetime here.
+    exportStatus_.clear();
+    bool open = active_;
     bool visible = ImGui::Begin("3D Importer", &open);
     bool closeRequested = !open;
     if (!visible) {
         ImGui::End();
-        if (closeRequested) editor->closeModelImporter();
+        if (closeRequested) close();
         return;
     }
 
     ImGui::Text("Previewing Model:");
-    ImGui::TextDisabled("%s", modelPath.c_str());
+    ImGui::TextDisabled("%s", modelPath_.c_str());
     ImGui::Separator();
     ImGui::Spacing();
 
     Animator* foundAnim = nullptr;
-    if (previewScene) {
-        previewScene->traverse([&](Node& node, const glm::mat4&) {
+    if (previewScene_) {
+        previewScene_->traverse([&](Node& node, const glm::mat4&) {
             if (!foundAnim && node.getBehaviour<Animator>()) {
                 foundAnim = node.getBehaviour<Animator>();
             }
@@ -45,8 +77,6 @@ void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::
     if (foundAnim && !foundAnim->clips().empty()) {
         ImGui::Text("Animation Controls");
         ImGui::Spacing();
-
-        static float speed = 1.0f;
 
         // Clip selector — stable order for a deterministic combo.
         std::vector<std::string> clipNames;
@@ -60,24 +90,25 @@ void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::
             for (const auto& name : clipNames) {
                 if (ImGui::Selectable(name.c_str(), name == current)) {
                     foundAnim->play(name);
-                    if (ClipNode* c = foundAnim->activeClipNode()) c->setPlaybackSpeed(speed);
+                    if (ClipNode* c = foundAnim->activeClipNode())
+                        c->setPlaybackSpeed(playbackSpeed_);
                 }
             }
             ImGui::EndCombo();
         }
 
         if (ClipNode* clipNode = foundAnim->activeClipNode()) {
-            bool isPlaying = (speed > 0.0f);
+            bool isPlaying = playbackSpeed_ > 0.0f;
 
             if (isPlaying) {
                 if (ImGui::Button("Pause", ImVec2(80, 0))) {
-                    speed = 0.0f;
-                    clipNode->setPlaybackSpeed(speed);
+                    playbackSpeed_ = 0.0f;
+                    clipNode->setPlaybackSpeed(playbackSpeed_);
                 }
             } else {
                 if (ImGui::Button("Play", ImVec2(80, 0))) {
-                    speed = 1.0f;
-                    clipNode->setPlaybackSpeed(speed);
+                    playbackSpeed_ = 1.0f;
+                    clipNode->setPlaybackSpeed(playbackSpeed_);
                 }
             }
 
@@ -112,8 +143,9 @@ void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::
         std::vector<ExportMesh> meshes;
         std::string error;
         const std::string outPath =
-            std::filesystem::path(modelPath).replace_extension(".meshopt.glb").string();
-        if (!collectExportMeshes(modelPath, meshes, error)) {
+            std::filesystem::path(modelPath_)
+                .replace_extension(".meshopt.glb").string();
+        if (!collectExportMeshes(modelPath_, meshes, error)) {
             exportStatus_ = "Export failed: " + error;
         } else if (exportMeshoptGlb(meshes, outPath)) {
             exportStatus_ = "Exported " + std::to_string(meshes.size()) + " mesh(es) to " + outPath;
@@ -129,7 +161,7 @@ void ModelImporterPanel::draw(EditorUI* editor, Scene* previewScene, const std::
     }
 
     ImGui::End();
-    if (closeRequested) editor->closeModelImporter();
+    if (closeRequested) close();
 }
 
 } // namespace saida

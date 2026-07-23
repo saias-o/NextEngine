@@ -8,7 +8,6 @@
 #include "graphics/ResourceManager.hpp"
 #include "graphics/Texture.hpp"
 #include "project/Project.hpp"
-#include "nodes/LightNode.hpp"
 #include "nodes/MeshNode.hpp"
 #include "scene/Node.hpp"
 #include "scene/Scene.hpp"
@@ -20,10 +19,8 @@
 #include "editor/panels/InspectorPanel.hpp"
 #include "editor/panels/FileBrowserPanel.hpp"
 #include "editor/panels/ViewportPanel.hpp"
-#include "editor/panels/ModelImporterPanel.hpp"
 #include "editor/panels/ProfilerPanel.hpp"
 #include "editor/panels/AnimationPanel.hpp"
-#include "scene/GLTFLoader.hpp"
 #ifdef SAIDA_ENABLE_MCP
 #include "mcp/McpBridge.hpp"
 #endif
@@ -352,10 +349,7 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
         fileBrowserPanel.draw(this, project, resources);
     }
 
-    if (showModelImporter_) {
-        ModelImporterPanel modelImporterPanel;
-        modelImporterPanel.draw(this, previewScene_.get(), previewModelPath_);
-    }
+    modelImporter_.draw();
 
     if (showProfiler_) {
         ProfilerPanel profilerPanel;
@@ -434,28 +428,7 @@ void EditorUI::duplicateSelected() {
 }
 
 void EditorUI::openModelImporter(const std::string& path, ResourceManager* resources) {
-    isPreviewMode_ = true;
-    showModelImporter_ = true;
-    previewModelPath_ = path;
-    previewScene_ = std::make_unique<Scene>();
-    
-    // Add a light aimed from (2,2,2) toward the origin so the preview is lit.
-    auto light = previewScene_->createChild<LightNode>("PreviewLight");
-    light->transform().position = glm::vec3(2.0f, 2.0f, 2.0f);
-    light->direction = glm::normalize(glm::vec3(0.0f) - light->transform().position);
-    
-    // Load the model
-    if (resources) {
-        GLTFLoadOptions opts;
-        if (ctxProject_) opts.autoMeshLods = ctxProject_->autoMeshLods();
-        GLTFLoader::load(path, *previewScene_, *resources, opts);
-    }
-}
-
-void EditorUI::closeModelImporter() {
-    isPreviewMode_ = false;
-    showModelImporter_ = false;
-    previewScene_.reset();
+    modelImporter_.open(path, ctxProject_, resources);
 }
 
 // New Project dialog (modal popup)
