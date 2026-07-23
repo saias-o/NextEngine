@@ -86,17 +86,33 @@ les risques, et surtout **ce qu'il faut mettre en place avant** (un filet de vé
 visuelle golden-image + les deux règles anti-spaghetti) pour que ce soit propre et
 tienne à long terme.
 
-### 5.2 `editor/EditorUI.cpp` (1933 l., 31 méthodes) → shell + contrôleurs
+### 5.2 `editor/EditorUI.cpp` (1933 → 1470 l., 31 → 24 méthodes) → shell + contrôleurs
 
-| Unité | Méthodes reprises |
-|---|---|
-| **EditorShell** — style + boucle de dessin, routage commandes | `applyEditorStyle`, `draw`, `canEdit`, `markDirty`, `execute`, `drawAboutWindow` |
-| **ProjectDialogs** | `drawNewProjectDialog`, `drawOpenProjectDialog`, `drawSaveSceneAsDialog`, `startProjectScan`, `loadProjectMainScene`, `resolveScenePath` |
-| **SceneDocumentActions** (étend `editor/SceneDocument`) | `saveScene`, `loadScene`, `copySelected`, `pasteClipboard`, `duplicateSelected` |
-| **BuildController** — UI + orchestration au-dessus de `BuildExporter` | `refreshBuildScenes_`, `executeBuild`, `runAutomatedBuild`, `drawBuildWindow` |
-| **GizmoController** — état de manipulation + rendu gizmo | `drawGizmo`, `updateGizmoHover`, `handleGizmoDrag`, `performRaycastSelection`, `renderGizmoRotationRings`, `renderGizmoTranslateScale`, `drawColliderGizmos` |
-| **SettingsWindow** | `drawSettingsWindow` (découpée par section) |
-| **ModelImporterPanel** | `openModelImporter`, `closeModelImporter` |
+| Unité | Méthodes reprises | État |
+|---|---|---|
+| **EditorShell** — style + boucle de dessin, routage commandes | `applyEditorStyle`, `draw`, `canEdit`, `markDirty`, `execute`, `drawAboutWindow` | — |
+| **ProjectDialogs** | `drawNewProjectDialog`, `drawOpenProjectDialog`, `drawSaveSceneAsDialog`, `startProjectScan`, `loadProjectMainScene`, `resolveScenePath` | — |
+| **SceneDocumentActions** (étend `editor/SceneDocument`) | `saveScene`, `loadScene`, `copySelected`, `pasteClipboard`, `duplicateSelected` | — |
+| **BuildController** — UI + orchestration au-dessus de `BuildExporter` | `refreshBuildScenes_`, `executeBuild`, `runAutomatedBuild`, `drawBuildWindow` | — |
+| **GizmoController** — état de manipulation + rendu gizmo | `drawGizmo`, `updateGizmoHover`, `handleGizmoDrag`, `performRaycastSelection`, `renderGizmoRotationRings`, `renderGizmoTranslateScale`, `drawColliderGizmos` | ✅ **Fait** |
+| **SettingsWindow** | `drawSettingsWindow` (découpée par section) | — |
+| **ModelImporterPanel** | `openModelImporter`, `closeModelImporter` | — |
+
+**`GizmoController` (fait).** Nouvelle classe `editor/GizmoController.{hpp,cpp}`. Elle
+**possède** l'état de manipulation (le drag transactionnel `grabbedAxis_` +
+snapshot `dragStart*`) et le cache géométrique écran reconstruit par frame
+(`gizmoNodePos_`/`gizmoWorldLength_`/`gizmoCenter2D_`/`gizmoEnds2D_`/
+`gizmoLocalAxes_`/`gizmoAxisValid_`). Invariant : `grabbedAxis_ != None ⟺ un drag
+est en cours et `dragStart*` tient la transform d'origine (base de l'undo). Les
+helpers libres gizmo (`intersectRayPlane`, `distanceToSegment`, `GizmoConfig`,
+`kPi`, `projectPoint`) descendent dans le TU du contrôleur. L'état **partagé**
+reste dans `EditorUI` : `gizmoMode_` (posé par la toolbar du viewport + clavier),
+`viewportPos_`/`viewportSize_`, `selectedNode_`, `execute()` ; le contrôleur y
+accède en `friend` via une réf `EditorUI&` (même patron que les panneaux). Move
+mécanique pur (logique inchangée). *Vérifié : build natif propre (`-Wall -Wextra`,
+zéro warning), 69/69 CTest, `witness_editor_play` PASS (run+restart). Reste non
+couvert par l'auto — l'interaction gizmo en mode Scene (drag T/R/S, clic-sélection,
+wireframe colliders) demande une vérif manuelle au viewport.*
 
 ### 5.3 `graphics/ResourceManager.cpp` (1102 → 747 l.) → façade + caches
 
@@ -222,11 +238,15 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   sans filet de vérif visuelle (exactitude pixel non testée, état intriqué,
   branches `#ifdef`). TODO.md dit pourquoi et ce qu'il faut d'abord (golden-image
   + règles anti-spaghetti). Ne pas l'attaquer avant d'avoir ce filet.
-- **Phase 4 — EditorUI (§5.2). ⚠️ Éditeur-only (pas de risque web) mais GUI non
-  testée.** Aucun test automatique n'exerce les gizmos/panneaux/dialogues.
-  `witness_editor_play` couvre le mode --play, pas l'édition. Extractions à faire
-  en session supervisée avec vérification manuelle de l'éditeur. GizmoController
-  = l'unité la plus cohérente pour commencer.
+- **Phase 4 — EditorUI (§5.2). 🟢 Démarrée — GizmoController extrait.**
+  `EditorUI.cpp` **1933 → 1470 l.** `GizmoController` (état de manipulation +
+  rendu gizmo + wireframe colliders) sorti dans `editor/GizmoController.{hpp,cpp}`,
+  move mécanique pur avec un invariant de drag propre (détail §5.2). Vérifié :
+  build natif propre, 69/69 CTest, `witness_editor_play` PASS. **Restent** :
+  BuildController, ProjectDialogs, SceneDocumentActions, SettingsWindow,
+  ModelImporterPanel, EditorShell. ⚠️ Rappel : aucun test auto n'exerce les
+  gizmos/panneaux/dialogues en mode édition — chaque extraction reste à mener en
+  session supervisée avec vérification manuelle de l'éditeur au viewport.
 - **Phase 5 — McpBridge (§5.4). Éditeur-only, déplacement quasi pur.** Bouger les
   ~45 fonctions `toolX(ToolCtx&, json&)` vers des modules `mcp/tools/` par domaine.
   Sûr **si fait comme un pur move** (logique inchangée → compile+link dans
