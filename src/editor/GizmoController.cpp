@@ -81,6 +81,29 @@ bool projectPoint(const glm::mat4& viewProj, const glm::vec2& vpPos, const glm::
     return true;
 }
 
+bool colliderBodyTransform(CollisionShapeNode& shape, Node*& bodyNode,
+                           glm::mat4& transform) {
+    for (Node* parent = shape.parent(); parent; parent = parent->parent()) {
+        if (parent->asCollisionObject()) {
+            bodyNode = parent;
+            break;
+        }
+    }
+    if (!bodyNode) return false;
+
+    glm::mat4 world = bodyNode->worldTransform();
+    glm::vec3 c0(world[0]), c1(world[1]), c2(world[2]);
+    glm::vec3 scale(glm::length(c0), glm::length(c1), glm::length(c2));
+    if (scale.x < 1e-6f) scale.x = 1.0f;
+    if (scale.y < 1e-6f) scale.y = 1.0f;
+    if (scale.z < 1e-6f) scale.z = 1.0f;
+    glm::quat rotation = glm::normalize(glm::quat_cast(
+        glm::mat3(c0 / scale.x, c1 / scale.y, c2 / scale.z)));
+    transform = glm::translate(glm::mat4(1.0f), glm::vec3(world[3])) *
+                glm::mat4_cast(rotation);
+    return true;
+}
+
 } // namespace
 
 void GizmoController::draw(EditorUI& editor, Camera* camera, Scene* scene) {
@@ -95,19 +118,14 @@ void GizmoController::draw(EditorUI& editor, Camera* camera, Scene* scene) {
         return;
     }
 
-    // Determine input clicks
-    ImVec2 imMousePos = ImGui::GetMousePos();
-    glm::vec2 mousePos = glm::vec2(imMousePos.x, imMousePos.y);
-    bool isMouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-    bool isMouseClicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
-
     ImGuiViewport* vp = ImGui::GetMainViewport();
     editor.viewportPos_ = glm::vec2(vp->WorkPos.x, vp->WorkPos.y);
     editor.viewportSize_ = glm::vec2(vp->WorkSize.x, vp->WorkSize.y);
 
+    const ImVec2 imMousePos = ImGui::GetMousePos();
+    const glm::vec2 mousePos(imMousePos.x, imMousePos.y);
     glm::mat4 viewProj = camera->projection() * camera->view();
     glm::mat4 invVP = glm::inverse(viewProj);
-
     float ndcX = ((mousePos.x - editor.viewportPos_.x) / editor.viewportSize_.x) * 2.0f - 1.0f;
     float ndcY = ((mousePos.y - editor.viewportPos_.y) / editor.viewportSize_.y) * 2.0f - 1.0f;
     glm::vec4 nearW = invVP * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
@@ -115,6 +133,26 @@ void GizmoController::draw(EditorUI& editor, Camera* camera, Scene* scene) {
     glm::vec3 rayOrigin = glm::vec3(nearW) / nearW.w;
     glm::vec3 rayDir = glm::normalize((glm::vec3(farW) / farW.w) - rayOrigin);
 
+    if (!buildScreenGeometry(editor, *camera, viewProj)) return;
+    int hoveredAxis = -1;
+    updateHover(editor, rayOrigin, rayDir, mousePos, hoveredAxis);
+    updateDragTransaction(
+        editor, *scene, rayOrigin, rayDir, mousePos, hoveredAxis,
+        ImGui::IsMouseDown(ImGuiMouseButton_Left),
+        ImGui::IsMouseClicked(ImGuiMouseButton_Left));
+
+    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+    if (editor.gizmoMode_ == GizmoMode::Rotate)
+        renderRotationRings(editor, drawList, camera, viewProj, hoveredAxis);
+    else
+        renderTranslateScale(editor, drawList, hoveredAxis);
+
+    drawList->AddCircleFilled(ImVec2(gizmoCenter2D_.x, gizmoCenter2D_.y), 5.0f, ImColor(255, 255, 255, 220));
+    drawList->AddCircle(ImVec2(gizmoCenter2D_.x, gizmoCenter2D_.y), 5.0f, ImColor(0, 0, 0, 255), 0, 1.0f);
+}
+
+bool GizmoController::buildScreenGeometry(EditorUI& editor, Camera& camera,
+                                          const glm::mat4& viewProj) {
     gizmoNodePos_ = editor.selectedNode_->transform().position;
     glm::quat nodeRot = editor.selectedNode_->transform().rotation;
 
@@ -123,12 +161,15 @@ void GizmoController::draw(EditorUI& editor, Camera* camera, Scene* scene) {
     gizmoLocalAxes_[2] = (editor.gizmoMode_ == GizmoMode::Rotate) ? nodeRot * glm::vec3(0,0,1) : glm::vec3(0,0,1);
 
     glm::vec4 clipCenter = viewProj * glm::vec4(gizmoNodePos_, 1.0f);
-    if (clipCenter.w <= 0.0f) return;
+    if (clipCenter.w <= 0.0f) return false;
 
     glm::vec3 ndcCenter = glm::vec3(clipCenter) / clipCenter.w;
     gizmoCenter2D_ = glm::vec2(editor.viewportPos_.x + (ndcCenter.x + 1.0f) * 0.5f * editor.viewportSize_.x, editor.viewportPos_.y + (ndcCenter.y + 1.0f) * 0.5f * editor.viewportSize_.y);
 
-    gizmoWorldLength_ = std::max(GizmoConfig::MinWorldLength, glm::length(camera->position - gizmoNodePos_) * GizmoConfig::GizmoScreenScale);
+    gizmoWorldLength_ = std::max(
+        GizmoConfig::MinWorldLength,
+        glm::length(camera.position - gizmoNodePos_) *
+            GizmoConfig::GizmoScreenScale);
 
     for (int i = 0; i < 3; ++i) {
         glm::vec3 axisEnd3D = gizmoNodePos_ + gizmoLocalAxes_[i] * gizmoWorldLength_;
@@ -141,11 +182,15 @@ void GizmoController::draw(EditorUI& editor, Camera* camera, Scene* scene) {
             gizmoAxisValid_[i] = false;
         }
     }
+    return true;
+}
 
-    int hoveredAxis = -1;
-    updateHover(editor, rayOrigin, rayDir, mousePos, hoveredAxis);
-
-    if (isMouseClicked && hoveredAxis != -1 && grabbedAxis_ == GizmoAxis::None) {
+void GizmoController::updateDragTransaction(
+    EditorUI& editor, Scene& scene, const glm::vec3& rayOrigin,
+    const glm::vec3& rayDir, const glm::vec2& mousePos, int hoveredAxis,
+    bool isMouseDown, bool isMouseClicked) {
+    if (isMouseClicked && hoveredAxis != -1 &&
+        grabbedAxis_ == GizmoAxis::None) {
         grabbedAxis_ = static_cast<GizmoAxis>(hoveredAxis);
         dragStartNodePos_ = gizmoNodePos_;
         dragStartNodeRotEuler_ = glm::degrees(glm::eulerAngles(editor.selectedNode_->transform().rotation));
@@ -181,19 +226,10 @@ void GizmoController::draw(EditorUI& editor, Camera* camera, Scene* scene) {
         grabbedAxis_ = GizmoAxis::None;
     }
 
-    if (!ImGui::GetIO().WantCaptureMouse && isMouseClicked && hoveredAxis == -1 && grabbedAxis_ == GizmoAxis::None) {
-        performRaycastSelection(editor, scene, rayOrigin, rayDir);
+    if (!ImGui::GetIO().WantCaptureMouse && isMouseClicked &&
+        hoveredAxis == -1 && grabbedAxis_ == GizmoAxis::None) {
+        performRaycastSelection(editor, &scene, rayOrigin, rayDir);
     }
-
-    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-    if (editor.gizmoMode_ == GizmoMode::Rotate) {
-        renderRotationRings(editor, drawList, camera, viewProj, hoveredAxis);
-    } else {
-        renderTranslateScale(editor, drawList, hoveredAxis);
-    }
-
-    drawList->AddCircleFilled(ImVec2(gizmoCenter2D_.x, gizmoCenter2D_.y), 5.0f, ImColor(255, 255, 255, 220));
-    drawList->AddCircle(ImVec2(gizmoCenter2D_.x, gizmoCenter2D_.y), 5.0f, ImColor(0, 0, 0, 255), 0, 1.0f);
 }
 
 void GizmoController::updateHover(EditorUI& editor, const glm::vec3& rayOrigin, const glm::vec3& rayDir, const glm::vec2& mousePos, int& outHoveredAxis) {
@@ -402,85 +438,85 @@ void GizmoController::drawColliders(EditorUI& editor, Camera* camera, Scene* sce
     glm::vec2 vpSize = editor.viewportSize_;
     if (vpSize.x < 1.0f || vpSize.y < 1.0f) return;
     glm::mat4 viewProj = camera->projection() * camera->view();
-    ImDrawList* dl = ImGui::GetBackgroundDrawList();
-
-    const ImU32 color = IM_COL32(96, 224, 140, 200);  // green wireframe
-    const float thickness = 1.5f;
-
-    auto line3D = [&](const glm::vec3& a, const glm::vec3& b) {
-        ImVec2 sa, sb;
-        if (projectPoint(viewProj, vpPos, vpSize, a, sa) &&
-            projectPoint(viewProj, vpPos, vpSize, b, sb))
-            dl->AddLine(sa, sb, color, thickness);
-    };
-
     scene->traverse([&](Node& n, const glm::mat4&) {
         auto* shape = dynamic_cast<CollisionShapeNode*>(&n);
-        if (!shape) return;
-
-        // Find the owning body (nearest CollisionObject ancestor).
-        Node* bodyNode = nullptr;
-        for (Node* p = n.parent(); p; p = p->parent())
-            if (p->asCollisionObject()) { bodyNode = p; break; }
-        if (!bodyNode) return;
-
-        // Body translation + rotation (scale is baked into the shape dimensions).
-        glm::mat4 w = bodyNode->worldTransform();
-        glm::vec3 T(w[3]);
-        glm::vec3 c0(w[0]), c1(w[1]), c2(w[2]);
-        glm::vec3 s(glm::length(c0), glm::length(c1), glm::length(c2));
-        if (s.x < 1e-6f) s.x = 1.0f;
-        if (s.y < 1e-6f) s.y = 1.0f;
-        if (s.z < 1e-6f) s.z = 1.0f;
-        glm::quat rot = glm::normalize(glm::quat_cast(glm::mat3(c0 / s.x, c1 / s.y, c2 / s.z)));
-        glm::mat4 bodyTR = glm::translate(glm::mat4(1.0f), T) * glm::mat4_cast(rot);
-
-        CollisionShapeViz v = shape->resolveViz(glm::inverse(bodyTR), *bodyNode);
-
-        // World matrix for the shape primitive (body frame + local offset).
-        glm::mat4 m = bodyTR * glm::translate(glm::mat4(1.0f), v.offset);
-        auto tp = [&](const glm::vec3& p) { return glm::vec3(m * glm::vec4(p, 1.0f)); };
-        auto arc = [&](const glm::vec3& c, const glm::vec3& u, const glm::vec3& vv,
-                       float r, float a0, float a1, int seg) {
-            glm::vec3 prev = tp(c + (u * std::cos(a0) + vv * std::sin(a0)) * r);
-            for (int i = 1; i <= seg; ++i) {
-                float a = a0 + (a1 - a0) * (static_cast<float>(i) / seg);
-                glm::vec3 cur = tp(c + (u * std::cos(a) + vv * std::sin(a)) * r);
-                line3D(prev, cur);
-                prev = cur;
-            }
-        };
-
-        if (v.type == CollisionShapeType::Sphere) {
-            glm::vec3 X(1, 0, 0), Y(0, 1, 0), Z(0, 0, 1), O(0);
-            arc(O, X, Y, v.radius, 0, 2 * kPi, 28);
-            arc(O, X, Z, v.radius, 0, 2 * kPi, 28);
-            arc(O, Y, Z, v.radius, 0, 2 * kPi, 28);
-        } else if (v.type == CollisionShapeType::Capsule) {
-            glm::vec3 axes[3] = {glm::vec3(1, 0, 0), glm::vec3(0, 1, 0), glm::vec3(0, 0, 1)};
-            glm::vec3 ax = axes[v.axis % 3];
-            glm::vec3 p1 = axes[(v.axis + 1) % 3];
-            glm::vec3 p2 = axes[(v.axis + 2) % 3];
-            float r = v.radius;
-            float hc = std::max(0.0f, v.height * 0.5f - r);  // half cylinder length
-            glm::vec3 top = ax * hc, bot = -ax * hc;
-            arc(top, p1, p2, r, 0, 2 * kPi, 24);  // cross rings
-            arc(bot, p1, p2, r, 0, 2 * kPi, 24);
-            for (glm::vec3 d : {p1, -p1, p2, -p2})  // connecting lines
-                line3D(tp(top + d * r), tp(bot + d * r));
-            arc(top, p1, ax, r, 0, kPi, 12);  // hemispherical caps
-            arc(top, p2, ax, r, 0, kPi, 12);
-            arc(bot, p1, -ax, r, 0, kPi, 12);
-            arc(bot, p2, -ax, r, 0, kPi, 12);
-        } else {  // Box (and convex/mesh fallback)
-            glm::vec3 e = v.halfExtents;
-            glm::vec3 c[8];
-            for (int i = 0; i < 8; ++i)
-                c[i] = tp(glm::vec3((i & 1) ? e.x : -e.x, (i & 2) ? e.y : -e.y, (i & 4) ? e.z : -e.z));
-            const int edges[12][2] = {{0,1},{1,3},{3,2},{2,0},{4,5},{5,7},{7,6},{6,4},{0,4},{1,5},{2,6},{3,7}};
-            for (auto& ed : edges) line3D(c[ed[0]], c[ed[1]]);
-        }
+        if (shape)
+            drawColliderShape(*shape, viewProj, vpPos, vpSize,
+                              ImGui::GetBackgroundDrawList());
     });
+}
+
+void GizmoController::drawColliderShape(
+    CollisionShapeNode& shape, const glm::mat4& viewProj,
+    const glm::vec2& vpPos, const glm::vec2& vpSize, ImDrawList* drawList) {
+    Node* bodyNode = nullptr;
+    glm::mat4 bodyTransform;
+    if (!colliderBodyTransform(shape, bodyNode, bodyTransform)) return;
+
+    const ImU32 color = IM_COL32(96, 224, 140, 200);
+    auto line3D = [&](const glm::vec3& a, const glm::vec3& b) {
+        ImVec2 screenA, screenB;
+        if (projectPoint(viewProj, vpPos, vpSize, a, screenA) &&
+            projectPoint(viewProj, vpPos, vpSize, b, screenB))
+            drawList->AddLine(screenA, screenB, color, 1.5f);
+    };
+
+    CollisionShapeViz viz =
+        shape.resolveViz(glm::inverse(bodyTransform), *bodyNode);
+    glm::mat4 primitiveTransform =
+        bodyTransform * glm::translate(glm::mat4(1.0f), viz.offset);
+    auto transformPoint = [&](const glm::vec3& point) {
+        return glm::vec3(primitiveTransform * glm::vec4(point, 1.0f));
+    };
+    auto arc = [&](const glm::vec3& center, const glm::vec3& u,
+                   const glm::vec3& v, float radius, float start, float end,
+                   int segments) {
+        glm::vec3 previous = transformPoint(
+            center + (u * std::cos(start) + v * std::sin(start)) * radius);
+        for (int i = 1; i <= segments; ++i) {
+            float angle =
+                start + (end - start) * (static_cast<float>(i) / segments);
+            glm::vec3 current = transformPoint(
+                center + (u * std::cos(angle) + v * std::sin(angle)) * radius);
+            line3D(previous, current);
+            previous = current;
+        }
+    };
+
+    if (viz.type == CollisionShapeType::Sphere) {
+        glm::vec3 X(1, 0, 0), Y(0, 1, 0), Z(0, 0, 1), O(0);
+        arc(O, X, Y, viz.radius, 0, 2 * kPi, 28);
+        arc(O, X, Z, viz.radius, 0, 2 * kPi, 28);
+        arc(O, Y, Z, viz.radius, 0, 2 * kPi, 28);
+    } else if (viz.type == CollisionShapeType::Capsule) {
+        glm::vec3 axes[3] = {glm::vec3(1, 0, 0), glm::vec3(0, 1, 0),
+                             glm::vec3(0, 0, 1)};
+        glm::vec3 ax = axes[viz.axis % 3];
+        glm::vec3 p1 = axes[(viz.axis + 1) % 3];
+        glm::vec3 p2 = axes[(viz.axis + 2) % 3];
+        float r = viz.radius;
+        float hc = std::max(0.0f, viz.height * 0.5f - r);
+        glm::vec3 top = ax * hc, bot = -ax * hc;
+        arc(top, p1, p2, r, 0, 2 * kPi, 24);
+        arc(bot, p1, p2, r, 0, 2 * kPi, 24);
+        for (glm::vec3 direction : {p1, -p1, p2, -p2})
+            line3D(transformPoint(top + direction * r),
+                   transformPoint(bot + direction * r));
+        arc(top, p1, ax, r, 0, kPi, 12);
+        arc(top, p2, ax, r, 0, kPi, 12);
+        arc(bot, p1, -ax, r, 0, kPi, 12);
+        arc(bot, p2, -ax, r, 0, kPi, 12);
+    } else {
+        glm::vec3 e = viz.halfExtents;
+        glm::vec3 c[8];
+        for (int i = 0; i < 8; ++i)
+            c[i] = transformPoint(glm::vec3(
+                (i & 1) ? e.x : -e.x, (i & 2) ? e.y : -e.y,
+                (i & 4) ? e.z : -e.z));
+        const int edges[12][2] = {{0,1},{1,3},{3,2},{2,0},{4,5},{5,7},
+                                  {7,6},{6,4},{0,4},{1,5},{2,6},{3,7}};
+        for (auto& edge : edges) line3D(c[edge[0]], c[edge[1]]);
+    }
 }
 
 } // namespace saida

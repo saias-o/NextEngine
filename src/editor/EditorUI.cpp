@@ -57,6 +57,17 @@ EditorUI::~EditorUI() = default;  // Scene/McpBridge complete here (unique_ptr m
 // Main draw entry point
 
 void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* project, ResourceManager* resources, float dt) {
+    beginFrameContext(app, scene, camera, project, resources);
+    handleShortcuts(project);
+    drawDockspace();
+    drawPanels(scene, camera, project, resources, dt);
+    drawModals(project);
+    document_.select(selectedNode_);
+}
+
+void EditorUI::beginFrameContext(EditorApp* app, Scene* scene, Camera* camera,
+                                 Project* project,
+                                 ResourceManager* resources) {
     document_.bind(scene, resources);
 
     // A project create/load invalidates all per-project editor state: the undo
@@ -90,7 +101,9 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
         mcp_->poll(*this);
     }
 #endif
+}
 
+void EditorUI::handleShortcuts(Project* project) {
     // Keyboard shortcuts (skip while typing in a text field).
     ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F3)) {
@@ -116,7 +129,9 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
         && (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace))) {
         nodeToDelete_ = selectedNode_;
     }
+}
 
+void EditorUI::drawDockspace() {
     // Full-viewport dockspace with passthrough so the 3D render shows behind.
     // We use a fixed ID so the DockBuilder setup below targets the right node.
     ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -175,7 +190,10 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     }
 
     ImGui::End();  // DockSpaceHost
+}
 
+void EditorUI::drawPanels(Scene* scene, Camera* camera, Project* project,
+                          ResourceManager* resources, float dt) {
     MenuBarPanel menuBarPanel;
     menuBarPanel.draw(this, project, scene);
 
@@ -211,7 +229,9 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
     
     gizmo_.draw(*this, camera, scene);
     gizmo_.drawColliders(*this, camera, scene);
+}
 
+void EditorUI::drawModals(Project* project) {
     // Modal dialogs.
     drawAboutWindow();
     buildController_.draw(project);
@@ -222,7 +242,6 @@ void EditorUI::draw(EditorApp* app, Scene* scene, Camera* camera, Project* proje
         currentBrowsePath_ = dialogActions.browseRoot;
     if (!dialogActions.sceneToSave.empty())
         saveScene(dialogActions.sceneToSave);
-    document_.select(selectedNode_);
 }
 
 // Scene update: serialization, clipboard, undo/redo helpers

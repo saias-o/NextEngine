@@ -21,6 +21,7 @@ namespace saida {
 class EditorUI;
 class Camera;
 class Scene;
+class CollisionShapeNode;
 
 class GizmoController {
 public:
@@ -32,6 +33,14 @@ public:
     void drawColliders(EditorUI& editor, Camera* camera, Scene* scene);
 
 private:
+    bool buildScreenGeometry(EditorUI& editor, Camera& camera,
+                             const glm::mat4& viewProjection);
+    void updateDragTransaction(EditorUI& editor, Scene& scene,
+                               const glm::vec3& rayOrigin,
+                               const glm::vec3& rayDirection,
+                               const glm::vec2& mousePosition,
+                               int hoveredAxis, bool mouseDown,
+                               bool mouseClicked);
     void updateHover(EditorUI& editor, const glm::vec3& rayOrigin, const glm::vec3& rayDir,
                      const glm::vec2& mousePos, int& outHoveredAxis);
     void handleDrag(EditorUI& editor, const glm::vec3& rayOrigin, const glm::vec3& rayDir,
@@ -41,6 +50,11 @@ private:
     void renderRotationRings(EditorUI& editor, ImDrawList* drawList, Camera* camera,
                              const glm::mat4& viewProj, int hoveredAxis);
     void renderTranslateScale(EditorUI& editor, ImDrawList* drawList, int hoveredAxis);
+    void drawColliderShape(CollisionShapeNode& shape,
+                           const glm::mat4& viewProjection,
+                           const glm::vec2& viewportPosition,
+                           const glm::vec2& viewportSize,
+                           ImDrawList* drawList);
 
     // Drag transaction state (see invariant above).
     GizmoAxis grabbedAxis_ = GizmoAxis::None;

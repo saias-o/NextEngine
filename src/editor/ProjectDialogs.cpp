@@ -165,7 +165,6 @@ void ProjectDialogs::drawOpenProject(Project* project, Actions& actions) {
             "Open Project", nullptr, ImGuiWindowFlags_None))
         return;
 
-    namespace fs = std::filesystem;
     ImGui::Text("Search root:");
     ImGui::SameLine();
     char rootBuffer[512];
@@ -188,8 +187,17 @@ void ProjectDialogs::drawOpenProject(Project* project, Actions& actions) {
     }
     if (rescan) startScan(browseRoot_);
 
+    drawOpenProjectResults(project, actions, scanFuture_.valid());
+    if (ImGui::Button("Cancel", ImVec2(120, 0)))
+        ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
+void ProjectDialogs::drawOpenProjectResults(Project* project,
+                                            Actions& actions,
+                                            bool scanning) {
+    namespace fs = std::filesystem;
     ImGui::Separator();
-    const bool scanning = scanFuture_.valid();
     if (!initialScanDone_ && scanning) {
         ImGui::TextDisabled("Scanning for projects…");
     } else if (projectCache_.empty()) {
@@ -228,10 +236,6 @@ void ProjectDialogs::drawOpenProject(Project* project, Actions& actions) {
             ImGui::SetTooltip("%s", projectPath.c_str());
     }
     ImGui::EndChild();
-
-    if (ImGui::Button("Cancel", ImVec2(120, 0)))
-        ImGui::CloseCurrentPopup();
-    ImGui::EndPopup();
 }
 
 void ProjectDialogs::drawSaveSceneAs(Project* project,

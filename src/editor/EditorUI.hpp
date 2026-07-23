@@ -95,6 +95,13 @@ private:
     void pasteClipboard();
     void duplicateSelected();
 
+    void beginFrameContext(EditorApp* app, Scene* scene, Camera* camera,
+                           Project* project, ResourceManager* resources);
+    void handleShortcuts(Project* project);
+    void drawDockspace();
+    void drawPanels(Scene* scene, Camera* camera, Project* project,
+                    ResourceManager* resources, float dt);
+    void drawModals(Project* project);
     void drawAboutWindow();
 
     bool showSceneTree_   = true;

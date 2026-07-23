@@ -26,6 +26,15 @@ public:
 private:
     void refreshScenes(Project* project);
     void executeBuild(Project* project, bool web, bool launchAfter);
+    void drawPlatformList(float bottomReserve);
+    void drawPlatformSettings(float bottomReserve);
+    void drawStartupScene();
+    void drawWindowsSettings();
+    void drawQuestSettings();
+    void drawLinuxSettings();
+    void drawWebSettings();
+    void drawResult();
+    void drawFooter(Project* project);
 
     bool openRequested_ = false;
     BuildPlatform selectedPlatform_ = BuildPlatform::Windows;

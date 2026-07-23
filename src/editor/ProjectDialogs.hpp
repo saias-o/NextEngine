@@ -33,6 +33,8 @@ private:
     void startScan(const std::string& root);
     void drawNewProject(Project* project, Actions& actions);
     void drawOpenProject(Project* project, Actions& actions);
+    void drawOpenProjectResults(Project* project, Actions& actions,
+                                bool scanning);
     void drawSaveSceneAs(Project* project, Actions& actions);
 
     bool openNewRequested_ = false;

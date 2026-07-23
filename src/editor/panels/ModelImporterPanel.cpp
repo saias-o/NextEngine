@@ -65,39 +65,60 @@ void ModelImporterPanel::draw() {
     ImGui::Separator();
     ImGui::Spacing();
 
-    Animator* foundAnim = nullptr;
+    drawAnimationControls(findAnimator());
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    drawExport();
+
+    ImGui::Spacing();
+    if (ImGui::Button("Close Preview", ImVec2(150, 30))) {
+        closeRequested = true;
+    }
+
+    ImGui::End();
+    if (closeRequested) close();
+}
+
+Animator* ModelImporterPanel::findAnimator() const {
+    Animator* animator = nullptr;
     if (previewScene_) {
         previewScene_->traverse([&](Node& node, const glm::mat4&) {
-            if (!foundAnim && node.getBehaviour<Animator>()) {
-                foundAnim = node.getBehaviour<Animator>();
+            if (!animator && node.getBehaviour<Animator>()) {
+                animator = node.getBehaviour<Animator>();
             }
         });
     }
+    return animator;
+}
 
-    if (foundAnim && !foundAnim->clips().empty()) {
+void ModelImporterPanel::drawAnimationControls(Animator* animator) {
+    if (animator && !animator->clips().empty()) {
         ImGui::Text("Animation Controls");
         ImGui::Spacing();
 
         // Clip selector — stable order for a deterministic combo.
         std::vector<std::string> clipNames;
-        clipNames.reserve(foundAnim->clips().size());
-        for (const auto& [name, clip] : foundAnim->clips()) clipNames.push_back(name);
+        clipNames.reserve(animator->clips().size());
+        for (const auto& [name, clip] : animator->clips())
+            clipNames.push_back(name);
         std::sort(clipNames.begin(), clipNames.end());
 
-        const std::string& current = foundAnim->currentClip();
+        const std::string& current = animator->currentClip();
         ImGui::SetNextItemWidth(-1);
         if (ImGui::BeginCombo("##Clip", current.empty() ? "(select a clip)" : current.c_str())) {
             for (const auto& name : clipNames) {
                 if (ImGui::Selectable(name.c_str(), name == current)) {
-                    foundAnim->play(name);
-                    if (ClipNode* c = foundAnim->activeClipNode())
+                    animator->play(name);
+                    if (ClipNode* c = animator->activeClipNode())
                         c->setPlaybackSpeed(playbackSpeed_);
                 }
             }
             ImGui::EndCombo();
         }
 
-        if (ClipNode* clipNode = foundAnim->activeClipNode()) {
+        if (ClipNode* clipNode = animator->activeClipNode()) {
             bool isPlaying = playbackSpeed_ > 0.0f;
 
             if (isPlaying) {
@@ -123,19 +144,17 @@ void ModelImporterPanel::draw() {
             }
 
             ImGui::Spacing();
-        } else if (foundAnim->rootNode()) {
+        } else if (animator->rootNode()) {
             ImGui::TextDisabled("Animation uses a complex graph (not a simple clip).");
         }
-    } else if (foundAnim && foundAnim->rootNode()) {
+    } else if (animator && animator->rootNode()) {
         ImGui::TextDisabled("Animation uses a complex graph (not a simple clip).");
     } else {
         ImGui::TextDisabled("No animation detected in this model.");
     }
+}
 
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
+void ModelImporterPanel::drawExport() {
     // Export GLB meshopt : réécrit la géométrie du modèle prévisualisé en
     // .meshopt.glb (buffers quantifiés + EXT_meshopt_compression) à côté de la
     // source — le format compact destiné aux packages web.
@@ -154,14 +173,6 @@ void ModelImporterPanel::draw() {
         }
     }
     if (!exportStatus_.empty()) ImGui::TextWrapped("%s", exportStatus_.c_str());
-
-    ImGui::Spacing();
-    if (ImGui::Button("Close Preview", ImVec2(150, 30))) {
-        closeRequested = true;
-    }
-
-    ImGui::End();
-    if (closeRequested) close();
 }
 
 } // namespace saida

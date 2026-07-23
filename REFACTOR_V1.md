@@ -86,7 +86,7 @@ les risques, et surtout **ce qu'il faut mettre en place avant** (un filet de vé
 visuelle golden-image + les deux règles anti-spaghetti) pour que ce soit propre et
 tienne à long terme.
 
-### 5.2 `editor/EditorUI.cpp` (1933 → 365 l., 31 → 12 méthodes) → shell + contrôleurs
+### 5.2 `editor/EditorUI.cpp` (1933 → 384 l., 31 → 17 méthodes) → shell + contrôleurs
 
 | Unité | Méthodes reprises | État |
 |---|---|---|
@@ -166,9 +166,12 @@ chemins déposés garantissent désormais explicitement la terminaison des buffe
 `EditorUI` est le shell final : il orchestre les panneaux et contrôleurs existants,
 garde l'état réellement partagé et ne contient plus aucun grand modal. Créer une
 classe `EditorShell` supplémentaire n'aurait ajouté ni état ni invariant et aurait
-violé la règle « pas de classe gratuite ». *Vérifié : build natif sans warning,
-69/69 CTest, `witness_editor_play` PASS (run+restart, UI incluse). Les interactions
-manuelles dans chaque onglet Settings restent hors automatisation.*
+violé la règle « pas de classe gratuite ». La boucle de frame et les UI de
+`BuildController`, `ProjectDialogs`, `ModelImporterPanel` et `GizmoController`
+sont découpées en sections nommées de 80 lignes maximum. *Vérifié : build natif
+sans warning, 70/70 CTest, `witness_editor_play` PASS (run+restart, UI incluse).
+Les interactions manuelles dans chaque onglet Settings restent hors
+automatisation.*
 
 ### 5.3 `graphics/ResourceManager.cpp` (1102 → 414 l.) → façade + caches
 
@@ -298,7 +301,7 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   branches `#ifdef`). TODO.md dit pourquoi et ce qu'il faut d'abord (golden-image
   + règles anti-spaghetti). Ne pas l'attaquer avant d'avoir ce filet.
 - **Phase 4 — EditorUI (§5.2). ✅ Faite — 7 unités cohérentes.**
-  `EditorUI.cpp` **1933 → 365 l.** `GizmoController` possède l'état de
+  `EditorUI.cpp` **1933 → 384 l.** `GizmoController` possède l'état de
   manipulation, le rendu gizmo et les wireframes colliders ;
   `BuildController` possède le modal et l'orchestration au-dessus de
   `BuildExporter`, avec un chemin unique bouton/`--build` ; `SceneDocument`
