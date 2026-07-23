@@ -141,7 +141,7 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene) {
 
         if (ImGui::BeginMenu("Settings")) {
             if (ImGui::MenuItem("Settings")) {
-                editor->showSettingsWindow_ = true;
+                editor->settings_.requestOpen();
             }
             ImGui::EndMenu();
         }
@@ -174,13 +174,13 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene) {
 
             bool sceneActive = !editor->app_->isPlayMode();
             if (sceneActive) {
-                ImGui::PushStyleColor(ImGuiCol_Button, editor->useLightTheme_
+                ImGui::PushStyleColor(ImGuiCol_Button, editor->settings_.lightTheme()
                     ? ImVec4(0.710f, 0.690f, 0.643f, 1.0f)
                     : ImVec4(0.725f, 0.922f, 0.063f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, editor->useLightTheme_
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, editor->settings_.lightTheme()
                     ? ImVec4(0.784f, 0.765f, 0.718f, 1.0f)
                     : ImVec4(0.816f, 0.965f, 0.357f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, editor->useLightTheme_
+                ImGui::PushStyleColor(ImGuiCol_Text, editor->settings_.lightTheme()
                     ? ImVec4(0.106f, 0.310f, 0.125f, 1.0f)
                     : ImVec4(0.067f, 0.075f, 0.059f, 1.0f));
             }
@@ -193,13 +193,13 @@ void MenuBarPanel::draw(EditorUI* editor, Project* project, Scene* scene) {
 
             bool playActive = editor->app_->isPlayMode();
             if (playActive) {
-                ImGui::PushStyleColor(ImGuiCol_Button, editor->useLightTheme_
+                ImGui::PushStyleColor(ImGuiCol_Button, editor->settings_.lightTheme()
                     ? ImVec4(0.710f, 0.690f, 0.643f, 1.0f)
                     : ImVec4(0.310f, 0.706f, 0.290f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, editor->useLightTheme_
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, editor->settings_.lightTheme()
                     ? ImVec4(0.784f, 0.765f, 0.718f, 1.0f)
                     : ImVec4(0.412f, 0.714f, 0.184f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, editor->useLightTheme_
+                ImGui::PushStyleColor(ImGuiCol_Text, editor->settings_.lightTheme()
                     ? ImVec4(0.106f, 0.310f, 0.125f, 1.0f)
                     : ImVec4(0.067f, 0.075f, 0.059f, 1.0f));
             }

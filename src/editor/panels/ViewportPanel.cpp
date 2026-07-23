@@ -24,11 +24,11 @@ void ViewportPanel::draw(EditorUI* editor, Camera* camera, float dt) {
 
     if (ImGui::Begin("##ViewportOverlay", nullptr, overlayFlags)) {
         if (editor->app_ && editor->app_->isPlayMode())
-            ImGui::TextColored(editor->useLightTheme_
+            ImGui::TextColored(editor->settings_.lightTheme()
                 ? ImVec4(0.106f, 0.310f, 0.125f, 1.0f)
                 : ImVec4(0.310f, 0.706f, 0.290f, 1.0f), "PLAY MODE");
         else
-            ImGui::TextColored(editor->useLightTheme_
+            ImGui::TextColored(editor->settings_.lightTheme()
                 ? ImVec4(0.106f, 0.310f, 0.125f, 1.0f)
                 : ImVec4(0.725f, 0.922f, 0.063f, 1.0f), "SCENE MODE");
 
@@ -50,13 +50,13 @@ void ViewportPanel::draw(EditorUI* editor, Camera* camera, float dt) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f, 4.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 4.0f));
     if (ImGui::Begin("##Toolbar", nullptr, overlayFlags)) {
-        ImGui::PushStyleColor(ImGuiCol_Header, editor->useLightTheme_
+        ImGui::PushStyleColor(ImGuiCol_Header, editor->settings_.lightTheme()
             ? ImVec4(0.710f, 0.690f, 0.643f, 1.0f)
             : ImVec4(0.412f, 0.714f, 0.184f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, editor->useLightTheme_
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, editor->settings_.lightTheme()
             ? ImVec4(0.784f, 0.765f, 0.718f, 1.0f)
             : ImVec4(0.310f, 0.706f, 0.290f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderActive, editor->useLightTheme_
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, editor->settings_.lightTheme()
             ? ImVec4(0.710f, 0.690f, 0.643f, 1.0f)
             : ImVec4(0.725f, 0.922f, 0.063f, 1.0f));
         

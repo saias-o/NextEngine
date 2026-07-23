@@ -627,6 +627,7 @@ add_library(saida_editor STATIC
     src/editor/GizmoController.cpp
     src/editor/BuildController.cpp
     src/editor/ProjectDialogs.cpp
+    src/editor/SettingsWindow.cpp
     src/editor/BuildExporter.cpp
     src/editor/ExeMetadata.cpp
     src/editor/SceneDocument.cpp

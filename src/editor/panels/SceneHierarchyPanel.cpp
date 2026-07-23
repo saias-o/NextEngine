@@ -533,7 +533,7 @@ void SceneHierarchyPanel::drawSceneTreeNode(EditorUI* editor, Node* node) {
     bool active = node->isActiveInHierarchy();
     bool hasCustomColor = false;
     ImVec4 customColor;
-    const bool lightTheme = editor->useLightTheme_;
+    const bool lightTheme = editor->settings_.lightTheme();
     
     if (active) {
         if (isNestedScene) {

@@ -86,16 +86,16 @@ les risques, et surtout **ce qu'il faut mettre en place avant** (un filet de vé
 visuelle golden-image + les deux règles anti-spaghetti) pour que ce soit propre et
 tienne à long terme.
 
-### 5.2 `editor/EditorUI.cpp` (1933 → 813 l., 31 → 15 méthodes) → shell + contrôleurs
+### 5.2 `editor/EditorUI.cpp` (1933 → 365 l., 31 → 12 méthodes) → shell + contrôleurs
 
 | Unité | Méthodes reprises | État |
 |---|---|---|
-| **EditorShell** — style + boucle de dessin, routage commandes | `applyEditorStyle`, `draw`, `canEdit`, `markDirty`, `execute`, `drawAboutWindow` | — |
+| **EditorShell** — boucle de dessin et routage commandes (`EditorUI`) | `draw`, `canEdit`, `markDirty`, `execute`, `drawAboutWindow` | ✅ **Fait** |
 | **ProjectDialogs** | `drawNewProjectDialog`, `drawOpenProjectDialog`, `drawSaveSceneAsDialog`, `startProjectScan`, `loadProjectMainScene`, `resolveScenePath` | ✅ **Fait** |
 | **SceneDocumentActions** (étend `editor/SceneDocument`) | `saveScene`, `loadScene`, `copySelected`, `pasteClipboard`, `duplicateSelected` | ✅ **Fait** |
 | **BuildController** — UI + orchestration au-dessus de `BuildExporter` | `refreshBuildScenes_`, `executeBuild`, `runAutomatedBuild`, `drawBuildWindow` | ✅ **Fait** |
 | **GizmoController** — état de manipulation + rendu gizmo | `drawGizmo`, `updateGizmoHover`, `handleGizmoDrag`, `performRaycastSelection`, `renderGizmoRotationRings`, `renderGizmoTranslateScale`, `drawColliderGizmos` | ✅ **Fait** |
-| **SettingsWindow** | `drawSettingsWindow` (découpée par section) | — |
+| **SettingsWindow** — préférences persistantes + style | `applyEditorStyle`, `drawSettingsWindow` (découpée par section) | ✅ **Fait** |
 | **ModelImporterPanel** | `openModelImporter`, `closeModelImporter` | ✅ **Fait** |
 
 **`GizmoController` (fait).** Nouvelle classe `editor/GizmoController.{hpp,cpp}`. Elle
@@ -156,6 +156,19 @@ remontent des `Actions` (`browseRoot`, `sceneToSave`) au lieu d'accéder à
 centralisée (déclaration → `scenes/main.scene` → première scène triée).
 *Vérifié : build natif sans warning, 69/69 CTest, `witness_editor_play` PASS
 (run+restart, UI incluse). Les clics manuels des trois modals restent hors auto.*
+
+**`SettingsWindow` + `EditorShell` (faits).** `SettingsWindow` possède la demande
+d'ouverture, le thème persistant, les préférences UI temporaires et les buffers
+d'alias/autoload. Invariant : un changement de thème applique ensemble layout et
+couleurs puis persiste la préférence ; chaque onglet est une section bornée
+(≤ 75 lignes, sauf la table de couleurs déclarative à 83 lignes). Les copies de
+chemins déposés garantissent désormais explicitement la terminaison des buffers.
+`EditorUI` est le shell final : il orchestre les panneaux et contrôleurs existants,
+garde l'état réellement partagé et ne contient plus aucun grand modal. Créer une
+classe `EditorShell` supplémentaire n'aurait ajouté ni état ni invariant et aurait
+violé la règle « pas de classe gratuite ». *Vérifié : build natif sans warning,
+69/69 CTest, `witness_editor_play` PASS (run+restart, UI incluse). Les interactions
+manuelles dans chaque onglet Settings restent hors automatisation.*
 
 ### 5.3 `graphics/ResourceManager.cpp` (1102 → 414 l.) → façade + caches
 
@@ -276,17 +289,18 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   sans filet de vérif visuelle (exactitude pixel non testée, état intriqué,
   branches `#ifdef`). TODO.md dit pourquoi et ce qu'il faut d'abord (golden-image
   + règles anti-spaghetti). Ne pas l'attaquer avant d'avoir ce filet.
-- **Phase 4 — EditorUI (§5.2). 🟢 En cours — 5 unités extraites.**
-  `EditorUI.cpp` **1933 → 813 l.** `GizmoController` possède l'état de
+- **Phase 4 — EditorUI (§5.2). ✅ Faite — 7 unités cohérentes.**
+  `EditorUI.cpp` **1933 → 365 l.** `GizmoController` possède l'état de
   manipulation, le rendu gizmo et les wireframes colliders ;
   `BuildController` possède le modal et l'orchestration au-dessus de
   `BuildExporter`, avec un chemin unique bouton/`--build` ; `SceneDocument`
   possède les actions et l'état sérialisé du document ; `ModelImporterPanel`
   possède la preview et sa fenêtre ; `ProjectDialogs` possède les modals et leur
-  scan asynchrone. Vérifié : build natif propre, 69/69 CTest,
+  scan asynchrone ; `SettingsWindow` possède le thème et les préférences.
+  `EditorUI` reste intentionnellement le shell final, sans classe miroir.
+  Vérifié : build natif propre, 69/69 CTest,
   `witness_editor_play` pour le document/gizmo/importer/dialogs et
   `witness_editor_build` PASS (export éditeur exact + run/restart) pour le build.
-  **Restent** : SettingsWindow, EditorShell.
   ⚠️ Rappel : aucun test auto n'exerce les
   gizmos/panneaux/dialogues en mode édition — chaque extraction reste à mener en
   session supervisée avec vérification manuelle de l'éditeur au viewport.

@@ -7,6 +7,7 @@
 #include "editor/panels/ModelImporterPanel.hpp"
 #include "editor/ProjectDialogs.hpp"
 #include "editor/SceneDocument.hpp"
+#include "editor/SettingsWindow.hpp"
 #include "editor/ThumbnailCache.hpp"
 #include "scene/animation/AnimationSequence.hpp"
 
@@ -95,8 +96,6 @@ private:
     void duplicateSelected();
 
     void drawAboutWindow();
-    void drawSettingsWindow(Project* project);
-    void applyEditorStyle();
 
     bool showSceneTree_   = true;
     bool showInspector_   = true;
@@ -151,8 +150,6 @@ private:
     FileListing fileListing_;
 
     bool showAboutWindow_       = false;
-    bool showSettingsWindow_    = false;
-    bool useLightTheme_         = false;
     void rebuildSceneHierarchy(Scene* scene);
 
     std::string resolveScenePath(Project* project) const;
@@ -160,6 +157,7 @@ private:
     BuildController buildController_;
     ModelImporterPanel modelImporter_;
     ProjectDialogs projectDialogs_;
+    SettingsWindow settings_;
 
     // Deferral avoids iterator invalidation during UI traversal.
     Node* nodeToDelete_ = nullptr;
