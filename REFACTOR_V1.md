@@ -45,8 +45,9 @@ Frontières visées (un dossier = une couche claire) :
   **conserver tel quel**. C'est la référence de propreté.
 - **`src/graphics/`** — ressources GPU : meshes, textures, matériaux, bindless,
   et les caches extraits de `ResourceManager` (§5.3). Pas de logique de frame.
-- **`src/render/`** — le renderer et ses passes : `Renderer` mince, `SceneGatherer`,
-  `TonemapPass`, `GIRenderer`, `GpuDrivenCuller`, `XrRenderer` (§5.1).
+- **`src/render/`** — le renderer et ses passes. Sa décomposition (`Renderer`
+  mince + `SceneGatherer`/`TonemapPass`/`GIRenderer`/`GpuDrivenCuller`/`XrRenderer`)
+  est différée dans [TODO.md](TODO.md) (risque : exactitude pixel non testée).
 - **`src/scene/` (surchargé, 80 fichiers) → scinder** :
   - `scene/` : le graphe (`Node`, `Scene`, `SceneTree`, hiérarchie, signaux) ;
   - `nodes/` : les types de nœuds (`MeshNode`, `LightNode`, `CameraNode`,
@@ -63,33 +64,27 @@ listes de sources CMake, **sans changement de logique** (Phase 0).
 
 | Fonction | Lignes | Fichier | Découpe visée |
 |---|---|---|---|
-| `Renderer::gatherScene` | 213 | render/Renderer.cpp:704 | `gatherLights` / `gatherDraws` / `gatherEnvironment` (dans `SceneGatherer`) |
-| `Renderer::recordCommandBuffer` | 164 | :1328 | un appel `record*Pass` par passe |
-| `Renderer::drawFrame` | 118 | :1492 | orchestration mince déléguant aux unités |
-| `Renderer::rebuildGlobalSet` | 108 | :477 | un helper par groupe de bindings |
 | `EditorUI::drawSettingsWindow` | 300 | editor/EditorUI.cpp:1518 | une section par onglet de réglages |
 | `EditorUI::drawBuildWindow` | 273 | :935 | UI séparée de l'orchestration (`BuildController`) |
 | `EditorUI::draw` | 171 | :233 | orchestration de panneaux, corps réduit |
+
+Les fonctions longues du `Renderer` (`gatherScene` 213 l., `recordCommandBuffer`
+164, `drawFrame` 118, `rebuildGlobalSet` 108) sont traitées avec la décomposition
+Renderer dans [TODO.md](TODO.md).
 
 ## 5. Décompositions par god class
 
 Convention des tableaux : *méthode actuelle → unité cible (état possédé)*.
 
-### 5.1 `render/Renderer.cpp` (1957 l.) → orchestrateur + 6 unités
+### 5.1 `render/Renderer.cpp` (1957 l.) — **déplacé dans [TODO.md](TODO.md)**
 
-C'est la décomposition prioritaire : elle débloque les chantiers P1 (flag
-GPU-driven, XR, lightmaps) en les rendant testables isolément.
-
-| Unité (état/invariant) | Méthodes reprises |
-|---|---|
-| **PipelineCache** — possède pipelines & layouts ; reconstruits sur changement de format/swapchain | `createGlobalSetLayout`, `createPipeline`, `createWebCanvasWorldPipeline`, `createCullingPipeline`, `createTonemapPipeline`, `createXrPipelines` |
-| **FrameDescriptors** — sets descripteurs globaux + UBO par frame-in-flight, tenus cohérents | `createUniformBuffers`, `createGlobalDescriptorSets`, `rebuildGlobalSet`, `updateGlobalShadowDescriptor`, `updateUniformBuffer` |
-| **GIRenderer** — descripteurs GI + cadence/signature de dirty | `shouldUpdateRealtimeGI`, `giDirtySignature`, `updateGIDescriptors`, `updateEnvironmentDescriptor` |
-| **TonemapPass** — cibles HDR + pipeline/descripteurs tonemap | `createHdrResources`, `cleanupHdrResources`, `createTonemapPipeline`, `updateTonemapDescriptorSet`, `tonemapPushConstants`, `recordTonemapPass` |
-| **GpuDrivenCuller** — buffers indirect draw + pipeline culling (derrière le flag) | `createGpuDrivenBuffers`, `uploadGpuDrivenDraws`, `featureDraws`, `buildFeatures`, `recordFeatures` |
-| **XrRenderer** — cibles/pipelines XR + UBO multiview | `createXrTargets`, `cleanupXrTargets`, `updateXrTonemapDescriptorSets`, `updateUniformBufferXr`, `recordXrScenePass`, `recordXrWorldWebCanvases` |
-| **SceneGatherer** — construit draw-list + lighting UBO depuis la scène | `gatherScene` (découpée), `recordMeshDraws`, `recordWorldWebCanvases`, `recordShadowPasses` |
-| **Renderer** (reste, mince) — orchestration de frame | `setViewportRect`, `clearViewportRect`, `activeRenderRect`, `drawFrame`, `recordCommandBuffer` |
+La décomposition du Renderer est **sortie de ce plan** : sa correction n'est pas
+couverte par le filet automatique (l'exactitude pixel du rendu), l'état est très
+intriqué et le code a des branches `#ifdef` plateforme/XR. La faire à l'arrache
+créerait du spaghetti. [TODO.md](TODO.md) garde la décomposition cible, détaille
+les risques, et surtout **ce qu'il faut mettre en place avant** (un filet de vérif
+visuelle golden-image + les deux règles anti-spaghetti) pour que ce soit propre et
+tienne à long terme.
 
 ### 5.2 `editor/EditorUI.cpp` (1933 l., 31 méthodes) → shell + contrôleurs
 
@@ -103,21 +98,62 @@ GPU-driven, XR, lightmaps) en les rendant testables isolément.
 | **SettingsWindow** | `drawSettingsWindow` (découpée par section) |
 | **ModelImporterPanel** | `openModelImporter`, `closeModelImporter` |
 
-### 5.3 `graphics/ResourceManager.cpp` (1102 l.) → façade + caches
+### 5.3 `graphics/ResourceManager.cpp` (1102 → 747 l.) → façade + caches
 
-Le **gain LOC majeur** : le triplet rig/clipView/animGraph répète le motif
-`loadX` / `getX` / `xLoadState` / `xLoadError` **trois fois** (~12 méthodes). Un
-template `AsyncAssetCache<T>` l'absorbe en une classe générique + 3 instances.
+**Fait (3 unités, chacune un concept + invariant, vérifiées natif+web+Witness) :**
 
-| Unité (état/invariant) | Méthodes reprises |
+| Unité (état/invariant) | Rôle |
 |---|---|
-| **BindlessTextureTable** — freelist d'indices bindless ; slot 0 réservé, indices stables inter-frame | `createGlobalBindlessResources`, `getBindlessTextureIndex`, `ensureBindlessTextureIndex` |
-| **MaterialTable** — buffer de slots matériaux + freelist | `writeMaterialSlot`, `registerMaterialData`, `updateMaterialData`, `getMaterial`, `rebindMaterialsUsing` |
-| **MeshCache** | `createMesh`, `loadMesh`, `finalizePendingMeshes`, `getMesh`, `registerMemoryMesh` (×2) |
-| **TextureCache** | `getTexture`, `finalizePendingTextures`, `registerMemoryTexture`, `registerGeneratedTexture` |
-| **AsyncAssetCache\<T>** (Rig, ClipView, AnimGraph) — map id→entrée {Loading/Ready/Failed + erreur} | remplace les 12 méthodes `load/get/state/error` des trois types |
-| **GpuBudget / Evictor** — horloge `lastUse` + graveyard + politique LRU | `trimUnused`, `enforceGpuBudget`, `retireBindGroup`, `drainGraveyard`, `pumpAssetLoads` |
-| **ResourceManager** (reste, façade) | `setRegistry`, `getOrRegister`, coordination des unités ci-dessus |
+| **`AsyncAssetCache<T>`** (`badcac3`) | cache async générique {Loading/Ready/Failed} ; absorbe la triplication `load/get/state/error` de Rig/ClipView/AnimGraph |
+| **`BindlessTables`** (`8f772d5`) | set descripteur bindless (texture-array binding 0 + SSBO matériaux binding 1) + alloc/recyclage d'index & slots ; **MaterialTable absorbée dedans** ; slot/index 0 = fallbacks jamais recyclés |
+| **`GpuGraveyard`** (`5b7f13c`) | destruction GPU différée sûre pour les frames en vol (`Retired` + `retire`/`drain`, invariant `kRetireFrames`) + recyclage des slots |
+
+**Reste : `MeshCache` + `TextureCache` + `GpuBudget` — design de l'interface cache↔budget.**
+
+Ces trois-là ne sont **pas** une coupe mécanique : `trimUnused`/`enforceGpuBudget`
+itèrent *tous* les caches et partagent aujourd'hui `gpuResidentBytes_` et
+`lastUse_`. **Piège à éviter** : une interface virtuelle `ResourceCache` pour 2
+types, ou un budget qui itère les maps internes des caches — c'est de
+l'indirection sans gain (« moins bien »). La règle : **chaque cache possède sa
+propre comptabilité ; le budget coordonne par appels concrets.**
+
+**Ownership (frontières d'état) :**
+- `MeshCache` possède `meshes_`, `reverseMeshMap_`, `pendingMeshes_`, **son**
+  `residentBytes_` (sous-total mesh) et **son** `lastUse_` (LRU mesh). API interne :
+  `createMesh`/`loadMesh`/`getMesh`/`finalizePendingMeshes`/`registerMemoryMesh`×2/`meshId`.
+- `TextureCache` possède `textures_`, `pendingTextures_`, `failedTextures_`, **son**
+  `residentBytes_` et **son** `lastUse_`. API : `getTexture`/`finalizePendingTextures`/
+  `registerMemoryTexture`/`registerGeneratedTexture` + le rebind matériau à `ready`.
+- `GpuBudget` possède `frameClock_`, `gpuBudgetBytes_`, `gpuEvicted*`, `liveUsage_`.
+  **Aucune ressource** — juste la politique.
+
+**Interface concrète cache→budget (zéro virtuel — le budget tient `MeshCache&` +
+`TextureCache&` et appelle les deux nommément) :**
+```
+uint64_t residentBytes() const;                        // total du cache
+uint64_t sweepUnused(const LiveSet&, GpuGraveyard&);   // mark-and-sweep changeScene, octets libérés
+void     collectEvictionCandidates(vector<Candidate>&) const;  // {id,lastUse} non-live/non-pending
+uint64_t evict(AssetID, GpuGraveyard&);                // évince 1 entrée, retourne les octets
+```
+`Candidate { AssetID id; uint64_t lastUse; CacheTag tag; }`. Le budget **merge**
+les candidats des deux caches, **trie** par `lastUse`, et évince LRU-first en
+dispatchant sur `tag` (2 branches concrètes, zéro dispatch virtuel).
+
+**Coordination (`GpuBudget`) :**
+- `gpuResidentBytes()` public = `mesh.residentBytes() + tex.residentBytes()`.
+- `trimUnused(live)` = `mesh.sweepUnused(...)` + `tex.sweepUnused(...)` + log agrégé.
+- `enforce()` par frame (si sur-budget) = merge → tri LRU → evict jusqu'à
+  sous-budget, sinon 1 warning mesuré. Évincés → `GpuGraveyard` (déjà partagé).
+- `frameClock_` possédé par le budget ; les caches le lisent (réf const) pour
+  dater `lastUse` dans `get()` — lecture seule, couplage minimal, pas de cycle.
+
+**Pourquoi ça améliore (et n'ajoute pas de spaghetti) :** chaque unité testable
+seule (cache sans budget ; budget avec des caches factices) ; le budget ne connaît
+que 3 méthodes par cache, jamais leurs maps ; `Retired`/`GpuGraveyard` déjà sortis
+(obstacle levé). **Ordre :** `MeshCache` d'abord (le plus simple — pas de
+bindless/rebind), vérifier ; `TextureCache` ensuite ; `GpuBudget` en dernier, une
+fois les deux caches auto-comptables. **À faire à froid**, un commit + vérif par
+unité.
 
 ### 5.4 `mcp/McpBridge.cpp` (1401 l.) → bridge mince + modules d'outils
 
@@ -182,13 +218,10 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   Une « source unique » forcerait des `#ifdef` par sous-système = moins lisible et
   risqué. Le seul gain honnête ici : extraire les templates `registerBehaviour<T>`
   /`registerNode<T>` (identiques dans les 3) vers un header partagé. Faible valeur.
-- **Phase 3 — Renderer (§5.1). ⚠️ Haut risque en autonome.** Débloque XR/GPU-driven
-  mais l'état (GI/shadow/tonemap/culling/XR) est très intriqué et le code a des
-  branches `#ifdef SAIDA_RHI_WEBGPU`/`SAIDA_ENABLE_XR`. **La correction pixel du
-  rendu n'est pas couverte par un test automatique** — Witness E2E vérifie que le
-  HUD/scène s'affichent, pas l'exactitude colorimétrique. À faire en session
-  supervisée, une unité à la fois (TonemapPass la plus séparable), en vérifiant
-  visuellement + build natif **et** web + (si dispo) XR.
+- **Phase 3 — Renderer. ⛔ Retirée du plan → [TODO.md](TODO.md).** Trop risquée
+  sans filet de vérif visuelle (exactitude pixel non testée, état intriqué,
+  branches `#ifdef`). TODO.md dit pourquoi et ce qu'il faut d'abord (golden-image
+  + règles anti-spaghetti). Ne pas l'attaquer avant d'avoir ce filet.
 - **Phase 4 — EditorUI (§5.2). ⚠️ Éditeur-only (pas de risque web) mais GUI non
   testée.** Aucun test automatique n'exerce les gizmos/panneaux/dialogues.
   `witness_editor_play` couvre le mode --play, pas l'édition. Extractions à faire
