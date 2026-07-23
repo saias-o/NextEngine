@@ -5,24 +5,20 @@ sur desktop, WebGPU via WebAssembly dans le navigateur et OpenXR pour la VR/AR.
 Le projet vise un moteur léger, lisible et pilotable par des humains comme par
 des assistants IA, sans multiplier les implémentations de gameplay.
 
-**Statut au 2026-07-21 : candidat V1.0 local, NO-GO pour publication tant que
-les manettes physiques et la signature Authenticode ne sont pas qualifiées.**
+**Statut au 2026-07-24 : V1.0 close côté moteur — toutes les gates techniques
+sont fermées et le refactor V1 est terminé. NO-GO pour publication tant que
+l'installeur n'est pas signé Authenticode avec la clé de publication.**
 
 ## Documents canoniques
 
-Il n'existe que deux documents de vérité en plus de ce README :
+Le dépôt n'a que trois documents, ce README compris :
 
 - [SPEC.md](SPEC.md) : architecture, contrats publics, formats, sous-systèmes,
-  plateformes, procédures techniques et limites actuelles ;
-- [PLAN_V1.md](PLAN_V1.md) : unique checklist pour atteindre la V1.
-
-Le guide opérationnel [support et retrait d'une release](docs/release-support.md)
-publie la matrice qualifiée, les prérequis de promotion et la procédure de
-rollback sans créer une troisième source de vérité produit. Le backlog de
-qualité du code ([AUDIT_V1.md](AUDIT_V1.md)) catalogue la dette structurelle
-connue et [REFACTOR_V1.md](REFACTOR_V1.md) en tire le plan d'exécution du
-refactor ; ces documents orientent le travail sans être des sources de vérité
-produit.
+  plateformes, procédures techniques, support/promotion/retrait d'une release
+  et limites actuelles — la vérité de ce qui *existe* ;
+- [ROADMAP.md](ROADMAP.md) : backlog unique de ce qui *reste à faire* — dernière
+  étape avant publication, dette structurelle du code, décomposition différée du
+  Renderer et ses prérequis, P1/P2 et décisions closes.
 
 La plateforme web, le backend et l'exploitation vivent dans
 [`saias-o/saida`](https://github.com/saias-o/saida). Son `PLAN_V1.md` porte le
@@ -321,8 +317,8 @@ cmake --build build/autolod --parallel
 ## Règles de contribution
 
 - Lire [SPEC.md](SPEC.md) avant de modifier un contrat ou un format.
-- Mettre à jour [PLAN_V1.md](PLAN_V1.md) dans le même changement lorsqu'une
-  gate est fermée ou qu'un nouveau bloqueur est prouvé.
+- Mettre à jour [ROADMAP.md](ROADMAP.md) dans le même changement lorsqu'une
+  entrée est close ou qu'un nouveau bloqueur est prouvé.
 - Donner à chaque module et chaque classe une responsabilité claire. Scinder
   les classes omniscientes et les fichiers qui mélangent plusieurs domaines.
 - Remplacer les nombres et chaînes magiques par des constantes nommées, des
@@ -346,4 +342,4 @@ cmake --build build/autolod --parallel
 Le projet est sous GPL-3.0. Les dépendances et assets gardent leurs licences.
 L'inventaire, les notices et le SBOM sont générés et vérifiés par la CI. Les
 assets explicitement non distribuables restent hors des bundles V1; consulter
-le [guide de release](docs/release-support.md) avant toute promotion.
+le guide de release ([SPEC.md](SPEC.md) §17) avant toute promotion.

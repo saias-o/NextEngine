@@ -37,6 +37,17 @@ ImGuiLayer::ImGuiLayer(VulkanDevice& device, Window& window, VkFormat colorForma
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;  // enable docking
     ImGui::StyleColorsDark();
 
+    // ImGui's 13 px default is too small for the editor chrome. The base size is
+    // set before the first font is added because AddFontDefault() picks the
+    // vector face (crisp at any size) instead of the 13 px bitmap one only when
+    // the expected context size is >= 15 px.
+    ImGui::GetStyle().FontSizeBase = 16.0f;
+    ImFontConfig fontConfig;
+    // No bold face is bundled; raising glyph coverage is what thickens the
+    // strokes, and it keeps small labels legible on both themes.
+    fontConfig.RasterizerMultiply = 1.18f;
+    io.Fonts->AddFontDefault(&fontConfig);
+
     ImGui_ImplGlfw_InitForVulkan(window.handle(), /*install_callbacks=*/true);
 
     ImGui_ImplVulkan_InitInfo info{};

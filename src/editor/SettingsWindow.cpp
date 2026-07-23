@@ -89,6 +89,7 @@ void SettingsWindow::applyColors() const {
     const ImVec4 brandDeep = ImVec4(0.412f, 0.714f, 0.184f, 1.0f); // #69b62f
     const ImVec4 paper     = ImVec4(0.984f, 0.973f, 0.929f, 1.0f); // #fbf8ed
     const ImVec4 darkGreen = ImVec4(0.106f, 0.310f, 0.125f, 1.0f);
+    const ImVec4 ink       = ImVec4(0.071f, 0.078f, 0.055f, 1.0f); // #12140e
 
     // Dark remains the default: neutral charcoal with a very subtle green
     // cast, so the Saida lime is the only strong hue in the editor chrome.
@@ -98,11 +99,25 @@ void SettingsWindow::applyColors() const {
     const ImVec4 accent   = light ? darkGreen : brand;
     const ImVec4 accentH  = light ? ImVec4(0.153f, 0.396f, 0.173f, 1.0f) : ImVec4(0.816f, 0.965f, 0.357f, 1.0f);
     const ImVec4 accentA  = light ? ImVec4(0.710f, 0.690f, 0.643f, 1.0f) : brandDeep;
-    const ImVec4 text     = light ? darkGreen : paper;
-    const ImVec4 textDim  = light ? ImVec4(0.251f, 0.373f, 0.263f, 1.0f) : ImVec4(0.635f, 0.702f, 0.651f, 1.0f);
+    // Light runs black on paper: the Saida green is a background hue here, never
+    // a text hue, so panel labels keep a full-contrast ink instead of tinted type.
+    const ImVec4 text     = light ? ink : paper;
+    const ImVec4 textDim  = light ? ImVec4(0.318f, 0.333f, 0.290f, 1.0f) : ImVec4(0.635f, 0.702f, 0.651f, 1.0f);
     const ImVec4 border   = light ? ImVec4(0.224f, 0.243f, 0.216f, 0.78f) : ImVec4(0.208f, 0.255f, 0.224f, 0.88f);
     const ImVec4 header   = light ? ImVec4(0.855f, 0.831f, 0.776f, 1.0f) : ImVec4(0.133f, 0.165f, 0.141f, 1.0f);
     const ImVec4 headerH  = light ? ImVec4(0.784f, 0.765f, 0.718f, 1.0f) : ImVec4(0.173f, 0.220f, 0.180f, 1.0f);
+
+    // Panel tabs ("Inspector", "File Browser", …) carry the green in light mode.
+    // ImGui has no per-tab text color, so the shared ink text lands on every
+    // shade below: 4.5:1 against black is the floor that decides how dark the
+    // ramp can go. Selected is the saturated green, idle the muted olive, and
+    // dimmed recedes by desaturating rather than by darkening further.
+    const ImVec4 tab       = light ? ImVec4(0.392f, 0.522f, 0.271f, 1.0f) : header;   // #648545, 5.0:1
+    const ImVec4 tabH      = light ? ImVec4(0.380f, 0.659f, 0.153f, 1.0f) : headerH;  // #61a827, 7.1:1
+    const ImVec4 tabSel    = light ? ImVec4(0.310f, 0.561f, 0.118f, 1.0f) : header;   // #4f8f1e, 5.3:1
+    const ImVec4 tabDim    = light ? ImVec4(0.541f, 0.580f, 0.471f, 1.0f) : bgChild;  // #8a9478, 6.6:1
+    const ImVec4 tabDimSel = light ? ImVec4(0.427f, 0.580f, 0.251f, 1.0f) : header;   // #6d9440, 6.0:1
+    const ImVec4 tabLine   = light ? darkGreen : brand;
 
     c[ImGuiCol_Text]                  = text;
     c[ImGuiCol_TextDisabled]          = textDim;
@@ -114,9 +129,10 @@ void SettingsWindow::applyColors() const {
     c[ImGuiCol_FrameBg]               = light ? ImVec4(0.941f, 0.925f, 0.890f, 1.0f) : ImVec4(0.047f, 0.063f, 0.051f, 1.0f);
     c[ImGuiCol_FrameBgHovered]        = light ? headerH : ImVec4(0.122f, 0.165f, 0.133f, 1.0f);
     c[ImGuiCol_FrameBgActive]         = light ? bg : ImVec4(0.153f, 0.200f, 0.161f, 1.0f);
-    c[ImGuiCol_TitleBg]               = bgChild;
-    c[ImGuiCol_TitleBgActive]         = light ? headerH : ImVec4(0.110f, 0.149f, 0.118f, 1.0f);
-    c[ImGuiCol_TitleBgCollapsed]      = bgChild;
+    // A floating panel's title bar is the same label chip as its docked tab.
+    c[ImGuiCol_TitleBg]               = light ? tabDim : bgChild;
+    c[ImGuiCol_TitleBgActive]         = light ? tabSel : ImVec4(0.110f, 0.149f, 0.118f, 1.0f);
+    c[ImGuiCol_TitleBgCollapsed]      = light ? tabDim : bgChild;
     c[ImGuiCol_MenuBarBg]             = light ? bg : ImVec4(0.082f, 0.102f, 0.086f, 1.0f);
     c[ImGuiCol_ScrollbarBg]           = bgChild;
     c[ImGuiCol_ScrollbarGrab]         = light ? ImVec4(0.596f, 0.576f, 0.529f, 1.0f) : ImVec4(0.208f, 0.255f, 0.224f, 1.0f);
@@ -137,12 +153,12 @@ void SettingsWindow::applyColors() const {
     c[ImGuiCol_ResizeGrip]            = light ? ImVec4(0.596f, 0.576f, 0.529f, 1.0f) : border;
     c[ImGuiCol_ResizeGripHovered]     = accent;
     c[ImGuiCol_ResizeGripActive]      = accentH;
-    c[ImGuiCol_Tab]                   = header;
-    c[ImGuiCol_TabHovered]            = headerH;
-    c[ImGuiCol_TabSelected]           = light ? accentA : header;
-    c[ImGuiCol_TabSelectedOverline]   = accent;
-    c[ImGuiCol_TabDimmed]             = bgChild;
-    c[ImGuiCol_TabDimmedSelected]     = header;
+    c[ImGuiCol_Tab]                   = tab;
+    c[ImGuiCol_TabHovered]            = tabH;
+    c[ImGuiCol_TabSelected]           = tabSel;
+    c[ImGuiCol_TabSelectedOverline]   = tabLine;
+    c[ImGuiCol_TabDimmed]             = tabDim;
+    c[ImGuiCol_TabDimmedSelected]     = tabDimSel;
     c[ImGuiCol_DockingPreview]        = ImVec4(accent.x, accent.y, accent.z, 0.7f);
     c[ImGuiCol_DockingEmptyBg]        = bgChild;
     c[ImGuiCol_PlotLines]             = textDim;

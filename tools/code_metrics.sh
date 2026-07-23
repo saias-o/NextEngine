@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Phase-0 refactor guardrail: baseline code metrics for SaidaEngine.
+# Refactor guardrail: baseline code metrics for SaidaEngine.
 #
 # Prints first-party LOC, oversized files, per-directory weight and a
-# long-function heuristic so each refactor phase (see REFACTOR_V1.md) can be
+# long-function heuristic so each refactor (see ROADMAP.md §2) can be
 # measured objectively. Read-only; run from the repo root:
 #
 #   tools/code_metrics.sh
@@ -11,8 +11,8 @@ set -euo pipefail
 
 ROOTS="src web tools tests WitnessGame"
 EXCLUDE='third_party|/build/|_deps|node_modules'
-FILE_MAX=600   # REFACTOR_V1 target: no first-party file above this
-FUNC_MAX=80    # REFACTOR_V1 target: no function above this
+FILE_MAX=600   # target: no first-party file above this
+FUNC_MAX=80    # target: no function above this
 
 srcfiles() {
   find $ROOTS -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.cc' \) 2>/dev/null \
