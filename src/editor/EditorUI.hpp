@@ -2,6 +2,7 @@
 
 #include "editor/CommandHistory.hpp"
 #include "editor/EditorEnums.hpp"
+#include "editor/GizmoController.hpp"
 #include "editor/SceneDocument.hpp"
 #include "editor/ThumbnailCache.hpp"
 #include "scene/animation/AnimationSequence.hpp"
@@ -46,6 +47,7 @@ class EditorUI {
     friend class AnimationPanel;
     friend class PropertyEditor;
     friend class McpBridge;
+    friend class GizmoController;
 public:
     EditorUI();
     ~EditorUI();
@@ -92,16 +94,7 @@ private:
     void copySelected(ResourceManager* resources);
     void pasteClipboard(Scene* scene, ResourceManager* resources);
     void duplicateSelected(ResourceManager* resources);
-    
-    void drawGizmo(Camera* camera, Scene* scene);
-    void updateGizmoHover(const glm::vec3& rayOrigin, const glm::vec3& rayDir, const glm::vec2& mousePos, int& outHoveredAxis);
-    void handleGizmoDrag(const glm::vec3& rayOrigin, const glm::vec3& rayDir, const glm::vec2& mousePos);
-    void performRaycastSelection(Scene* scene, const glm::vec3& rayOrigin, const glm::vec3& rayDir);
-    void renderGizmoRotationRings(ImDrawList* drawList, Camera* camera, const glm::mat4& viewProj, int hoveredAxis);
-    void renderGizmoTranslateScale(ImDrawList* drawList, int hoveredAxis);
 
-    void drawColliderGizmos(Camera* camera, Scene* scene);
-    
     void drawAboutWindow();
     void drawBuildWindow(Project* project);
     void executeBuild(Project* project, bool web, bool launchAfter);
@@ -230,21 +223,11 @@ private:
     char sceneTreeSearchBuf_[128] = "";
     char fileBrowserSearchBuf_[128] = "";
 
+    // Active tool mode is shared editor state: set by the viewport toolbar and
+    // by keyboard, consumed by the gizmo. The manipulation/geometry state lives
+    // in GizmoController.
     GizmoMode gizmoMode_ = GizmoMode::Translate;
-    GizmoAxis grabbedAxis_ = GizmoAxis::None;
-    glm::vec3 dragStartNodePos_{0.0f};
-    glm::vec3 dragStartNodeRotEuler_{0.0f};
-    glm::quat dragStartNodeRotQuat_{1.0f, 0.0f, 0.0f, 0.0f};
-    glm::vec3 dragStartNodeScale_{1.0f};
-    glm::vec2 dragStartMousePos_{0.0f};
-    glm::vec3 dragStartHitPos3D_{0.0f};
-
-    glm::vec3 gizmoNodePos_{0.0f};
-    float gizmoWorldLength_{0.0f};
-    glm::vec2 gizmoCenter2D_{0.0f};
-    glm::vec2 gizmoEnds2D_[3];
-    glm::vec3 gizmoLocalAxes_[3];
-    bool gizmoAxisValid_[3]{false, false, false};
+    GizmoController gizmo_;
 
     glm::vec2 viewportPos_{0.0f, 0.0f};
     glm::vec2 viewportSize_{0.0f, 0.0f};
