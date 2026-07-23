@@ -228,20 +228,28 @@ deux caches, jamais leurs maps. `ResourceManager` conserve son contrat externe e
 les responsabilités transversales qui lui appartiennent encore (rebind matériaux,
 rigs/clips), sans porter la stratégie de résidence GPU.
 
-### 5.4 `mcp/McpBridge.cpp` (1401 l.) → bridge mince + modules d'outils
+### 5.4 `mcp/McpBridge.cpp` (1401 → 77 l.) → bridge mince + modules d'outils
 
-Les outils sont déjà des fonctions libres `toolXxx(ToolCtx&, json&)`. Les grouper
-par domaine dans `mcp/tools/`, chaque module s'enregistrant dans un registre
-partagé ; `McpBridge` ne fait plus que composer.
+Les outils, déjà fonctions libres, sont regroupés par domaine dans `mcp/tools/`.
+Chaque module enregistre son schéma et son handler dans le même `ToolRegistry` ;
+`McpBridge` ne fait plus que construire le contexte éditeur et router le protocole.
+Invariant : un nom est unique et `tools/list` ne peut pas diverger de `tools/call`.
 
 | Module `mcp/tools/` | Outils |
 |---|---|
-| **IntrospectionTools** | `describeApi`, `listNodeTypes`, `listBehaviourTypes` |
-| **SceneTools** | `getScene`, `getNode`, `findNodes`, `setSceneSettings` |
-| **NodeTools** | `createNode`, `deleteNode`, `renameNode`, `reparent`, `setTransform`, `addBehaviour`, `setProperty`, `group`, `connectSignal` |
-| **AssetTools** | `writeScript`, `writeUi` |
-| **ScenarioTools** | `listScenarioActions`, … |
-| **ToolContext** (partagé) | `ToolCtx`, `requireEdit`, `requireNode`, `resolveToolPath` |
+| **IntrospectionTools** (154 l.) | manifeste, listes de types, guide et recettes |
+| **SceneTools** (130 l.) | lecture de scène/nœud, recherche, signaux, réglages |
+| **NodeTools** (273 l.) | mutations de nœuds/behaviours, propriétés, import modèle |
+| **AssetTools** (230 l.) | écriture JS/UI/C++, build, check headless, logs |
+| **ScenarioTools** (152 l.) | catalogue, lecture, validation, édition, attachement |
+| **AnimationTools** (464 l.) | inspection, validation, création, patch et preview |
+| **ToolContext** (106 l.) | contexte partagé, garde d'édition, IDs et chemins sandboxés |
+| **ToolRegistry** (60 l.) | catalogue unique schéma + handler, rejet des doublons |
+
+Les 45 noms historiques sont couverts par `saida_mcp_tool_registry_tests`, qui
+vérifie aussi les schémas de base, l'unicité et les erreurs de dispatch. *Vérifié :
+build natif propre, 70/70 CTest, smoke TCP réel `initialize` + `tools/list` +
+`tools/call` (45 outils), `witness_editor_play` PASS (run+restart).*
 
 ### 5.5 Registre de types — 3 listes → 1 source filtrée
 
@@ -304,12 +312,13 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   ⚠️ Rappel : aucun test auto n'exerce les
   gizmos/panneaux/dialogues en mode édition — chaque extraction reste à mener en
   session supervisée avec vérification manuelle de l'éditeur au viewport.
-- **Phase 5 — McpBridge (§5.4). Éditeur-only, déplacement quasi pur.** Bouger les
-  ~45 fonctions `toolX(ToolCtx&, json&)` vers des modules `mcp/tools/` par domaine.
-  Sûr **si fait comme un pur move** (logique inchangée → compile+link dans
-  `saida_editor` = forte présomption de préservation), mais les outils MCP ne sont
-  pas testés automatiquement. Volumineux ; à faire d'un bloc pour ne pas laisser
-  un état mi-splitté.
+- **Phase 5 — McpBridge (§5.4). ✅ Faite — 6 domaines + contexte/registre.**
+  `McpBridge.cpp` **1401 → 77 l.** Les 45 handlers ont été déplacés sans changer
+  leur logique. Le registre associe chaque schéma à son handler et refuse les
+  doublons ; `ToolContext` centralise la garde Play, les IDs et les chemins
+  sandboxés. Vérifié : build natif propre, 70/70 CTest dont le nouveau test du
+  catalogue complet, smoke TCP réel (initialize/list/call) et
+  `witness_editor_play` PASS (run+restart).
 - **Phase 6 — Magic numbers (AUDIT §D) + polish.** Constantes nommées
   (behavior-identique, sûr). Ex. sûrs déjà identifiés : `Input.cpp` 0.1f (deadzone
   défaut), 0.99f (deadzone max, aussi dans `InputGamepad.hpp:102` → constante

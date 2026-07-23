@@ -12,6 +12,9 @@ namespace saida {
 
 class EditorUI;
 class McpServer;
+namespace mcp {
+class ToolRegistry;
+}
 
 class McpBridge {
 public:
@@ -32,6 +35,7 @@ private:
     nlohmann::json callTool(EditorUI& ui, const std::string& name, const nlohmann::json& args);
 
     std::unique_ptr<McpServer> server_;
+    std::unique_ptr<mcp::ToolRegistry> tools_;
 };
 
 } // namespace saida

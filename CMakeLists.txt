@@ -651,6 +651,14 @@ if(SAIDA_ENABLE_MCP)
     target_sources(saida_editor PRIVATE
         src/mcp/McpServer.cpp
         src/mcp/McpBridge.cpp
+        src/mcp/tools/ToolContext.cpp
+        src/mcp/tools/ToolRegistry.cpp
+        src/mcp/tools/IntrospectionTools.cpp
+        src/mcp/tools/SceneTools.cpp
+        src/mcp/tools/NodeTools.cpp
+        src/mcp/tools/AssetTools.cpp
+        src/mcp/tools/ScenarioTools.cpp
+        src/mcp/tools/AnimationTools.cpp
     )
     target_compile_definitions(saida_editor PUBLIC SAIDA_ENABLE_MCP)
     if(WIN32)
@@ -989,6 +997,15 @@ if (BUILD_TESTING)
     target_link_libraries(saida_editor_document_tests PRIVATE saida_editor)
     target_compile_options(saida_editor_document_tests PRIVATE -Wall -Wextra)
     add_test(NAME saida_editor_document_tests COMMAND $<TARGET_FILE:saida_editor_document_tests>)
+
+    if(SAIDA_ENABLE_MCP)
+        add_executable(saida_mcp_tool_registry_tests tests/McpToolRegistryTests.cpp)
+        saida_test_target(saida_mcp_tool_registry_tests)
+        target_link_libraries(saida_mcp_tool_registry_tests PRIVATE saida_editor)
+        target_compile_options(saida_mcp_tool_registry_tests PRIVATE -Wall -Wextra)
+        add_test(NAME saida_mcp_tool_registry_tests
+                 COMMAND $<TARGET_FILE:saida_mcp_tool_registry_tests>)
+    endif()
 
 endif()
 
