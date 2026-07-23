@@ -20,6 +20,7 @@
 #include "graphics/BindlessTables.hpp"
 #include "graphics/GpuGraveyard.hpp"
 #include "graphics/MeshCache.hpp"
+#include "graphics/TextureCache.hpp"
 #include "rhi/Rhi.hpp"
 
 #ifdef SAIDA_RHI_WEBGPU
@@ -145,7 +146,7 @@ public:
     // Octets GPU des ressources résidentes chargées par asset (textures,
     // meshes) — diagnostics de fuite du chantier 3, exposé via assets.stats().
     uint64_t gpuResidentBytes() const {
-        return textureResidentBytes_ + meshCache_->residentBytes();
+        return textureCache_->residentBytes() + meshCache_->residentBytes();
     }
 
     // Budget GPU appliqué PENDANT une scène (pas seulement au changeScene) :
@@ -210,8 +211,6 @@ public:
                                   MaterialType type);
 
 private:
-    void ensureDefaultTextures();
-    void finalizePendingTextures();
     void finalizePendingAnimationAssets();
     void rebindMaterialsUsing(AssetID textureId);
 
@@ -224,8 +223,8 @@ private:
 
     std::unique_ptr<GeometryRegistry> geometryRegistry_;
     std::unique_ptr<MeshCache> meshCache_;
+    std::unique_ptr<TextureCache> textureCache_;
 
-    std::unordered_map<AssetID, std::unique_ptr<Texture>> textures_;
     std::unordered_map<MaterialDesc, std::unique_ptr<Material>> materials_;
     std::unordered_map<AssetID, std::unique_ptr<Rig>> rigs_;
     std::unordered_map<AssetID, std::unique_ptr<AnimationClip>> animations_;
@@ -235,33 +234,20 @@ private:
     AsyncAssetCache<ClipView> clipViewCache_;
     AsyncAssetCache<AnimGraphAsset> animGraphCache_;
     
-    std::unique_ptr<Texture> defaultWhiteTexture_;
-    std::unique_ptr<Texture> defaultNormalTexture_;
-    std::unique_ptr<Texture> missingTexture_;
     std::unique_ptr<AssetLoader> assetLoader_;
-
-    // Chargement asynchrone et cycle de vie.
-    struct PendingTexture {
-        bool srgb = true;
-        AssetHandle handle;
-    };
-    std::unordered_map<AssetID, PendingTexture> pendingTextures_;
-    std::unordered_set<AssetID> failedTextures_;
 
     // Objets GPU retirés mais possiblement encore lus par une frame en vol :
     // détruits (et leurs slots bindless recyclés) après un délai (GpuGraveyard).
     GpuGraveyard graveyard_;
     uint64_t frameClock_ = 0;
-    uint64_t textureResidentBytes_ = 0;
 
-    // Budget GPU mi-scène. MeshCache possède son sous-total et son LRU ; le
-    // sous-total et le LRU texture restent ici jusqu'à l'extraction suivante.
+    // Budget GPU mi-scène. Chaque cache possède son sous-total et son LRU ;
+    // ResourceManager fusionne encore leurs candidats jusqu'au prochain lot.
     void enforceGpuBudget();
     uint64_t gpuBudgetBytes_ = 512ull * 1024ull * 1024ull;
     uint64_t gpuEvictedCount_ = 0;
     uint64_t gpuEvictedBytes_ = 0;
     bool overBudgetWarned_ = false;
-    std::unordered_map<AssetID, uint64_t> textureLastUse_;
     AssetUsage liveUsage_;
     bool hasLiveUsage_ = false;
 };

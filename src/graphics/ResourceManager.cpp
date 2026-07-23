@@ -2,12 +2,8 @@
 
 #include "core/Log.hpp"
 #include "core/Profiler.hpp"
-#include "graphics/Pipeline.hpp"
-#include "graphics/Buffer.hpp"
 #include "graphics/Material.hpp"
-#include "graphics/Texture.hpp"
 #include "project/AssetRegistry.hpp"
-#include "scene/Node.hpp"
 #include "scene/animation/Rig.hpp"
 #include "scene/animation/RigAsset.hpp"
 #include "scene/animation/AnimationClip.hpp"
@@ -15,66 +11,10 @@
 #include "scene/animation/AnimGraphAsset.hpp"
 #include "scene/animation/ClipView.hpp"
 
-#ifndef SAIDA_RHI_WEBGPU
-#include "graphics/Swapchain.hpp"
-#include "graphics/VulkanDevice.hpp"
-#endif
-
-#include <stb_image.h>
-
 #include <algorithm>
-#include <array>
-#include <atomic>
-#include <cstring>
-#include <stdexcept>
 #include <string>
 
 namespace saida {
-
-namespace {
-
-// Image décodée sur le worker de l'AssetLoader : pixels RGBA prêts pour
-// l'upload GPU (fait sur le thread principal dans finalizePendingTextures).
-struct DecodedImage {
-    void* pixels = nullptr;  // allocation stbi
-    uint32_t width = 0;
-    uint32_t height = 0;
-    bool hdr = false;  // pixels en float RGBA (16 o/px), sinon RGBA8
-    ~DecodedImage() {
-        if (pixels) stbi_image_free(pixels);
-    }
-};
-
-// Décodage stbi pur CPU — exécuté hors du thread principal sur desktop. Le
-// HDR (.hdr → RGBA32F) n'est décodé en float que sur desktop ; le backend web
-// utilise volontairement la conversion LDR de stbi.
-AssetDecoder makeImageDecoder() {
-    return [](std::vector<uint8_t>&& bytes, AssetDecodeResult& out, std::string& error) {
-        auto image = std::make_shared<DecodedImage>();
-        int w = 0, h = 0, channels = 0;
-        const auto* data = bytes.data();
-        const int size = static_cast<int>(bytes.size());
-#ifndef SAIDA_RHI_WEBGPU
-        image->hdr = size > 0 && stbi_is_hdr_from_memory(data, size) != 0;
-        if (image->hdr)
-            image->pixels = stbi_loadf_from_memory(data, size, &w, &h, &channels, STBI_rgb_alpha);
-        else
-#endif
-            image->pixels = stbi_load_from_memory(data, size, &w, &h, &channels, STBI_rgb_alpha);
-        if (!image->pixels) {
-            const char* reason = stbi_failure_reason();
-            error = reason ? reason : "unrecognized image";
-            return false;
-        }
-        image->width = static_cast<uint32_t>(w);
-        image->height = static_cast<uint32_t>(h);
-        out.payload = image;
-        out.bytes = static_cast<uint64_t>(image->width) * image->height * (image->hdr ? 16 : 4);
-        return true;
-    };
-}
-
-}
 
 namespace {
 // Shared by the three animation-asset extractors below.
@@ -145,18 +85,17 @@ ResourceManager::ResourceManager(rhi::Device& device, AssetRegistry* registry)
         });
     bindlessTables_.create();
 #endif
-    ensureDefaultTextures();
+    textureCache_ = std::make_unique<TextureCache>(device_, bindlessTables_);
 }
 
 ResourceManager::~ResourceManager() {
     assetLoader_.reset();
-    pendingTextures_.clear();
     // Clear caches first (resource destructors run while the device is alive),
     // then the descriptor objects they were allocated from. The graveyard goes
     // with them (retired bind groups were allocated from the same layout/pool).
     graveyard_.clear();
     materials_.clear();
-    textures_.clear();
+    textureCache_->clear();
     meshCache_->clear();
     rigs_.clear();
     animations_.clear();
@@ -217,62 +156,7 @@ AnimationClip* ResourceManager::getAnimation(AssetID id) {
 }
 
 Texture* ResourceManager::getTexture(AssetID id, bool srgb) {
-    if (id == kAssetInvalid) return nullptr;
-    if (auto it = textures_.find(id); it != textures_.end()) {
-        textureLastUse_[id] = frameClock_;
-        return it->second.get();
-    }
-    // Un asset en échec rend le damier magenta (fallback visible) au lieu de
-    // relancer un chargement voué à l'échec à chaque frame.
-    if (failedTextures_.count(id)) return missingTexture();
-    if (!registry_) return nullptr;
-
-    // Chargement asynchrone : lecture fichier + décodage stbi sur le worker
-    // (l'AssetLoader résout le chemin via le registre — relatif à la racine
-    // projet, donc robuste au déplacement du dossier). L'appelant retombe sur
-    // ses fallbacks ; finalizePendingTextures() crée la texture GPU et rebinde
-    // les matériaux quand les pixels sont prêts.
-    if (!pendingTextures_.count(id)) {
-        AssetHandle handle = assetLoader_->request(id, AssetLoadPriority::High,
-                                                   AssetPayloadKind::Image, makeImageDecoder());
-        if (!handle) return nullptr;
-        pendingTextures_.emplace(id, PendingTexture{srgb, std::move(handle)});
-    }
-    return nullptr;
-}
-
-void ResourceManager::finalizePendingTextures() {
-    if (pendingTextures_.empty()) return;
-    for (auto it = pendingTextures_.begin(); it != pendingTextures_.end();) {
-        const AssetLoadState state = it->second.handle.state();
-        if (state == AssetLoadState::Queued || state == AssetLoadState::Loading) {
-            ++it;
-            continue;
-        }
-        const AssetID id = it->first;
-        bool created = false;
-        if (state == AssetLoadState::Ready) {
-            if (auto image = std::static_pointer_cast<DecodedImage>(it->second.handle.payload())) {
-                SAIDA_PROFILE_SCOPE("Resource/FinalizeAsyncTexture");
-                rhi::Format format = it->second.srgb ? rhi::Format::RGBA8Srgb : rhi::Format::RGBA8Unorm;
-#ifndef SAIDA_RHI_WEBGPU
-                if (image->hdr) format = rhi::Format::RGBA32Float;
-#endif
-                auto tex = std::make_unique<Texture>(
-                    device_, static_cast<const uint8_t*>(image->pixels),
-                    image->width, image->height, format);
-                ensureBindlessTextureIndex(tex.get());
-                textureResidentBytes_ += tex->gpuBytes();
-                textures_.emplace(id, std::move(tex));
-                created = true;
-            }
-        }
-        if (!created) failedTextures_.insert(id);  // diagnostic déjà loggué par le loader
-        // Libère le handle (les pixels décodés sortent de la comptabilité du
-        // loader), puis rebinde les matériaux qui référencent cet asset.
-        it = pendingTextures_.erase(it);
-        rebindMaterialsUsing(id);
-    }
+    return textureCache_->get(id, srgb, registry_, *assetLoader_, frameClock_);
 }
 
 void ResourceManager::rebindMaterialsUsing(AssetID textureId) {
@@ -285,25 +169,11 @@ void ResourceManager::rebindMaterialsUsing(AssetID textureId) {
 
 void ResourceManager::trimUnused(const AssetUsage& used) {
     SAIDA_PROFILE_SCOPE("Resource/TrimUnused");
-    const size_t texturesBefore = textures_.size();
+    const size_t texturesBefore = textureCache_->size();
     const size_t meshesBefore = meshCache_->size();
     const size_t materialsBefore = materials_.size();
 
-    // Textures : tout ce qu'aucun matériau/nœud/skybox vivant ne référence.
-    for (auto it = textures_.begin(); it != textures_.end();) {
-        if (used.textures.count(it->first)) {
-            ++it;
-            continue;
-        }
-        Retired r;
-        r.bindlessIndex = it->second->bindlessIndex();
-        textureResidentBytes_ -= std::min(textureResidentBytes_, it->second->gpuBytes());
-        textureLastUse_.erase(it->first);
-        r.texture = std::move(it->second);
-        graveyard_.retire(std::move(r), frameClock_);
-        it = textures_.erase(it);
-    }
-
+    textureCache_->sweepUnused(used.textures, graveyard_, frameClock_);
     meshCache_->sweepUnused(used.meshes, graveyard_, frameClock_);
 
     // Matériaux : un matériau utilisé garde ses textures vivantes (marquées
@@ -345,14 +215,14 @@ void ResourceManager::trimUnused(const AssetUsage& used) {
     clipViewCache_.clear();
     animGraphCache_.clear();
 
-    const size_t evicted = (texturesBefore - textures_.size()) +
+    const size_t evicted = (texturesBefore - textureCache_->size()) +
                            (meshesBefore - meshCache_->size()) +
                            (materialsBefore - materials_.size()) +
                            (rigsBefore - rigs_.size()) +
                            (animationsBefore - animations_.size()) +
                            rigAssetsSwept + viewsSwept + graphsSwept;
     if (evicted)
-        Log::info("assets: evicted ", texturesBefore - textures_.size(), " textures, ",
+        Log::info("assets: evicted ", texturesBefore - textureCache_->size(), " textures, ",
                   meshesBefore - meshCache_->size(), " meshes, ",
                   materialsBefore - materials_.size(), " materials, ",
                   rigsBefore - rigs_.size(), " rigs, ",
@@ -373,7 +243,10 @@ void ResourceManager::pumpAssetLoads() {
     // pump() d'abord : sur le web (pas de worker) c'est lui qui exécute les
     // chargements — finaliser ensuite rend les assets prêts dès cette frame.
     assetLoader_->pump();
-    finalizePendingTextures();
+    std::vector<AssetID> completedTextures;
+    textureCache_->finalizePending(completedTextures);
+    for (AssetID id : completedTextures)
+        rebindMaterialsUsing(id);
     meshCache_->finalizePending(registry_);
     finalizePendingAnimationAssets();
     enforceGpuBudget();
@@ -390,47 +263,37 @@ void ResourceManager::enforceGpuBudget() {
 
     // Candidats : assets chargés par id, ni référencés par la scène vivante ni
     // en cours de chargement, ni builtin/défauts. Tri LRU global.
+    enum class CacheTag {
+        Texture,
+        Mesh,
+    };
     struct Candidate {
         AssetID id;
         uint64_t lastUse;
-        bool isMesh;
+        CacheTag cache;
     };
     std::vector<Candidate> candidates;
-    for (const auto& [id, tex] : textures_) {
-        (void)tex;
-        if (liveUsage_.textures.count(id) || pendingTextures_.count(id)) continue;
-        const auto it = textureLastUse_.find(id);
-        candidates.push_back(
-            {id, it != textureLastUse_.end() ? it->second : 0, false});
-    }
+    std::vector<TextureCache::EvictionCandidate> textureCandidates;
+    textureCache_->collectEvictionCandidates(liveUsage_.textures, textureCandidates);
+    for (const TextureCache::EvictionCandidate& candidate : textureCandidates)
+        candidates.push_back({candidate.id, candidate.lastUse, CacheTag::Texture});
     std::vector<MeshCache::EvictionCandidate> meshCandidates;
     meshCache_->collectEvictionCandidates(liveUsage_.meshes, meshCandidates);
     for (const MeshCache::EvictionCandidate& candidate : meshCandidates)
-        candidates.push_back({candidate.id, candidate.lastUse, true});
+        candidates.push_back({candidate.id, candidate.lastUse, CacheTag::Mesh});
     std::sort(candidates.begin(), candidates.end(),
               [](const Candidate& a, const Candidate& b) { return a.lastUse < b.lastUse; });
 
     for (const Candidate& c : candidates) {
         if (gpuResidentBytes() <= gpuBudgetBytes_) break;
-        uint64_t bytes = 0;
-        if (c.isMesh) {
-            bytes = meshCache_->evict(c.id, graveyard_, frameClock_);
-        } else {
-            auto it = textures_.find(c.id);
-            if (it == textures_.end()) continue;
-            bytes = it->second->gpuBytes();
-            Retired retired;
-            retired.bindlessIndex = it->second->bindlessIndex();
-            retired.texture = std::move(it->second);
-            textures_.erase(it);
-            textureResidentBytes_ -= std::min(textureResidentBytes_, bytes);
-            textureLastUse_.erase(c.id);
-            graveyard_.retire(std::move(retired), frameClock_);
-        }
+        const bool isMesh = c.cache == CacheTag::Mesh;
+        const uint64_t bytes = isMesh
+            ? meshCache_->evict(c.id, graveyard_, frameClock_)
+            : textureCache_->evict(c.id, graveyard_, frameClock_);
         if (bytes == 0) continue;
         gpuEvictedBytes_ += bytes;
         ++gpuEvictedCount_;
-        Log::info("assets: gpu budget evicted ", c.isMesh ? "mesh" : "texture", " id=",
+        Log::info("assets: gpu budget evicted ", isMesh ? "mesh" : "texture", " id=",
                   c.id, " (", bytes, " bytes, resident ", gpuResidentBytes(), "/",
                   gpuBudgetBytes_, ")");
     }
@@ -462,39 +325,14 @@ AssetID ResourceManager::getOrRegister(const std::string& path, AssetType type, 
 }
 
 AssetID ResourceManager::registerMemoryTexture(const uint8_t* data, size_t size, bool srgb) {
-    int texWidth, texHeight, texChannels;
-    stbi_uc* pixels = stbi_load_from_memory(data, static_cast<int>(size), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-    if (!pixels) {
-        Log::error("Failed to load memory texture");
-        return kAssetInvalid;
-    }
-    
-    rhi::Format format = srgb ? rhi::Format::RGBA8Srgb : rhi::Format::RGBA8Unorm;
-    auto tex = std::make_unique<Texture>(device_, pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), format);
-    ensureBindlessTextureIndex(tex.get());
-    stbi_image_free(pixels);
-    textureResidentBytes_ += tex->gpuBytes();
-
-    static std::atomic<AssetID> s_dynamicId{0x8000000000000000ULL};
-    AssetID id = s_dynamicId++;
-    textures_.emplace(id, std::move(tex));
-    return id;
+    return textureCache_->registerMemory(data, size, srgb);
 }
 
 AssetID ResourceManager::registerGeneratedTexture(const uint8_t* pixels, uint32_t width,
                                                   uint32_t height, rhi::Format format,
                                                   bool generateMipmaps) {
-    if (!pixels || width == 0 || height == 0)
-        return kAssetInvalid;
-
-    auto tex = std::make_unique<Texture>(device_, pixels, width, height, format, generateMipmaps);
-    ensureBindlessTextureIndex(tex.get());
-    textureResidentBytes_ += tex->gpuBytes();
-
-    static std::atomic<AssetID> s_generatedId{0x8100000000000000ULL};
-    AssetID id = s_generatedId++;
-    textures_.emplace(id, std::move(tex));
-    return id;
+    return textureCache_->registerGenerated(
+        pixels, width, height, format, generateMipmaps);
 }
 
 AssetID ResourceManager::registerMemoryMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
@@ -587,41 +425,16 @@ AssetID ResourceManager::meshId(const Mesh* mesh) const {
     return meshCache_->idFor(mesh);
 }
 
-void ResourceManager::ensureDefaultTextures() {
-    if (!defaultWhiteTexture_) {
-        uint8_t whitePixels[] = {255, 255, 255, 255};
-        defaultWhiteTexture_ = std::make_unique<Texture>(device_, whitePixels, 1, 1, rhi::Format::RGBA8Srgb);
-        ensureBindlessTextureIndex(defaultWhiteTexture_.get());
-    }
-    if (!defaultNormalTexture_) {
-        const uint8_t normalPixel[4] = {128, 128, 255, 255}; // 0.5, 0.5, 1.0 flat normal
-        defaultNormalTexture_ = std::make_unique<Texture>(device_, normalPixel, 1, 1, rhi::Format::RGBA8Srgb);
-        ensureBindlessTextureIndex(defaultNormalTexture_.get());
-    }
-}
-
 Texture* ResourceManager::defaultWhiteTexture() {
-    ensureDefaultTextures();
-    return defaultWhiteTexture_.get();
+    return textureCache_->defaultWhite();
 }
 
 Texture* ResourceManager::defaultNormalTexture() {
-    ensureDefaultTextures();
-    return defaultNormalTexture_.get();
+    return textureCache_->defaultNormal();
 }
 
 Texture* ResourceManager::missingTexture() {
-    if (!missingTexture_) {
-        // Damier magenta/anthracite 2x2 — le fallback visible du chantier 3 :
-        // un asset manquant se voit, il ne fait ni crash ni surface noire.
-        const uint8_t px[2 * 2 * 4] = {
-            255, 0, 255, 255,  24, 24, 24, 255,
-            24, 24, 24, 255,  255, 0, 255, 255,
-        };
-        missingTexture_ = std::make_unique<Texture>(device_, px, 2, 2, rhi::Format::RGBA8Srgb);
-        ensureBindlessTextureIndex(missingTexture_.get());
-    }
-    return missingTexture_.get();
+    return textureCache_->missing();
 }
 
 } // namespace saida

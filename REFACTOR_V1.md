@@ -114,9 +114,9 @@ zéro warning), 69/69 CTest, `witness_editor_play` PASS (run+restart). Reste non
 couvert par l'auto — l'interaction gizmo en mode Scene (drag T/R/S, clic-sélection,
 wireframe colliders) demande une vérif manuelle au viewport.*
 
-### 5.3 `graphics/ResourceManager.cpp` (1102 → 627 l.) → façade + caches
+### 5.3 `graphics/ResourceManager.cpp` (1102 → 449 l.) → façade + caches
 
-**Fait (4 unités, chacune un concept + invariant, vérifiées natif+web+Witness) :**
+**Fait (5 unités, chacune un concept + invariant, vérifiées natif+web+Witness) :**
 
 | Unité (état/invariant) | Rôle |
 |---|---|
@@ -124,25 +124,27 @@ wireframe colliders) demande une vérif manuelle au viewport.*
 | **`BindlessTables`** (`8f772d5`) | set descripteur bindless (texture-array binding 0 + SSBO matériaux binding 1) + alloc/recyclage d'index & slots ; **MaterialTable absorbée dedans** ; slot/index 0 = fallbacks jamais recyclés |
 | **`GpuGraveyard`** (`5b7f13c`) | destruction GPU différée sûre pour les frames en vol (`Retired` + `retire`/`drain`, invariant `kRetireFrames`) + recyclage des slots |
 | **`MeshCache`** (2026-07-23) | cache mesh complet : proxies async, index inverse, sous-total GPU et LRU ; chaque entrée possède un `Mesh*` stable, indexé par son `AssetID`, et les candidats/évictions restent encapsulés |
+| **`TextureCache`** (2026-07-23) | cache texture complet : décodage async, échecs, fallbacks non évictables, inscription bindless, sous-total GPU et LRU ; les IDs finalisés remontent sans dépendance vers `Material` |
 
-**Reste : `TextureCache` + `GpuBudget` — terminer l'interface cache↔budget.**
+**Reste : `GpuBudget` — sortir la politique désormais déjà découplée des caches.**
 
-Le lot mesh a posé la frontière sans virtuel : `ResourceManager` ne voit aucune
-map mesh et ne reçoit que le sous-total, les candidats et `evict`. Le sous-total
-texture et son LRU restent temporairement dans `ResourceManager`. **Piège à
-éviter pour la suite** : une interface virtuelle `ResourceCache` pour 2 types,
-ou un budget qui itère les maps internes des caches — c'est de l'indirection sans
-gain (« moins bien »). La règle reste : **chaque cache possède sa propre
-comptabilité ; le budget coordonne par appels concrets.**
+Les deux caches ont maintenant la même frontière sans héritage : `ResourceManager`
+ne voit aucune map de ressources et ne reçoit que les sous-totaux, les candidats
+et `evict`. Le merge/tri/dispatch LRU est encore dans `ResourceManager`, mais ne
+dépend déjà plus de leur représentation. **Piège à éviter pour le dernier lot** :
+réintroduire une interface virtuelle `ResourceCache` pour 2 types ou donner au
+budget accès aux maps — ce serait de l'indirection sans gain (« moins bien »).
 
 **Ownership (frontières d'état) :**
 - ✅ `MeshCache` possède `meshes_`, `reverseMap_`, `pending_`, **son**
   `residentBytes_` (sous-total mesh) et **son** `lastUse_` (LRU mesh). API interne :
   `get`/`load`/`finalizePending`/`registerMemory`×2/`idFor`, plus
   `sweepUnused`/`collectEvictionCandidates`/`evict` pour la coordination.
-- `TextureCache` possède `textures_`, `pendingTextures_`, `failedTextures_`, **son**
-  `residentBytes_` et **son** `lastUse_`. API : `getTexture`/`finalizePendingTextures`/
-  `registerMemoryTexture`/`registerGeneratedTexture` + le rebind matériau à `ready`.
+- ✅ `TextureCache` possède `textures_`, `pending_`, `failed_`, les trois
+  fallbacks, **son** `residentBytes_` et **son** `lastUse_`. API :
+  `get`/`finalizePending`/`registerMemory`/`registerGenerated`, plus la même
+  interface `sweepUnused`/`collectEvictionCandidates`/`evict`. Il remonte les IDs
+  terminés ; `ResourceManager` garde seulement le rebind des matériaux.
 - `GpuBudget` possède `frameClock_`, `gpuBudgetBytes_`, `gpuEvicted*`, `liveUsage_`.
   **Aucune ressource** — juste la politique.
 
@@ -163,14 +165,14 @@ dispatchant sur `tag` (2 branches concrètes, zéro dispatch virtuel).
 - `trimUnused(live)` = `mesh.sweepUnused(...)` + `tex.sweepUnused(...)` + log agrégé.
 - `enforce()` par frame (si sur-budget) = merge → tri LRU → evict jusqu'à
   sous-budget, sinon 1 warning mesuré. Évincés → `GpuGraveyard` (déjà partagé).
-- `frameClock_` possédé par le budget ; les caches le lisent (réf const) pour
-  dater `lastUse` dans `get()` — lecture seule, couplage minimal, pas de cycle.
+- `frameClock_` possédé par le budget ; il passe sa valeur aux caches pour dater
+  `lastUse` dans `get()` — pas de référence stockée, donc pas de cycle.
 
 **Pourquoi ça améliore (et n'ajoute pas de spaghetti) :** chaque unité reste
 testable seule ; le budget ne connaît que 3 méthodes par cache, jamais leurs maps ;
-`Retired`/`GpuGraveyard` sont déjà partagés. **Ordre restant :** `TextureCache`,
-vérifier ; `GpuBudget` en dernier, une fois les deux caches auto-comptables.
-**À faire à froid**, un commit + vérif par unité.
+`Retired`/`GpuGraveyard` sont déjà partagés. **Reste :** extraire `GpuBudget`
+maintenant que les deux caches sont auto-comptables. **À faire à froid**, un
+commit + vérif.
 
 ### 5.4 `mcp/McpBridge.cpp` (1401 l.) → bridge mince + modules d'outils
 
@@ -209,18 +211,18 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   behaviours concrets), `animation/` (déjà là). *Vérifié via build + CTest ; les
   moves étant des relocalisations sans changement de logique, les harnais Witness
   lourds n'ont pas été rejoués.*
-- **Phase 1 — ResourceManager (§5.3). 🟢 Bien avancée — 4 extractions nettes.**
-  `ResourceManager.cpp` **1102 → 627 lignes**. Faits : **`AsyncAssetCache<T>`**
+- **Phase 1 — ResourceManager (§5.3). 🟢 Presque terminée — 5 extractions nettes.**
+  `ResourceManager.cpp` **1102 → 449 lignes**. Faits : **`AsyncAssetCache<T>`**
   (`badcac3`), **`BindlessTables`** (`8f772d5`, MaterialTable absorbée — SSBO =
   binding 1 du set bindless), **`GpuGraveyard`** (`5b7f13c`, destruction différée
   in-flight-safe + recyclage des slots, invariant `kRetireFrames`) et
-  **`MeshCache`** (proxies async + identité pointeur/ID + sous-total/LRU +
-  sweep/éviction encapsulés). Le total public est maintenant la somme des
-  sous-totaux mesh et texture ; le budget fusionne les candidats sans connaître
-  les maps mesh. **Restent `TextureCache` puis `GpuBudget/Evictor`**, dans cet
-  ordre, avec la même règle : zéro interface virtuelle, zéro accès du budget aux
-  maps. *Vérifié le 2026-07-23 : build natif propre, 69/69 CTest, player Web,
-  runtime Web et authoring WASM, Witness E2E PASS (run + restart).*
+  **`MeshCache`** (proxies async + identité pointeur/ID + sous-total/LRU) et
+  **`TextureCache`** (décodage/échecs + fallbacks + bindless + sous-total/LRU).
+  Sweep, collecte de candidats et éviction sont encapsulés dans chaque cache ; le
+  total public les additionne et le budget fusionne les candidats sans connaître
+  aucune map. **Reste uniquement `GpuBudget/Evictor`**, avec la même règle : zéro
+  interface virtuelle. *Vérifié le 2026-07-23 : build natif propre, 69/69 CTest,
+  player Web, runtime Web et authoring WASM, Witness E2E PASS (run + restart).*
 - **Phase 2 — Registre unique (§5.5). ⛔ Révisée : NE PAS faire tel quel.** Les
   trois `ReflectedTypes*.cpp` diffèrent par **nécessité de build**, pas par
   accident : le player web et le viewer d'authoring excluent délibérément des
