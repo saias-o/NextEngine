@@ -473,6 +473,7 @@ add_library(saida_engine STATIC
     src/graphics/Texture.cpp
     src/graphics/BindlessTables.cpp
     src/graphics/GpuGraveyard.cpp
+    src/graphics/GpuBudget.cpp
     src/graphics/MeshCache.cpp
     src/graphics/TextureCache.cpp
     src/graphics/ResourceManager.cpp

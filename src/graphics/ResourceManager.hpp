@@ -41,6 +41,7 @@ class AnimationClip;
 class ClipView;
 class AnimGraphAsset;
 class RigAsset;
+class GpuBudget;
 
 // Loads and caches GPU resources. Owns material set 1 layout/pool.
 class ResourceManager {
@@ -145,19 +146,17 @@ public:
 
     // Octets GPU des ressources résidentes chargées par asset (textures,
     // meshes) — diagnostics de fuite du chantier 3, exposé via assets.stats().
-    uint64_t gpuResidentBytes() const {
-        return textureCache_->residentBytes() + meshCache_->residentBytes();
-    }
+    uint64_t gpuResidentBytes() const;
 
     // Budget GPU appliqué PENDANT une scène (pas seulement au changeScene) :
     // au-delà du budget, les assets ni référencés par la scène vivante (cf.
     // setLiveUsage) ni en cours de chargement sont évincés du moins récemment
     // utilisé au plus récent. Si tout le dépassement est référencé, rien n'est
     // cassé : un warning unique le mesure. 0 = illimité.
-    void setGpuBudget(uint64_t bytes) { gpuBudgetBytes_ = bytes; }
-    uint64_t gpuBudgetBytes() const { return gpuBudgetBytes_; }
-    uint64_t gpuEvictedCount() const { return gpuEvictedCount_; }
-    uint64_t gpuEvictedBytes() const { return gpuEvictedBytes_; }
+    void setGpuBudget(uint64_t bytes);
+    uint64_t gpuBudgetBytes() const;
+    uint64_t gpuEvictedCount() const;
+    uint64_t gpuEvictedBytes() const;
 
 
     // Ensemble des ressources encore référencées par les scènes vivantes —
@@ -185,10 +184,7 @@ public:
     // Photographie des références vivantes (SceneTree, rafraîchie à chaque
     // changement de hiérarchie) — les candidats à l'éviction budget mi-scène
     // sont exactement les assets hors de cet ensemble.
-    void setLiveUsage(AssetUsage usage) {
-        liveUsage_ = std::move(usage);
-        hasLiveUsage_ = true;
-    }
+    void setLiveUsage(AssetUsage usage);
 
     // Confie un objet GPU potentiellement encore référencé par une frame en
     // vol ; il sera détruit après kRetireFrames pumps (pattern ThumbnailCache).
@@ -239,17 +235,7 @@ private:
     // Objets GPU retirés mais possiblement encore lus par une frame en vol :
     // détruits (et leurs slots bindless recyclés) après un délai (GpuGraveyard).
     GpuGraveyard graveyard_;
-    uint64_t frameClock_ = 0;
-
-    // Budget GPU mi-scène. Chaque cache possède son sous-total et son LRU ;
-    // ResourceManager fusionne encore leurs candidats jusqu'au prochain lot.
-    void enforceGpuBudget();
-    uint64_t gpuBudgetBytes_ = 512ull * 1024ull * 1024ull;
-    uint64_t gpuEvictedCount_ = 0;
-    uint64_t gpuEvictedBytes_ = 0;
-    bool overBudgetWarned_ = false;
-    AssetUsage liveUsage_;
-    bool hasLiveUsage_ = false;
+    std::unique_ptr<GpuBudget> gpuBudget_;
 };
 
 } // namespace saida

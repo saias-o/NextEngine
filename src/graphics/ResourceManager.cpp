@@ -2,6 +2,7 @@
 
 #include "core/Log.hpp"
 #include "core/Profiler.hpp"
+#include "graphics/GpuBudget.hpp"
 #include "graphics/Material.hpp"
 #include "project/AssetRegistry.hpp"
 #include "scene/animation/Rig.hpp"
@@ -11,7 +12,6 @@
 #include "scene/animation/AnimGraphAsset.hpp"
 #include "scene/animation/ClipView.hpp"
 
-#include <algorithm>
 #include <string>
 
 namespace saida {
@@ -86,13 +86,16 @@ ResourceManager::ResourceManager(rhi::Device& device, AssetRegistry* registry)
     bindlessTables_.create();
 #endif
     textureCache_ = std::make_unique<TextureCache>(device_, bindlessTables_);
+    gpuBudget_ =
+        std::make_unique<GpuBudget>(*meshCache_, *textureCache_, graveyard_);
 }
 
 ResourceManager::~ResourceManager() {
     assetLoader_.reset();
-    // Clear caches first (resource destructors run while the device is alive),
-    // then the descriptor objects they were allocated from. The graveyard goes
-    // with them (retired bind groups were allocated from the same layout/pool).
+    // The coordinator only holds references; drop it before its caches.
+    gpuBudget_.reset();
+    // Release retired and cached resources while the device and descriptor
+    // objects they were allocated from are still alive.
     graveyard_.clear();
     materials_.clear();
     textureCache_->clear();
@@ -110,6 +113,31 @@ ResourceManager::~ResourceManager() {
 void ResourceManager::setRegistry(AssetRegistry* registry) {
     registry_ = registry;
     assetLoader_->setRegistry(registry);
+}
+
+void ResourceManager::setLiveUsage(AssetUsage usage) {
+    gpuBudget_->setLiveUsage(std::move(usage.meshes),
+                             std::move(usage.textures));
+}
+
+uint64_t ResourceManager::gpuResidentBytes() const {
+    return gpuBudget_->residentBytes();
+}
+
+void ResourceManager::setGpuBudget(uint64_t bytes) {
+    gpuBudget_->setLimit(bytes);
+}
+
+uint64_t ResourceManager::gpuBudgetBytes() const {
+    return gpuBudget_->limit();
+}
+
+uint64_t ResourceManager::gpuEvictedCount() const {
+    return gpuBudget_->evictedCount();
+}
+
+uint64_t ResourceManager::gpuEvictedBytes() const {
+    return gpuBudget_->evictedBytes();
 }
 
 uint32_t ResourceManager::ensureBindlessTextureIndex(Texture* texture) {
@@ -138,7 +166,8 @@ Mesh* ResourceManager::loadMesh(AssetID id) {
 }
 
 Mesh* ResourceManager::getMesh(AssetID id) {
-    return meshCache_->get(id, registry_, *assetLoader_, frameClock_);
+    return meshCache_->get(id, registry_, *assetLoader_,
+                           gpuBudget_->frameClock());
 }
 
 Rig* ResourceManager::getRig(AssetID id) {
@@ -156,7 +185,8 @@ AnimationClip* ResourceManager::getAnimation(AssetID id) {
 }
 
 Texture* ResourceManager::getTexture(AssetID id, bool srgb) {
-    return textureCache_->get(id, srgb, registry_, *assetLoader_, frameClock_);
+    return textureCache_->get(id, srgb, registry_, *assetLoader_,
+                              gpuBudget_->frameClock());
 }
 
 void ResourceManager::rebindMaterialsUsing(AssetID textureId) {
@@ -169,12 +199,10 @@ void ResourceManager::rebindMaterialsUsing(AssetID textureId) {
 
 void ResourceManager::trimUnused(const AssetUsage& used) {
     SAIDA_PROFILE_SCOPE("Resource/TrimUnused");
-    const size_t texturesBefore = textureCache_->size();
-    const size_t meshesBefore = meshCache_->size();
     const size_t materialsBefore = materials_.size();
 
-    textureCache_->sweepUnused(used.textures, graveyard_, frameClock_);
-    meshCache_->sweepUnused(used.meshes, graveyard_, frameClock_);
+    const GpuBudget::TrimResult gpuTrim =
+        gpuBudget_->trimUnused(used.meshes, used.textures);
 
     // Matériaux : un matériau utilisé garde ses textures vivantes (marquées
     // par le collecteur), donc l'inverse — évincer un matériau dont les
@@ -190,7 +218,7 @@ void ResourceManager::trimUnused(const AssetUsage& used) {
         // être partagé par plusieurs matériaux, on ne le recycle jamais.
         if (r.materialIndex == 0) r.materialIndex = ~0u;
         r.material = std::move(it->second);
-        graveyard_.retire(std::move(r), frameClock_);
+        graveyard_.retire(std::move(r), gpuBudget_->frameClock());
         it = materials_.erase(it);
     }
 
@@ -215,15 +243,15 @@ void ResourceManager::trimUnused(const AssetUsage& used) {
     clipViewCache_.clear();
     animGraphCache_.clear();
 
-    const size_t evicted = (texturesBefore - textureCache_->size()) +
-                           (meshesBefore - meshCache_->size()) +
+    const size_t evicted = gpuTrim.textures +
+                           gpuTrim.meshes +
                            (materialsBefore - materials_.size()) +
                            (rigsBefore - rigs_.size()) +
                            (animationsBefore - animations_.size()) +
                            rigAssetsSwept + viewsSwept + graphsSwept;
     if (evicted)
-        Log::info("assets: evicted ", texturesBefore - textureCache_->size(), " textures, ",
-                  meshesBefore - meshCache_->size(), " meshes, ",
+        Log::info("assets: evicted ", gpuTrim.textures, " textures, ",
+                  gpuTrim.meshes, " meshes, ",
                   materialsBefore - materials_.size(), " materials, ",
                   rigsBefore - rigs_.size(), " rigs, ",
                   animationsBefore - animations_.size(), " clips, ",
@@ -233,12 +261,12 @@ void ResourceManager::trimUnused(const AssetUsage& used) {
 }
 
 void ResourceManager::retireBindGroup(std::unique_ptr<rhi::BindGroup> group) {
-    graveyard_.retireBindGroup(std::move(group), frameClock_);
+    graveyard_.retireBindGroup(std::move(group), gpuBudget_->frameClock());
 }
 
 void ResourceManager::pumpAssetLoads() {
-    ++frameClock_;
-    graveyard_.drain(frameClock_, bindlessTables_,
+    gpuBudget_->advanceFrame();
+    graveyard_.drain(gpuBudget_->frameClock(), bindlessTables_,
                      bindlessTables_.active() ? defaultWhiteTexture() : nullptr);
     // pump() d'abord : sur le web (pas de worker) c'est lui qui exécute les
     // chargements — finaliser ensuite rend les assets prêts dès cette frame.
@@ -249,63 +277,9 @@ void ResourceManager::pumpAssetLoads() {
         rebindMaterialsUsing(id);
     meshCache_->finalizePending(registry_);
     finalizePendingAnimationAssets();
-    enforceGpuBudget();
+    gpuBudget_->enforce();
     SAIDA_PROFILE_COUNTER("Assets/GpuResidentBytes", gpuResidentBytes());
-    SAIDA_PROFILE_COUNTER("Assets/GpuEvictions", gpuEvictedCount_);
-}
-
-void ResourceManager::enforceGpuBudget() {
-    if (gpuBudgetBytes_ == 0 || gpuResidentBytes() <= gpuBudgetBytes_) {
-        overBudgetWarned_ = false;
-        return;
-    }
-    if (!hasLiveUsage_) return;  // pas encore de photographie : ne rien casser
-
-    // Candidats : assets chargés par id, ni référencés par la scène vivante ni
-    // en cours de chargement, ni builtin/défauts. Tri LRU global.
-    enum class CacheTag {
-        Texture,
-        Mesh,
-    };
-    struct Candidate {
-        AssetID id;
-        uint64_t lastUse;
-        CacheTag cache;
-    };
-    std::vector<Candidate> candidates;
-    std::vector<TextureCache::EvictionCandidate> textureCandidates;
-    textureCache_->collectEvictionCandidates(liveUsage_.textures, textureCandidates);
-    for (const TextureCache::EvictionCandidate& candidate : textureCandidates)
-        candidates.push_back({candidate.id, candidate.lastUse, CacheTag::Texture});
-    std::vector<MeshCache::EvictionCandidate> meshCandidates;
-    meshCache_->collectEvictionCandidates(liveUsage_.meshes, meshCandidates);
-    for (const MeshCache::EvictionCandidate& candidate : meshCandidates)
-        candidates.push_back({candidate.id, candidate.lastUse, CacheTag::Mesh});
-    std::sort(candidates.begin(), candidates.end(),
-              [](const Candidate& a, const Candidate& b) { return a.lastUse < b.lastUse; });
-
-    for (const Candidate& c : candidates) {
-        if (gpuResidentBytes() <= gpuBudgetBytes_) break;
-        const bool isMesh = c.cache == CacheTag::Mesh;
-        const uint64_t bytes = isMesh
-            ? meshCache_->evict(c.id, graveyard_, frameClock_)
-            : textureCache_->evict(c.id, graveyard_, frameClock_);
-        if (bytes == 0) continue;
-        gpuEvictedBytes_ += bytes;
-        ++gpuEvictedCount_;
-        Log::info("assets: gpu budget evicted ", isMesh ? "mesh" : "texture", " id=",
-                  c.id, " (", bytes, " bytes, resident ", gpuResidentBytes(), "/",
-                  gpuBudgetBytes_, ")");
-    }
-
-    if (gpuResidentBytes() > gpuBudgetBytes_ && !overBudgetWarned_) {
-        // Tout le dépassement est référencé par la scène : mesuré et signalé
-        // une fois, jamais cassé.
-        overBudgetWarned_ = true;
-        Log::warn("assets: gpu budget exceeded by live content (resident ",
-                  gpuResidentBytes(), " > budget ", gpuBudgetBytes_,
-                  "), nothing evictable");
-    }
+    SAIDA_PROFILE_COUNTER("Assets/GpuEvictions", gpuEvictedCount());
 }
 
 Material* ResourceManager::getMaterial(const MaterialDesc& desc) {
