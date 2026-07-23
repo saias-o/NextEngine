@@ -7,13 +7,22 @@
 #include "graphics/Material.hpp"
 #include "rhi/Rhi.hpp"
 
+#ifdef SAIDA_RHI_WEBGPU
+// On WebGPU, Buffer/Texture are type aliases (rhi::webgpu::*) — they cannot be
+// forward-declared as classes.
+#include "graphics/Buffer.hpp"
+#include "graphics/Texture.hpp"
+#endif
+
 #include <memory>
 #include <vector>
 
 namespace saida {
 
+#ifndef SAIDA_RHI_WEBGPU
 class Buffer;
 class Texture;
+#endif
 
 // The global bindless descriptor tables shared by every pipeline: one Vulkan
 // descriptor set with binding 0 = the bindless texture array and binding 1 =
