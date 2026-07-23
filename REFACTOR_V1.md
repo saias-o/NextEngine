@@ -156,18 +156,24 @@ Ordonné par isolement et par gain, chaque phase reste verte de bout en bout.
   behaviours concrets), `animation/` (déjà là). *Vérifié via build + CTest ; les
   moves étant des relocalisations sans changement de logique, les harnais Witness
   lourds n'ont pas été rejoués.*
-- **Phase 1 — ResourceManager (§5.3). 🟡 Bien avancée.** `ResourceManager.cpp`
-  1102 → 773 lignes. Faits : **`AsyncAssetCache<T>`** (`badcac3`, triplication
-  rig/clip/graph éliminée) et **`BindlessTables`** (`8f772d5`, set descripteur
-  bindless texture-array + SSBO matériaux + alloc/recyclage d'index/slots ;
-  MaterialTable y est absorbée — le SSBO matériaux est le binding 1 du set
-  bindless). **Restent MeshCache, TextureCache, GpuBudget/Evictor** : ce n'est
-  PAS une coupe nette — `trimUnused` et `enforceGpuBudget` itèrent tous les
-  caches et partagent `gpuResidentBytes_`, `lastUse_`, `graveyard_`. Il faut
-  d'abord définir l'interface cache↔budget (chaque cache sait s'itérer,
-  s'évincer par id, donne ses `gpuBytes`) PUIS extraire GpuBudget par-dessus :
-  redesign de frontières, pas déplacement mécanique. *Filet : build natif + web,
-  `saida_asset_loader_tests`, `saida_hostile_asset_tests`, Witness E2E.*
+- **Phase 1 — ResourceManager (§5.3). 🟢 Bien avancée — 3 extractions nettes.**
+  `ResourceManager.cpp` **1102 → 747 lignes**. Faits : **`AsyncAssetCache<T>`**
+  (`badcac3`), **`BindlessTables`** (`8f772d5`, MaterialTable absorbée — SSBO =
+  binding 1 du set bindless), **`GpuGraveyard`** (`5b7f13c`, destruction différée
+  in-flight-safe + recyclage des slots, invariant `kRetireFrames`). Chacune isole
+  un concept avec un invariant clair.
+  **Reste MeshCache + TextureCache + GpuBudget/Evictor** — mais ATTENTION : ce
+  n'est PAS une coupe nette. `trimUnused`/`enforceGpuBudget` itèrent tous les
+  caches et partagent `gpuResidentBytes_`/`lastUse_`. Les découper *mal* (interface
+  virtuelle pour 2 types, ou budget qui fouille dans les maps) **ajoute de
+  l'indirection = rend moins bien**. La bonne voie : donner à chaque cache sa
+  propre comptabilité (ses octets, son LRU) pour que le budget *coordonne* via des
+  appels concrets (pas de virtuel), en poussant les évincés dans `GpuGraveyard`
+  (le type `Retired` partagé est déjà sorti, ce qui débloque ça). C'est un
+  redesign de frontières à faire **à froid**, pas mécaniquement. À ce stade RM est
+  déjà un coordinateur cohérent ; ne pas fragmenter davantage sans gain net.
+  *Filet : build natif + web, `saida_asset_loader_tests`, `saida_hostile_asset_tests`,
+  Witness E2E.*
 - **Phase 2 — Registre unique (§5.5). ⛔ Révisée : NE PAS faire tel quel.** Les
   trois `ReflectedTypes*.cpp` diffèrent par **nécessité de build**, pas par
   accident : le player web et le viewer d'authoring excluent délibérément des
