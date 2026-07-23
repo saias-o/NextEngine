@@ -7,6 +7,11 @@
 
 namespace saida {
 
+Retired::Retired() = default;
+Retired::~Retired() = default;
+Retired::Retired(Retired&&) noexcept = default;
+Retired& Retired::operator=(Retired&&) noexcept = default;
+
 GpuGraveyard::GpuGraveyard() = default;
 GpuGraveyard::~GpuGraveyard() = default;
 

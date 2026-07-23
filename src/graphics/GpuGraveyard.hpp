@@ -26,6 +26,13 @@ class Texture;
 // only after GpuGraveyard::kRetireFrames pumps, once no in-flight frame can
 // sample it.
 struct Retired {
+    Retired();
+    ~Retired();
+    Retired(Retired&&) noexcept;
+    Retired& operator=(Retired&&) noexcept;
+    Retired(const Retired&) = delete;
+    Retired& operator=(const Retired&) = delete;
+
     std::unique_ptr<Texture> texture;
     std::unique_ptr<Mesh> mesh;
     std::unique_ptr<Material> material;

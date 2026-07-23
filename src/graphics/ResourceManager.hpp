@@ -19,6 +19,7 @@
 #include "graphics/AsyncAssetCache.hpp"
 #include "graphics/BindlessTables.hpp"
 #include "graphics/GpuGraveyard.hpp"
+#include "graphics/MeshCache.hpp"
 #include "rhi/Rhi.hpp"
 
 #ifdef SAIDA_RHI_WEBGPU
@@ -143,7 +144,9 @@ public:
 
     // Octets GPU des ressources résidentes chargées par asset (textures,
     // meshes) — diagnostics de fuite du chantier 3, exposé via assets.stats().
-    uint64_t gpuResidentBytes() const { return gpuResidentBytes_; }
+    uint64_t gpuResidentBytes() const {
+        return textureResidentBytes_ + meshCache_->residentBytes();
+    }
 
     // Budget GPU appliqué PENDANT une scène (pas seulement au changeScene) :
     // au-delà du budget, les assets ni référencés par la scène vivante (cf.
@@ -207,11 +210,8 @@ public:
                                   MaterialType type);
 
 private:
-    Mesh* createMesh(AssetID id, const std::vector<Vertex>& vertices,
-                     const std::vector<uint32_t>& indices);
     void ensureDefaultTextures();
     void finalizePendingTextures();
-    void finalizePendingMeshes();
     void finalizePendingAnimationAssets();
     void rebindMaterialsUsing(AssetID textureId);
 
@@ -223,8 +223,8 @@ private:
     BindlessTables bindlessTables_;
 
     std::unique_ptr<GeometryRegistry> geometryRegistry_;
+    std::unique_ptr<MeshCache> meshCache_;
 
-    std::unordered_map<AssetID, std::unique_ptr<Mesh>> meshes_;
     std::unordered_map<AssetID, std::unique_ptr<Texture>> textures_;
     std::unordered_map<MaterialDesc, std::unique_ptr<Material>> materials_;
     std::unordered_map<AssetID, std::unique_ptr<Rig>> rigs_;
@@ -234,7 +234,6 @@ private:
     AsyncAssetCache<RigAsset> rigAssetCache_;
     AsyncAssetCache<ClipView> clipViewCache_;
     AsyncAssetCache<AnimGraphAsset> animGraphCache_;
-    std::unordered_map<const Mesh*, AssetID> reverseMeshMap_;  // mesh -> id
     
     std::unique_ptr<Texture> defaultWhiteTexture_;
     std::unique_ptr<Texture> defaultNormalTexture_;
@@ -248,23 +247,21 @@ private:
     };
     std::unordered_map<AssetID, PendingTexture> pendingTextures_;
     std::unordered_set<AssetID> failedTextures_;
-    // Proxies Mesh en attente de leur géométrie (parse .obj sur le worker).
-    std::unordered_map<AssetID, AssetHandle> pendingMeshes_;
 
     // Objets GPU retirés mais possiblement encore lus par une frame en vol :
     // détruits (et leurs slots bindless recyclés) après un délai (GpuGraveyard).
     GpuGraveyard graveyard_;
     uint64_t frameClock_ = 0;
-    uint64_t gpuResidentBytes_ = 0;
+    uint64_t textureResidentBytes_ = 0;
 
-    // Budget GPU mi-scène (LRU mesuré). lastUse_ est daté par frameClock_ à
-    // chaque résolution/finalisation d'un asset.
+    // Budget GPU mi-scène. MeshCache possède son sous-total et son LRU ; le
+    // sous-total et le LRU texture restent ici jusqu'à l'extraction suivante.
     void enforceGpuBudget();
     uint64_t gpuBudgetBytes_ = 512ull * 1024ull * 1024ull;
     uint64_t gpuEvictedCount_ = 0;
     uint64_t gpuEvictedBytes_ = 0;
     bool overBudgetWarned_ = false;
-    std::unordered_map<AssetID, uint64_t> lastUse_;
+    std::unordered_map<AssetID, uint64_t> textureLastUse_;
     AssetUsage liveUsage_;
     bool hasLiveUsage_ = false;
 };
